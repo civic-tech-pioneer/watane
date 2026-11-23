@@ -356,8 +356,8 @@ later hardening.
    - other modes besides 0600: `KeyMode`;
    - an owner different from the process's effective user ID: `KeyOwner`.
 
-   The effective UID comes from `/usr/bin/id -u`. Linux uses `O_PATH` to
-   inspect the inode without opening a device for I/O. After the checks,
+   Get the process's effective UID with `rustix::process::geteuid`.
+   Linux uses `O_PATH` to inspect the inode without opening a device for I/O. After the checks,
    open the held descriptor through `/proc/self/fd` and check the read
    handle again. Linux needs procfs mounted at `/proc` to read the key.
    macOS uses `O_NONBLOCK | O_NOCTTY` and checks the handle before reading
@@ -591,6 +591,7 @@ minicbor = { version = "2.3", default-features = false, features = ["alloc"] }
 argon2 = { version = "0.6", default-features = false, features = ["alloc"] }
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 rusqlite = { version = "0.41", features = ["bundled"] }
+rustix = { version = "1", features = ["process"] } # effective UID
 data-encoding = "2.11"           # z-base-32 (custom Specification) and HEXLOWER
 unicode-normalization = "0.1.26"
 zeroize = "1.9"
