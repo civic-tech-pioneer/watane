@@ -439,11 +439,9 @@ impl Dist {
             });
             return Err(cause);
         }
-        {
-            let mut state = self.unsynced_state();
-            state.unfollow_done.append(&mut done.unfollowed);
-            state.drop_done.append(&mut done.dropped);
-        }
+        let mut state = self.unsynced_state();
+        state.unfollow_done.append(&mut done.unfollowed);
+        state.drop_done.append(&mut done.dropped);
         Ok(())
     }
     pub fn follow(&self, link: &Link) -> Result<RefreshReport, DistError> {
