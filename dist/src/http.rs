@@ -114,7 +114,7 @@ impl Dist {
         check: Option<&Check<'_>>,
     ) -> Result<Vec<u8>, DistError> {
         let Some(check) = check else {
-            return match self.get_hop(url, limit, timeout, head, &self.agent)? {
+            return match self.get_hop(url, limit, timeout, head, false)? {
                 Hop::Done(bytes) => Ok(bytes),
                 Hop::Redirect(_) => unreachable!("the agent follows redirects"),
             };
@@ -123,7 +123,7 @@ impl Dist {
         let deadline = Instant::now() + timeout;
         follow_hops(url, check, |current| {
             let left = deadline.saturating_duration_since(Instant::now());
-            self.get_hop(current, limit, left, head, &self.listed_agent)
+            self.get_hop(current, limit, left, head, true)
         })
     }
     fn get_hop(
@@ -132,8 +132,14 @@ impl Dist {
         limit: u64,
         timeout: Duration,
         head: bool,
-        agent: &ureq::Agent,
+        by_hand: bool,
     ) -> Result<Hop<Vec<u8>>, DistError> {
+        // `by_hand`: the listed agent follows no redirect; the caller checks each target.
+        let agent = if by_hand {
+            &self.listed_agent
+        } else {
+            &self.agent
+        };
         let map = |error: ureq::Error| match error {
             ureq::Error::Timeout(_) => DistError::Timeout { url: url.into() },
             ureq::Error::BodyExceedsLimit(_) => DistError::TooLarge {
@@ -155,7 +161,7 @@ impl Dist {
         }
         let mut response = request.call().map_err(map)?;
         match response.status().as_u16() {
-            301 | 302 | 303 | 307 | 308 if !std::ptr::eq(agent, &self.agent) => {
+            301 | 302 | 303 | 307 | 308 if by_hand => {
                 match response
                     .headers()
                     .get("location")
