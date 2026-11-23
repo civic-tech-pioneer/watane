@@ -1725,6 +1725,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Deputy decisions
 
+- 2026-11-23 (S105, two RISKs of option B, both closed by S107) Accepted until S107: (1) tombstone churn: an index
+  listing throwaway keys can force DD-48's 1024-tombstone limit in minutes, after which a stale hit gives a pruned base;
+  (2) the seen_full lock: a channel churned past 16 bases keeps a new mirror the participant gives as a listed read
+  (availability only: it cannot reach the local network).
 - 2026-11-23 (S105 BLOCKED: how dist knows the participant gave a base) Option B now, in dist/ only: each record keeps a
   capped 'seen' list of every base it ever held (kept across eviction, a tombstone after prune); a link at a seen base
   never given does not give it. Option A, the root fix (a follow from a derived link, a search-hit install or the app's
