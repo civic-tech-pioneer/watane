@@ -230,6 +230,8 @@ fn ac4_provider_trust_order() {
             .unwrap()
             .starts_with(seen_before.as_array().unwrap())
     );
+    let served = carol.host.as_ref().unwrap().url.clone();
+    assert!(seen_after.as_array().unwrap().contains(&served.into()));
     let nested = eve
         .dist
         .fetch_for(
