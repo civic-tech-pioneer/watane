@@ -236,4 +236,14 @@ fn ac1_follow_choose_and_a_learned_link_mark_the_base_given() {
     let link = Link::new(key, &b, Some(&"reading-list".parse().unwrap())).unwrap();
     let _ = bob.open_link(&link);
     assert!(given(&home, key).is_empty(), "a held base stays unknown");
+
+    // open_link at a base the record does not hold still learns and gives it.
+    drop(bob);
+    let dead = "http://127.0.0.1:9/";
+    let old = serde_json::json!({"version": 1, "channels": {key.to_string(): {
+        "base": a, "bases": [a, dead], "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
+    std::fs::write(home.join("dist/follows.json"), old.to_string()).unwrap();
+    let bob = open(&home);
+    let _ = bob.open_link(&link);
+    assert_eq!(given(&home, key), [b]);
 }

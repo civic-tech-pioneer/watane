@@ -834,6 +834,8 @@ mod tests {
         // AC2: a follow at the held base gives nothing; the redirect is still refused.
         let got = eve.follow(&w.link(&w.a)).map(|_| ());
         assert!(got.is_err(), "the listed rule refuses the local redirect");
+        let index = crate::Link::new(w.key, &w.a.url, None).unwrap();
+        assert!(eve.choose_index(&index).is_err(), "so does choose_index");
         let report = eve.refresh_channel(&w.key).unwrap();
         assert_refused(failure(Ok(report)), &format!("{}head", w.b.url));
         assert_eq!(w.b.count(), 0, "a repeated link gives no base");
@@ -841,6 +843,7 @@ mod tests {
         eve.unfollow(&w.key).unwrap();
         eve.follow(&w.link(&w.a)).unwrap();
         assert!(w.b.count() > 0);
+        eve.follow(&w.link(&w.a)).unwrap();
         let before = w.b.count();
         eve.fetch(&w.reference).unwrap();
         assert!(w.b.count() > before, "the package redirect was followed");
