@@ -253,6 +253,48 @@ impl Dist {
             last_success: None,
         }
     }
+    /// Notes a 5.11 provider `base` of `key` as seen before dist reads it: in the channel's
+    /// record, or else in its tombstone (created when it has none), saved before the read.
+    /// A later link at that base is then a listed first read and gives nothing (4.4, DD-48).
+    pub(crate) fn note_provider_base(&self, key: PublicKey, base: &str) -> Result<(), DistError> {
+        let mut records = self
+            .follows
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
+        if let Some(record) = records.get(&key) {
+            let mut next = record.clone();
+            note_seen(&mut next.seen, &mut next.seen_full, base);
+            if next.seen == record.seen && next.seen_full == record.seen_full {
+                return Ok(());
+            }
+            let mut all = records.clone();
+            all.insert(key, next);
+            let next = all;
+            self.save_staged(&next, None)?;
+            *records = next;
+            return Ok(());
+        }
+        let mut tombs = self
+            .tombs
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .clone();
+        let name = key.to_string();
+        let mut tomb = tombs.map.get(&name).cloned().unwrap_or_else(|| Tombstone {
+            seen: Vec::new(),
+            given: Vec::new(),
+            // A channel whose tombstone was evicted fails closed (4.4, DD-48).
+            seen_full: tombs.gone.may_be_gone(&key),
+            at: now(),
+        });
+        let before = (tomb.seen.len(), tomb.seen_full);
+        note_seen(&mut tomb.seen, &mut tomb.seen_full, base);
+        if tombs.map.contains_key(&name) && before == (tomb.seen.len(), tomb.seen_full) {
+            return Ok(());
+        }
+        add_tombstone(&mut tombs, name, tomb);
+        self.save_staged(&records, Some(tombs))
+    }
     /// Saves `records`; a channel with a record has no tombstone (4.4).
     pub(crate) fn save_follows(
         &self,

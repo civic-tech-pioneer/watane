@@ -171,6 +171,11 @@ impl Dist {
         let mut package_failure = None;
         let mut answered = 0;
         for base in bases {
+            // A base dist reads is a base the record (or tombstone) saw (4.4, DD-48).
+            if let Err(cause) = self.note_provider_base(key, base) {
+                channel_failure.get_or_insert(cause);
+                continue;
+            }
             match self.read_channel_entries(key, base, true) {
                 Ok(RefreshReport {
                     outcome: Outcome::Compromised { seq },
