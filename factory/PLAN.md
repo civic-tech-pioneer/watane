@@ -1746,6 +1746,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Deputy decisions
 
+- 2026-11-23 (S100, ninth adversary pass) Not accepted: `clean_runs` killing a recorded pgid at open without checking it is still this home's run, and `probe()` killing its group after the reap. Same class as the stop() pgid reuse the human vetoed; added to S100's last answer round as item 5.
 - 2026-11-23 (S109 R1.1) Accepted: on macOS the key-path open can reach a device driver's open routine before the fstat refusal. Planting a device node in the user's 0700 log dir needs root, which spec/TECHNICAL 6 does not protect against, and nothing is read; cheap to undo (a symlink_metadata pre-check).
 - 2026-11-23 (the human, with the monitor; watane-mods PR #5) New review rules from the next dispatch: the review lead
   triages its agents' findings into blocking and polish; polish never holds a merge and goes under Upkeep; the lead may
