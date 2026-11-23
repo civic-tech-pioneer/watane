@@ -1267,7 +1267,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Touches: `dist/` only. Runs beside S100 (host/, dev/) and S102 (app/): no shared file. Remove the three items from
   Leftovers when it merges.
 - [~] **S106 (guard) the net pair test stops flaking on macOS.** (in flight, cloud, builder codex, reviewer claude;
-  sketched 2026-11-23 by the deputy.) `net/tests/it/pair.rs:259` `s4_an_unknown_node_gets_hello_and_nothing_else`
+  sketched 2026-11-23 by the deputy; Codex task https://chatgpt.com/local/6b045b02-1260-83eb-960d-5bddbca75041.)
+  `net/tests/it/pair.rs:259` `s4_an_unknown_node_gets_hello_and_nothing_else`
   failed with `over_budget` instead of `unknown_op` on macOS CI for two unrelated PRs (S100 cafe7fa, S102 820c46f). The
   loop above it uses a fresh key per call because one unknown key's connection budget is small; the last call
   (`frobnicate`) reuses `seed`. Outcome: the test asserts `unknown_op` without depending on that budget, and passes 50
