@@ -1,7 +1,7 @@
 //! Sign in with ChatGPT through a one-shot native OpenID Connect flow (TECHNICAL 19.1).
 
-use crate::CmdError;
 use crate::accounts::OpenAi;
+use crate::{CmdError, words};
 use axum::Router;
 use axum::extract::{Query, Request, State};
 use axum::http::{Method, StatusCode, Uri, header};
@@ -44,7 +44,7 @@ impl Provider {
         if CLIENT_ID.is_empty() {
             return Err(CmdError::new(
                 "unavailable",
-                "Sign in with ChatGPT needs Watane’s OpenAI client registration.",
+                words::CHATGPT_REGISTRATION_REQUIRED,
             ));
         }
         Self::new(ISSUER, CLIENT_ID, SCOPES, false)
@@ -210,23 +210,39 @@ fn http_json<T: DeserializeOwned>(
     response: Result<ureq::http::Response<ureq::Body>, ureq::Error>,
     action: &str,
 ) -> Result<T, CmdError> {
-    // The response and transport details can carry credentials. Show a bounded, fixed cause.
-    let mut response =
-        response.map_err(|_| CmdError::new("unavailable", format!("Could not {action}.")))?;
+    // Server and transport details can carry credentials. Show only a fixed cause.
+    let unavailable = || CmdError::new("unavailable", format!("Could not {action}."));
+    let refused = || {
+        CmdError::new(
+            "bad_input",
+            format!("OpenAI refused the request to {action}."),
+        )
+    };
+    let unreadable = || {
+        CmdError::new(
+            "bad_input",
+            format!("The response could not be read to {action}."),
+        )
+    };
+    let mut response = response.map_err(|error| match error {
+        ureq::Error::StatusCode(_)
+        | ureq::Error::RedirectFailed
+        | ureq::Error::TooManyRedirects => refused(),
+        _ => unavailable(),
+    })?;
     if !response.status().is_success() {
-        return Err(CmdError::new("unavailable", format!("Could not {action}.")));
+        return Err(refused());
     }
-    response
+    let body = response
         .body_mut()
         .with_config()
         .limit(1024 * 1024)
-        .read_json()
-        .map_err(|_| {
-            CmdError::new(
-                "bad_input",
-                format!("The response could not be read to {action}."),
-            )
-        })
+        .read_to_vec()
+        .map_err(|error| match error {
+            ureq::Error::Io(_) | ureq::Error::Timeout(_) => unavailable(),
+            _ => unreadable(),
+        })?;
+    serde_json::from_slice(&body).map_err(|_| unreadable())
 }
 
 #[derive(Deserialize)]
@@ -267,7 +283,7 @@ fn callback_code(uri: &Uri, expected: &str) -> Result<String, CmdError> {
         };
         return Err(CmdError::new(
             "bad_input",
-            format!("sign-in refused: {error}"),
+            words::chatgpt_sign_in_refused(error),
         ));
     }
     answer
@@ -321,7 +337,7 @@ async fn callback(State(state): State<Arc<ListenerState>>, request: Request) -> 
             (header::CACHE_CONTROL, "no-store"),
             (header::REFERRER_POLICY, "no-referrer"),
         ],
-        "You can return to watane.",
+        words::CHATGPT_CALLBACK_PAGE,
     )
         .into_response()
 }
@@ -409,7 +425,7 @@ struct Claims {
 }
 
 fn id_token_error(cause: &str) -> CmdError {
-    CmdError::new("bad_input", format!("the ID token did not check: {cause}"))
+    CmdError::new("bad_input", words::chatgpt_id_token_check_error(cause))
 }
 
 fn decode_claim<T: DeserializeOwned>(encoded: &str, cause: &str) -> Result<T, CmdError> {
@@ -428,7 +444,7 @@ fn get_key(agent: &ureq::Agent, jwks: &Url, kid: &str) -> Result<Key, CmdError> 
         .map_err(|error| {
             CmdError::new(
                 error.code,
-                format!("the ID token did not check: {}", error.message),
+                words::chatgpt_id_token_check_error(&error.message),
             )
         })?;
         let mut matches = keys
@@ -649,13 +665,46 @@ mod tests {
     #![allow(clippy::unwrap_used, reason = "tests may panic")]
 
     use super::issuer_fixture::{Issuer, TokenFault};
-    use super::{ATTEMPT_TIMEOUT, Attempt, Provider, run, wait_for_callback, with_timeout};
+    use super::{
+        ATTEMPT_TIMEOUT, Attempt, Provider, http_json, run, wait_for_callback, with_timeout,
+    };
     use reqwest::{Client, StatusCode};
     use std::io::Write;
     use std::net::Ipv4Addr;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::net::{TcpListener, TcpStream};
+
+    #[test]
+    fn ac1_http_refusal_and_unreachable_issuer_have_distinct_errors() {
+        let action = "exchange the OpenID authorization code";
+        let refusal =
+            ureq::http::Response::builder()
+                .status(400)
+                .body(ureq::Body::builder().data(
+                    br#"{"error":"invalid_grant","error_description":"private issuer detail"}"#,
+                ))
+                .unwrap();
+        for response in [Ok(refusal), Err(ureq::Error::StatusCode(400))] {
+            let error = http_json::<serde_json::Value>(response, action).unwrap_err();
+            assert_eq!(error.code, "bad_input");
+            assert_eq!(
+                error.message,
+                "OpenAI refused the request to exchange the OpenID authorization code."
+            );
+        }
+
+        let transport = ureq::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "private transport detail",
+        ));
+        let error = http_json::<serde_json::Value>(Err(transport), action).unwrap_err();
+        assert_eq!(error.code, "unavailable");
+        assert_eq!(
+            error.message,
+            "Could not exchange the OpenID authorization code."
+        );
+    }
 
     #[tokio::test]
     async fn ac1_flow_checks_pkce_and_signed_plan_with_rotating_keys() {
