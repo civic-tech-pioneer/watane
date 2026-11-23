@@ -225,6 +225,16 @@ impl Dist {
     }
 
     pub(crate) fn check_listed_base(&self, base: &str) -> Result<(), DistError> {
+        #[cfg(test)]
+        if self
+            .test_local_ok
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .iter()
+            .any(|prefix| base.starts_with(prefix.as_str()))
+        {
+            return Ok(());
+        }
         if !self.options.listed_local && index::local_base(base) {
             return Err(DistError::BadUrl {
                 url: base.into(),

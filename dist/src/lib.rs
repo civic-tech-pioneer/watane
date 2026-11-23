@@ -119,6 +119,10 @@ pub struct Dist {
     agent: ureq::Agent,
     /// Never follows a redirect; `http::follow_hops` does, checking each target.
     listed_agent: ureq::Agent,
+    /// Tests only: URL prefixes of test servers that count as non-local, so that a first
+    /// hop can be local-free while its redirect targets are still checked.
+    #[cfg(test)]
+    test_local_ok: Mutex<Vec<String>>,
 }
 // The confirm callback has no Debug, and the rest is lock and cache state.
 impl std::fmt::Debug for Dist {
@@ -284,6 +288,8 @@ impl Dist {
                 .user_agent(concat!("watane-dist/", env!("CARGO_PKG_VERSION")))
                 .build()
                 .into(),
+            #[cfg(test)]
+            test_local_ok: Mutex::new(Vec::new()),
             listed_agent: ureq::Agent::config_builder()
                 .http_status_as_error(false)
                 .max_redirects(0)
