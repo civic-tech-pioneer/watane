@@ -82,14 +82,17 @@ pub(crate) fn replace_equal(
         .map_err(|e| io(tmp.path(), e))?;
     tmp.as_file().sync_all().map_err(|e| io(tmp.path(), e))?;
     tmp.persist(path).map_err(|e| io(path, e.error))?;
+    Ok((true, sync_dir(parent)))
+}
+/// Syncs directory `dir`, so the renames in it survive a crash.
+pub(crate) fn sync_dir(dir: &Path) -> Result<(), DistError> {
     #[cfg(test)]
     if test_dir_sync_fails() {
-        return Ok((true, Err(io(parent, std::io::Error::from_raw_os_error(5)))));
+        return Err(io(dir, std::io::Error::from_raw_os_error(5)));
     }
-    let synced = fs::File::open(parent)
+    fs::File::open(dir)
         .and_then(|f| f.sync_all())
-        .map_err(|e| io(parent, e));
-    Ok((true, synced))
+        .map_err(|e| io(dir, e))
 }
 impl Dist {
     pub fn set_site_url(&self, url: &str) -> Result<(), DistError> {

@@ -117,6 +117,9 @@ pub struct Dist {
     follows: Mutex<std::collections::BTreeMap<PublicKey, Follow>>,
     /// `seen` and `given` of removed records, by channel text (4.4, DD-48). Lock after `follows`.
     tombs: Mutex<Tombs>,
+    /// Set when a rename installed `follows.json` but its directory sync failed, with the
+    /// work the failed call left (4.4, `follow::Unsynced`). Never held while taking `follows`.
+    unsynced: Mutex<follow::Unsynced>,
     read_mutex: Mutex<()>,
     agent: ureq::Agent,
     /// Never follows a redirect; `http::follow_hops` does, checking each target.
@@ -345,6 +348,7 @@ impl Dist {
             options,
             follows: Mutex::new(follows),
             tombs: Mutex::new(tombs),
+            unsynced: Mutex::new(follow::Unsynced::default()),
             read_mutex: Mutex::new(()),
         })
     }

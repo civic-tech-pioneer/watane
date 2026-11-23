@@ -146,6 +146,7 @@ impl Dist {
                 local_only: false,
             });
         }
+        self.settle(false)?;
         let mut records = self
             .follows
             .lock()
@@ -157,6 +158,9 @@ impl Dist {
         let result = (|| {
             if let watane_log::Status::Compromised(f) = self.log.status(channel)? {
                 return Ok(Ingested::Compromised { seq: f.chain.seq() });
+            }
+            if reason == Reason::Kept {
+                self.settle(false)?;
             }
             let mut records =
                 (reason == Reason::Kept && Some(*channel) != self.identity()).then(|| {
@@ -184,8 +188,12 @@ impl Dist {
             if let Some(records) = records.as_mut() {
                 let had = records.contains_key(channel);
                 if !records.get(channel).is_some_and(|r| r.kept) {
-                    self.mark_kept(channel, records)?;
-                    added = Some(had);
+                    let marked = self.mark_kept(channel, records);
+                    // A rename can install the mark although the save returns an error.
+                    if records.get(channel).is_some_and(|r| r.kept) {
+                        added = Some(had);
+                    }
+                    marked?;
                 }
             }
             drop(records);
@@ -206,8 +214,9 @@ impl Dist {
         }
         result.unwrap_or_else(Ingested::Failed)
     }
-    /// Takes back the kept mark a failed `ingest` added, when nothing is stored.
-    fn take_back_kept(&self, channel: &PublicKey, had: bool) {
+    /// Takes back the kept mark a failed `ingest` added, when nothing is stored. A save that
+    /// fails leaves it to `settle` (4.4).
+    pub(crate) fn take_back_kept(&self, channel: &PublicKey, had: bool) {
         if self.log.head(channel).ok().flatten().is_some() {
             return;
         }
@@ -241,7 +250,10 @@ impl Dist {
             }
             _ => return,
         }
-        let _ = self.save_staged(&mut records, next, staged);
+        if self.save_staged(&mut records, next, staged).is_err() {
+            drop(records);
+            self.leave_pending(|state| state.take_back.push((*channel, had)));
+        }
     }
 }
 

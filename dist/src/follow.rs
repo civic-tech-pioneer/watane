@@ -5,8 +5,19 @@ use crate::{
     Change, ChannelView, Dist, DistError, Follow, Follows, Link, Outcome, Profile, PublicKey,
     RefreshReport, Tombs, Tombstone, http, site, view,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+/// The store after a rename whose directory sync failed (4.4): `dirty` until a retry of
+/// that sync succeeds, and the work the failed calls left, finished by `settle`.
+#[derive(Default)]
+pub(crate) struct Unsynced {
+    pub(crate) dirty: bool,
+    /// Kept marks of failed ingests to take back: the channel and whether it had a record.
+    pub(crate) take_back: Vec<(PublicKey, bool)>,
+    /// Channels whose unfollow or drop_index still has to prune.
+    pub(crate) unfollowed: BTreeSet<PublicKey>,
+    pub(crate) dropped: BTreeSet<PublicKey>,
+}
 pub(crate) fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -196,7 +207,8 @@ impl Dist {
     /// A link's base the record (or a tombstone) saw but the participant has not given: its
     /// first read is a listed one, also when it turns a listed-only record followed or
     /// chosen, for the link may be built from the record (4.4, 5.9, DD-48).
-    pub(crate) fn held_ungiven(&self, key: PublicKey, base: &str) -> bool {
+    pub(crate) fn held_ungiven(&self, key: PublicKey, base: &str) -> Result<bool, DistError> {
+        self.settle(true)?;
         // One snapshot: the `follows` lock is held through the tombstone lookup, so a
         // `keep` or a follow cannot move a tombstone into a record between the two. The
         // order is `follows`, then `tombs`, as `save_follows` takes them.
@@ -205,7 +217,7 @@ impl Dist {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         if let Some(r) = records.get(&key) {
-            return !link_gives(&r.seen, r.seen_full, &r.given, base);
+            return Ok(!link_gives(&r.seen, r.seen_full, &r.given, base));
         }
         #[cfg(test)]
         if let Some(hook) = self.test_held_gap.lock().expect("test hook").as_ref() {
@@ -215,11 +227,11 @@ impl Dist {
             .tombs
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        match tombs.map.get(&key.to_string()) {
+        Ok(match tombs.map.get(&key.to_string()) {
             Some(t) => !link_gives(&t.seen, t.seen_full, &t.given, base),
             // No record, no tombstone: a channel whose tombstone was evicted fails closed.
             None => tombs.gone.may_be_gone(&key),
-        }
+        })
     }
     /// A record with no base yet, starting from its channel's tombstone (4.4, DD-48).
     pub(crate) fn new_record(
@@ -257,6 +269,7 @@ impl Dist {
     /// record, or else in its tombstone (created when it has none), saved before the read.
     /// A later link at that base is then a listed first read and gives nothing (4.4, DD-48).
     pub(crate) fn note_provider_base(&self, key: PublicKey, base: &str) -> Result<(), DistError> {
+        self.settle(true)?;
         let mut records = self
             .follows
             .lock()
@@ -306,7 +319,8 @@ impl Dist {
     /// tombstone map a caller built on a copy. Memory changes exactly when the file is
     /// replaced: a save that fails before the rename leaves records and tombstones as they
     /// were; once the rename installed the file, both become what it holds, and a failed
-    /// directory sync after it is still returned (4.4, Codex r3 F3.2).
+    /// directory sync after it is still returned and leaves the store unsynced. An unsynced
+    /// store first retries that sync and writes nothing while it fails (4.4).
     pub(crate) fn save_staged(
         &self,
         live: &mut BTreeMap<PublicKey, Follow>,
@@ -327,6 +341,7 @@ impl Dist {
                 None => {}
             }
         }
+        self.sync_pending()?;
         let mut tombs = self
             .tombs
             .lock()
@@ -351,7 +366,61 @@ impl Dist {
         )?;
         *tombs = next;
         *live = records;
+        if synced.is_err() {
+            self.unsynced_state().dirty = true;
+        }
         synced
+    }
+    fn unsynced_state(&self) -> std::sync::MutexGuard<'_, Unsynced> {
+        self.unsynced
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+    }
+    /// Retries the directory sync an earlier save left failed; `Err` while it fails.
+    fn sync_pending(&self) -> Result<(), DistError> {
+        let mut state = self.unsynced_state();
+        if state.dirty {
+            site::sync_dir(&self.home.join("dist"))?;
+            state.dirty = false;
+        }
+        Ok(())
+    }
+    /// Records work a failed call left, for `settle` to finish (4.4).
+    pub(crate) fn leave_pending(&self, add: impl FnOnce(&mut Unsynced)) {
+        add(&mut self.unsynced_state());
+    }
+    /// Called first by each call that reads provenance or changes `follows.json` (4.4):
+    /// retries a failed directory sync, returning its error without further work, then
+    /// finishes the work earlier calls left: the kept marks to take back and, when `prune`
+    /// (the caller holds the read lock; a holder method does not), the prune of an unfollow
+    /// or drop_index. Returns what it finished. The caller holds no `follows` lock.
+    pub(crate) fn settle(&self, prune: bool) -> Result<Unsynced, DistError> {
+        self.sync_pending()?;
+        let mut done = {
+            let mut state = self.unsynced_state();
+            let mut work = Unsynced {
+                take_back: std::mem::take(&mut state.take_back),
+                ..Unsynced::default()
+            };
+            if prune {
+                work.unfollowed = std::mem::take(&mut state.unfollowed);
+                work.dropped = std::mem::take(&mut state.dropped);
+            }
+            work
+        };
+        for (channel, had) in std::mem::take(&mut done.take_back) {
+            self.take_back_kept(&channel, had);
+        }
+        if !done.unfollowed.is_empty() || !done.dropped.is_empty() {
+            if let Err(cause) = self.prune_listed() {
+                self.leave_pending(|state| {
+                    state.unfollowed.append(&mut done.unfollowed);
+                    state.dropped.append(&mut done.dropped);
+                });
+                return Err(cause);
+            }
+        }
+        Ok(done)
     }
     pub fn follow(&self, link: &Link) -> Result<RefreshReport, DistError> {
         if Some(link.channel()) == self.identity() {
@@ -361,7 +430,7 @@ impl Dist {
             .read_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        let listed = self.held_ungiven(link.channel(), link.base());
+        let listed = self.held_ungiven(link.channel(), link.base())?;
         let report = self.read_channel_mode(link.channel(), link.base(), listed)?;
         match report.outcome {
             Outcome::Failed { cause } => return Err(cause),
@@ -411,7 +480,7 @@ impl Dist {
         if !unknown {
             return Ok(false);
         }
-        let listed = self.held_ungiven(key, link.base());
+        let listed = self.held_ungiven(key, link.base())?;
         let Ok(report) = self.read_channel_mode(key, link.base(), listed) else {
             return Ok(false);
         };
@@ -453,19 +522,29 @@ impl Dist {
             .read_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
+        // A retry of an unfollow whose prune was left finishes it here (4.4).
+        let done = self.settle(true)?;
         let mut records = self
             .follows
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
-        let record = next
-            .get_mut(channel)
-            .filter(|r| r.followed)
-            .ok_or(DistError::NothingToUnfollow { channel: *channel })?;
+        let Some(record) = next.get_mut(channel).filter(|r| r.followed) else {
+            if done.unfollowed.contains(channel) {
+                return Ok(());
+            }
+            return Err(DistError::NothingToUnfollow { channel: *channel });
+        };
         record.followed = false;
-        self.save_follows(&mut records, next)?;
+        let saved = self.save_follows(&mut records, next);
         drop(records);
-        self.prune_listed()
+        let result = saved.and_then(|()| self.prune_listed());
+        if result.is_err() {
+            self.leave_pending(|state| {
+                state.unfollowed.insert(*channel);
+            });
+        }
+        result
     }
     pub fn followed(&self) -> Result<Vec<ChannelView>, DistError> {
         let keys: Vec<_> = self
@@ -483,6 +562,8 @@ impl Dist {
             .read_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
+        // Finishes left work; while the sync fails, each read below returns its error.
+        let _ = self.settle(true);
         let keys: Vec<_> = self
             .follows
             .lock()
@@ -531,6 +612,7 @@ impl Dist {
         base: &str,
         listed: bool,
     ) -> Result<RefreshReport, DistError> {
+        self.settle(true)?;
         // A channel already stopped by a fork makes no request or new attempt.
         if let watane_log::Status::Compromised(fork) = self.log.status(&key)? {
             return Ok(RefreshReport {

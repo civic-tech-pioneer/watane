@@ -215,19 +215,32 @@ impl Dist {
             .read_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
+        // A retry of a drop whose prune was left finishes it here (4.4).
+        let done = self.settle(true)?;
         let mut records = self
             .follows
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
-        let record = next
+        let Some(record) = next
             .get_mut(channel)
             .filter(|r| r.index && Some(*channel) != self.identity())
-            .ok_or(DistError::NotIndex { channel: *channel })?;
+        else {
+            if done.dropped.contains(channel) {
+                return Ok(());
+            }
+            return Err(DistError::NotIndex { channel: *channel });
+        };
         record.index = false;
-        self.save_follows(&mut records, next)?;
+        let saved = self.save_follows(&mut records, next);
         drop(records);
-        self.prune_listed()
+        let result = saved.and_then(|()| self.prune_listed());
+        if result.is_err() {
+            self.leave_pending(|state| {
+                state.dropped.insert(*channel);
+            });
+        }
+        result
     }
     pub fn choose_index(&self, link: &Link) -> Result<Vec<RefreshReport>, DistError> {
         if link.slug().is_some() {
@@ -242,7 +255,7 @@ impl Dist {
             .read_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        let listed = self.held_ungiven(link.channel(), link.base());
+        let listed = self.held_ungiven(link.channel(), link.base())?;
         let report = self.read_channel_mode(link.channel(), link.base(), listed)?;
         match report.outcome {
             Outcome::Failed { cause } => return Err(cause),

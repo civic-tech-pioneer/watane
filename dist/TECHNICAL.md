@@ -655,6 +655,18 @@ once the rename has installed the file, so a save that fails before the
 rename changes neither. When only the directory sync after the rename fails,
 the records and tombstones in memory become the ones in the installed file
 and the call still returns that `Io` error (Codex S105 r3 F3.2).
+The store is then *unsynced* (S105 r4, deputy ruling): every later call that
+reads provenance (`follow`, `choose_index`, `open_link`, `fetch`, `read_link`,
+a channel read, `refresh`) or changes `follows.json` (each save, `unfollow`,
+`drop_index`, `keep`, a kept `ingest`) first retries that directory sync. While it
+fails the call returns its `Io` error and reads, fetches and writes nothing.
+When it succeeds the call first finishes the work recorded with the unsynced
+state, then goes on: the kept mark of a failed `ingest` that stored no head is
+taken back, and the prune of an `unfollow` or `drop_index` runs, so a retry of
+that call returns `Ok` instead of `NothingToUnfollow` or `NotIndex`. The holder
+methods take no read lock (5.12), so `keep` and `ingest` leave a recorded prune
+to the next call that does. The unsynced state lives in memory: a restart reads
+the installed file.
 
 Each 5.11 provider base dist reads, and the base of a `read_link` link (S105 r8), is also noted in `seen` before its first
 request (S105 r7): in the channel's record, or, for a channel with no record, in
