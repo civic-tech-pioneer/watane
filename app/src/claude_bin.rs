@@ -111,8 +111,10 @@ fn probe(path: &Path, timeout: Duration) -> io::Result<Vec<u8>> {
             ) || name.starts_with("LC_")
         })
     });
-    // A local socket lets the reader time out without a thread that could stay blocked.
+    // Configure only the reader, before the child can close its end. Darwin
+    // rejects SO_RCVTIMEO updates after disconnect, even with data left to read.
     let (stdout, output) = UnixStream::pair()?;
+    stdout.set_nonblocking(true)?;
     let deadline = Instant::now() + timeout;
     let mut child = Command::new(path)
         .arg("--version")
@@ -164,11 +166,14 @@ fn read_first_line(mut stdout: UnixStream, deadline: Instant) -> io::Result<Vec<
         let time_left = deadline
             .checked_duration_since(Instant::now())
             .ok_or(ErrorKind::TimedOut)?;
-        stdout.set_read_timeout(Some(time_left))?;
         let count = match stdout.read(&mut buf) {
             Ok(0) => return Ok(line),
             Ok(count) => count,
             Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+            Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                std::thread::sleep(time_left.min(Duration::from_millis(5)));
+                continue;
+            }
             Err(error) => return Err(error),
         };
         // Drain later output so a verbose program can finish normally.
@@ -190,16 +195,31 @@ fn read_first_line(mut stdout: UnixStream, deadline: Instant) -> io::Result<Vec<
 #[cfg(all(test, unix))]
 #[expect(clippy::unwrap_used, reason = "test fixtures must open and run")]
 mod tests {
-    use super::{probe, validate};
+    use super::{probe, read_first_line, validate};
+    use std::io::Write;
     use std::os::unix::fs::{PermissionsExt, symlink};
+    use std::os::unix::net::UnixStream;
     use std::path::{Path, PathBuf};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     fn program(dir: &Path, name: &str, script: &str) -> PathBuf {
         let path = dir.join(name);
         std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
         path
+    }
+
+    #[test]
+    fn ac3_drains_version_stdout_after_the_writer_has_closed() {
+        let (reader, mut writer) = UnixStream::pair().unwrap();
+        reader.set_nonblocking(true).unwrap();
+        writer
+            .write_all(b"Claude Code 2.1.295\nextra output\n")
+            .unwrap();
+        drop(writer);
+
+        let line = read_first_line(reader, Instant::now() + Duration::from_secs(5)).unwrap();
+        assert_eq!(line, b"Claude Code 2.1.295");
     }
 
     #[test]
