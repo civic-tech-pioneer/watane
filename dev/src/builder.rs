@@ -33,26 +33,35 @@ fn quoted(path: &Path) -> String {
 }
 pub fn cargo(ctx: &BuildCtx<'_>, copy: &Path, args: &[&str]) -> Command {
     let mut command = Command::new(&ctx.toolchain.cargo);
+    let bin = ctx
+        .toolchain
+        .cargo
+        .parent()
+        .expect("the cargo binary sits in a directory");
+    #[cfg(unix)]
+    let path = format!("{}:/usr/bin:/bin", bin.display());
+    #[cfg(windows)]
+    let path = bin;
     command
         .current_dir(copy.join("logic"))
         .env_clear()
-        .env(
-            "PATH",
-            format!(
-                "{}:/usr/bin:/bin",
-                ctx.toolchain
-                    .cargo
-                    .parent()
-                    .expect("the cargo binary sits in a directory")
-                    .display()
-            ),
-        )
+        .env("PATH", path)
         .env("RUSTC", &ctx.toolchain.rustc)
         .env("CARGO_HOME", ctx.env.cache.join("cargo-home"))
         .env("HOME", ctx.env.cache.join("cargo-home"))
         .env("TMPDIR", ctx.env.cache.join("tmp"))
         .env("CARGO_TERM_COLOR", "never")
         .env("CARGO_INCREMENTAL", "0");
+    #[cfg(windows)]
+    {
+        command
+            .env("USERPROFILE", ctx.env.cache.join("cargo-home"))
+            .env("TEMP", ctx.env.cache.join("tmp"))
+            .env("TMP", ctx.env.cache.join("tmp"));
+        if let Some(root) = crate::env::var_os("SystemRoot") {
+            command.env("SystemRoot", root);
+        }
+    }
     for key in ["SDKROOT", "DEVELOPER_DIR"] {
         if let Some(value) = crate::env::var_os(key) {
             command.env(key, value);
@@ -873,6 +882,14 @@ mod tests {
                 "CARGO_INCREMENTAL",
                 "SDKROOT",
                 "DEVELOPER_DIR",
+                #[cfg(windows)]
+                "USERPROFILE",
+                #[cfg(windows)]
+                "TEMP",
+                #[cfg(windows)]
+                "TMP",
+                #[cfg(windows)]
+                "SystemRoot",
             ]
             .contains(k)
         }));
