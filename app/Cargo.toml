@@ -25,7 +25,7 @@ axum = "0.8"
 base64 = "0.23"
 open = "5"
 ring = { version = "0.17", features = ["std"] }
-subtle = "2"
+subtle = { version = "2", default-features = false }
 ureq = { version = "3", features = ["json"] }
 tauri-plugin-dialog = "=2.8.4"
 tauri = "=2.12.5"
