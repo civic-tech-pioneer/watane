@@ -1056,4 +1056,51 @@ mod tests {
         let _ = eve.refresh_channel(&w.key);
         assert_eq!(w.b.count(), before, "no request to the redirect target");
     }
+
+    /// Adversary S105 r5: an index moves its listing of a channel off base `a` to a fresh
+    /// base each refresh (unlist, list again); 16 such refreshes push `a` out of the
+    /// listed record's 16-entry `seen`. A hit the app showed while `a` was listed is then
+    /// installed: `a` looks never seen, the link gives it, and its redirects into the
+    /// local network are followed (A35, DD-48).
+    #[test]
+    fn adv_s105_r5_listing_churn_evicts_base_from_seen_then_stale_hit_gives_it() {
+        let w = world();
+        let (dir, eve) = w.eve(&[&w.a]);
+        let (_zdir, zed, _zhost) = listed_record(&w, &eve);
+        let hits = eve
+            .search(&crate::Query {
+                text: String::new(),
+                publisher: Some(w.key),
+                origin: None,
+                interface: None,
+            })
+            .unwrap();
+        let hit = hits[0].link.clone().expect("hit link");
+        assert_eq!(hit.base(), w.a.url, "the hit names the listing's base");
+        let mut listed = zed.own().unwrap().listings[0].entry;
+        for round in 0..16 {
+            zed.unlist(&listed).unwrap();
+            let base = format!("{}j{round}/", w.a.url);
+            let link = crate::Link::new(w.key, &base, Some(&w.slug)).unwrap();
+            listed = zed.list(&link, "moved").unwrap().id();
+            eve.refresh();
+        }
+        let file: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.path().join("dist/follows.json")).unwrap())
+                .unwrap();
+        let record = file["channels"][w.key.to_string()].clone();
+        // The app installs the hit it showed earlier (5.10): follow(hit.link), then fetch.
+        w.a.redirect("/head", &format!("{}head", w.b.url));
+        w.a.redirect(
+            &format!("/{}", w.package),
+            &format!("{}{}", w.b.url, w.package),
+        );
+        let _ = eve.follow(&hit);
+        let _ = eve.refresh_channel(&w.key);
+        assert_eq!(
+            w.b.count(),
+            0,
+            "a listing's base pushed out of `seen` was given by a stale hit: {record}"
+        );
+    }
 }
