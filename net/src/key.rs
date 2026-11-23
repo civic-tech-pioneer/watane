@@ -4,8 +4,11 @@
 use crate::error::NetError;
 use ed25519_dalek::SigningKey;
 use std::fmt;
-use std::fs::{self, DirBuilder, File, OpenOptions};
+use std::fs::{self, File};
+#[cfg(unix)]
+use std::fs::{DirBuilder, OpenOptions};
 use std::io::{self, Read, Write};
+#[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::str::FromStr;
@@ -107,6 +110,7 @@ fn corrupt(path: &Path, cause: impl Into<String>) -> NetError {
         cause: cause.into(),
     }
 }
+#[cfg(unix)]
 fn check(path: &Path, directory: bool) -> Result<(), NetError> {
     let meta = fs::symlink_metadata(path).map_err(|e| io_error(path, e))?;
     let plain = if directory {
@@ -130,10 +134,33 @@ fn check(path: &Path, directory: bool) -> Result<(), NetError> {
     }
     Ok(())
 }
-fn read(path: &Path) -> Result<Zeroizing<[u8; 32]>, NetError> {
+#[cfg(unix)]
+fn key_file(path: &Path) -> Result<File, NetError> {
     check(path, false)?;
+    File::open(path).map_err(|e| io_error(path, e))
+}
+
+#[cfg(windows)]
+fn key_file(path: &Path) -> Result<File, NetError> {
+    use watane_log_windows_fs::{self as winfs, FileKind};
+    let file = winfs::open_path(path, false).map_err(|e| io_error(path, e))?;
+    match winfs::kind(&file).map_err(|e| io_error(path, e))? {
+        FileKind::Regular { links: 1 } => {}
+        FileKind::ReparsePoint => return Err(corrupt(path, "a Windows reparse point is refused")),
+        _ => {
+            return Err(corrupt(
+                path,
+                "the key must be a regular file with one link",
+            ));
+        }
+    }
+    winfs::check_owner_only(&file).map_err(|e| corrupt(path, e.to_string()))?;
+    Ok(file)
+}
+
+fn read(path: &Path) -> Result<Zeroizing<[u8; 32]>, NetError> {
     let mut seed = Zeroizing::new([0u8; 32]);
-    let mut file = File::open(path).map_err(|e| io_error(path, e))?;
+    let mut file = key_file(path)?;
     file.read_exact(&mut seed[..]).map_err(|e| {
         if e.kind() == io::ErrorKind::UnexpectedEof {
             corrupt(path, "the key file is not 32 bytes")
@@ -150,6 +177,7 @@ fn read(path: &Path) -> Result<Zeroizing<[u8; 32]>, NetError> {
 
 /// Open `dir` (create it, 0700) and `dir/node.key` (create it, 0600, the
 /// 32-byte seed), with the rules of log's key file (log TECHNICAL 4.7).
+#[cfg(unix)]
 pub(crate) fn open(dir: &Path) -> Result<Zeroizing<[u8; 32]>, NetError> {
     if dir.as_os_str().is_empty() {
         return Err(corrupt(dir, "the net directory path is empty"));
@@ -196,6 +224,53 @@ pub(crate) fn open(dir: &Path) -> Result<Zeroizing<[u8; 32]>, NetError> {
     File::open(dir)
         .and_then(|f| f.sync_all())
         .map_err(|e| io_error(dir, e))?;
+    read(&path)
+}
+
+/// Open a private node key on Windows, or atomically install a new one.
+#[cfg(windows)]
+pub(crate) fn open(dir: &Path) -> Result<Zeroizing<[u8; 32]>, NetError> {
+    use watane_log_windows_fs::{self as winfs, FileKind};
+    if dir.as_os_str().is_empty() {
+        return Err(corrupt(dir, "the net directory path is empty"));
+    }
+    winfs::create_dir_all(dir).map_err(|e| io_error(dir, e))?;
+    let directory = winfs::open_path(dir, false).map_err(|e| io_error(dir, e))?;
+    if !matches!(
+        winfs::kind(&directory).map_err(|e| io_error(dir, e))?,
+        FileKind::Directory
+    ) {
+        return Err(corrupt(dir, "not a plain Windows directory"));
+    }
+    winfs::check_owner_only(&directory).map_err(|e| corrupt(dir, e.to_string()))?;
+    let path = dir.join("node.key");
+    match fs::symlink_metadata(&path) {
+        Ok(_) => return read(&path),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(io_error(&path, e)),
+    }
+    let mut seed = Zeroizing::new([0u8; 32]);
+    getrandom::fill(&mut *seed).map_err(|e| io_error(&path, io::Error::other(e)))?;
+    let mut random = [0u8; 16];
+    getrandom::fill(&mut random).map_err(|e| io_error(&path, io::Error::other(e)))?;
+    let tmp = dir.join(format!(".node.key.{}.tmp", zbase32(&random)));
+    let mut file = winfs::create_file(&tmp).map_err(|e| io_error(&tmp, e))?;
+    let prepared = (|| {
+        winfs::check_owner_only(&file).map_err(|e| corrupt(&tmp, e.to_string()))?;
+        file.write_all(&seed[..]).map_err(|e| io_error(&tmp, e))?;
+        file.sync_all().map_err(|e| io_error(&tmp, e))
+    })();
+    drop(file);
+    if let Err(error) = prepared {
+        let _ = fs::remove_file(&tmp);
+        return Err(error);
+    }
+    if let Err(error) = winfs::publish(&tmp, &path, false) {
+        fs::remove_file(&tmp).map_err(|e| io_error(&tmp, e))?;
+        if error.kind() != io::ErrorKind::AlreadyExists {
+            return Err(io_error(&path, error));
+        }
+    }
     read(&path)
 }
 

@@ -8545,6 +8545,7 @@ dependencies = [
  "tokio",
  "url",
  "watane-log",
+ "watane-log-windows-fs",
  "workspace-hack",
  "zeroize",
 ]

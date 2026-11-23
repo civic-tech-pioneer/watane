@@ -9,6 +9,7 @@ mod code;
 mod faults;
 mod keyfile;
 mod light;
+#[cfg(unix)] // This fixture counts Unix socket descriptors in /dev/fd.
 mod node;
 mod pair;
 mod q1;

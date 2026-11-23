@@ -16,6 +16,7 @@ use iroh_blobs::provider::events::{
 use iroh_blobs::store::fs::FsStore;
 use iroh_blobs::{BlobFormat, Hash};
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -26,7 +27,22 @@ pub(crate) async fn open(
     core: Arc<Core>,
     dir: &Path,
 ) -> Result<(FsStore, EventSender, tokio::task::JoinHandle<()>), String> {
+    #[cfg(windows)]
+    let _directory = {
+        use watane_log_windows_fs::{self as winfs, FileKind};
+        winfs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        let directory = winfs::open_path(dir, false).map_err(|e| e.to_string())?;
+        if !matches!(
+            winfs::kind(&directory).map_err(|e| e.to_string())?,
+            FileKind::Directory
+        ) {
+            return Err("not a plain Windows blob directory".into());
+        }
+        winfs::check_owner_only(&directory).map_err(|e| e.to_string())?;
+        directory
+    };
     let store = FsStore::load(dir).await.map_err(|e| e.to_string())?;
+    #[cfg(unix)]
     std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
         .map_err(|e| e.to_string())?;
     let mask = EventMask {
@@ -269,12 +285,17 @@ async fn download(
         path: path.clone(),
         cause: e.to_string(),
     };
-    let mut file = std::fs::OpenOptions::new()
+    #[cfg(unix)]
+    let create = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o600)
-        .open(&path)
-        .map_err(io)?;
+        .open(&path);
+    #[cfg(windows)]
+    let create = watane_log_windows_fs::create_file(&path);
+    let mut file = create.map_err(io)?;
+    #[cfg(windows)]
+    watane_log_windows_fs::check_owner_only(&file).map_err(io)?;
     // the size is verified above, so this holds at most `size` bytes
     let bytes = get_blob(conn.clone(), hash)
         .bytes()

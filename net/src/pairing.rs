@@ -8,8 +8,11 @@ use crate::key::{NodeKey, zbase32};
 use crate::ticket::{Hint, PairCode};
 use crate::wire::{self, Request};
 use crate::{Class, Core, DeviceList, Event, Role, client, lock};
-use std::fs::{self, File, OpenOptions};
+use std::fs;
+#[cfg(unix)]
+use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
+#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::sync::Arc;
@@ -62,18 +65,29 @@ pub(crate) fn write_atomic(dir: &Path, name: &str, data: &[u8]) -> Result<(), Ne
     getrandom::fill(&mut random).map_err(|e| io_error(&path, io::Error::other(e)))?;
     let tmp = dir.join(format!(".{name}.{}.tmp", zbase32(&random)));
     let result = (|| {
-        let mut file = OpenOptions::new()
+        #[cfg(unix)]
+        let create = OpenOptions::new()
             .write(true)
             .create_new(true)
             .mode(0o600)
-            .open(&tmp)
-            .map_err(|e| io_error(&tmp, e))?;
+            .open(&tmp);
+        #[cfg(windows)]
+        let create = watane_log_windows_fs::create_file(&tmp);
+        let mut file = create.map_err(|e| io_error(&tmp, e))?;
+        #[cfg(windows)]
+        watane_log_windows_fs::check_owner_only(&file).map_err(|e| io_error(&tmp, e))?;
         file.write_all(data).map_err(|e| io_error(&tmp, e))?;
         file.sync_all().map_err(|e| io_error(&tmp, e))?;
-        fs::rename(&tmp, &path).map_err(|e| io_error(&path, e))?;
-        File::open(dir)
-            .and_then(|f| f.sync_all())
-            .map_err(|e| io_error(dir, e))
+        drop(file);
+        #[cfg(unix)]
+        {
+            fs::rename(&tmp, &path).map_err(|e| io_error(&path, e))?;
+            File::open(dir)
+                .and_then(|f| f.sync_all())
+                .map_err(|e| io_error(dir, e))
+        }
+        #[cfg(windows)]
+        watane_log_windows_fs::publish(&tmp, &path, true).map_err(|e| io_error(&path, e))
     })();
     if result.is_err() {
         let _ = fs::remove_file(&tmp);
@@ -573,6 +587,7 @@ mod tests {
     /// are `Corrupt`.
     #[test]
     fn ac2_storage_reopens_and_bad_files_are_corrupt() {
+        #[cfg(unix)]
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let (net, _, anchor) = replica(dir.path());
@@ -581,11 +596,19 @@ mod tests {
         drop(net);
         let net_dir = dir.path().join("net");
         for name in ["devices", "anchor", "book.json"] {
-            let mode = fs::metadata(net_dir.join(name))
-                .unwrap()
-                .permissions()
-                .mode();
-            assert_eq!(mode & 0o7777, 0o600, "{name}");
+            #[cfg(unix)] // Unix pairing files use mode 0600.
+            {
+                let mode = fs::metadata(net_dir.join(name))
+                    .unwrap()
+                    .permissions()
+                    .mode();
+                assert_eq!(mode & 0o7777, 0o600, "{name}");
+            }
+            #[cfg(windows)] // Windows pairing files use an owner-only DACL.
+            {
+                let file = fs::File::open(net_dir.join(name)).unwrap();
+                watane_log_windows_fs::check_owner_only(&file).unwrap();
+            }
         }
         let book: serde_json::Value =
             serde_json::from_slice(&fs::read(net_dir.join("book.json")).unwrap()).unwrap();
