@@ -652,4 +652,29 @@ mod tests {
         }
         assert_eq!(w.a.count(), before);
     }
+    /// Adversary S105: a listing's base stays in the record when Eve later follows the
+    /// channel by its own link elsewhere, and is then read with unchecked redirects. Ivy's
+    /// listed base must not lead dist into the local network (A35, 5.9: a followed
+    /// record holds only the bases the participant gave).
+    #[test]
+    fn adv_s105_listed_base_kept_after_follow_redirects_local() {
+        let w = world();
+        let c = Host::serve(&w.publisher.site_dir());
+        let (_dir, eve) = w.eve(&[&w.a]);
+        let _z = listed_record(&w, &eve);
+        // Ivy's base `a` now redirects the head and the package into the local network.
+        w.a.redirect("/head", &format!("{}head", w.b.url));
+        w.a.redirect(
+            &format!("/{}", w.package),
+            &format!("{}{}", w.b.url, w.package),
+        );
+        // Eve follows Carol by Carol's own link at `c` (her choice), not at `a`.
+        eve.follow(&w.link(&c)).unwrap();
+        let _ = eve.fetch(&w.reference);
+        assert_eq!(
+            w.b.count(),
+            0,
+            "a listing's base was read as a followed base: redirects into the local network were followed"
+        );
+    }
 }
