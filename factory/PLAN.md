@@ -1286,7 +1286,9 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   (`frobnicate`) reuses `seed`. Outcome: the test asserts `unknown_op` without depending on that budget, and passes 50
   runs in a row; no product change unless the budget itself is wrong (then say so). Touches: `net/tests/` only.
 - [~] **S108 (upkeep) pkg names what it refuses at the right path.** (in flight, cloud, builder codex, reviewer claude;
-  sketched 2026-11-23 by the deputy; Codex task https://chatgpt.com/local/6b047765-d63c-83ed-aded-e08349b8d06a.) Leftovers items, all in `pkg/`; each outcome is its item's check:
+  sketched 2026-11-23 by the deputy; Codex task https://chatgpt.com/local/6b047765-d63c-83ed-aded-e08349b8d06a;
+  DELIVERED as PR #22 (+300 -88, pkg/ only; user-sim ACCEPTED, boundary HELD); r1 to Claude, routine
+  `trig_01GeQd1KUiKu71BDnQJHHQfT`, 17:48 UTC.) Leftovers items, all in `pkg/`; each outcome is its item's check:
   1. [S15] a link inside a hidden folder (`ui/.git/x`) is named as the hidden folder's rule, not rule `path` at the link
      (pkg/TECHNICAL.md:288; `ac1_s46_hidden_link_named` changes to match).
   2. [S57] `pack` has no list-then-stat window (as `Mod::read` was fixed): a directory swapped in for a file is named as
