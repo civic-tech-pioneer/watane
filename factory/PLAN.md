@@ -1216,7 +1216,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
 
 - [~] **S102 Alice connects her agent accounts in Settings (app stage L, part: 19.1, 19.3).** (in flight,
   cloud, builder codex, reviewer claude; sketched 2026-11-23 by the deputy; Codex task
-  https://chatgpt.com/local/6b041e07-d008-83eb-b737-65d3b6dc704c, ~11:05 UTC.) Settings gets the groups
+  https://chatgpt.com/local/6b041e07-d008-83eb-b737-65d3b6dc704c, ~11:05 UTC; PR #18 opened at 8ce07e4
+  (+2162, app/ only); r1 to Claude, routine `trig_01AWD7ghXiLTs1pS7i7VmPm6`, 11:54 UTC.) Settings gets the groups
   `ChatGPT` and `Claude Code`, so the agent layer's two accounts can be set up before the host stages that
   use them land. Outcomes (app FUNCTIONAL, on the real app with stand-ins):
   1. S54: Alice chooses `Sign in with ChatGPT`; the browser stand-in opens at the stand-in issuer, the
@@ -1235,7 +1236,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   rule applies. Runs beside S100 (host/, dev/): no shared file.
 - [~] **S104 (upkeep) dist reads past a bad mirror and says what is stale.** (in flight, cloud, builder codex,
   reviewer claude; sketched 2026-11-23 by the deputy; Codex task
-  https://chatgpt.com/local/6b041e6f-437c-83ed-a25f-004fef586048, ~11:10 UTC.) Three Leftovers items, all in `dist/`; each outcome is
+  https://chatgpt.com/local/6b041e6f-437c-83ed-a25f-004fef586048, ~11:10 UTC; PR #17 opened at 7eb74a1
+  (+285 -151, dist/ only); r1 to Claude, routine `trig_01GK67rWigPWwZ1J1UbBwX1y`, 11:54 UTC.) Three Leftovers items, all in `dist/`; each outcome is
   its item's check:
   1. [S49] (core) a mirror that answers 404 for the package makes dist try the next base, as a down
      base does; the package comes from the first base that has it (dist/TECHNICAL.md:990).
