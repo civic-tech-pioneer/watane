@@ -1847,3 +1847,65 @@ fn s100_ac8_a_claude_line_typed_as_a_host_item_is_wrapped_also_while_asks_are_op
         r#"{"type":"ask-resolved","id":"1","by":"answered","outcome":"deny"}"#
     );
 }
+
+// ---- S100 fix 9: bounded end of a run, a request before the answer to initialize ------------
+
+#[test]
+fn s100_fix9_ac3_a_process_that_closes_stdout_and_stays_alive_is_killed_within_the_bound() {
+    let rig = Rig::new(&[("closeout", b"")]);
+    let s = rig.start_ok(LAUNCH);
+    rig.wait_items(&s, 2);
+    let eof = std::time::Instant::now();
+    rig.wait_ended(1);
+    // The 2 s bound plus the kill, well before the fake exits by itself (6 s).
+    assert!(
+        eof.elapsed() < Duration::from_millis(3500),
+        "{:?}",
+        eof.elapsed()
+    );
+    let pid: i32 = rig.entries("PID")[0].parse().unwrap();
+    wait("the group to die", Duration::from_secs(5), || !alive(pid));
+}
+
+#[test]
+fn s100_fix9_ac5_a_request_before_the_answer_gets_its_deny_written_first_once_initialize_passed() {
+    let before = lines_of(&[
+        can_use("r1", "t1", "Read", json!({"file_path":"a"})),
+        hook("r2", "t2", "Bash", json!({"command":"ls"})),
+    ]);
+    let rig = Rig::new(&[("before", &before), ("after.2", b"")]);
+    let s = rig.start_ok(ASKING);
+    let items = rig.wait_items(&s, 2);
+    assert!(items[0].contains("initialized"), "{items:?}");
+    assert!(items[1].contains(r#""subtype":"init""#), "{items:?}");
+    // A `say` queued by the mod right after the start must not pass the denies.
+    rig.call("api.say", json!({"s": s, "text": "hello"}));
+    let ins = rig
+        .wait_log("the denies and the say", |l| {
+            l.iter().filter(|e| e.starts_with("IN ")).count() >= 4
+        })
+        .iter()
+        .filter_map(|l| l.strip_prefix("IN "))
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(ins[1], envelope("r1", deny_body(REFUSED)));
+    assert_eq!(ins[2], envelope("r2", check_deny_body(REFUSED)));
+    assert_eq!(
+        items.len(),
+        2,
+        "no item for a request before the answer: {items:?}"
+    );
+}
+
+#[test]
+fn s100_fix9_ac5_an_initialize_answer_that_fails_step_2_leaves_no_line_after_initialize() {
+    let before = lines_of(&[can_use("r1", "t1", "Read", json!({"file_path":"a"}))]);
+    // The answer lacks the hook support that the launch's check needs.
+    let rig = Rig::new(&[("before", &before), ("reply", b"{}")]);
+    let s = rig.start_ok(ASKING);
+    let ended = rig.wait_ended(1);
+    assert!(ended[0].contains("mismatch"), "{ended:?}");
+    let _ = s;
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(rig.entries("IN").len(), 1, "{:?}", rig.log());
+}

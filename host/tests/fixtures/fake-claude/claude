@@ -14,6 +14,8 @@
 #            `go`, then exits (a write to it fails)
 #   exitafter  with this file the program exits after it read as many stdin lines as its content
 #            says (`initialize` is the first)
+#   closeout with this file the program closes its stdout after the lines and stays alive for 6 s
+#            (the end of the output of a process that does not exit)
 #   rate     with this file, after the lines: `<deltas> <entries> <bytes> <seconds>`: a perl process
 #            takes over (below) and runs one turn at that rate
 #   spawn    with this file the program starts a `sleep` in its group and logs its pid
@@ -131,6 +133,11 @@ while (1) {
 }
 PERL
   exec perl "$dir/rate.$$.pl" "$dir" $(cat "$dir/rate")
+fi
+if [ -f "$dir/closeout" ]; then
+  exec 1>&-
+  sleep 6
+  exit 0
 fi
 if [ -f "$dir/closein" ]; then
   exec 0<&-

@@ -3069,9 +3069,10 @@ not keep a credential from a mod on their own. Three rules do:
    `claude`'s stdin; a write that fails (stdin closed) pushes no `answered`, and
    the stream ends as the process does. The end of a run is bounded (review r2,
    F2.3 and F2.4): once `claude`'s stdout reaches its end, the host waits at most
-   2 s for the process to exit and then kills its group; it then closes its own
-   handle on `claude`'s stdin, so a write still blocked fails, and waits at most 2 s
-   more for the stdin writer. Every line the writer reported written has its
+   2 s for the process to exit and then kills its group, which closes the read end
+   of `claude`'s stdin, so a write still blocked fails (safe Rust cannot wake a write
+   by closing the host's own handle, which the writer drops when it ends); it closes
+   the writer's queue and waits at most 2 s more for the writer. Every line the writer reported written has its
    `ask-resolved {by: answered}` pushed before `ended`; a write that did not
    complete pushes none. No thread of the run outlives that second bound.
    The checks of an `answer` are made at the call against the asks open then

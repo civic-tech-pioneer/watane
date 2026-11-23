@@ -55,6 +55,8 @@ pub(crate) struct Asks {
     /// `ask-resolved` items decided but not yet on the stream (it was full): they go before
     /// any later item.
     pending: VecDeque<Vec<u8>>,
+    /// The run's stream has ended or is about to: no `answered` goes on it any more.
+    sealed: bool,
     cwd: PathBuf,
     roots: Vec<PathBuf>,
     /// The run folder's plugin folder, one of `roots`: read-only for an answer.
@@ -242,9 +244,20 @@ impl Session {
         }
     }
 
+    /// The stream is ending, after the writer ended and `drain` ran: a writer that was let go
+    /// and finishes a write later pushes nothing (19.3, step 5).
+    pub(crate) fn seal(&self) {
+        let mut asks = self.asks();
+        asks.sealed = true;
+        asks.pending.clear();
+    }
+
     /// The writer wrote the line of an answer: now `answered` goes on the stream.
     pub(crate) fn answered(&self, hub: &Hub, id: &str, outcome: &str) {
         let mut asks = self.asks();
+        if asks.sealed {
+            return;
+        }
         asks.pending
             .push_back(control::resolved_item(id, "answered", Some(outcome)));
         let _ = self.flush(hub, &mut asks);
@@ -253,6 +266,8 @@ impl Session {
     /// `claude` cancelled a request: closes the ask or check it names, if it is open.
     pub(crate) fn cancel_request(&self, hub: &Hub, request_id: &str) {
         let mut asks = self.asks();
+        // An ask or check that is due is expired first, never cancelled (19.3, step 5).
+        self.expire(hub, &mut asks);
         if let Some(i) = asks.open.iter().position(|o| o.request_id == request_id) {
             self.close(hub, &mut asks, &[i], "cancelled", None);
         }
@@ -262,6 +277,7 @@ impl Session {
     /// every open ask and check closes `cancelled`.
     pub(crate) fn interrupt(&self, hub: &Hub, line: Vec<u8>) {
         let mut asks = self.asks();
+        self.expire(hub, &mut asks);
         for open in asks.open.iter().filter(|o| !o.hook) {
             self.write(control::deny(&open.request_id, false, "interrupted"));
         }
@@ -450,5 +466,100 @@ mod tests {
         drop(rx);
         assert!(!session.write(b"x".to_vec()));
         assert!(session.stopped());
+    }
+
+    /// The expiry deny of `r1`, as written.
+    fn expiry_line(out: &Out) -> Value {
+        let line: Value = serde_json::from_slice(&out.line).unwrap();
+        assert_eq!(out.answered, None);
+        line["response"].clone()
+    }
+    const EXPIRED: &[u8] = br#"{"type":"ask-resolved","id":"1","by":"expired"}"#;
+    fn taken(hub: &Hub, s: &str) -> Vec<Vec<u8>> {
+        hub.test_take(s).into_iter().map(|(_, b)| b).collect()
+    }
+    /// Like `rig`, on a held stream whose items the test takes.
+    fn held_rig() -> (
+        std::sync::Arc<Hub>,
+        String,
+        Session,
+        std::sync::mpsc::Receiver<Out>,
+        TestClock,
+    ) {
+        use crate::agent::streams::Consumer;
+        let hub = Hub::new();
+        let clock = TestClock::new();
+        hub.set_clock(&clock);
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let session = Session::new(s.clone(), "o".into(), None);
+        let rx = session.started(0);
+        rx.try_recv().unwrap(); // `initialize`
+        (hub, s, session, rx, clock)
+    }
+
+    #[test]
+    fn s100_fix9_ac2_an_interrupt_at_the_deadline_writes_the_expiry_deny_not_interrupted() {
+        let (hub, s, session, rx, clock) = held_rig();
+        session
+            .open_request(&hub, "r1", false, &bash(), Duration::from_secs(10))
+            .unwrap();
+        hub.test_take(&s);
+        clock.advance(Duration::from_secs(10));
+        session.interrupt(&hub, b"INT".to_vec());
+        let deny = expiry_line(&rx.try_recv().unwrap());
+        assert_eq!(deny["request_id"], "r1");
+        assert_eq!(
+            deny["response"],
+            json!({"behavior":"deny","message":"the ask expired"})
+        );
+        assert_eq!(rx.try_recv().unwrap().line, b"INT");
+        session.tick(&hub);
+        rx.try_recv().unwrap_err();
+        assert_eq!(taken(&hub, &s), [EXPIRED]);
+    }
+
+    #[test]
+    fn s100_fix9_ac2_a_cancel_request_at_the_deadline_is_an_expiry_not_a_cancel() {
+        let (hub, s, session, rx, clock) = held_rig();
+        session
+            .open_request(&hub, "r1", false, &bash(), Duration::from_secs(10))
+            .unwrap();
+        hub.test_take(&s);
+        clock.advance(Duration::from_secs(10));
+        session.cancel_request(&hub, "r1");
+        let deny = expiry_line(&rx.try_recv().unwrap());
+        assert_eq!(deny["response"]["message"], "the ask expired");
+        session.tick(&hub);
+        rx.try_recv().unwrap_err();
+        assert_eq!(taken(&hub, &s), [EXPIRED]);
+    }
+
+    #[test]
+    fn s100_fix9_ac2_a_check_at_its_deadline_is_expired_with_no_stdin_line() {
+        let (hub, s, session, rx, clock) = held_rig();
+        session
+            .open_request(&hub, "r1", true, &bash(), Duration::from_secs(10))
+            .unwrap();
+        hub.test_take(&s);
+        clock.advance(Duration::from_secs(10));
+        session.cancel_request(&hub, "r1");
+        session.tick(&hub);
+        rx.try_recv().unwrap_err();
+        assert_eq!(taken(&hub, &s), [EXPIRED]);
+        // An interrupt at the deadline writes the interrupt only.
+        session
+            .open_request(&hub, "r2", true, &bash(), Duration::from_secs(10))
+            .unwrap();
+        hub.test_take(&s);
+        clock.advance(Duration::from_secs(10));
+        session.interrupt(&hub, b"INT".to_vec());
+        assert_eq!(rx.try_recv().unwrap().line, b"INT");
+        rx.try_recv().unwrap_err();
+        assert_eq!(
+            taken(&hub, &s),
+            [br#"{"type":"ask-resolved","id":"2","by":"expired"}"#]
+        );
     }
 }

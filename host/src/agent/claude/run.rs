@@ -424,7 +424,7 @@ impl Job {
         let rx = self.session.started(pgid);
         let writer_session = Arc::clone(&self.session);
         let writer_hub = Arc::clone(&self.hub);
-        let (release, held) = std::sync::mpsc::channel::<()>();
+        let (release, held) = std::sync::mpsc::channel::<Vec<Vec<u8>>>();
         let writer = std::thread::spawn(move || {
             use std::io::Write;
             let mut stdin = stdin;
@@ -443,19 +443,27 @@ impl Job {
                     writer_session.answered(&writer_hub, id, outcome);
                 }
                 if !released {
-                    if held.recv().is_err() {
+                    // The denies of the requests that came before the answer go first.
+                    let Ok(early) = held.recv() else {
                         break;
-                    }
+                    };
                     released = true;
+                    for mut line in early {
+                        line.push(b'\n');
+                        if stdin.write_all(&line).and_then(|()| stdin.flush()).is_err() {
+                            return;
+                        }
+                    }
                 }
             }
         });
         // The waiter reaps the child and then kills what is left of its group, so that a
         // grandchild cannot keep the pipe open.
+        let (exited, exit) = std::sync::mpsc::channel();
         let waiter = std::thread::spawn(move || {
             let status = child.wait();
             killpg(pgid);
-            status
+            let _ = exited.send(status);
         });
         let request_id = self.session.request_id.clone();
         let mut reader = Reading {
@@ -464,16 +472,26 @@ impl Job {
             request_id,
             workspace,
             awaiting_init: false,
+            early: vec![],
             release: Some(release),
         };
         let ended = reader.read(&mut stdout);
-        let status = waiter.join().ok().and_then(Result::ok);
+        // The output is at its end: the process gets `EXIT_WAIT` to exit, then its group is
+        // killed (19.3, step 5).
+        let status = exit.recv_timeout(EXIT_WAIT).or_else(|_| {
+            killpg(pgid);
+            exit.recv_timeout(EXIT_WAIT)
+        });
+        if status.is_ok() {
+            let _ = waiter.join();
+        }
+        let status = status.ok().and_then(Result::ok);
         // Before the stream ends: the writer reports every answer it wrote, then each waiting
         // `ask-resolved` goes on the stream, so `ended` never overtakes one (19.3, step 5).
         drop(reader);
-        self.session.close_queue();
-        join_within(writer, WRITER_WAIT);
+        end_writer(&self.session, writer, WRITER_WAIT);
         self.session.drain(&self.hub);
+        self.session.seal();
         if let Some(outcome) = ended {
             return outcome;
         }
@@ -500,8 +518,13 @@ struct Reading<'a> {
     /// The answer to `initialize` came and the `system/init` line has not: only control lines
     /// may come before it (19.3, step 3).
     awaiting_init: bool,
-    /// Lets the writer thread go on after `initialize`; dropped unsent when the check fails.
-    release: Option<std::sync::mpsc::Sender<()>>,
+    /// The denies of requests that came before the answer to `initialize`: nothing is written
+    /// before it passed step 2, so they go first once it did, and are dropped when it fails
+    /// (19.3, step 5).
+    early: Vec<Vec<u8>>,
+    /// Lets the writer thread go on after `initialize`, with `early`; dropped unsent when the
+    /// check fails.
+    release: Option<std::sync::mpsc::Sender<Vec<Vec<u8>>>>,
 }
 impl Reading<'_> {
     /// Pushes one item, waiting while the stream is full (a host stream stops reading its
@@ -523,7 +546,12 @@ impl Reading<'_> {
     }
     /// An ask or a check, or a deny at once when the launch did not ask for it, the request
     /// is malformed, or its item is too large to push (19.3, step 4).
-    fn request(&self, request_id: &str, hook: bool, fields: Option<&Fields>) -> Result<(), Value> {
+    fn request(
+        &mut self,
+        request_id: &str,
+        hook: bool,
+        fields: Option<&Fields>,
+    ) -> Result<(), Value> {
         let session = &self.job.session;
         let launch = &self.job.launch;
         let wanted = if hook {
@@ -534,7 +562,12 @@ impl Reading<'_> {
         // Nothing is opened before `system/init` passed (19.3, step 5).
         let (true, true, Some(fields)) = (wanted, self.answered && !self.awaiting_init, fields)
         else {
-            session.write(control::deny(request_id, hook, REFUSED));
+            let deny = control::deny(request_id, hook, REFUSED);
+            if self.answered {
+                session.write(deny);
+            } else {
+                self.early.push(deny);
+            }
             return Ok(());
         };
         let ttl = match launch.check {
@@ -639,7 +672,7 @@ impl Reading<'_> {
                     self.answered = true;
                     self.awaiting_init = true;
                     if let Some(release) = self.release.take() {
-                        let _ = release.send(());
+                        let _ = release.send(std::mem::take(&mut self.early));
                     }
                     Ok(())
                 } else {
@@ -655,39 +688,137 @@ pub(crate) fn shell_waits() -> Value {
     Job::failed(SHELL_WAITS)
 }
 
-/// How long the end of a run waits for the writer thread (19.3, step 5).
+/// How long the end of a run waits for the process to exit once its output is at its end, and
+/// then for the writer thread (19.3, step 5).
+const EXIT_WAIT: Duration = Duration::from_secs(2);
 const WRITER_WAIT: Duration = Duration::from_secs(2);
 
-/// Joins `handle`, but gives up after `limit` and detaches it: a writer blocked on a stdin that a
-/// stray process keeps open cannot hold the stream's end.
-fn join_within(handle: std::thread::JoinHandle<()>, limit: Duration) {
-    let (done, wait) = std::sync::mpsc::channel::<()>();
-    std::thread::spawn(move || {
-        let _ = handle.join();
-        let _ = done.send(());
-    });
-    let _ = wait.recv_timeout(limit);
+/// Closes the queue of the writer and waits at most `limit` for it, so that the writer reports
+/// every line it wrote. `true` when it ended. By now the process group is dead, so the read end of
+/// stdin is closed and a write that was blocked has failed; only a process outside the group
+/// that holds the pipe could keep it blocked, and then the thread is let go.
+fn end_writer(session: &Session, writer: std::thread::JoinHandle<()>, limit: Duration) -> bool {
+    session.close_queue();
+    let start = std::time::Instant::now();
+    while !writer.is_finished() {
+        if start.elapsed() >= limit {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    writer.join().is_ok()
 }
 
 #[cfg(test)]
 mod join_tests {
     use super::*;
+    use crate::agent::streams::Consumer;
+
+    /// A held stream and a session on it, with the queue's receiver for a fake writer.
+    fn rig() -> (
+        Arc<Hub>,
+        String,
+        Arc<Session>,
+        std::sync::mpsc::Receiver<super::super::Out>,
+    ) {
+        let hub = Hub::new();
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let session = Arc::new(Session::new(s.clone(), "o".into(), None));
+        let rx = session.started(0);
+        (hub, s, session, rx)
+    }
+    fn items(hub: &Hub, s: &str) -> Vec<String> {
+        hub.test_take(s)
+            .into_iter()
+            .map(|(_, b)| String::from_utf8(b).unwrap())
+            .collect()
+    }
 
     #[test]
-    fn ac3_a_blocked_writer_is_detached_after_the_limit() {
-        let (hold, held) = std::sync::mpsc::channel::<()>();
-        let blocked = std::thread::spawn(move || {
-            let _ = held.recv();
+    fn s100_fix9_ac4_a_writer_that_waits_on_its_queue_ends_when_the_queue_closes() {
+        let (_hub, _s, session, rx) = rig();
+        let writer = std::thread::spawn(move || for _ in rx {});
+        let start = std::time::Instant::now();
+        assert!(end_writer(&session, writer, Duration::from_secs(5)));
+        assert!(start.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn s100_fix9_ac4_a_write_that_completes_during_the_teardown_gets_its_answered_before_ended() {
+        let (hub, s, session, rx) = rig();
+        // The writer is in the middle of a write when the teardown starts; it completes
+        // 150 ms later and reports, as the real writer does.
+        let writer = {
+            let (hub, session) = (Arc::clone(&hub), Arc::clone(&session));
+            std::thread::spawn(move || {
+                for out in rx {
+                    std::thread::sleep(Duration::from_millis(150));
+                    if let Some((id, outcome)) = &out.answered {
+                        session.answered(&hub, id, outcome);
+                    }
+                }
+            })
+        };
+        session.enqueue(super::super::Out {
+            line: b"x".to_vec(),
+            answered: Some(("7".into(), "allow")),
+        });
+        assert!(end_writer(&session, writer, Duration::from_secs(5)));
+        session.drain(&hub);
+        session.seal();
+        assert_eq!(
+            items(&hub, &s),
+            [r#"{"type":"ask-resolved","id":"7","by":"answered","outcome":"allow"}"#]
+        );
+    }
+
+    #[test]
+    fn s100_fix9_ac4_a_write_that_fails_pushes_no_answered() {
+        let (hub, s, session, rx) = rig();
+        let writer = std::thread::spawn(move || {
+            // The write of the first line fails: the writer ends without reporting.
+            drop(rx);
+        });
+        session.enqueue(super::super::Out {
+            line: b"x".to_vec(),
+            answered: Some(("7".into(), "allow")),
+        });
+        assert!(end_writer(&session, writer, Duration::from_secs(5)));
+        session.drain(&hub);
+        assert_eq!(items(&hub, &s), Vec::<String>::new());
+    }
+
+    #[test]
+    fn s100_fix9_ac4_a_writer_that_stays_blocked_is_let_go_after_the_limit_and_pushes_nothing() {
+        let (hub, s, session, rx) = rig();
+        let (unblock, blocked) = std::sync::mpsc::channel::<()>();
+        let writer = {
+            let (hub, session) = (Arc::clone(&hub), Arc::clone(&session));
+            std::thread::spawn(move || {
+                for out in rx {
+                    let _ = blocked.recv();
+                    if let Some((id, outcome)) = &out.answered {
+                        session.answered(&hub, id, outcome);
+                    }
+                }
+            })
+        };
+        session.enqueue(super::super::Out {
+            line: b"x".to_vec(),
+            answered: Some(("7".into(), "allow")),
         });
         let start = std::time::Instant::now();
-        join_within(blocked, Duration::from_millis(200));
+        assert!(!end_writer(&session, writer, Duration::from_millis(200)));
         let took = start.elapsed();
         assert!(took >= Duration::from_millis(200) && took < Duration::from_secs(2));
-        drop(hold);
-        let quick = std::thread::spawn(|| {});
-        let start = std::time::Instant::now();
-        join_within(quick, Duration::from_secs(5));
-        assert!(start.elapsed() < Duration::from_secs(1));
+        session.drain(&hub);
+        session.seal();
+        // It completes after the stream ended: nothing more goes on the stream.
+        drop(unblock);
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(items(&hub, &s), Vec::<String>::new());
     }
 }
 

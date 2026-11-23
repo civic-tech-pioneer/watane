@@ -24,8 +24,12 @@ fn resolve(path: &Path, base: &Path, links: &mut usize) -> Option<PathBuf> {
             }
             Component::Normal(name) => {
                 cur.push(name);
-                let Ok(meta) = std::fs::symlink_metadata(&cur) else {
-                    continue;
+                // Only a missing component lets the path go on (a prospective write); any
+                // other error (`ENOTDIR`, `EACCES`, ...) leaves it unresolved (19.3).
+                let meta = match std::fs::symlink_metadata(&cur) {
+                    Ok(meta) => meta,
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(_) => return None,
                 };
                 if meta.file_type().is_symlink() {
                     *links += 1;
@@ -668,6 +672,86 @@ mod adv_s100_path_key {
             ),
             None,
             "NotebookEdit writes `notebook_path`, the item must not show `file_path`"
+        );
+    }
+}
+
+/// Review r2 of S100, F2.1: only a missing component lets a path resolve through; any other
+/// error of the filesystem makes it unresolvable (TECHNICAL 19.3, the resolve rule).
+#[cfg(test)]
+mod fix9_resolve_errors {
+    use super::*;
+    use serde_json::json;
+    use std::os::unix::fs::{PermissionsExt, symlink};
+
+    fn rig() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let work = dir.path().canonicalize().unwrap().join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        std::fs::write(work.join("a.txt"), "a").unwrap();
+        (dir, work)
+    }
+    fn answer(work: &Path, tool: &str, input: &Value) -> (bool, Option<String>) {
+        let roots = [work.to_path_buf()];
+        let run = PathBuf::from("/nonexistent-run");
+        (
+            refused_for_answer(tool, input, work, &roots, &run),
+            resolved(tool, input, work, &roots, &run),
+        )
+    }
+
+    #[test]
+    fn s100_fix9_ac1_a_file_used_as_a_folder_is_refused_and_gives_no_path() {
+        let (_d, work) = rig();
+        let input = json!({"file_path": "a.txt/child"});
+        assert_eq!(answer(&work, "Read", &input), (true, None));
+        let input = json!({"file_path": "a.txt/child/deeper"});
+        assert_eq!(answer(&work, "Write", &input), (true, None));
+    }
+
+    #[test]
+    fn s100_fix9_ac1_a_symlink_loop_is_refused_and_gives_no_path() {
+        let (_d, work) = rig();
+        symlink(work.join("b"), work.join("a")).unwrap();
+        symlink(work.join("a"), work.join("b")).unwrap();
+        for path in ["a", "a/x", "b/x/y"] {
+            let input = json!({"file_path": path});
+            assert_eq!(answer(&work, "Read", &input), (true, None), "{path}");
+        }
+    }
+
+    #[test]
+    fn s100_fix9_ac1_an_unreadable_folder_is_refused_and_gives_no_path() {
+        let (_d, work) = rig();
+        let locked = work.join("locked");
+        std::fs::create_dir(&locked).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let unreadable = std::fs::symlink_metadata(locked.join("x"))
+            .is_err_and(|e| e.kind() == std::io::ErrorKind::PermissionDenied);
+        let input = json!({"file_path": "locked/x"});
+        let got = answer(&work, "Read", &input);
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+        if !unreadable {
+            eprintln!("skipped: this user (root) can search a mode 000 folder");
+            return;
+        }
+        assert_eq!(got, (true, None));
+    }
+
+    #[test]
+    fn s100_fix9_ac1_a_missing_tail_under_an_existing_folder_still_resolves() {
+        let (_d, work) = rig();
+        std::fs::create_dir(work.join("sub")).unwrap();
+        let w = work.to_str().unwrap();
+        let input = json!({"file_path": "sub/new/deep/b.txt"});
+        assert_eq!(
+            answer(&work, "Write", &input),
+            (false, Some(format!("{w}/sub/new/deep/b.txt")))
+        );
+        let input = json!({"file_path": "missing"});
+        assert_eq!(
+            answer(&work, "Read", &input),
+            (false, Some(format!("{w}/missing")))
         );
     }
 }
