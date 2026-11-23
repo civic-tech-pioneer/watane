@@ -217,6 +217,7 @@ impl Dist {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
+        let mut staged = None;
         match next.get_mut(channel) {
             // A follow between step 2 and here keeps the record, not the mark.
             Some(r) if had || r.followed => r.kept = false,
@@ -232,14 +233,16 @@ impl Dist {
                     let mut tombs = self
                         .tombs
                         .lock()
-                        .expect("lock poisoned: another thread panicked while holding it");
+                        .expect("lock poisoned: another thread panicked while holding it")
+                        .clone();
                     follow::add_tombstone(&mut tombs, channel.to_string(), tomb);
+                    staged = Some(tombs);
                 }
                 next.remove(channel);
             }
             _ => return,
         }
-        if self.save_follows(&next).is_ok() {
+        if self.save_staged(&next, staged).is_ok() {
             *records = next;
         }
     }
