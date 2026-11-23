@@ -1555,6 +1555,32 @@ mod tests {
         assert!(budgets(&host.hub).1.unwrap() <= ORIGIN_BUDGET);
     }
 
+    /// 19.2 (Commit, Byte budgets): the bytes a chain has queued for another origin count in
+    /// the host budget of an ask.
+    #[test]
+    fn s100_fix15_ac3_a_host_ask_counts_pending_bytes_of_other_origins_in_the_host_budget() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let s = host
+            .hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let push = Effect::Push {
+            id: "mod-stream".into(),
+            body: vec![0; HOST_BUDGET - 10],
+            hop: 0,
+            by: modref("m"),
+            origin: "p".into(),
+        };
+        let chain = crate::runtime::call::test_chain(&host, vec![push]);
+        assert_eq!(
+            host.hub.host_open_keeping(&s, b"ask", 1000),
+            Err(StreamError::Full)
+        );
+        drop(chain);
+        host.hub.host_open_keeping(&s, b"ask", 1000).unwrap();
+    }
+
     /// 19.2 (In flight): a close takes its ask's reserve once; the stream's end frees the rest.
     #[test]
     fn s100_fix12_a_close_reserve_is_freed_once_by_its_close_or_the_end() {
