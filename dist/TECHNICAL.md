@@ -634,7 +634,10 @@ but only a base the record never saw (below, DD-48).
 Every record also has `"seen": [text]` (S105, DD-48; default `[]`, omitted
 when empty, so the version stays 1): every base the record ever held, as
 `base`, in `bases` or from a listing, also one that the 4-base cap or a
-listing change dropped; at most 16, the oldest goes first. A record read
+listing change dropped; at most 16. A full `seen` drops nothing: a base
+that would be the 17th is not added, and the record gets `"seen_full":
+true` (default `false`, omitted when `false`; S105 r5), after which a link
+gives no base that is not in `given`. A record read
 from a file adds its held bases to `seen`, so in a file saved before S105
 every held base is seen and none given. `given` then keeps every base the
 participant ever gave, also one no longer held, at most 16. A link gives
@@ -643,10 +646,11 @@ seen base that was never given (by `follow`, `choose_index` or `open_link`,
 also when a listed-only record turns followed or chosen, DD-46) gives
 nothing, and its first read is a listed one. When `prune_listed` removes a
 record, its `seen` and `given` stay as a tombstone in the top-level
-`"seen": {channel: {"seen": [text], "given": [text], "at": ms}}` of
+`"seen": {channel: {"seen": [text], "given": [text], "seen_full": bool, "at": ms}}` of
 `follows.json` (default `{}`, omitted when empty), at most 1024 tombstones,
 the oldest `at` goes first; a new record of that channel starts from its
-tombstone, which is then removed.
+tombstone, which is then removed. Tombstone bases are normalised on read
+as record bases are.
 
 Step 8 adds `"kept": bool` (default `false`), so the version stays 1: a
 **kept** record is a channel that an own machine holds (5.12). A record
@@ -1597,4 +1601,4 @@ are `list` and `include` statements of 4.1.
 | DD-45 | A listed record on a cache miss tries the record's base first, then the provider bases of 5.11 (at most 4 in all), without changing the record. | A dead record base must not end a fetch that another listing of the channel can serve, as for a channel with no record (S104). Undo: cheap (fetch.rs). |
 | DD-46 | A listed-only record that becomes followed or chosen by `follow` or `choose_index` holds only the base the link gave: `base` is the link's base, `bases` is empty. Foreman decision S105. | The listing's bases were read as the participant's own, which skipped the redirect check of DD-43 (A35). The alternative, a per-base origin in `follows.json`, is a format change. Undo: cheap (follow.rs). |
 | DD-47 | A base of a followed or chosen record that the participant did not give by a link (not in `given`, 4.4) is read as listed until the participant unfollows the channel (and drops it, for a chosen index) and follows or chooses it again by a link at that base (a repeated link at a held base gives nothing, S105 r3; the first read of such a link is listed too): the local-address rule, redirect targets included, and the limits of a listed read (5.9: `max_listed_entries`, `TooManyEntries`); a cached package is still given. Every base in a record saved before S105 is unknown. `given` is an additive serde-default field. Deputy decision S105 r1, tightened S105 r3. | An old home could hold a listing-learned base as a followed one and follow its redirects unchecked (A35). The alternative, trusting old records, leaves that hole open for every existing home. Undo: cheap (follow.rs, index.rs, fetch.rs). |
-| DD-48 | Every record keeps `seen`, each base it ever held (at most 16), across the 4-base cap and a listing change, and as a tombstone in `follows.json` after `prune_listed` removes the record (at most 1024). A link at a seen base that was never given gives nothing (4.4). So a base of unknown origin, from a listing or a file saved before S105, is never given by a link, while a base the participant gave once is given again. Interim, deputy decision S105 (option B of the BLOCKED question). Accepted limit: until the root fix, a participant cannot give a seen base that was never given at all, so a pre-S105 follow of a local base stays a listed read; and more than 1024 removed records drop the oldest tombstone. The root fix (option A, its own slice after S102): a follow from a derived link (a search hit's install, `Fetched.link`, DD-29) never gives its base and only a link the participant opens or pastes does, a dist<->app interface change. | dist cannot tell a link the participant gave from a link built out of a record's own base: the 4-base cap (S105 r4) and `prune_listed` made such a base look new, and a hit's install then gave it, so its redirects into the local network were followed (A35). Undo: cheap (follow.rs, index.rs, lib.rs); option A replaces it. |
+| DD-48 | Every record keeps `seen`, each base it ever held (at most 16), across the 4-base cap and a listing change, and as a tombstone in `follows.json` after `prune_listed` removes the record (at most 1024). A link at a seen base that was never given gives nothing (4.4); a record whose `seen` would pass 16 keeps the first 16 and gives no new base by a link (`seen_full`, S105 r5), so listing churn cannot push a base out of `seen`. So a base of unknown origin, from a listing or a file saved before S105, is never given by a link, while a base the participant gave once is given again. Interim, deputy decision S105 (option B of the BLOCKED question). Accepted limit: until the root fix, a participant cannot give a seen base that was never given at all, so a pre-S105 follow of a local base stays a listed read; and more than 1024 removed records drop the oldest tombstone. The root fix (option A, its own slice after S102): a follow from a derived link (a search hit's install, `Fetched.link`, DD-29) never gives its base and only a link the participant opens or pastes does, a dist<->app interface change. | dist cannot tell a link the participant gave from a link built out of a record's own base: the 4-base cap (S105 r4) and `prune_listed` made such a base look new, and a hit's install then gave it, so its redirects into the local network were followed (A35). Undo: cheap (follow.rs, index.rs, lib.rs); option A replaces it. |
