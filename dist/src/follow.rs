@@ -147,7 +147,9 @@ impl Dist {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         let mut seen = tombs.clone();
-        seen.retain(|k, _| !records.keys().any(|key| key.to_string() == *k));
+        for key in records.keys() {
+            seen.remove(&key.to_string());
+        }
         let file = Follows {
             version: 1,
             channels: records

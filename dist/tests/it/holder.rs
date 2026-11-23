@@ -529,6 +529,17 @@ fn a_failed_kept_ingest_keeps_the_tombstone() {
     let key = alice.identity().unwrap();
     let gap = entries(&alice, 1)[1].clone();
     let tomb = serde_json::json!({"seen": ["http://127.0.0.1:9/"], "given": [], "at": 1});
+    // Without a tombstone, none is written.
+    let h = tempfile::tempdir().unwrap();
+    let d = Dist::open_keyless(h.path(), fast_options()).unwrap();
+    assert!(matches!(
+        d.ingest(&key, vec![gap.clone()], Reason::Kept),
+        Ingested::Failed(DistError::Gap { .. })
+    ));
+    let saved: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(h.path().join("dist/follows.json")).unwrap())
+            .unwrap();
+    assert!(saved.get("seen").is_none());
     let h = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(h.path().join("dist")).unwrap();
     let file = serde_json::json!({"version": 1, "channels": {}, "seen": {key.to_string(): tomb}});

@@ -503,19 +503,18 @@ impl Dist {
         let Some(channel) = channel else {
             return Ok(());
         };
-        let gone: Vec<_> = next
-            .iter()
-            .filter(|(k, r)| !(r.followed || r.index || r.kept || walk.bases.contains_key(k)))
-            .map(|(k, r)| (k.to_string(), r.seen.clone(), r.given.clone()))
-            .collect();
-        next.retain(|k, r| r.followed || r.index || r.kept || walk.bases.contains_key(k));
+        let gone: BTreeMap<_, _>;
+        (next, gone) = next
+            .into_iter()
+            .partition(|(k, r)| r.followed || r.index || r.kept || walk.bases.contains_key(k));
         let mut tombs = self
             .tombs
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        for (key, seen, given) in gone {
+        for (key, Follow { seen, given, .. }) in gone {
             let at = follow::now();
-            follow::add_tombstone(&mut tombs, key, crate::Tombstone { seen, given, at });
+            let tomb = crate::Tombstone { seen, given, at };
+            follow::add_tombstone(&mut tombs, key.to_string(), tomb);
         }
         drop(tombs);
         for (key, record) in &mut next {

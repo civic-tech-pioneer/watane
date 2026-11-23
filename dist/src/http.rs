@@ -1040,6 +1040,10 @@ mod tests {
             "the record is pruned"
         );
         assert_eq!(file()["seen"][&key]["seen"], serde_json::json!([w.a.url]));
+        // The first read of the tombstone's seen base is listed: the redirect is refused.
+        w.a.redirect("/head", &format!("{}head", w.b.url));
+        assert_refused(eve.follow(&hit).err(), &format!("{}head", w.b.url));
+        w.a.redirects.lock().unwrap().clear();
         let _ = eve.follow(&hit);
         let record = &file()["channels"][&key];
         assert!(record["given"].as_array().is_none_or(|g| g.is_empty()));
