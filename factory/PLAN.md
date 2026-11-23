@@ -1240,7 +1240,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
 - [~] **S104 (upkeep) dist reads past a bad mirror and says what is stale.** (in flight, cloud, builder codex,
   reviewer claude; sketched 2026-11-23 by the deputy; Codex task
   https://chatgpt.com/local/6b041e6f-437c-83ed-a25f-004fef586048, ~11:10 UTC; PR #17 opened at 7eb74a1
-  (+285 -151, dist/ only); r1 to Claude, routine `trig_01GK67rWigPWwZ1J1UbBwX1y`, 11:54 UTC.) Three Leftovers items, all in `dist/`; each outcome is
+  (+285 -151, dist/ only); r1 to Claude, routine `trig_01GK67rWigPWwZ1J1UbBwX1y`, 11:54 UTC; r1 `changes (5)`, answer round to Codex in its task.) Three Leftovers items, all in `dist/`; each outcome is
   its item's check:
   1. [S49] (core) a mirror that answers 404 for the package makes dist try the next base, as a down
      base does; the package comes from the first base that has it (dist/TECHNICAL.md:990).
