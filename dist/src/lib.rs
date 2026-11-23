@@ -125,6 +125,12 @@ pub struct Dist {
     /// hop can be local-free while its redirect targets are still checked.
     #[cfg(test)]
     test_local_ok: Mutex<Vec<String>>,
+    /// Tests only: called by `held_ungiven` between its record and tombstone lookups.
+    #[cfg(test)]
+    test_held_gap: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
+    /// Tests only: `Some(n)` lets `n` saves of `follows.json` pass, then fails every one.
+    #[cfg(test)]
+    test_fail_saves: Mutex<Option<usize>>,
 }
 // The confirm callback has no Debug, and the rest is lock and cache state.
 impl std::fmt::Debug for Dist {
@@ -321,6 +327,10 @@ impl Dist {
                 .into(),
             #[cfg(test)]
             test_local_ok: Mutex::new(Vec::new()),
+            #[cfg(test)]
+            test_held_gap: Mutex::new(None),
+            #[cfg(test)]
+            test_fail_saves: Mutex::new(None),
             listed_agent: ureq::Agent::config_builder()
                 .http_status_as_error(false)
                 .max_redirects(0)

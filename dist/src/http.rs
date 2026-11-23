@@ -1103,4 +1103,245 @@ mod tests {
             "a listing's base pushed out of `seen` was given by a stale hit: {record}"
         );
     }
+
+    // Codex review r2 of PR #19 (F2.1 to F2.4) and S105-CHURN "(a) fail closed".
+
+    /// Rewrites `follows.json` of `dir` as a home saved before S105: one record for the
+    /// publisher at base `a`, nothing in `given`.
+    fn write_old(dir: &std::path::Path, w: &World, record: serde_json::Value) {
+        let old = serde_json::json!({"version": 1, "channels": {w.key.to_string(): record}});
+        std::fs::write(dir.join("dist/follows.json"), old.to_string()).unwrap();
+    }
+    fn old_record(w: &World, given: &[&str], index: bool) -> serde_json::Value {
+        serde_json::json!({"base": w.a.url, "followed": !index, "index": index, "given": given,
+            "followed_at": 1, "last_attempt": 1, "last_success": 1})
+    }
+    fn strict(dir: &std::path::Path) -> Dist {
+        Dist::open(dir, Arc::new(Yes), Options::default()).unwrap()
+    }
+    fn tomb(seen: &[&str], at: u64) -> crate::Tombstone {
+        crate::Tombstone {
+            seen: seen.iter().map(|b| (*b).to_owned()).collect(),
+            given: Vec::new(),
+            seen_full: false,
+            at,
+        }
+    }
+    /// A home that saw the publisher only through a pre-S105 record at `a`, then pruned it:
+    /// a tombstone `seen = [a]`, and the hit link the app showed before.
+    fn pruned_old_record(w: &World) -> (tempfile::TempDir, Dist, crate::Link) {
+        let c = Host::serve(&w.publisher.site_dir());
+        let (dir, eve) = w.eve(&[&w.a, &c]);
+        eve.follow(&w.link(&c)).unwrap();
+        drop(eve);
+        write_old(dir.path(), w, old_record(w, &[], false));
+        let eve = strict(dir.path());
+        exempt(&eve, &[&w.a]);
+        let hits = eve
+            .search(&crate::Query {
+                text: String::new(),
+                publisher: Some(w.key),
+                origin: None,
+                interface: None,
+            })
+            .unwrap();
+        let hit = hits[0].link.clone().expect("hit link");
+        assert_eq!(hit.base(), w.a.url);
+        eve.unfollow(&w.key).unwrap();
+        assert!(eve.test_tomb_keys().contains(&w.key.to_string()));
+        (dir, eve, hit)
+    }
+
+    /// F2.1: a listed read of a first base that is itself local gets no request, at follow
+    /// and choose too.
+    fn local_first_base_gets_no_request(choose: bool) {
+        let w = world();
+        let c = Host::serve(&w.publisher.site_dir());
+        let (dir, eve) = w.eve(&[&c]);
+        eve.follow(&w.link(&c)).unwrap();
+        drop(eve);
+        write_old(dir.path(), &w, old_record(&w, &[], choose));
+        let eve = strict(dir.path());
+        let before = w.a.count();
+        let link = crate::Link::new(w.key, &w.a.url, None).unwrap();
+        let got = if choose {
+            eve.choose_index(&link).map(|_| ()).err()
+        } else {
+            eve.follow(&link).map(|_| ()).err()
+        };
+        assert_eq!(w.a.count(), before, "the local base was requested");
+        assert_refused(got, &w.a.url);
+    }
+    #[test]
+    fn adv_s105_r2_follow_of_a_listed_local_first_base_gets_no_request() {
+        local_first_base_gets_no_request(false);
+    }
+    #[test]
+    fn adv_s105_r2_choose_index_of_a_listed_local_first_base_gets_no_request() {
+        local_first_base_gets_no_request(true);
+    }
+    /// F2.1: a base the participant gave still reads a local base (a LAN mirror).
+    #[test]
+    fn adv_s105_r2_a_given_local_first_base_is_still_read() {
+        let w = world();
+        let c = Host::serve(&w.publisher.site_dir());
+        let (dir, eve) = w.eve(&[&c]);
+        eve.follow(&w.link(&c)).unwrap();
+        drop(eve);
+        write_old(dir.path(), &w, old_record(&w, &[&w.a.url], false));
+        let eve = strict(dir.path());
+        eve.follow(&w.link(&w.a)).unwrap();
+        assert!(w.a.count() > 0, "a given local base is read");
+    }
+
+    /// F2.3: `read_link` gives a cached package for a refused listed base, as `fetch`
+    /// does (DD-47), with no request; on a miss it returns the address refusal.
+    #[test]
+    fn adv_s105_r2_read_link_gives_a_cached_package_for_a_refused_listed_base() {
+        let w = world();
+        let (dir, eve) = w.eve(&[&w.a]);
+        eve.follow(&w.link(&w.a)).unwrap();
+        eve.fetch(&w.reference).unwrap();
+        drop(eve);
+        write_old(dir.path(), &w, old_record(&w, &[], false));
+        let eve = strict(dir.path());
+        let before = w.a.count();
+        let got = eve.read_link(&w.link(&w.a)).unwrap();
+        assert_eq!(got.package.id().to_string(), w.package["packages/".len()..]);
+        assert_eq!(w.a.count(), before, "no request to the unknown local base");
+        let package = w.package.trim_start_matches("packages/").to_owned();
+        std::fs::remove_file(eve.cache_path(&package.parse().unwrap())).unwrap();
+        assert_refused(eve.read_link(&w.link(&w.a)).map(|_| ()).err(), &w.a.url);
+        assert_eq!(w.a.count(), before, "no request on a miss either");
+    }
+
+    /// F2.2: `held_ungiven` classifies from one snapshot. A `keep` that moves the
+    /// tombstone into a record between the two lookups must not turn a seen, never-given
+    /// base into a given-looking one. The hook waits for the `keep` to finish, or for a
+    /// lock the classifier still holds to refuse it (the wait only bounds that case).
+    #[test]
+    fn adv_s105_r2_held_ungiven_reads_one_snapshot() {
+        let w = world();
+        let (_dir, eve, _hit) = pruned_old_record(&w);
+        let (gap_tx, gap_rx) = std::sync::mpsc::channel::<()>();
+        let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
+        let done_rx = std::sync::Mutex::new(done_rx);
+        *eve.test_held_gap.lock().unwrap() = Some(Box::new(move || {
+            gap_tx.send(()).unwrap();
+            let _ = done_rx
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_millis(500));
+        }));
+        let held = std::thread::scope(|s| {
+            let classify = s.spawn(|| eve.held_ungiven(w.key, &w.a.url));
+            gap_rx.recv().unwrap();
+            eve.keep(&w.key).unwrap();
+            done_tx.send(()).unwrap();
+            classify.join().unwrap()
+        });
+        assert!(held, "a seen, never-given base was classified as given");
+    }
+
+    /// F2.4: a failed save leaves the tombstones as they were, also when 1024 were held.
+    #[test]
+    fn adv_s105_r2_a_failed_save_leaves_the_tombstones_in_a_prune() {
+        for held in [0u64, 1024] {
+            let w = world();
+            let (dir, eve) = w.eve(&[&w.a]);
+            let (_zdir, zed, _zhost) = listed_record(&w, &eve);
+            for n in 0..held {
+                eve.test_add_tombstone(&format!("k{n}"), tomb(&[], n + 2));
+            }
+            let id = zed.own().unwrap().listings[0].entry;
+            zed.unlist(&id).unwrap();
+            eve.refresh_channel(&zed.identity().unwrap()).unwrap();
+            let before = eve.test_tomb_keys();
+            let file = std::fs::read(dir.path().join("dist/follows.json")).unwrap();
+            *eve.test_fail_saves.lock().unwrap() = Some(0);
+            assert!(eve.prune_listed().is_err());
+            assert_eq!(eve.test_tomb_keys(), before, "held={held}");
+            let after = std::fs::read(dir.path().join("dist/follows.json")).unwrap();
+            assert_eq!(after, file, "held={held}: the file changed");
+        }
+    }
+
+    /// F2.4: a failed kept ingest that cannot take its record back leaves the tombstones
+    /// as the first save left them (the record took its channel's tombstone).
+    #[test]
+    fn adv_s105_r2_a_failed_save_leaves_the_tombstones_in_take_back_kept() {
+        for held in [0u64, 1023] {
+            let w = world();
+            let (dir, eve) = w.eve(&[]);
+            let key = w.key.to_string();
+            eve.test_add_tombstone(&key, tomb(&[&w.a.url], 1));
+            for n in 0..held {
+                eve.test_add_tombstone(&format!("k{n}"), tomb(&[], n + 2));
+            }
+            let mut expected = eve.test_tomb_keys();
+            expected.retain(|k| *k != key);
+            // Entries from seq 1 on, with no seq 0 stored: the ingest has a gap and fails.
+            let entries = w.publisher.entries(&w.key, 1, 100, usize::MAX).unwrap();
+            assert!(!entries.is_empty());
+            // The first save (the kept mark) passes, the take back fails.
+            *eve.test_fail_saves.lock().unwrap() = Some(1);
+            let got = eve.ingest(&w.key, entries, crate::Reason::Kept);
+            assert!(matches!(got, crate::Ingested::Failed(_)), "{got:?}");
+            assert_eq!(eve.test_tomb_keys(), expected, "held={held}");
+            let file: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(dir.path().join("dist/follows.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(file["channels"][&key]["kept"], true);
+            assert!(file["seen"].get(&key).is_none());
+        }
+    }
+
+    /// S105-CHURN (a): once the tombstone of a channel is evicted, a stale hit link at its
+    /// seen base gives nothing (the DELIVERED RISK of the churn route).
+    #[test]
+    fn adv_s105_churn_tombstone_overflow_then_stale_hit_gives_nothing() {
+        let w = world();
+        let (dir, eve, hit) = pruned_old_record(&w);
+        let key = w.key.to_string();
+        for n in 0..1024 {
+            eve.test_add_tombstone(&format!("k{n}"), tomb(&[], u64::MAX - 5000 + n));
+        }
+        assert!(
+            !eve.test_tomb_keys().contains(&key),
+            "the tombstone is evicted"
+        );
+        w.a.redirect("/head", &format!("{}head", w.b.url));
+        let first = eve.follow(&hit).map(|_| ()).err();
+        assert_eq!(w.b.count(), 0, "the first read followed a local redirect");
+        assert_refused(first, &format!("{}head", w.b.url));
+        w.a.redirects.lock().unwrap().clear();
+        eve.follow(&hit).unwrap();
+        let file: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.path().join("dist/follows.json")).unwrap())
+                .unwrap();
+        let record = &file["channels"][&key];
+        assert!(record["given"].as_array().is_none_or(|g| g.is_empty()));
+        w.a.redirect("/head", &format!("{}head", w.b.url));
+        let report = eve.refresh_channel(&w.key).unwrap();
+        assert_refused(failure(Ok(report)), &format!("{}head", w.b.url));
+        assert_eq!(w.b.count(), 0, "the stale hit gave its base");
+    }
+
+    /// S105-CHURN (a): a channel dist never knew still gets its base from a link, also
+    /// after tombstones overflowed.
+    #[test]
+    fn adv_s105_churn_after_overflow_a_fresh_channel_link_gives_its_base() {
+        let w = world();
+        let (dir, eve) = w.eve(&[]);
+        for n in 0..1100 {
+            eve.test_add_tombstone(&format!("k{n}"), tomb(&[], n + 2));
+        }
+        eve.follow(&w.link(&w.a)).unwrap();
+        let file: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.path().join("dist/follows.json")).unwrap())
+                .unwrap();
+        let record = &file["channels"][w.key.to_string()];
+        assert_eq!(record["given"], serde_json::json!([w.a.url]));
+    }
 }
