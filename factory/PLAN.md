@@ -1738,6 +1738,13 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Deputy decisions
 
+- 2026-11-23 (the human, with the monitor; watane-mods PR #5) New review rules from the next dispatch: the review lead
+  triages its agents' findings into blocking and polish; polish never holds a merge and goes under Upkeep; the lead may
+  propose to accept a blocking finding when the fix costs more than it is worth for the vision (a security finding only
+  if cheap to undo and outside the vision's promises, else the human decides); no fixed round cap: each review ends with
+  the trend and the lead's call, and from round 4 the deputy writes why one more round is worth it; the deputy rules when
+  a finding comes back twice. The human: "find a balanced perspective on building out many features of the product
+  versus building few features perfect".
 - 2026-11-23 (the human's answers, through the monitor) S100-CAP: "One more round": one answer round for F5.1 and F5.2,
   then a sixth Codex review limited to them and their tests. S105-CHURN: "(a) Fail closed", built in S105's r2 answers.
   S100 risks: two vetoed and folded into S100's last answer round, off host 14 'Not protected': stop() killing a process
