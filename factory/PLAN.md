@@ -1189,7 +1189,7 @@ names the same interface in its sketch and fakes it until this one merges.
   (one admission check under one lock; refusal changes only on commit; signal only with an atomic identity check, else
   leave the group; records keyed by whole identity) for the foreman's r6 answer. Round 7 is worth it: all four are narrow
   with red tests, F6.3 is a boundary defect that must close before any merge, and the ruling removes the code paths that
-  bred the regressions; the human may stop it instead (asked, deputy-2); builder claude (rule 3: the last three were Claude, but it went out while the deputy misread Codex as signed out), reviewer codex) Stage B, end to end: Alice steers a turn (the watane half).** After S99.
+  bred the regressions; the human may stop it instead (asked, deputy-2); r6 answered at 4104a61 (21:45, all four; adversary 11th pass HELD); r7 to Codex; builder claude (rule 3: the last three were Claude, but it went out while the deputy misread Codex as signed out), reviewer codex) Stage B, end to end: Alice steers a turn (the watane half).** After S99.
   One story in two repositories: agentic-harness S36 is the kernel and console half (its PLAN), handed
   out after S35 merges. In a session on dev's fake `claude`, Claude asks to use a tool and Alice
   answers it; she sends a second message while the first turn runs (the kernel queues it); she presses
