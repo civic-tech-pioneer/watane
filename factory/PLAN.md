@@ -1286,7 +1286,11 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Codex. Round 5 is worth it: blocking 5, 5, 3, 3, but r4's three were one cause, now closed by one rule with red
   tests; r5 checks one answer commit, and S107 waits on this merge; r5's output was withheld by Codex's cybersecurity filter ("This content can't be
   shown"), sent again as a new task ~21:13 UTC, https://chatgpt.com/local/6b04ac8b-cd24-83eb-8242-3d0d0316a06d; withheld again, so r5 goes to Claude (4c failure mode):
-  routine `trig_01CXiyL4nMudy9av7KNfRGn8`, 21:45 UTC.) Three Leftovers items, all in `dist/`:
+  routine `trig_01CXiyL4nMudy9av7KNfRGn8`, 21:45 UTC; r5 (Claude, ~22:15) 3/4, call another round (F5.1 refresh after a
+  failed unfollow requests and panics, poisoning the store's locks; F5.2/F5.3 requests while unsynced), posted with a deputy
+  ruling (one gate before any request); r5 answer through the routine. Round 6 is worth it: blocking 5, 5, 3, 3, 3 is
+  flat, but F5.1 is a panic that must close, the gate closes the class by construction, and a r6 return of the class
+  that loses no seen/given is accepted until S107 (pre-announced on the PR).) Three Leftovers items, all in `dist/`:
   1. (guard) a redirect from a listed or hint base is checked like the base itself: a redirect target on `localhost`
      or a local IP literal is refused, as A35/A37 refuse the base (dist/TECHNICAL.md:1273, 1278). Deputy decision: check
      each redirect target (not "Not protected"); the 5-redirect limit stays.
@@ -1590,6 +1594,8 @@ Re-checked and swept by S86 (2026-11-18); these remain.
   carries serde's internal wording).
 
 ### dist
+
+- (S105 r5, guard) `list` and `include` read a link's base in given mode before `confirm` (`dist/src/own.rs:386-392`), skipping `held_ungiven` and the local-address check; `app/src/api.rs:346-363` passes links from a mod's publish request. Should it read as listed, as `read_link` does?
 
 - [S26] Q12: log entries of unlisted channels are never removed. `prune_listed_channels` touches
   only follows.json (dist/src/index.rs:463); log has no `forget` API (log/src/lib.rs:81).
