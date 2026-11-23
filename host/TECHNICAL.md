@@ -2088,8 +2088,8 @@ produces the same load for S36 (dev 18.2).
 **Stage B host record** (S100, 2026-11-23; `Linux vm 6.18.44-fc-v726 #1 SMP PREEMPT_DYNAMIC
 x86_64`, `nproc` 4, a virtual machine with a real fsync; nothing else running, load average
 0.5 to 0.7; `cd host && cargo test --test it agent_load::stage_b:: -- --include-ignored` three
-passes in a row, every budget met in each; re-run 2026-11-23 after review r3, F3.3 to F3.5,
-with another build running, load average 1.3 to 2.0). The load of
+passes in a row, every budget met in each; re-run by the foreman 2026-11-23 after review r3
+and s100-fix14, nothing else running, load average 0.8 to 0.9). The load of
 `tests/it/agent_load.rs::stage_b::ac1_stage_b_load`: 8 sessions, 4 on each of the consumer mods
 `claude` and `claude-b`, on the fixture fake `claude` in its rate mode (50 deltas and 5 entries
 of 4 096 bytes a second, each line stamped with its write time; 10.6 s before the interrupt,
@@ -2104,14 +2104,14 @@ only after every stream's `initialized` reached its consumer, so the scratch row
 are outside the window; the host counter counts every host-owned commit (scratch add, delete,
 remove, the generation, timers), and the figures cover the window from that reading to the last `cancel`. One `ask` answered and one left open for the `interrupt`; the turn's
 `result`, then `cancel`. Figures, pass 1 / 2 / 3 (the p95 over the 8 sessions is the worst,
-one value per kind): item delay host to consumer, the worst session's p95, 4 / 3 / 4 ms (budget
-100; the histogram's ms upper edge, each session's p95 over its own 580 lines); `ask` taken 5.1 /
-2.0 / 5.9 ms (100); `answer` to the fake's stdin 1.1 / 1.4 / 9.7 ms (50); `interrupt` to
-`ask-resolved` 10.2 / 6.1 / 9.6 ms and to the turn's `result` 15.3 / 11.0 / 9.6 ms (1 000);
-`cancel` to `ended` 8.7 / 8.2 / 7.7 ms (250); writer busy 24.6 / 23.4 / 25.3% (50), measured by
+one value per kind): item delay host to consumer, the worst session's p95, 3 / 6 / 4 ms (budget
+100; the histogram's ms upper edge, each session's p95 over its own 580 lines); `ask` taken 3.8 /
+2.6 / 3.3 ms (100); `answer` to the fake's stdin 13.9 / 5.0 / 7.4 ms (50); `interrupt` to
+`ask-resolved` 10.7 / 18.3 / 14.9 ms and to the turn's `result` 14.6 / 18.3 / 15.8 ms (1 000);
+`cancel` to `ended` 9.0 / 8.3 / 7.9 ms (250); writer busy 20.2 / 20.3 / 19.1% (50), measured by
 owner on the commit path (`TestStats.host_commits`, `host_commit_time`): the host's own commits
 (timer and scratch writes) 0 of about 4 240, so 0.0% of the share, and the mods' (the consumers' one small
-tally write per batch, mean commit 0.59 to 0.64 ms) all of it. Three busy loops beside it (load
+tally write per batch, mean commit 0.48 to 0.51 ms) all of it. Three busy loops beside it (load
 average 2) left every figure within budget (interrupt and cancel up to 24 ms). With another build
 running (load average 5 to 9 on the 4 cores) the same load took the writer to 53 to 59% (a commit
 took 1.4 ms, not 0.6), and a build beside it once took the first `ask` to 260 ms: the budgets need
