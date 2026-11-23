@@ -983,6 +983,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)] // Uses a POSIX symlink fixture.
     #[test]
     fn ac3_dev_s5_and_s8_file_codes_locations_and_fixes() {
         let temp = tempfile::tempdir().unwrap();
@@ -1041,6 +1042,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)] // Uses a POSIX symlink fixture.
     #[test]
     fn ac3_check_repairs_host_wit_and_skips_git_links() {
         let root = tempfile::tempdir().unwrap();

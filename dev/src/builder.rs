@@ -907,6 +907,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)] // Uses a POSIX symlink fixture.
     #[test]
     fn ac1_generate_literal_is_resolved_as_text() {
         let copy = Path::new("/nonexistent/c/build/me");
@@ -940,6 +941,7 @@ mod tests {
         assert_eq!(generate_paths(&src, &copy), [out]);
     }
 
+    #[cfg(unix)] // Uses a POSIX symlink fixture.
     #[test]
     fn s93_fix6_generate_scan_follows_no_symlink() {
         let temp = tempfile::tempdir().unwrap();
@@ -1040,6 +1042,7 @@ mod tests {
             [PathBuf::from("/c/build/other/wit")]
         );
     }
+    #[cfg(unix)] // Uses a POSIX symlink fixture.
     #[test]
     fn s93_fix2_sibling_paths_are_real_siblings() {
         let (b, c) = (Path::new("/c/build"), Path::new("/c/build/me"));

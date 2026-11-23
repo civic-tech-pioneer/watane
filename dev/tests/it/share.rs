@@ -9,7 +9,10 @@ use std::cell::RefCell;
 use std::ffi::OsString;
 use std::fs;
 use std::io::{BufRead, BufReader};
+#[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
+#[cfg(windows)]
+use std::os::windows::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Output, Stdio};
 use std::rc::Rc;
@@ -93,8 +96,12 @@ impl Fixture {
 
 type Reply = std::io::Result<Output>;
 fn reply(code: i32, stdout: &str, stderr: &str) -> Reply {
+    #[cfg(unix)]
+    let status = ExitStatus::from_raw(code << 8);
+    #[cfg(windows)]
+    let status = ExitStatus::from_raw(u32::try_from(code).unwrap());
     Ok(Output {
-        status: ExitStatus::from_raw(code << 8),
+        status,
         stdout: stdout.into(),
         stderr: stderr.into(),
     })
@@ -1149,261 +1156,266 @@ fn ac3_owner_matching_login_case_insensitively_omits_organization() {
 
 // ---- End to end: the real program, git and fake-gh ----
 
-struct Real {
-    f: Fixture,
-    git: PathBuf,
-}
-impl Real {
-    fn new() -> Self {
-        let f = Fixture::new();
-        let root = &f.root;
-        for p in ["remotes", "bin"] {
-            fs::create_dir_all(root.join(p)).unwrap();
+#[cfg(unix)] // End-to-end git fixtures use POSIX symlinks and shell quoting.
+mod real {
+    use super::*;
+
+    struct Real {
+        f: Fixture,
+        git: PathBuf,
+    }
+    impl Real {
+        fn new() -> Self {
+            let f = Fixture::new();
+            let root = &f.root;
+            for p in ["remotes", "bin"] {
+                fs::create_dir_all(root.join(p)).unwrap();
+            }
+            let git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+                .map(|dir| dir.join("git"))
+                .find(|git| git.is_file())
+                .unwrap();
+            std::os::unix::fs::symlink(&git, root.join("bin/git")).unwrap();
+            let fake = Path::new(env!("CARGO_BIN_EXE_fake-gh"));
+            std::os::unix::fs::symlink(fake, root.join("bin/gh")).unwrap();
+            fs::write(root.join("gitconfig"), format!("[user]\n name = Alice\n email = alice@example.test\n[url \"file://{}/remotes/\"]\n insteadOf = https://github.com/\n", root.display())).unwrap();
+            Self { f, git }
         }
-        let git = std::env::split_paths(&std::env::var_os("PATH").unwrap())
-            .map(|dir| dir.join("git"))
-            .find(|git| git.is_file())
-            .unwrap();
-        std::os::unix::fs::symlink(&git, root.join("bin/git")).unwrap();
-        let fake = Path::new(env!("CARGO_BIN_EXE_fake-gh"));
-        std::os::unix::fs::symlink(fake, root.join("bin/gh")).unwrap();
-        fs::write(root.join("gitconfig"), format!("[user]\n name = Alice\n email = alice@example.test\n[url \"file://{}/remotes/\"]\n insteadOf = https://github.com/\n", root.display())).unwrap();
-        Self { f, git }
-    }
-    fn env(&self, cmd: &mut Command) {
-        let root = &self.f.root;
-        cmd.env("PATH", root.join("bin"))
-            .env("GIT_CONFIG_GLOBAL", root.join("gitconfig"))
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env("FAKE_GH_ROOT", root.join("remotes"))
-            .env("FAKE_GH_USER", "alice")
-            .env_remove("GIT_AUTHOR_NAME")
-            .env_remove("GIT_AUTHOR_EMAIL")
-            .env_remove("GIT_COMMITTER_NAME")
-            .env_remove("GIT_COMMITTER_EMAIL");
-    }
-    fn run(&self, args: &[OsString], user: &str) -> (i32, Value) {
-        let mut c = Command::new(env!("CARGO_BIN_EXE_watane-dev"));
-        self.env(&mut c);
-        let o = c
-            .args(&args[1..])
-            .env("FAKE_GH_USER", user)
-            .env("WATANE_DEV_CACHE", self.f.home.join("cache"))
-            .output()
-            .unwrap();
-        (
-            o.status.code().unwrap(),
-            serde_json::from_slice(&o.stdout).unwrap_or_else(|_| panic!("{o:?}")),
-        )
-    }
-    fn git(&self, dir: &Path, args: &[&str]) -> String {
-        let mut c = Command::new(&self.git);
-        self.env(&mut c);
-        let o = c.arg("-C").arg(dir).args(args).output().unwrap();
-        assert!(o.status.success(), "{o:?}");
-        String::from_utf8(o.stdout).unwrap().trim().into()
-    }
-    fn remote(&self, path: &str) -> PathBuf {
-        self.f.root.join("remotes").join(path)
-    }
-}
-fn shell_quote(path: &Path) -> String {
-    format!("'{}'", path.display().to_string().replace('\'', "'\"'\"'"))
-}
-
-#[test]
-fn ac1_e2e_first_push_creates_both_repositories_and_names_the_mod_repository() {
-    let r = Real::new();
-    let f = &r.f;
-    let (code, v) = r.run(&f.publish_args(), "alice");
-    assert_eq!(code, 0, "{v}");
-    assert_eq!(
-        v["result"]["push"],
-        json!({"site":{"repository":"https://github.com/alice/watane-channel","raw":"https://raw.githubusercontent.com/alice/watane-channel/main/","pages":"https://alice.github.io/watane-channel/","created":true,"pushed":true},"mod":{"repository":"https://github.com/alice/demo","created":true,"pushed":true,"forked":false,"tag":release("demo")}})
-    );
-    assert_eq!(
-        v["next"],
-        format!(
-            "Ask the person to set the site URL in the watane app to https://raw.githubusercontent.com/alice/watane-channel/main/ (or to https://alice.github.io/watane-channel/ if GitHub Pages serves this repository), then run: watane-dev publish --json --dir {} --home {} --push",
-            shell_quote(&f.dir),
-            shell_quote(&f.home)
-        )
-    );
-    assert!(v["result"]["link"].is_null());
-    let manifest = fs::read_to_string(f.dir.join("mod.toml")).unwrap();
-    assert!(manifest.contains("repository = \"https://github.com/alice/demo\""));
-    let package =
-        watane_pkg::Package::from_bytes(fs::read(f.home.join("requests/1-publish")).unwrap())
-            .unwrap();
-    assert_eq!(package.file("mod.toml").unwrap(), manifest.as_bytes());
-    assert_eq!(
-        r.git(
-            &r.remote("alice/demo"),
-            &["ls-tree", "-r", "--name-only", "main"]
-        ),
-        "mod.toml\nui/index.html\nwit/deps/watane-host/host.wit\nwit/world.wit"
-    );
-    assert_eq!(r.git(&r.remote("alice/demo"), &["tag"]), release("demo"));
-    assert_eq!(
-        r.git(
-            &r.remote("alice/watane-channel"),
-            &["ls-tree", "-r", "--name-only", "main"]
-        ),
-        format!(
-            "head\npackages/{}",
-            v["result"]["package"].as_str().unwrap()
-        )
-    );
-}
-
-#[test]
-fn ac2_e2e_second_version_pushes_without_creating() {
-    let r = Real::new();
-    let f = &r.f;
-    assert_eq!(r.run(&f.publish_args(), "alice").0, 0);
-    let old_mod = r.git(&r.remote("alice/demo"), &["rev-parse", "main"]);
-    let old_site = r.git(&r.remote("alice/watane-channel"), &["rev-parse", "main"]);
-    fs::write(
-        f.dir.join("wit/world.wit"),
-        "package mods:demo@0.2.0; world demo {}",
-    )
-    .unwrap();
-    let (code, v) = r.run(&f.publish_args(), "alice");
-    assert_eq!(code, 0, "{v}");
-    for (name, old) in [("alice/demo", old_mod), ("alice/watane-channel", old_site)] {
-        assert_eq!(r.git(&r.remote(name), &["rev-parse", "main^"]), old);
-    }
-    assert_eq!(v["result"]["push"]["site"]["created"], false);
-    assert_eq!(v["result"]["push"]["mod"]["created"], false);
-    // The gitconfig's insteadOf is active: raw proves the stored URL is read.
-    assert_eq!(
-        v["result"]["push"]["site"]["raw"],
-        "https://raw.githubusercontent.com/alice/watane-channel/main/"
-    );
-    assert_eq!(
-        r.git(&r.remote("alice/demo"), &["tag"]),
-        format!("{0}/demo@0.1.0\n{0}/demo@0.2.0", "y".repeat(52))
-    );
-}
-
-#[test]
-fn ac8_e2e_new_from_clones_then_first_push_forks() {
-    let r = Real::new();
-    let f = &r.f;
-    // Alice's release: a tagged commit with a README in her repository.
-    let checkout = f.published(Some(UPSTREAM));
-    r.git(&checkout, &["init", "-q", "-b", "main"]);
-    r.git(&checkout, &["add", "."]);
-    r.git(&checkout, &["commit", "-qm", "parent"]);
-    r.git(&checkout, &["tag", &parent_tag()]);
-    fs::create_dir_all(r.remote("alice/reading-list")).unwrap();
-    r.git(
-        &r.remote("alice/reading-list"),
-        &["init", "-q", "--bare", "-b", "main"],
-    );
-    r.git(&checkout, &["push", "-q", UPSTREAM, "main", "--tags"]);
-    let commit = r.git(&checkout, &["rev-parse", "HEAD"]);
-
-    let (code, v) = r.run(&f.derive_args(), "carol");
-    assert_eq!(code, 0, "{v}");
-    assert_eq!(
-        v["result"]["fork"],
-        json!({"repository":UPSTREAM,"tag":parent_tag()})
-    );
-    let dir = f.root.join("ratings");
-    assert_eq!(r.git(&dir, &["rev-parse", "HEAD"]), commit);
-    assert_eq!(r.git(&dir, &["remote"]), "upstream");
-    f.assert_derived_files(&v);
-
-    // Carol's first push forks it; `upstream` ends in `.git`.
-    r.git(
-        &dir,
-        &["remote", "set-url", "upstream", &format!("{UPSTREAM}.git")],
-    );
-    fs::remove_dir_all(dir.join("logic")).unwrap();
-    let mut args = f.publish_args();
-    args[5] = dir.clone().into();
-    let (code, v) = r.run(&args, "carol");
-    assert_eq!(code, 0, "{v}");
-    assert_eq!(v["result"]["push"]["mod"]["forked"], true);
-    assert_eq!(v["result"]["push"]["mod"]["created"], true);
-    assert_eq!(v["warnings"], json!([]));
-    let remote = r.remote("carol/ratings");
-    assert_eq!(
-        fs::read_to_string(remote.join("fake-gh-parent"))
-            .unwrap()
-            .trim(),
-        "alice/reading-list"
-    );
-    assert_eq!(
-        r.git(&remote, &["symbolic-ref", "HEAD"]),
-        "refs/heads/watane"
-    );
-    assert_eq!(r.git(&remote, &["merge-base", "watane", &commit]), commit);
-    assert_eq!(
-        r.git(&remote, &["rev-parse", &release("ratings")]),
-        r.git(&remote, &["rev-parse", "watane"])
-    );
-}
-
-/// fake-gh's fork arms (15.4), which app's journeys also rely on.
-#[test]
-fn ac4_fake_gh_organization_and_login_arms() {
-    let r = Real::new();
-    let upstream = r.remote("alice/reading-list");
-    fs::create_dir_all(&upstream).unwrap();
-    r.git(&upstream, &["init", "-q", "--bare", "-b", "main"]);
-    let seed = r.f.root.join("seed");
-    fs::create_dir(&seed).unwrap();
-    r.git(&seed, &["init", "-q", "-b", "main"]);
-    r.git(&seed, &["commit", "-q", "--allow-empty", "-m", "seed"]);
-    r.git(&seed, &["push", "-q", upstream.to_str().unwrap(), "main"]);
-    let fork = |name: &str, organization: Option<&str>| {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_fake-gh"));
-        r.env(&mut cmd);
-        cmd.args([
-            "api",
-            "-X",
-            "POST",
-            "repos/alice/reading-list/forks",
-            "-f",
-            &format!("name={name}"),
-        ]);
-        if let Some(org) = organization {
-            cmd.args(["-f", &format!("organization={org}")]);
+        fn env(&self, cmd: &mut Command) {
+            let root = &self.f.root;
+            cmd.env("PATH", root.join("bin"))
+                .env("GIT_CONFIG_GLOBAL", root.join("gitconfig"))
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("FAKE_GH_ROOT", root.join("remotes"))
+                .env("FAKE_GH_USER", "alice")
+                .env_remove("GIT_AUTHOR_NAME")
+                .env_remove("GIT_AUTHOR_EMAIL")
+                .env_remove("GIT_COMMITTER_NAME")
+                .env_remove("GIT_COMMITTER_EMAIL");
         }
-        cmd.args(["-F", "default_branch_only=true", "--jq", ".full_name"])
-            .output()
-            .unwrap()
-    };
-    let org = fork("ratings", Some("acme"));
-    assert!(org.status.success(), "{org:?}");
-    assert_eq!(String::from_utf8(org.stdout).unwrap(), "acme/ratings\n");
-    assert_eq!(
-        fs::read_to_string(r.remote("acme/ratings/fake-gh-parent")).unwrap(),
-        "alice/reading-list"
-    );
-    let existing = fork("another", Some("acme"));
-    assert!(existing.status.success());
-    assert_eq!(
-        String::from_utf8(existing.stdout).unwrap(),
-        "acme/ratings\n"
-    );
-    assert!(!r.remote("acme/another").exists());
-    for login in ["alice", "ALICE"] {
-        let refused = fork("refused", Some(login));
-        assert_eq!(refused.status.code(), Some(1));
-        assert!(
-            String::from_utf8(refused.stderr)
-                .unwrap()
-                .contains("organization=")
+        fn run(&self, args: &[OsString], user: &str) -> (i32, Value) {
+            let mut c = Command::new(env!("CARGO_BIN_EXE_watane-dev"));
+            self.env(&mut c);
+            let o = c
+                .args(&args[1..])
+                .env("FAKE_GH_USER", user)
+                .env("WATANE_DEV_CACHE", self.f.home.join("cache"))
+                .output()
+                .unwrap();
+            (
+                o.status.code().unwrap(),
+                serde_json::from_slice(&o.stdout).unwrap_or_else(|_| panic!("{o:?}")),
+            )
+        }
+        fn git(&self, dir: &Path, args: &[&str]) -> String {
+            let mut c = Command::new(&self.git);
+            self.env(&mut c);
+            let o = c.arg("-C").arg(dir).args(args).output().unwrap();
+            assert!(o.status.success(), "{o:?}");
+            String::from_utf8(o.stdout).unwrap().trim().into()
+        }
+        fn remote(&self, path: &str) -> PathBuf {
+            self.f.root.join("remotes").join(path)
+        }
+    }
+    fn shell_quote(path: &Path) -> String {
+        format!("'{}'", path.display().to_string().replace('\'', "'\"'\"'"))
+    }
+
+    #[test]
+    fn ac1_e2e_first_push_creates_both_repositories_and_names_the_mod_repository() {
+        let r = Real::new();
+        let f = &r.f;
+        let (code, v) = r.run(&f.publish_args(), "alice");
+        assert_eq!(code, 0, "{v}");
+        assert_eq!(
+            v["result"]["push"],
+            json!({"site":{"repository":"https://github.com/alice/watane-channel","raw":"https://raw.githubusercontent.com/alice/watane-channel/main/","pages":"https://alice.github.io/watane-channel/","created":true,"pushed":true},"mod":{"repository":"https://github.com/alice/demo","created":true,"pushed":true,"forked":false,"tag":release("demo")}})
+        );
+        assert_eq!(
+            v["next"],
+            format!(
+                "Ask the person to set the site URL in the watane app to https://raw.githubusercontent.com/alice/watane-channel/main/ (or to https://alice.github.io/watane-channel/ if GitHub Pages serves this repository), then run: watane-dev publish --json --dir {} --home {} --push",
+                shell_quote(&f.dir),
+                shell_quote(&f.home)
+            )
+        );
+        assert!(v["result"]["link"].is_null());
+        let manifest = fs::read_to_string(f.dir.join("mod.toml")).unwrap();
+        assert!(manifest.contains("repository = \"https://github.com/alice/demo\""));
+        let package =
+            watane_pkg::Package::from_bytes(fs::read(f.home.join("requests/1-publish")).unwrap())
+                .unwrap();
+        assert_eq!(package.file("mod.toml").unwrap(), manifest.as_bytes());
+        assert_eq!(
+            r.git(
+                &r.remote("alice/demo"),
+                &["ls-tree", "-r", "--name-only", "main"]
+            ),
+            "mod.toml\nui/index.html\nwit/deps/watane-host/host.wit\nwit/world.wit"
+        );
+        assert_eq!(r.git(&r.remote("alice/demo"), &["tag"]), release("demo"));
+        assert_eq!(
+            r.git(
+                &r.remote("alice/watane-channel"),
+                &["ls-tree", "-r", "--name-only", "main"]
+            ),
+            format!(
+                "head\npackages/{}",
+                v["result"]["package"].as_str().unwrap()
+            )
         );
     }
-    let personal = fork("personal", None);
-    assert!(personal.status.success(), "{personal:?}");
-    assert_eq!(
-        String::from_utf8(personal.stdout).unwrap(),
-        "alice/personal\n"
-    );
-    assert!(r.remote("alice/personal/fake-gh-parent").exists());
+
+    #[test]
+    fn ac2_e2e_second_version_pushes_without_creating() {
+        let r = Real::new();
+        let f = &r.f;
+        assert_eq!(r.run(&f.publish_args(), "alice").0, 0);
+        let old_mod = r.git(&r.remote("alice/demo"), &["rev-parse", "main"]);
+        let old_site = r.git(&r.remote("alice/watane-channel"), &["rev-parse", "main"]);
+        fs::write(
+            f.dir.join("wit/world.wit"),
+            "package mods:demo@0.2.0; world demo {}",
+        )
+        .unwrap();
+        let (code, v) = r.run(&f.publish_args(), "alice");
+        assert_eq!(code, 0, "{v}");
+        for (name, old) in [("alice/demo", old_mod), ("alice/watane-channel", old_site)] {
+            assert_eq!(r.git(&r.remote(name), &["rev-parse", "main^"]), old);
+        }
+        assert_eq!(v["result"]["push"]["site"]["created"], false);
+        assert_eq!(v["result"]["push"]["mod"]["created"], false);
+        // The gitconfig's insteadOf is active: raw proves the stored URL is read.
+        assert_eq!(
+            v["result"]["push"]["site"]["raw"],
+            "https://raw.githubusercontent.com/alice/watane-channel/main/"
+        );
+        assert_eq!(
+            r.git(&r.remote("alice/demo"), &["tag"]),
+            format!("{0}/demo@0.1.0\n{0}/demo@0.2.0", "y".repeat(52))
+        );
+    }
+
+    #[test]
+    fn ac8_e2e_new_from_clones_then_first_push_forks() {
+        let r = Real::new();
+        let f = &r.f;
+        // Alice's release: a tagged commit with a README in her repository.
+        let checkout = f.published(Some(UPSTREAM));
+        r.git(&checkout, &["init", "-q", "-b", "main"]);
+        r.git(&checkout, &["add", "."]);
+        r.git(&checkout, &["commit", "-qm", "parent"]);
+        r.git(&checkout, &["tag", &parent_tag()]);
+        fs::create_dir_all(r.remote("alice/reading-list")).unwrap();
+        r.git(
+            &r.remote("alice/reading-list"),
+            &["init", "-q", "--bare", "-b", "main"],
+        );
+        r.git(&checkout, &["push", "-q", UPSTREAM, "main", "--tags"]);
+        let commit = r.git(&checkout, &["rev-parse", "HEAD"]);
+
+        let (code, v) = r.run(&f.derive_args(), "carol");
+        assert_eq!(code, 0, "{v}");
+        assert_eq!(
+            v["result"]["fork"],
+            json!({"repository":UPSTREAM,"tag":parent_tag()})
+        );
+        let dir = f.root.join("ratings");
+        assert_eq!(r.git(&dir, &["rev-parse", "HEAD"]), commit);
+        assert_eq!(r.git(&dir, &["remote"]), "upstream");
+        f.assert_derived_files(&v);
+
+        // Carol's first push forks it; `upstream` ends in `.git`.
+        r.git(
+            &dir,
+            &["remote", "set-url", "upstream", &format!("{UPSTREAM}.git")],
+        );
+        fs::remove_dir_all(dir.join("logic")).unwrap();
+        let mut args = f.publish_args();
+        args[5] = dir.clone().into();
+        let (code, v) = r.run(&args, "carol");
+        assert_eq!(code, 0, "{v}");
+        assert_eq!(v["result"]["push"]["mod"]["forked"], true);
+        assert_eq!(v["result"]["push"]["mod"]["created"], true);
+        assert_eq!(v["warnings"], json!([]));
+        let remote = r.remote("carol/ratings");
+        assert_eq!(
+            fs::read_to_string(remote.join("fake-gh-parent"))
+                .unwrap()
+                .trim(),
+            "alice/reading-list"
+        );
+        assert_eq!(
+            r.git(&remote, &["symbolic-ref", "HEAD"]),
+            "refs/heads/watane"
+        );
+        assert_eq!(r.git(&remote, &["merge-base", "watane", &commit]), commit);
+        assert_eq!(
+            r.git(&remote, &["rev-parse", &release("ratings")]),
+            r.git(&remote, &["rev-parse", "watane"])
+        );
+    }
+
+    /// fake-gh's fork arms (15.4), which app's journeys also rely on.
+    #[test]
+    fn ac4_fake_gh_organization_and_login_arms() {
+        let r = Real::new();
+        let upstream = r.remote("alice/reading-list");
+        fs::create_dir_all(&upstream).unwrap();
+        r.git(&upstream, &["init", "-q", "--bare", "-b", "main"]);
+        let seed = r.f.root.join("seed");
+        fs::create_dir(&seed).unwrap();
+        r.git(&seed, &["init", "-q", "-b", "main"]);
+        r.git(&seed, &["commit", "-q", "--allow-empty", "-m", "seed"]);
+        r.git(&seed, &["push", "-q", upstream.to_str().unwrap(), "main"]);
+        let fork = |name: &str, organization: Option<&str>| {
+            let mut cmd = Command::new(env!("CARGO_BIN_EXE_fake-gh"));
+            r.env(&mut cmd);
+            cmd.args([
+                "api",
+                "-X",
+                "POST",
+                "repos/alice/reading-list/forks",
+                "-f",
+                &format!("name={name}"),
+            ]);
+            if let Some(org) = organization {
+                cmd.args(["-f", &format!("organization={org}")]);
+            }
+            cmd.args(["-F", "default_branch_only=true", "--jq", ".full_name"])
+                .output()
+                .unwrap()
+        };
+        let org = fork("ratings", Some("acme"));
+        assert!(org.status.success(), "{org:?}");
+        assert_eq!(String::from_utf8(org.stdout).unwrap(), "acme/ratings\n");
+        assert_eq!(
+            fs::read_to_string(r.remote("acme/ratings/fake-gh-parent")).unwrap(),
+            "alice/reading-list"
+        );
+        let existing = fork("another", Some("acme"));
+        assert!(existing.status.success());
+        assert_eq!(
+            String::from_utf8(existing.stdout).unwrap(),
+            "acme/ratings\n"
+        );
+        assert!(!r.remote("acme/another").exists());
+        for login in ["alice", "ALICE"] {
+            let refused = fork("refused", Some(login));
+            assert_eq!(refused.status.code(), Some(1));
+            assert!(
+                String::from_utf8(refused.stderr)
+                    .unwrap()
+                    .contains("organization=")
+            );
+        }
+        let personal = fork("personal", None);
+        assert!(personal.status.success(), "{personal:?}");
+        assert_eq!(
+            String::from_utf8(personal.stdout).unwrap(),
+            "alice/personal\n"
+        );
+        assert!(r.remote("alice/personal/fake-gh-parent").exists());
+    }
 }

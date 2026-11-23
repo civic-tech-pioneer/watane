@@ -3,7 +3,9 @@
 
 use crate::env::Env;
 use crate::outcome::{Code, Problem};
+#[cfg(unix)]
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -15,9 +17,22 @@ pub struct Toolchain {
     pub sysroot: PathBuf,
     pub version: String,
 }
-fn executable(path: &Path) -> bool {
+#[cfg(unix)]
+pub(crate) fn executable(path: &Path) -> bool {
     fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }
+#[cfg(windows)]
+pub(crate) fn executable(path: &Path) -> bool {
+    path.is_file()
+        && path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"))
+}
+
+pub(crate) fn program_name(name: &str) -> String {
+    format!("{name}{}", std::env::consts::EXE_SUFFIX)
+}
+
 fn problem(detail: impl std::fmt::Display) -> Problem {
     Problem::new(
         Code::EnvToolchain,
@@ -46,20 +61,27 @@ pub fn find(env: &Env) -> Result<Toolchain, Problem> {
 pub fn discover(env: &Env) -> Result<Toolchain, Problem> {
     let (cargo, rustc) = if let Some(root) = crate::env::var_os("WATANE_DEV_TOOLCHAIN") {
         let root = PathBuf::from(root).canonicalize().map_err(problem)?;
-        (root.join("bin/cargo"), root.join("bin/rustc"))
+        (
+            root.join("bin").join(program_name("cargo")),
+            root.join("bin").join(program_name("rustc")),
+        )
     } else {
         let mut candidates = crate::env::var_os("PATH")
             .map(|p| {
                 std::env::split_paths(&p)
-                    .map(|p| p.join("rustup"))
+                    .map(|p| p.join(program_name("rustup")))
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
         if let Some(home) = crate::env::var_os("CARGO_HOME") {
-            candidates.push(PathBuf::from(home).join("bin/rustup"));
+            candidates.push(PathBuf::from(home).join("bin").join(program_name("rustup")));
         }
         if let Some(home) = crate::env::var_os("HOME") {
-            candidates.push(PathBuf::from(home).join(".cargo/bin/rustup"));
+            candidates.push(
+                PathBuf::from(home)
+                    .join(".cargo/bin")
+                    .join(program_name("rustup")),
+            );
         }
         let rustup = candidates
             .into_iter()

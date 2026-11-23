@@ -1406,6 +1406,11 @@ and the command's `next` are
 
 ### 9.4 `serve --stop`
 
+On Windows, `serve` and `serve --stop` return `env.preview_start` before
+opening the cache, building the mod or starting and stopping any process.
+The preview lifecycle requires Unix process groups.
+
+
 Stopping never runs `check` or reads the mod's manifest or world. Canonicalize
 its folder, compute h8 as in section 3, and find `<cache>/previews/*-<h8>`.
 Apply the steps below to every matching preview folder `P`, so stopping also

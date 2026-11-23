@@ -450,6 +450,7 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
             })
             .and_then(|dir| {
                 outcome.dir = Some(dir.clone());
+                preview::require_available().map_err(|e| vec![e])?;
                 let env = Env::from_process().map_err(|e| vec![e])?;
                 if stop {
                     preview::stop(&dir, &env)
@@ -1834,6 +1835,7 @@ mod tests {
         assert!(matches!(parsed.command, Command::Search { text, .. } if text == ["foo"]));
     }
 
+    #[cfg(unix)] // Uses a POSIX symlink fixture.
     #[test]
     fn ac1_missing_home_resolves_existing_symlink_ancestor() {
         let root = tempfile::tempdir().unwrap();
