@@ -1302,7 +1302,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
 - [~] **S109 (guard) the log's identity key is opened without a check-then-open.** (in flight, cloud, builder codex,
   reviewer claude; sketched 2026-11-23 by the deputy; Codex task https://chatgpt.com/local/6b047781-1a7c-83eb-8113-e4596ed7c056;
   DELIVERED as PR #21 (+270 -25, log/ only; user-sim ACCEPTED, adversary HELD, both Linux); r1 to Claude under the new
-  review-lead brief, 17:55 UTC.) `log/src/identity.rs` does `symlink_metadata` and then
+  review-lead brief, 17:55 UTC; r1: 2/3 (blocking/polish), call: another round (an interrupted first creation locks
+  the identity out; the owner check runs /usr/bin/id -u); answer round to Codex.) `log/src/identity.rs` does `symlink_metadata` and then
   `File::open` on the key path, and accepts a hard link (no nlink or uid check) and opens a device node before `fstat`
   (Leftovers [S57], S91 adversary). Outcomes: the key file is opened once with no-follow and checked on the open handle
   (regular file, nlink 1, owner the user, mode 0600); a symlink, a hard link, a FIFO or a device node at the key path is
@@ -1449,6 +1450,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
   local IPv4 address; add them (deputy decision 2026-11-23).
 - [S108 review] `watane-dev check` scans for links itself before `Mod::read`, so a maker never sees the hidden-folder
   rule there; `watane-dev add` drops the provider's `Mod::read` error (both dev).
+- [S109 review] (guard) the log directory's owner is never checked: root running over a 0700 log dir another user owns
+  lets that user swap or roll back the identity key. A check that the dir is owned by the effective user.
 - [S37] `{"release"}` in a home with no record answers 200 from dist's cache
   (app/src/api.rs:321, dist/src/fetch.rs:68). Documented as deliberate; no app test covers the
   link-then-release sequence.
@@ -1743,6 +1746,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Deputy decisions
 
+- 2026-11-23 (S109 R1.1) Accepted: on macOS the key-path open can reach a device driver's open routine before the fstat refusal. Planting a device node in the user's 0700 log dir needs root, which spec/TECHNICAL 6 does not protect against, and nothing is read; cheap to undo (a symlink_metadata pre-check).
 - 2026-11-23 (the human, with the monitor; watane-mods PR #5) New review rules from the next dispatch: the review lead
   triages its agents' findings into blocking and polish; polish never holds a merge and goes under Upkeep; the lead may
   propose to accept a blocking finding when the fix costs more than it is worth for the vision (a security finding only
