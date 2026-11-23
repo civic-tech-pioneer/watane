@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn ac3_minimum_is_numeric_and_the_chosen_path_is_canonical() {
         let dir = tempfile::tempdir().unwrap();
-        let program = program(
+        let minimum = program(
             dir.path(),
             "claude",
             r#"test "$#" = 1 && test "$1" = --version || exit 1
@@ -193,49 +193,64 @@ if read -r input; then exit 1; fi
 printf 'Claude Code 2.1.295-rc.1\n'"#,
         );
         let alias = dir.path().join("chosen");
-        symlink(&program, &alias).unwrap();
+        symlink(&minimum, &alias).unwrap();
         let checked = validate(&alias).unwrap();
-        assert_eq!(checked.path, program.canonicalize().unwrap());
+        assert_eq!(checked.path, minimum.canonicalize().unwrap());
         assert_eq!(checked.version, "2.1.295");
 
-        std::fs::write(&program, "#!/bin/sh\nprintf '2.1.294 (Claude Code)\\n'\n").unwrap();
-        let error = validate(&alias).unwrap_err();
+        let old = program(
+            dir.path(),
+            "claude-2.1.294",
+            "printf '2.1.294 (Claude Code)\\n'",
+        );
+        let error = validate(&old).unwrap_err();
         assert_eq!(error.code, "bad_input");
         assert_eq!(
             error.message,
             "Claude Code 2.1.294 is too old; watane needs 2.1.295 or later."
         );
 
-        std::fs::write(&program, "#!/bin/sh\nprintf '2.1.9\\n'\n").unwrap();
+        let single_digit = program(dir.path(), "claude-2.1.9", "printf '2.1.9\\n'");
         assert_eq!(
-            validate(&alias).unwrap_err().message,
+            validate(&single_digit).unwrap_err().message,
             "Claude Code 2.1.9 is too old; watane needs 2.1.295 or later."
         );
 
-        std::fs::write(&program, "#!/bin/sh\nprintf '2.2.0\\n'\n").unwrap();
-        assert_eq!(validate(&alias).unwrap().version, "2.2.0");
+        let next_minor = program(dir.path(), "claude-2.2.0", "printf '2.2.0\\n'");
+        assert_eq!(validate(&next_minor).unwrap().version, "2.2.0");
 
-        std::fs::write(&program, "#!/bin/sh\nprintf '10.0.0 (Claude Code)\\n'\n").unwrap();
-        assert_eq!(validate(&alias).unwrap().version, "10.0.0");
+        let two_digit = program(
+            dir.path(),
+            "claude-10.0.0",
+            "printf '10.0.0 (Claude Code)\\n'",
+        );
+        assert_eq!(validate(&two_digit).unwrap().version, "10.0.0");
     }
 
     #[test]
     fn ac3_rejects_non_program_and_malformed_or_failed_answer() {
         let dir = tempfile::tempdir().unwrap();
-        let program = program(dir.path(), "claude", "printf 'unavailable\\n2.1.295\\n'");
-        let path = program.canonicalize().unwrap();
+        let malformed = program(
+            dir.path(),
+            "claude-malformed",
+            "printf 'unavailable\\n2.1.295\\n'",
+        );
+        let path = malformed.canonicalize().unwrap();
         assert_eq!(
-            validate(&program).unwrap_err().message,
+            validate(&malformed).unwrap_err().message,
             format!("{} did not answer --version.", path.display())
         );
-        std::fs::write(&program, "#!/bin/sh\nprintf '2.1.295\\n'\nexit 1\n").unwrap();
+        let failed = program(dir.path(), "claude-failed", "printf '2.1.295\\n'; exit 1");
         assert_eq!(
-            validate(&program).unwrap_err().message,
-            format!("{} did not answer --version.", path.display())
+            validate(&failed).unwrap_err().message,
+            format!(
+                "{} did not answer --version.",
+                failed.canonicalize().unwrap().display()
+            )
         );
-        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o600)).unwrap();
+        std::fs::set_permissions(&malformed, std::fs::Permissions::from_mode(0o600)).unwrap();
         assert_eq!(
-            validate(&program).unwrap_err().message,
+            validate(&malformed).unwrap_err().message,
             format!("{} is not a program you can run.", path.display())
         );
         assert_eq!(validate(dir.path()).unwrap_err().code, "bad_input");
