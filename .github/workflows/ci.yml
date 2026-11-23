@@ -27,8 +27,6 @@ jobs:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
-    # Windows does not build yet (factory/README.md, "Windows"): it reports, it does not block.
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -68,7 +66,11 @@ jobs:
         shell: bash
         run: |
           # dev's tests run the real watane; tests never touch the runner's home.
-          export WATANE_BIN="$PWD/target/debug/watane"
+          WATANE_BIN="$PWD/target/debug/watane"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            WATANE_BIN="$WATANE_BIN.exe"
+          fi
+          export WATANE_BIN
           export WATANE_HOME="$RUNNER_TEMP/watane-home"; mkdir -p "$WATANE_HOME"
           # Tests' scratch (install's shared fakes) is reused when present; a cached partial
           # copy made 129 install tests fail. It is never worth caching.
