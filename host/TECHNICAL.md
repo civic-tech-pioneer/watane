@@ -2081,9 +2081,9 @@ the consumers'). Every line arrives once and in order. dev's `fake-claude` `load
 produces the same load for S36 (dev 18.2).
 
 **Stage B host record** (S100, 2026-11-23; `Linux vm 6.18.44-fc-v726 #1 SMP PREEMPT_DYNAMIC
-x86_64`, `nproc` 4, a virtual machine with a real fsync; nothing else running except the
-other worktree's builds, load average 1.4 to 2.7; `cd host && cargo test --test it
-agent_load:: -- --include-ignored` three passes in a row, every budget met in each). The load of
+x86_64`, `nproc` 4, a virtual machine with a real fsync; nothing else running, load average
+0.5 to 0.7; `cd host && cargo test --test it agent_load::stage_b:: -- --include-ignored` three
+passes in a row, every budget met in each). The load of
 `tests/it/agent_load.rs::stage_b::ac1_stage_b_load`: 8 sessions, 4 on each of the consumer mods
 `claude` and `claude-b`, on the fixture fake `claude` in its rate mode (50 deltas and 5 entries
 of 4 096 bytes a second, each line stamped with its write time; 10.6 s before the interrupt,
@@ -2093,19 +2093,19 @@ and 5 a second; measured 50.0 and 5.00), the size of every entry (4 096 bytes), 
 `result` is the interrupted one (subtype `error_during_execution`, written by the fake after it
 read the interrupt) and that `ended` came after the `cancel` that it times; the workload
 `55 0 4096 10.2` fails it. One `ask` answered and one left open for the `interrupt`; the turn's
-`result`, then `cancel`. Figures, pass 1 / 2 / 3 of the final runs (the p95 over the 8
-sessions is the worst, one value per kind): item delay host to consumer, the worst session's
-p95, 4 / 4 / 4 ms (budget 100; the histogram's ms upper edge, each session's p95 over its own
-580 lines); `ask` taken 5.4 / 5.6 / 2.1 ms (100); `answer` to the fake's stdin 4.0 / 6.4 / 4.2
-ms (50); `interrupt` to `ask-resolved` 6.4 / 4.9 / 10.2 ms and to the turn's `result` 8.1 / 7.2 /
-10.2 ms (1 000); `cancel` to `ended` 11.4 / 7.7 / 10.0 ms (250); writer busy 22.9 / 22.3 / 22.2%
-(50), measured by owner on the
-commit path (`TestStats.host_commits`, `host_commit_time`): the host's own commits (timer
-writes) 0 of about 4 260, so 0.0% of the share, and the mods' (the consumers' one small tally
-write per batch, mean commit 0.56 to 0.57 ms) all of it. With another build running (load
-average 5 to 9 on the 4 cores) the same load took the writer to 53 to 59% (a commit took 1.4
-ms, not 0.4), and a busy machine alone has taken the first `ask` to 260 ms: the budgets need a
-quiet machine.
+`result`, then `cancel`. Figures, pass 1 / 2 / 3 (the p95 over the 8 sessions is the worst,
+one value per kind): item delay host to consumer, the worst session's p95, 4 / 3 / 4 ms (budget
+100; the histogram's ms upper edge, each session's p95 over its own 580 lines); `ask` taken 5.1 /
+2.0 / 5.9 ms (100); `answer` to the fake's stdin 1.1 / 1.4 / 9.7 ms (50); `interrupt` to
+`ask-resolved` 10.2 / 6.1 / 9.6 ms and to the turn's `result` 15.3 / 11.0 / 9.6 ms (1 000);
+`cancel` to `ended` 8.7 / 8.2 / 7.7 ms (250); writer busy 24.6 / 23.4 / 25.3% (50), measured by
+owner on the commit path (`TestStats.host_commits`, `host_commit_time`): the host's own commits
+(timer writes) 0 of about 4 260, so 0.0% of the share, and the mods' (the consumers' one small
+tally write per batch, mean commit 0.59 to 0.64 ms) all of it. Three busy loops beside it (load
+average 2) left every figure within budget (interrupt and cancel up to 24 ms). With another build
+running (load average 5 to 9 on the 4 cores) the same load took the writer to 53 to 59% (a commit
+took 1.4 ms, not 0.6), and a build beside it once took the first `ask` to 260 ms: the budgets need
+a quiet machine.
 
 Step 2 is done when J2 passes with `app`. Steps 4 and 5 need only
 HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.

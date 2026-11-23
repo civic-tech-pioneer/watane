@@ -526,3 +526,36 @@ impl Transaction {
         Ok(changed)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{State, TimerOp};
+    use crate::Limits;
+    use std::sync::atomic::Ordering::Relaxed;
+
+    /// The writer's counters tell the host's own commits (timer writes) from the mods'
+    /// transactions: both count in `commits`, only the host's in `host_commits` (19.9).
+    #[test]
+    fn host_commits_count_timer_writes_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = State::open(dir.path()).unwrap();
+        let mut txn = state.transaction("m", &Limits::default()).unwrap();
+        txn.put("k".into(), b"v".to_vec()).unwrap();
+        assert!(txn.commit(&Vec::new, false).unwrap());
+        let after = |due| TimerOp::After {
+            key: "m/t".into(),
+            due,
+            origin: "m".into(),
+        };
+        state.timer_write(&[after(1)]).unwrap();
+        state.timer_write_with(&|| vec![after(2)]).unwrap();
+        let s = &state.stats;
+        assert_eq!(s.commits.load(Relaxed), 3);
+        assert_eq!(s.host_commits.load(Relaxed), 2);
+        let (all, host) = (
+            s.commit_nanos.load(Relaxed),
+            s.host_commit_nanos.load(Relaxed),
+        );
+        assert!(0 < host && host < all, "{host} {all}");
+    }
+}
