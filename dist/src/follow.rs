@@ -104,6 +104,23 @@ pub(crate) fn adopt_given_base(record: &mut Follow, base: &str) {
 fn follow_unseen(record: &Follow, base: &str) -> bool {
     record.base != base && !record.bases.iter().any(|b| b == base)
 }
+#[cfg(test)]
+impl Dist {
+    /// Tests only: adds a tombstone as `prune` does.
+    pub(crate) fn test_add_tombstone(&self, key: &str, tomb: Tombstone) {
+        let mut tombs = self.tombs.lock().expect("test tombs");
+        add_tombstone(&mut tombs, key.into(), tomb);
+    }
+    /// Tests only: the channel texts that hold a tombstone.
+    pub(crate) fn test_tomb_keys(&self) -> Vec<String> {
+        self.tombs
+            .lock()
+            .expect("test tombs")
+            .keys()
+            .cloned()
+            .collect()
+    }
+}
 impl Dist {
     /// A link's base the record (or a tombstone) saw but the participant has not given: its
     /// first read is a listed one, also when it turns a listed-only record followed or
@@ -116,6 +133,10 @@ impl Dist {
             .get(&key)
         {
             return !link_gives(&r.seen, r.seen_full, &r.given, base);
+        }
+        #[cfg(test)]
+        if let Some(hook) = self.test_held_gap.lock().expect("test hook").as_ref() {
+            hook();
         }
         self.tombs
             .lock()
@@ -157,6 +178,20 @@ impl Dist {
         &self,
         records: &BTreeMap<PublicKey, Follow>,
     ) -> Result<(), DistError> {
+        #[cfg(test)]
+        {
+            let mut left = self.test_fail_saves.lock().expect("test switch");
+            match left.as_mut() {
+                Some(0) => {
+                    return Err(DistError::Io {
+                        path: self.home.join("dist/follows.json"),
+                        source: std::io::Error::other("test: save fails"),
+                    });
+                }
+                Some(n) => *n -= 1,
+                None => {}
+            }
+        }
         let mut tombs = self
             .tombs
             .lock()
