@@ -1221,7 +1221,9 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   the deputy allowed Cargo.lock and workspace-hack (generated; a rebase regenerates them), answered in the Codex task; DELIVERED at dac59df; r1 `changes (8)` (adversary HELD, user-sim ACCEPTED; F1.1 the lock, already fixed), answered at 5d35804; r2 `changes (3)` (adversary BREACHED: a gzip body escapes
   the 1 MiB limit; 4 missed mutants; a macOS test); r3 `changes (1)` (a cut gzip read `bad_input`); r4 `changes (2)`
   (adversary HELD, user-sim 58/58; a truncated gzip in a complete body reads `unavailable`; the macOS version test fails
-  again); answer round to Codex, round 5 the last.) Settings gets the groups
+  again); answered at 9f7a60f (F4.1 fixed; F4.2 diagnostics only). The macOS log then showed the cause: reading the
+  `claude --version` probe's stdout fails with EINVAL on macOS, a product bug (choosing a real claude fails on a Mac);
+  sent back to Codex to fix before round 5, the last.) Settings gets the groups
   `ChatGPT` and `Claude Code`, so the agent layer's two accounts can be set up before the host stages that
   use them land. Outcomes (app FUNCTIONAL, on the real app with stand-ins):
   1. S54: Alice chooses `Sign in with ChatGPT`; the browser stand-in opens at the stand-in issuer, the
