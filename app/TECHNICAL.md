@@ -2494,7 +2494,9 @@ the registration is the human's, Q12), for a native app:
 4. **Exchange.** The app posts `grant_type=authorization_code`, the code, the
    redirect URI, the client id and the `code_verifier` to the token endpoint
    (`https`, no redirects, 15 s). The answer must hold `access_token`,
-   `refresh_token` and `id_token`.
+   `refresh_token` and `id_token`. Discovery, token and JWKS response
+   bodies each have a 1 MiB limit after content decoding. An oversized
+   body is `bad_input`.
 5. **Check.** The ID token is checked against the JWKS of the issuer: the
    signature (RS256, the key named by `kid`; the JWKS is fetched again once
    when the `kid` is unknown), `iss` equal to the issuer, `aud` equal to the
