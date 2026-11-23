@@ -317,8 +317,11 @@ its own local host.
   host is followed, at most 5 times. A base the participant gave by a link
   (follow, choose, open) may redirect anywhere. A base of a followed or
   chosen record that the participant never gave, such as one saved before
-  this rule or learned from a listing, is read like a listed base until a
-  link at it is given. (DIST-F-49)
+  this rule or learned from a listing, is read like a listed base: when
+  that base is itself local it gets no request, at follow and choose too,
+  and a redirect target is checked. A link gives a base when the
+  participant gave it before, or the channel never saw it and its record
+  is not full (TECHNICAL 4.4, DD-48). (DIST-F-49)
 
 ### Step 5
 
