@@ -840,7 +840,10 @@ mod join_tests {
             let mut total = 0;
             while total < 300_000 {
                 std::thread::sleep(Duration::from_millis(2));
-                total += reader.read(&mut buf).unwrap();
+                match reader.read(&mut buf).unwrap() {
+                    0 => break, // the writer ended: the assertions below tell why
+                    n => total += n,
+                }
             }
         });
         rig.out(vec![b'x'; 300_000]);
