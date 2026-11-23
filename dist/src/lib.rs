@@ -399,9 +399,22 @@ struct Follows {
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     seen: std::collections::BTreeMap<String, Tombstone>,
     /// Filter of the channels whose tombstone was evicted: lower-case hex of 4096 bytes
-    /// (4.4, DD-48). Absent while none was.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// (4.4, DD-48). Absent while none was; present but no string reads as malformed.
+    #[serde(
+        default,
+        deserialize_with = "present_gone",
+        skip_serializing_if = "Option::is_none"
+    )]
     gone: Option<String>,
+}
+/// A present `gone` is kept, a value that is no string as the empty text, which
+/// `Gone::from_text` reads as all bits set; only an absent one is `None` (4.4, F3.1).
+fn present_gone<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    use serde::Deserialize;
+    Ok(Some(match serde_json::Value::deserialize(d)? {
+        serde_json::Value::String(text) => text,
+        _ => String::new(),
+    }))
 }
 /// The tombstones with the filter of the evicted ones; one lock covers both.
 #[derive(Clone, Default)]
