@@ -1285,7 +1285,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   (`frobnicate`) reuses `seed`. Outcome: the test asserts `unknown_op` without depending on that budget, and passes 50
   runs in a row; no product change unless the budget itself is wrong (then say so). Touches: `net/tests/` only.
 - [~] **S108 (upkeep) pkg names what it refuses at the right path.** (in flight, cloud, builder codex, reviewer claude;
-  sketched 2026-11-23 by the deputy.) Leftovers items, all in `pkg/`; each outcome is its item's check:
+  sketched 2026-11-23 by the deputy; Codex task https://chatgpt.com/local/6b047765-d63c-83ed-aded-e08349b8d06a.) Leftovers items, all in `pkg/`; each outcome is its item's check:
   1. [S15] a link inside a hidden folder (`ui/.git/x`) is named as the hidden folder's rule, not rule `path` at the link
      (pkg/TECHNICAL.md:288; `ac1_s46_hidden_link_named` changes to match).
   2. [S57] `pack` has no list-then-stat window (as `Mod::read` was fixed): a directory swapped in for a file is named as
@@ -1294,7 +1294,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
      (up to 5 s) moves out of the default run (a `slow:` test).
   Touches: `pkg/` only. Remove the three items from Leftovers when it merges.
 - [~] **S109 (guard) the log's identity key is opened without a check-then-open.** (in flight, cloud, builder codex,
-  reviewer claude; sketched 2026-11-23 by the deputy.) `log/src/identity.rs` does `symlink_metadata` and then
+  reviewer claude; sketched 2026-11-23 by the deputy; Codex task https://chatgpt.com/local/6b047781-1a7c-83eb-8113-e4596ed7c056.) `log/src/identity.rs` does `symlink_metadata` and then
   `File::open` on the key path, and accepts a hard link (no nlink or uid check) and opens a device node before `fstat`
   (Leftovers [S57], S91 adversary). Outcomes: the key file is opened once with no-follow and checked on the open handle
   (regular file, nlink 1, owner the user, mode 0600); a symlink, a hard link, a FIFO or a device node at the key path is
