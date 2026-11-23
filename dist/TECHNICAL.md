@@ -1104,8 +1104,8 @@ already holds (W25, DD-28):
    (5.9, 4.5). A failed channel read or a read (`Current` or `Behind`)
    after which the stored view lacks the release moves to the next base.
    After a successful read with the release in the stored view, try
-   5.7 steps 2 to 8. Package `NotFound` (404 or 410), `Network` and `Timeout`
-   move to the next base. Package verification failures, withdrawals
+   5.7 steps 2 to 8. Package `NotFound` (404 or 410), `Network`, `Timeout`
+   and a refused redirect (`BadUrl`, 4.5) move to the next base. Package verification failures, withdrawals
    and compromises end the fetch with their cause. A provider read
    creates no record and changes no existing record. The verified entries
    stay in `<home>/log/` as for the check before a `list` (5.9).
