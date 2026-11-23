@@ -1216,7 +1216,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
 
 - [~] **S102 Alice connects her agent accounts in Settings (app stage L, part: 19.1, 19.3).** (in flight,
   cloud, builder codex, reviewer claude; sketched 2026-11-23 by the deputy; Codex task
-  https://chatgpt.com/local/6b041e07-d008-83eb-b737-65d3b6dc704c, ~10:55 UTC.) Settings gets the groups
+  https://chatgpt.com/local/6b041e07-d008-83eb-b737-65d3b6dc704c, ~11:05 UTC.) Settings gets the groups
   `ChatGPT` and `Claude Code`, so the agent layer's two accounts can be set up before the host stages that
   use them land. Outcomes (app FUNCTIONAL, on the real app with stand-ins):
   1. S54: Alice chooses `Sign in with ChatGPT`; the browser stand-in opens at the stand-in issuer, the
@@ -1233,6 +1233,18 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   tests replace with a stand-in issuer (app 18, Q12). Consents (19.2) and the judge key (19.4) are left for
   the slices that build host A3 and A5. A security boundary (an OAuth flow, tokens on disk): the adversary
   rule applies. Runs beside S100 (host/, dev/): no shared file.
+- [~] **S104 (upkeep) dist reads past a bad mirror and says what is stale.** (in flight, cloud, builder codex,
+  reviewer claude; sketched 2026-11-23 by the deputy.) Three Leftovers items, all in `dist/`; each outcome is
+  its item's check:
+  1. [S49] (core) a mirror that answers 404 for the package makes dist try the next base, as a down
+     base does; the package comes from the first base that has it (dist/TECHNICAL.md:990).
+  2. [S49] (core) by DD-33 the cache-path link never points at a base known dead at link time
+     (dist/TECHNICAL.md:1270); `ac4_cache_hit_no_record_links_first_base` serves a dead host and
+     asserts the link: that test changes to assert a live base.
+  3. [S57] (polish) `StaleBases` counts in words ("1 base", "2 bases"), and a slug that exists at no
+     base reads as not found, not as stale.
+  Touches: `dist/` only (code, tests, `dist/TECHNICAL.md` where a rule changes). Runs beside S100 (host/,
+  dev/) and S102 (app/): no shared file. Remove the three items from Leftovers when it merges.
 - [ ] **S103 Alice gives a mod's agents a folder, and can take it back (stage C, the watane half: host A3,
   app 19.2).** (sketch ahead; after S100 merges: it touches host/src/agent/, as S100 does.) agentic-harness
   stage C: the workspace consent held before `initialized`, the consent view's words (app S58, S60),
