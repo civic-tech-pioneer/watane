@@ -471,12 +471,15 @@ which `Host::open` creates (3.1 step 6).
    that start time; a record without them, or with no live leader, is
    dropped unkilled (S100-CAP, item 5). The check and the signal are one step
    (review r6, F6.3; the deputy's ruling): on Linux the host opens a pidfd of
-   the leader first, which pins its pid (and so the group's number) for as
-   long as it is open, checks the start time and boot id with it open, then
-   signals the group and closes it. Where that cannot be done (macOS, where
-   `lstart` resolves to a second and there is no pidfd), no group is signalled
-   at open: the record is dropped and the leftover is logged; a leftover
-   process is a lesser harm than a signal to an unrelated group. A record is
+   the leader, checks the start time and boot id with it open, and sends
+   SIGKILL to that exact process through the pidfd (`pidfd_send_signal`), so
+   the signal can reach no other process. An open pidfd does not keep the pid
+   number from being reused once the process is reaped, so the host does not
+   signal the group by its number at open: other members of a crashed run's
+   group are left and logged. Where no pidfd exists (macOS, where `lstart`
+   also resolves to a second), nothing is signalled at open: the record is
+   dropped and the leftover is logged. A leftover process is a lesser harm than
+   a signal to an unrelated group. A record is
    identified by its whole line (pgid, boot id, start time); a run removes
    only its own line (review r6, F6.4).
 4. Read each installed mod with `Mod::read`, compile its `logic.wasm` when
