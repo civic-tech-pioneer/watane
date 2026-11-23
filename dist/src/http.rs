@@ -1834,4 +1834,194 @@ mod tests {
             assert!(file["seen"].get(&key).is_some(), "{key}: {file}");
         }
     }
+
+    // Review r5 (Claude). F5.1 to F5.3 are the reviewer's red tests as given.
+
+    /// F5.1: a record a failed unfollow left is pruned before it is read, so the call
+    /// answers NotFollowed with no request and no panic.
+    #[test]
+    fn v_refresh_channel_after_a_failed_unfollow_makes_no_request() {
+        let w = world();
+        let (_dir, eve) = w.eve(&[&w.a]);
+        eve.follow(&w.link(&w.a)).unwrap();
+        sync_fails(1);
+        assert_eio(eve.unfollow(&w.key));
+        let before = w.a.count();
+        let got = eve.refresh_channel(&w.key);
+        assert!(matches!(got, Err(DistError::NotFollowed { .. })), "{got:?}");
+        assert_eq!(w.a.count(), before, "a request for an unfollowed channel");
+    }
+
+    /// F5.2: `settle` returns the error when its own take-back leaves the store unsynced.
+    #[test]
+    fn v_a_take_back_that_leaves_the_store_unsynced_stops_the_call() {
+        let w = world();
+        let v = world();
+        let (_dir, eve) = w.eve(&[&w.a]);
+        eve.follow(&w.link(&w.a)).unwrap();
+        let entries = v.publisher.entries(&v.key, 1, 100, usize::MAX).unwrap();
+        // The kept mark saves; its take back fails before the rename and is left pending.
+        *eve.test_fail_saves.lock().unwrap() = Some(1);
+        let got = eve.ingest(&v.key, entries, crate::Reason::Kept);
+        assert!(matches!(got, crate::Ingested::Failed(_)), "{got:?}");
+        *eve.test_fail_saves.lock().unwrap() = None;
+        // The pending take back installs its file, but its directory sync fails.
+        sync_fails(1);
+        let before = w.a.count();
+        assert_eio(eve.fetch(&w.reference).map(|_| ()));
+        assert_eq!(w.a.count(), before, "a request while the store is unsynced");
+    }
+
+    /// F5.3: a save inside `read_link` that leaves the store unsynced stops it before the
+    /// package request.
+    #[test]
+    fn adv_s105_r9_read_link_requests_the_package_after_its_save_unsynced() {
+        let w = world();
+        let (_dir, eve) = w.eve(&[&w.a]);
+        eve.follow(&w.link(&w.a)).unwrap();
+        sync_fails(u32::MAX);
+        let got = eve.read_link(&w.link(&w.a));
+        sync_fails(0);
+        assert!(eve.unsynced.lock().unwrap().dirty, "the store is unsynced");
+        let path = format!("/{}", w.package);
+        assert!(
+            !w.a.requests.lock().unwrap().contains(&path),
+            "a package request from an unsynced store: {:?}",
+            got.map(|f| f.link)
+        );
+    }
+
+    /// P5.1: a retried unfollow answers Ok also when another call finished its prune.
+    #[test]
+    fn v_a_retried_unfollow_after_a_refresh_is_ok() {
+        let w = world();
+        let (_dir, eve) = w.eve(&[&w.a]);
+        eve.follow(&w.link(&w.a)).unwrap();
+        sync_fails(1);
+        assert_eio(eve.unfollow(&w.key));
+        eve.refresh();
+        eve.unfollow(&w.key).unwrap();
+    }
+
+    /// P5.1: as an unfollow, a retried drop_index after a refresh.
+    #[test]
+    fn v_a_retried_drop_index_after_a_refresh_is_ok() {
+        let w = world();
+        let (_dir, eve) = w.eve(&[&w.a]);
+        eve.choose_index(&crate::Link::new(w.key, &w.a.url, None).unwrap())
+            .unwrap();
+        sync_fails(1);
+        assert_eio(eve.drop_index(&w.key));
+        eve.refresh();
+        eve.drop_index(&w.key).unwrap();
+    }
+
+    /// P5.2: while unsynced, an asked ingest stores (it changes no record) and a kept one,
+    /// which marks a record, does not.
+    #[test]
+    fn v_while_unsynced_an_asked_ingest_stores_and_a_kept_one_does_not() {
+        let w = world();
+        let (_dir, eve) = w.eve(&[]);
+        eve.unsynced.lock().unwrap().dirty = true;
+        sync_fails(u32::MAX);
+        let entries = w.publisher.entries(&w.key, 0, 100, usize::MAX).unwrap();
+        let kept = eve.ingest(&w.key, entries.clone(), crate::Reason::Kept);
+        assert!(matches!(kept, crate::Ingested::Failed(_)), "{kept:?}");
+        assert!(eve.log.head(&w.key).unwrap().is_none());
+        let asked = eve.ingest(&w.key, entries, crate::Reason::Asked);
+        sync_fails(0);
+        assert!(matches!(asked, crate::Ingested::Stored(_)), "{asked:?}");
+    }
+
+    /// The r5 gate, one test per entry point: an unsynced store whose sync keeps failing
+    /// returns the Io error and requests nothing.
+    fn unsynced_world(followed: bool) -> (World, tempfile::TempDir, Dist) {
+        let w = world();
+        let (dir, eve) = w.eve(&[&w.a, &w.b]);
+        if followed {
+            eve.follow(&w.link(&w.a)).unwrap();
+        }
+        eve.unsynced.lock().unwrap().dirty = true;
+        sync_fails(u32::MAX);
+        (w, dir, eve)
+    }
+    fn assert_no_requests(w: &World, result: Result<(), DistError>) {
+        sync_fails(0);
+        assert_eq!(
+            (w.a.count(), w.b.count()),
+            (0, 0),
+            "a request while unsynced"
+        );
+        assert_eio(result);
+    }
+    fn requests_before(w: &World) -> (usize, usize) {
+        (w.a.count(), w.b.count())
+    }
+    #[test]
+    fn v_gate_read_link() {
+        let (w, _dir, eve) = unsynced_world(false);
+        assert_no_requests(&w, eve.read_link(&w.link(&w.a)).map(|_| ()));
+    }
+    #[test]
+    fn v_gate_read_link_followed() {
+        let (w, _dir, eve) = unsynced_world(true);
+        let before = requests_before(&w);
+        let got = eve.read_link(&w.link(&w.a)).map(|_| ());
+        sync_fails(0);
+        assert_eq!(requests_before(&w), before, "a request while unsynced");
+        assert_eio(got);
+    }
+    #[test]
+    fn v_gate_fetch() {
+        let (w, _dir, eve) = unsynced_world(true);
+        let before = requests_before(&w);
+        let got = eve.fetch(&w.reference).map(|_| ());
+        sync_fails(0);
+        assert_eq!(requests_before(&w), before, "a request while unsynced");
+        assert_eio(got);
+    }
+    #[test]
+    fn v_gate_follow() {
+        let (w, _dir, eve) = unsynced_world(false);
+        assert_no_requests(&w, eve.follow(&w.link(&w.a)).map(|_| ()));
+    }
+    #[test]
+    fn v_gate_choose_index() {
+        let (w, _dir, eve) = unsynced_world(false);
+        let link = crate::Link::new(w.key, &w.a.url, None).unwrap();
+        assert_no_requests(&w, eve.choose_index(&link).map(|_| ()));
+    }
+    #[test]
+    fn v_gate_refresh_channel() {
+        let (w, _dir, eve) = unsynced_world(true);
+        let before = requests_before(&w);
+        let got = eve.refresh_channel(&w.key).map(|_| ());
+        sync_fails(0);
+        assert_eq!(requests_before(&w), before, "a request while unsynced");
+        assert_eio(got);
+    }
+    #[test]
+    fn v_gate_refresh() {
+        let (w, _dir, eve) = unsynced_world(true);
+        let before = requests_before(&w);
+        let reports = eve.refresh();
+        sync_fails(0);
+        assert_eq!(requests_before(&w), before, "a request while unsynced");
+        assert!(!reports.is_empty());
+        for report in reports {
+            match report.outcome {
+                crate::Outcome::Failed { cause } => assert_eio(Err(cause)),
+                other => panic!("{other:?}"),
+            }
+        }
+    }
+    #[test]
+    fn v_gate_open_link_at_a_new_base() {
+        let (w, _dir, eve) = unsynced_world(true);
+        let before = requests_before(&w);
+        let got = eve.open_link(&w.link(&w.b)).map(|_| ());
+        sync_fails(0);
+        assert_eq!(requests_before(&w), before, "a request while unsynced");
+        assert_eio(got);
+    }
 }
