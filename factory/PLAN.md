@@ -1290,7 +1290,9 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   failed unfollow requests and panics, poisoning the store's locks; F5.2/F5.3 requests while unsynced), posted with a deputy
   ruling (one gate before any request); r5 answer through the routine. Round 6 is worth it: blocking 5, 5, 3, 3, 3 is
   flat, but F5.1 is a panic that must close, the gate closes the class by construction, and a r6 return of the class
-  that loses no seen/given is accepted until S107 (pre-announced on the PR).) Three Leftovers items, all in `dist/`:
+  that loses no seen/given is accepted until S107 (pre-announced on the PR); r5 answered at 8f253ba (22:35, all three,
+  P5.1, P5.2); r6 to Claude again, in the r5 reviewer's session (Codex's filter withheld this slice's review twice: the
+  reviewer for this slice is Claude until it merges), 22:38 UTC.) Three Leftovers items, all in `dist/`:
   1. (guard) a redirect from a listed or hint base is checked like the base itself: a redirect target on `localhost`
      or a local IP literal is refused, as A35/A37 refuse the base (dist/TECHNICAL.md:1273, 1278). Deputy decision: check
      each redirect target (not "Not protected"); the 5-redirect limit stays.
