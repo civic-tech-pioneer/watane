@@ -338,10 +338,10 @@ async fn ac1_fetch_link_verified_without_follow_or_consent() {
     let confirm = Recording::new(true);
     let dist = open(home.path(), Arc::clone(&confirm), true);
     let follows = home.path().join("dist/follows.json");
-    let before = std::fs::read(&follows).ok();
+    let link = published.link.unwrap();
     let (status, headers, bytes) = fetch(
         Some(Arc::clone(&dist)),
-        json!({"link":published.link.unwrap().to_string()}),
+        json!({"link":link.to_string()}),
     )
     .await;
     assert_eq!(status, 200, "{}", String::from_utf8_lossy(&bytes));
@@ -355,7 +355,14 @@ async fn ac1_fetch_link_verified_without_follow_or_consent() {
         watane_dist::PackageId::of(&bytes).to_string()
     );
     assert_eq!(bytes, package());
-    assert_eq!(std::fs::read(follows).ok(), before);
+    // dist A40: no record; the only change is Carol's provenance tombstone.
+    let file: Value = serde_json::from_slice(&std::fs::read(follows).unwrap()).unwrap();
+    let carol_key = link.channel().to_string();
+    assert_eq!(file["channels"], json!({}), "{file}");
+    let seen = file["seen"].as_object().expect("tombstones");
+    assert_eq!(seen.keys().collect::<Vec<_>>(), [&carol_key], "{file}");
+    assert_eq!(seen[&carol_key]["seen"], json!([link.base()]), "{file}");
+    assert_eq!(seen[&carol_key]["given"], json!([]), "{file}");
     assert!(dist.followed().unwrap().is_empty());
     assert!(dist.own().unwrap().releases.is_empty());
     assert!(confirm.requests.lock().unwrap().is_empty());

@@ -338,7 +338,8 @@ its own local host.
   no request either. Given Eve has a listed record for Carol whose base is
   dead and the package is not cached, when Eve's own channel lists Carol at
   a live base, the fetch tries the record's base, then that base, and gives
-  the package; the record is unchanged. A redirect target of a provider
+  the package; the record's bases and timestamps are unchanged (its `seen`
+  keeps each base read, 4.4). A redirect target of a provider
   base or of a `read_link` read gets the same address check as the base; a
   refused redirect fails that base, and a provider fetch tries the next
   eligible base. (DIST-F-51)
@@ -354,7 +355,9 @@ its own local host.
   of `ratings` has Dave's base for Carol, and no dead base is read before
   it. (DIST-F-50)
 - **A40 Read a link.** When Eve calls `read_link` on Carol's link, then
-  she gets the verified package and `follows.json` is unchanged. A link on
+  she gets the verified package and no record of Carol in `follows.json`:
+  its only change is a tombstone for Carol whose `seen` holds the link's
+  base (the provenance of 4.4, S105 r8). No consent is asked. A link on
   `127.0.0.1` with `listed_local` false is `BadUrl`, with no request.
   (DIST-F-54)
 - **A41 Offline provider.** Given A36 done once, when every host stops,
