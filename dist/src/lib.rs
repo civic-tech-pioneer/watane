@@ -253,7 +253,7 @@ impl Dist {
                         .into();
                 }
                 for base in record.bases.clone().iter().chain([&record.base]) {
-                    follow::note_seen(&mut record.seen, base);
+                    follow::note_seen(&mut record.seen, &mut record.seen_full, base);
                 }
                 if !record.followed && !record.index && !record.base.is_empty() {
                     if record.bases.is_empty() {
@@ -264,6 +264,21 @@ impl Dist {
                 follows.insert(channel, record);
             }
             tombs = file.seen;
+            for (key, tomb) in &mut tombs {
+                let channel = key.parse().map_err(|e: KeyTextError| DistError::Corrupt {
+                    path: path.clone(),
+                    cause: e.to_string(),
+                })?;
+                for base in tomb.given.iter_mut().chain(&mut tomb.seen) {
+                    *base = Link::new(channel, base, None)
+                        .map_err(|e| DistError::Corrupt {
+                            path: path.clone(),
+                            cause: e.to_string(),
+                        })?
+                        .base()
+                        .into();
+                }
+            }
         }
         let base = match read_json::<Site>(&dir.join("site.json"))? {
             None => None,
@@ -352,6 +367,9 @@ struct Follow {
     /// Every base the record ever held, at most 16 (4.4, DD-48).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     seen: Vec<String>,
+    /// `seen` was full and refused a base: a link then gives no new base (4.4, DD-48).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    seen_full: bool,
     #[serde(rename = "followed_at")]
     _followed_at: u64,
     #[serde(rename = "last_attempt")]
@@ -373,6 +391,8 @@ struct Follows {
 struct Tombstone {
     seen: Vec<String>,
     given: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    seen_full: bool,
     at: u64,
 }
 #[derive(serde::Deserialize)]

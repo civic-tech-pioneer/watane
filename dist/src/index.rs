@@ -364,7 +364,7 @@ impl Dist {
             record.bases = ordered;
             record.base = record.bases[0].clone();
             for base in &record.bases {
-                follow::note_seen(&mut record.seen, base);
+                follow::note_seen(&mut record.seen, &mut record.seen_full, base);
             }
         }
         self.save_follows(&next)?;
@@ -511,9 +511,23 @@ impl Dist {
             .tombs
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        for (key, Follow { seen, given, .. }) in gone {
+        for (
+            key,
+            Follow {
+                seen,
+                given,
+                seen_full,
+                ..
+            },
+        ) in gone
+        {
             let at = follow::now();
-            let tomb = crate::Tombstone { seen, given, at };
+            let tomb = crate::Tombstone {
+                seen,
+                given,
+                seen_full,
+                at,
+            };
             follow::add_tombstone(&mut tombs, key.to_string(), tomb);
         }
         drop(tombs);

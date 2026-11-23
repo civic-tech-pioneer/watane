@@ -275,3 +275,56 @@ fn ac6_a_file_without_seen_marks_its_held_bases_seen() {
     assert!(r.get("given").is_none(), "an empty given is not written");
     assert_eq!(bases(&home, key), [a, b]);
 }
+
+/// A fresh home whose `follows.json` holds only `tombs` (top-level `seen`), then a follow of `base`.
+fn follow_after_tombstone(w: World, tombs: serde_json::Value, base: &str) -> serde_json::Value {
+    let home = w.bob_home.path().to_owned();
+    let key = w.key;
+    let link = w.link(base);
+    drop(w.bob);
+    let file = serde_json::json!({"version": 1, "channels": {}, "seen": {key.to_string(): tombs}});
+    std::fs::create_dir_all(home.join("dist")).unwrap();
+    std::fs::write(home.join("dist/follows.json"), file.to_string()).unwrap();
+    let bob = open(&home);
+    let _ = bob.follow(&link);
+    record(&home, key)
+}
+
+/// AC4 (DD-48): a tombstone's bases are normalised on load as a record's are, so one
+/// spelled without the trailing slash still blocks a link at `a`.
+#[test]
+fn ac4_a_tombstone_base_is_normalised_on_load() {
+    let w = world();
+    let (a, spelled) = (w.a(), w.a().trim_end_matches('/').to_owned());
+    assert_ne!(spelled, a);
+    let r = follow_after_tombstone(
+        w,
+        serde_json::json!({"seen": [spelled], "given": [], "at": 1}),
+        &a,
+    );
+    assert!(
+        r.get("given").is_none(),
+        "a link at a tombstoned base gave it: {r}"
+    );
+    assert_eq!(r["seen"], serde_json::json!([a]));
+}
+
+/// AC3 (DD-48 r5): a tombstone carries `seen_full` and a new record takes it back, so a
+/// link at an unseen base gives nothing and the record writes `seen_full`.
+#[test]
+fn ac3_a_new_record_takes_seen_full_back_from_its_tombstone() {
+    let w = world();
+    let a = w.a();
+    let seen: Vec<String> = (0..16).map(|n| format!("http://h{n}.invalid/")).collect();
+    let r = follow_after_tombstone(
+        w,
+        serde_json::json!({"seen": seen, "given": [], "seen_full": true, "at": 1}),
+        &a,
+    );
+    assert!(
+        r.get("given").is_none(),
+        "an unseen base of a full seen was given: {r}"
+    );
+    assert_eq!(r["seen_full"], true);
+    assert_eq!(r["seen"], serde_json::json!(seen));
+}
