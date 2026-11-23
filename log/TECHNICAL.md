@@ -374,7 +374,9 @@ open file, then
 exists. On `AlreadyExists` another opener won: remove the temporary file and
 read the winner's file. Then remove the temporary file and `sync_all` the
 directory. The directory lock keeps concurrent openers from observing the
-temporary second link. Hold the seed in `zeroize::Zeroizing`.
+temporary second link. If creation is interrupted between linking and removing
+the temporary name, a later open refuses the multiply linked key. Hold the
+seed in `zeroize::Zeroizing`.
 
 Replace the key (restore only): write the temporary file in the same way,
 then `fs::rename` it over `identity.key`, then `sync_all` the directory.
