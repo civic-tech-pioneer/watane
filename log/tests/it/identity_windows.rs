@@ -1,0 +1,80 @@
+//! Windows identity storage tests for TECHNICAL 4.7.
+
+use std::fs;
+use std::process::Command;
+use watane_log::{Error, Log};
+
+#[test]
+fn s110_key_is_private_and_reopens() {
+    let temp = tempfile::tempdir().expect("create temporary parent");
+    let dir = temp.path().join("fresh/nested");
+    let log = Log::open(&dir).expect("create private identity");
+    let path = dir.join("identity.key");
+    assert_eq!(fs::metadata(&path).expect("stat key").len(), 32);
+    assert_eq!(
+        Log::open(&dir).expect("reopen private identity").identity(),
+        log.identity()
+    );
+    let key = fs::File::open(&path).expect("open key");
+    watane_log_windows_fs::check_owner_only(&key).expect("key must be owner-only");
+}
+
+#[test]
+fn s110_key_reparse_point_is_refused() {
+    let temp = crate::oracle::directory();
+    let dir = temp.path();
+    fs::create_dir(dir.join("target")).expect("create junction target");
+    fs::write(dir.join("target/marker"), b"untouched").expect("write target marker");
+    let result = Command::new("cmd.exe")
+        .args(["/d", "/c", "mklink", "/J", "identity.key", "target"])
+        .current_dir(dir)
+        .output()
+        .expect("create NTFS junction");
+    assert!(result.status.success(), "{result:?}");
+    let error = Log::open(dir).expect_err("refuse reparse point");
+    assert!(error.to_string().contains("reparse point"), "{error}");
+    assert_eq!(
+        fs::read(dir.join("target/marker")).expect("read marker"),
+        b"untouched"
+    );
+}
+
+#[test]
+fn s110_exposed_acl_is_refused_without_touching_key() {
+    let temp = crate::oracle::directory();
+    let dir = temp.path();
+    drop(Log::open(dir).expect("create private identity"));
+    let path = dir.join("identity.key");
+    let before = fs::read(&path).expect("read seed");
+    let result = Command::new("icacls.exe")
+        .arg(&path)
+        .args(["/grant", "*S-1-1-0:(R)"])
+        .output()
+        .expect("expose key to Everyone");
+    assert!(result.status.success(), "{result:?}");
+    let error = Log::open(dir).expect_err("refuse exposed identity");
+    assert!(matches!(error, Error::Io { .. }));
+    assert!(
+        error.to_string().contains("owner-only Windows ACL"),
+        "{error}"
+    );
+    assert_eq!(fs::read(&path).expect("read unchanged seed"), before);
+}
+
+#[test]
+fn s110_exposed_directory_refuses_key_creation() {
+    let temp = crate::oracle::directory();
+    let dir = temp.path();
+    let result = Command::new("icacls.exe")
+        .arg(dir)
+        .args(["/grant", "*S-1-1-0:(R)"])
+        .output()
+        .expect("expose directory to Everyone");
+    assert!(result.status.success(), "{result:?}");
+    let error = Log::open(dir).expect_err("refuse exposed directory");
+    assert!(
+        error.to_string().contains("owner-only Windows ACL"),
+        "{error}"
+    );
+    assert!(!dir.join("identity.key").exists());
+}

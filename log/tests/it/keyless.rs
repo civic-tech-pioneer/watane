@@ -3,6 +3,7 @@
 use crate::oracle;
 use std::collections::BTreeMap;
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use watane_log::{Entry, Error, Log, PublicKey, Status};
@@ -12,8 +13,12 @@ fn snapshot(dir: &Path) -> BTreeMap<PathBuf, (u32, Vec<u8>)> {
         .unwrap()
         .map(|e| {
             let path = e.unwrap().path();
-            let mode = fs::metadata(&path).unwrap().permissions().mode();
-            (path.clone(), (mode, fs::read(path).unwrap()))
+            let permissions = fs::metadata(&path).unwrap().permissions();
+            #[cfg(unix)]
+            let protection = permissions.mode();
+            #[cfg(windows)]
+            let protection = u32::from(permissions.readonly());
+            (path.clone(), (protection, fs::read(path).unwrap()))
         })
         .collect()
 }
@@ -23,6 +28,7 @@ fn ac1_keyless_creates_store_and_reads_oracle_chain() {
     let temp = oracle::directory();
     let dir = temp.path().join("fresh/nested");
     let log = Log::open_keyless(&dir).unwrap();
+    #[cfg(unix)] // The Unix directory uses mode 0700.
     assert_eq!(
         fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
         0o700
@@ -50,29 +56,36 @@ fn ac1_keyless_creates_store_and_reads_oracle_chain() {
 
 #[test]
 fn ac2_keyless_refuses_every_form_of_key_unchanged() {
-    for form in 0..5 {
+    // The last two fixtures exercise POSIX symlinks.
+    let cases = if cfg!(unix) { 5 } else { 3 };
+    for form in 0..cases {
         let dir = oracle::directory();
         let path = dir.path().join("identity.key");
         match form {
             0 | 1 => {
                 fs::write(&path, if form == 0 { &oracle::SEED[..] } else { b"bad" }).unwrap();
+                #[cfg(unix)] // Exercise an exposed Unix mode.
                 fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap();
             }
             2 => fs::create_dir(&path).unwrap(),
-            _ => {
+            #[cfg(unix)] // The extra cases are POSIX symlinks.
+            3 | 4 => {
                 let target = dir.path().join("target");
                 if form == 3 {
                     fs::write(&target, oracle::SEED).unwrap();
                 }
                 symlink(target, &path).unwrap();
             }
+            _ => unreachable!("fixture case outside the supported range"),
         }
+        #[cfg(unix)]
         let before = fs::symlink_metadata(&path).unwrap();
         let bytes = fs::read(&path).ok();
         let link = fs::read_link(&path).ok();
         assert!(
             matches!(Log::open_keyless(dir.path()), Err(Error::HasIdentity { path: p }) if p == path)
         );
+        #[cfg(unix)] // Verify the Unix mode remains untouched.
         assert_eq!(
             fs::symlink_metadata(&path).unwrap().permissions().mode(),
             before.permissions().mode()
@@ -140,20 +153,33 @@ fn ac4_drop_unused_identity_and_preserve_used_identity() {
             assert_eq!(log.identity(), Some(author));
             assert!(snapshot(dir.path()) == before, "directory files changed");
         } else {
-            log.drop_identity().unwrap();
-            assert!(!dir.path().join("identity.key").exists());
-            assert_eq!(log.identity(), None);
-            assert!(matches!(log.append("a", b""), Err(Error::NoIdentity)));
-            assert_eq!(
-                db.query_row(
-                    "SELECT count(*) FROM meta WHERE key='unconfirmed'",
-                    [],
-                    |r| r.get::<_, i64>(0)
-                )
-                .unwrap(),
-                0
-            );
-            assert_eq!(Log::open_keyless(dir.path()).unwrap().identity(), None);
+            #[cfg(windows)] // Windows refuses when it cannot durably remove the key.
+            {
+                let error = log.drop_identity().unwrap_err();
+                assert!(
+                    matches!(&error, Error::Io { source, .. } if source.kind() == std::io::ErrorKind::Unsupported)
+                );
+                assert!(error.to_string().contains("durable directory flush"));
+                assert_eq!(log.identity(), Some(author));
+                assert!(snapshot(dir.path()) == before, "directory files changed");
+            }
+            #[cfg(unix)] // Unix flushes the directory after removing the identity.
+            {
+                log.drop_identity().unwrap();
+                assert!(!dir.path().join("identity.key").exists());
+                assert_eq!(log.identity(), None);
+                assert!(matches!(log.append("a", b""), Err(Error::NoIdentity)));
+                assert_eq!(
+                    db.query_row(
+                        "SELECT count(*) FROM meta WHERE key='unconfirmed'",
+                        [],
+                        |r| r.get::<_, i64>(0)
+                    )
+                    .unwrap(),
+                    0
+                );
+                assert_eq!(Log::open_keyless(dir.path()).unwrap().identity(), None);
+            }
         }
     }
 }

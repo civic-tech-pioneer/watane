@@ -2,7 +2,7 @@
 
 use crate::oracle;
 use watane_log::{Entry, Error, Log, PublicKey, Status};
-fn fixture() -> (tempfile::TempDir, Log, PublicKey, Vec<Entry>) {
+fn fixture() -> (oracle::Directory, Log, PublicKey, Vec<Entry>) {
     let d = oracle::directory();
     let l = Log::open(d.path()).unwrap();
     let a = PublicKey::from_bytes(&oracle::PUBLIC).unwrap();
@@ -65,11 +65,19 @@ fn ac2_forks_persist_and_freeze() {
 #[test]
 fn ac2_compromised_own_refuses_append() {
     let d = oracle::directory();
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(d.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     let path = d.path().join("identity.key");
-    std::fs::write(&path, oracle::SEED).unwrap();
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::write(&path, oracle::SEED).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    #[cfg(windows)]
+    {
+        use std::io::Write;
+        let mut file = watane_log_windows_fs::create_file(&path).unwrap();
+        file.write_all(&oracle::SEED).unwrap();
+    }
     let l = Log::open(d.path()).unwrap();
     let e = l.append("a", b"").unwrap();
     let other = Entry::decode(&oracle::entry(0, None, 0, "a", b"fork")).unwrap();

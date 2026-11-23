@@ -8510,8 +8510,16 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "unicode-normalization",
+ "watane-log-windows-fs",
  "workspace-hack",
  "zeroize",
+]
+
+[[package]]
+name = "watane-log-windows-fs"
+version = "0.1.0"
+dependencies = [
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
