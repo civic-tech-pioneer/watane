@@ -1252,6 +1252,16 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
      base reads as not found, not as stale.
   Touches: `dist/` only (code, tests, `dist/TECHNICAL.md` where a rule changes). Runs beside S100 (host/,
   dev/) and S102 (app/): no shared file. Remove the three items from Leftovers when it merges.
+- [~] **S105 (upkeep) a listed base cannot lead dist into the local network.** (in flight, cloud, builder claude,
+  reviewer codex; sketched 2026-11-23 by the deputy from S104's review.) Three Leftovers items, all in `dist/`:
+  1. (guard) a redirect from a listed or hint base is checked like the base itself: a redirect target on `localhost`
+     or a local IP literal is refused, as A35/A37 refuse the base (dist/TECHNICAL.md:1273, 1278). Deputy decision: check
+     each redirect target (not "Not protected"); the 5-redirect limit stays.
+  2. (guard) `localhost.` and other trailing-dot forms are local for `local_base` (`dist/src/index.rs:577`).
+  3. (core) a cache miss with a listed record still tries Eve's own mirrors after the record's base fails, as outcome 1
+     of S104 does without a record (`dist/src/fetch.rs` ~107-125).
+  Touches: `dist/` only. Runs beside S100 (host/, dev/) and S102 (app/): no shared file. Remove the three items from
+  Leftovers when it merges.
 - [ ] **S103 Alice gives a mod's agents a folder, and can take it back (stage C, the watane half: host A3,
   app 19.2).** (sketch ahead; after S100 merges: it touches host/src/agent/, as S100 does.) agentic-harness
   stage C: the workspace consent held before `initialized`, the consent view's words (app S58, S60),
@@ -1679,6 +1689,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Deputy decisions
 
+- 2026-11-23 (S105) dist follows a redirect from a listed or hint base only to a target that passes the same local-address rule as the base (A35/A37); redirects are not left under "Not protected".
 - 2026-11-23 (S102 BLOCKED) A slice scoped to one folder may still change the root `Cargo.lock` and `workspace-hack` for its own dependencies: they are generated, and a rebase regenerates them.
 - 2026-11-23 (the human's answer, through the monitor: "Yes, tell it"; on throughput) Last night ran only two
   slices, one per project, with nothing sketched ahead; earlier nights merged 10 to 17 a day. Follow deputy
