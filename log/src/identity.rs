@@ -157,46 +157,6 @@ fn read(path: &Path) -> Result<Option<SigningKey>, Error> {
     Ok(Some(SigningKey::from_bytes(&seed)))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{check_key_owner, read};
-    use crate::Error;
-    use std::os::unix::fs::MetadataExt;
-    use std::path::Path;
-
-    #[test]
-    fn s109_ac4_device_is_refused() {
-        // Use the system device so this runs without permission to create one.
-        let path = Path::new("/dev/null");
-        let result = read(path);
-        assert!(
-            matches!(
-                &result,
-                Err(Error::NotPlain { path: found, expected: "regular file", link: false })
-                    if found == path
-            ),
-            "{result:?}"
-        );
-    }
-
-    #[test]
-    fn s109_ac5_foreign_owner_is_refused() {
-        let file = tempfile::tempfile().expect("create key file");
-        let meta = file.metadata().expect("stat key handle");
-        let path = Path::new("identity.key");
-        let current = meta.uid() ^ 1;
-        let result = check_key_owner(path, &meta, current);
-        assert!(
-            matches!(
-                &result,
-                Err(Error::KeyOwner { path: found, owner, current: expected })
-                    if found == path && *owner == meta.uid() && *expected == current
-            ),
-            "{result:?}"
-        );
-    }
-}
-
 pub(crate) fn prepare_dir(dir: &Path) -> Result<(), Error> {
     if dir.as_os_str().is_empty() {
         return Err(Error::EmptyPath);
@@ -396,4 +356,44 @@ pub(crate) fn decrypt(backup: &[u8], passphrase: &str) -> Result<SigningKey, Err
     let seed =
         Zeroizing::new(<[u8; 32]>::try_from(plain.as_slice()).map_err(|_| Error::WrongPassphrase)?);
     Ok(SigningKey::from_bytes(&seed))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{check_key_owner, read};
+    use crate::Error;
+    use std::os::unix::fs::MetadataExt;
+    use std::path::Path;
+
+    #[test]
+    fn s109_ac4_device_is_refused() {
+        // Use the system device so this runs without permission to create one.
+        let path = Path::new("/dev/null");
+        let result = read(path);
+        assert!(
+            matches!(
+                &result,
+                Err(Error::NotPlain { path: found, expected: "regular file", link: false })
+                    if found == path
+            ),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn s109_ac5_foreign_owner_is_refused() {
+        let file = tempfile::tempfile().expect("create key file");
+        let meta = file.metadata().expect("stat key handle");
+        let path = Path::new("identity.key");
+        let current = meta.uid() ^ 1;
+        let result = check_key_owner(path, &meta, current);
+        assert!(
+            matches!(
+                &result,
+                Err(Error::KeyOwner { path: found, owner, current: expected })
+                    if found == path && *owner == meta.uid() && *expected == current
+            ),
+            "{result:?}"
+        );
+    }
 }
