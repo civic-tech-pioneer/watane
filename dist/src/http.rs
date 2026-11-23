@@ -1527,7 +1527,7 @@ mod tests {
         let file = std::fs::read(dir.path().join("dist/follows.json")).unwrap();
         let requests = w.a.count();
         *eve.test_fail_saves.lock().unwrap() = Some(0);
-        assert!(eve.fetch_for(&w.reference, Some(&dave_key)).is_err());
+        eve.fetch_for(&w.reference, Some(&dave_key)).unwrap_err();
         assert_eq!(
             w.a.count(),
             requests,
