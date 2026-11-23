@@ -323,6 +323,7 @@ fn ac1_screen_locked_parses_ioreg_sessions() {
     assert_eq!(driver::screen_locked("+-o Root"), None);
 }
 
+#[cfg(unix)] // Runs a POSIX shell fake for macOS ioreg.
 #[test]
 fn ac2_front_skips_locked_and_rejects_unknown_ioreg() {
     use std::os::unix::fs::PermissionsExt;
@@ -513,7 +514,7 @@ fn ac1_real_github_child_environment_and_site_origin_without_network() {
 
 // Harness self-tests live here, not in support/github.rs, so they run in one
 // test binary rather than in every binary that includes `support`.
-#[cfg(feature = "real-github")]
+#[cfg(all(feature = "real-github", unix))] // Uses executable POSIX shell fixtures.
 mod github_harness {
     use super::github::{PREFIX, RealGithub};
     use std::fs;

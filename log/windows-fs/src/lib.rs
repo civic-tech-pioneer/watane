@@ -28,7 +28,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
     FILE_GENERIC_WRITE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TYPE_DISK,
     GetFileInformationByHandle, GetFileType, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
-    MoveFileExW,
+    MoveFileExW, SECURITY_IDENTIFICATION, SECURITY_SQOS_PRESENT,
 };
 use windows_sys::Win32::System::SystemServices::ACCESS_ALLOWED_ACE_TYPE;
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
@@ -185,7 +185,10 @@ pub fn create_file(path: &Path) -> io::Result<File> {
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             &attributes,
             CREATE_NEW,
-            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+            FILE_ATTRIBUTE_NORMAL
+                | FILE_FLAG_OPEN_REPARSE_POINT
+                | SECURITY_SQOS_PRESENT
+                | SECURITY_IDENTIFICATION,
             null_mut(),
         )
     };
@@ -193,7 +196,9 @@ pub fn create_file(path: &Path) -> io::Result<File> {
         return Err(io::Error::last_os_error());
     }
     // SAFETY: CreateFileW returned a new owned file handle.
-    Ok(unsafe { File::from_raw_handle(handle) })
+    let file = unsafe { File::from_raw_handle(handle) };
+    check_owner_only(&file)?;
+    Ok(file)
 }
 
 pub fn open_path(path: &Path, write: bool) -> io::Result<File> {
@@ -202,6 +207,7 @@ pub fn open_path(path: &Path, write: bool) -> io::Result<File> {
         .access_mode(FILE_GENERIC_READ | if write { FILE_GENERIC_WRITE } else { 0 })
         .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+        .security_qos_flags(SECURITY_IDENTIFICATION)
         .open(path)
 }
 
@@ -213,18 +219,22 @@ pub enum FileKind {
     Other,
 }
 
-pub fn kind(file: &File) -> io::Result<FileKind> {
-    let handle = file.as_raw_handle();
+fn file_information(file: &File) -> io::Result<BY_HANDLE_FILE_INFORMATION> {
     // SAFETY: This Win32 result structure is valid zero-initialized.
     let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { zeroed() };
     // SAFETY: The live handle and writable info are valid for the call.
-    if unsafe { GetFileType(handle) } != FILE_TYPE_DISK {
-        return Ok(FileKind::Other);
-    }
-    // SAFETY: The live handle and writable info are valid for the call.
-    if unsafe { GetFileInformationByHandle(handle, &mut info) } == 0 {
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0 {
         return Err(io::Error::last_os_error());
     }
+    Ok(info)
+}
+
+pub fn kind(file: &File) -> io::Result<FileKind> {
+    // SAFETY: The file owns a live handle.
+    if unsafe { GetFileType(file.as_raw_handle()) } != FILE_TYPE_DISK {
+        return Ok(FileKind::Other);
+    }
+    let info = file_information(file)?;
     Ok(
         if info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
             FileKind::ReparsePoint
@@ -236,6 +246,36 @@ pub fn kind(file: &File) -> io::Result<FileKind> {
             }
         },
     )
+}
+
+/// The volume and file identity recorded by Windows on the open handle.
+pub fn file_id(file: &File) -> io::Result<(u64, u64)> {
+    let info = file_information(file)?;
+    Ok((
+        u64::from(info.dwVolumeSerialNumber),
+        (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
+    ))
+}
+
+/// Open a regular, private file from its handle without following a reparse point.
+pub fn open_private_file(path: &Path, write: bool) -> io::Result<File> {
+    let file = open_path(path, write)?;
+    if !matches!(kind(&file)?, FileKind::Regular { links: 1 }) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "expected a regular Windows file with one link and no reparse point",
+        ));
+    }
+    check_owner_only(&file)?;
+    Ok(file)
+}
+
+/// Open an existing checked file or create a new file with its private ACL.
+pub fn open_or_create_private_file(path: &Path) -> io::Result<File> {
+    match create_file(path) {
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => open_private_file(path, true),
+        result => result,
+    }
 }
 
 pub fn check_owner_only(file: &File) -> io::Result<()> {
