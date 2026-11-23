@@ -142,14 +142,21 @@ fn private_attributes(descriptor: &LocalAllocation) -> SECURITY_ATTRIBUTES {
 
 /// Create a directory with a protected, owner-only ACL from the first instant.
 pub fn create_dir(path: &Path) -> io::Result<()> {
-    let path = absolute_wide(path)?;
+    let wide = absolute_wide(path)?;
     let descriptor = User::current()?.descriptor(true)?;
     let attributes = private_attributes(&descriptor);
     // SAFETY: The path is nul terminated and attributes borrow the live descriptor.
-    if unsafe { CreateDirectoryW(path.as_ptr(), &attributes) } == 0 {
+    if unsafe { CreateDirectoryW(wide.as_ptr(), &attributes) } == 0 {
         return Err(io::Error::last_os_error());
     }
-    Ok(())
+    let directory = open_path(path, false)?;
+    if !matches!(kind(&directory)?, FileKind::Directory) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "expected a plain Windows directory",
+        ));
+    }
+    check_owner_only(&directory)
 }
 
 /// Create missing directories with the same private ACL as the final directory.
@@ -199,6 +206,12 @@ pub fn create_file(path: &Path) -> io::Result<File> {
     }
     // SAFETY: CreateFileW returned a new owned file handle.
     let file = unsafe { File::from_raw_handle(handle) };
+    if !matches!(kind(&file)?, FileKind::Regular { links: 1 }) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "expected a new regular Windows file",
+        ));
+    }
     check_owner_only(&file)?;
     Ok(file)
 }
