@@ -935,7 +935,7 @@ nor chosen has a listed record (`followed: false`, `index: false`). Its
 `bases` are the distinct bases of the listings that name it, at most 4:
 first learned in the order of the walk (own channel first, then chosen
 indexes in key order), then reordered by the read below. A listing never changes the `bases` or `base` of a followed or chosen
-channel; only a link the participant gives does (below). A listed-only record that `follow` or `choose_index` turns followed or chosen drops the listing's `bases` and takes the link's base as `base` (DD-46). The decision "listed read" is per base: a read of a base is listed when the record is listed-only or the base is not in `given` (DD-47). It covers the channel read, `refresh`, and the package GET of `fetch` and `read_link`: the base is skipped or refused when local (unless `listed_local`), and every redirect target is checked. dist creates a listed record when the walk first
+channel; only a link the participant gives does (below). A listed-only record that `follow` or `choose_index` turns followed or chosen drops the listing's `bases` and takes the link's base as `base` (DD-46). The decision "listed read" is per base: a read of a base is listed when the record is listed-only or the base is not in `given` (DD-47). It covers the channel read, `refresh`, and the package GET of `fetch` and `read_link`: the base is skipped or refused when local (unless `listed_local`), and every redirect target is checked; as for a listed record, `fetch` still gives a cached package. dist creates a listed record when the walk first
 reaches the channel, before it reads it, and removes it after a refresh in
 which no read set holds it.
 

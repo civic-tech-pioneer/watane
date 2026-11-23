@@ -432,15 +432,15 @@ mod tests {
     }
     #[test]
     fn ac3_one_deadline_covers_all_hops() {
-        // Four hops of 300 ms: each is under the 700 ms timeout, the chain is not.
-        let base = serve_slow(Duration::from_millis(300), "ok");
+        // Four hops of 100 ms: each is under the 300 ms timeout, the chain is not.
+        let base = serve_slow(Duration::from_millis(100), "ok");
         let dir = tempfile::tempdir().unwrap();
         let dist = Dist::open(dir.path(), Arc::new(NoSign), Options::default()).unwrap();
         let allow = |_: &str| Ok(());
         let got = dist.get_guarded(
             &format!("{base}/h0"),
             100,
-            Duration::from_millis(700),
+            Duration::from_millis(300),
             false,
             Some(&allow),
         );
@@ -837,5 +837,43 @@ mod tests {
         let before = w.b.count();
         eve.fetch(&w.reference).unwrap();
         assert!(w.b.count() > before, "the package redirect was followed");
+    }
+    /// DD-47 as a listed record: an unknown local base still gives a cached package,
+    /// and refuses the base on a miss.
+    #[test]
+    fn ac1_an_unknown_local_base_gives_a_cached_package() {
+        let w = world();
+        let (dir, eve) = w.eve(&[&w.a]);
+        eve.follow(&w.link(&w.a)).unwrap();
+        eve.fetch(&w.reference).unwrap();
+        drop(eve);
+        let old = serde_json::json!({"version": 1, "channels": {w.key.to_string(): {
+            "base": w.a.url, "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
+        std::fs::write(dir.path().join("dist/follows.json"), old.to_string()).unwrap();
+        let eve = Dist::open(dir.path(), Arc::new(Yes), Options::default()).unwrap();
+        let before = w.a.count();
+        eve.fetch(&w.reference).unwrap();
+        let package = w.package.trim_start_matches("packages/").to_owned();
+        std::fs::remove_file(eve.cache_path(&package.parse().unwrap())).unwrap();
+        assert_refused(eve.fetch(&w.reference).map(|_| ()).err(), &w.a.url);
+        assert_eq!(w.a.count(), before, "no request to the unknown local base");
+    }
+    /// open_link at a given base reads it once, as a refresh; no extra read to learn it.
+    #[test]
+    fn ac1_open_link_at_a_given_base_reads_its_head_once() {
+        let w = world();
+        let (_dir, eve) = w.eve(&[&w.a]);
+        eve.follow(&w.link(&w.a)).unwrap();
+        let heads = || {
+            w.a.requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|p| *p == "/head")
+                .count()
+        };
+        let before = heads();
+        eve.open_link(&w.link(&w.a)).unwrap();
+        assert_eq!(heads(), before + 1);
     }
 }
