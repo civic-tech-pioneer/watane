@@ -72,6 +72,16 @@ fn servers(limits: Limits) -> (Node, Node) {
 }
 
 #[test]
+fn s9_the_unknown_budgets_default_to_the_spec() {
+    // net/TECHNICAL.md 4.2
+    let limits = Limits::default();
+    assert_eq!(limits.unknown_conns_per_peer, 2);
+    assert_eq!(limits.unknown_streams_per_peer, 2);
+    assert_eq!(limits.unknown_conns, 16);
+    assert_eq!(limits.unknown_bytes_per_sec, 65_536);
+}
+
+#[test]
 fn s9_requests_over_limits_and_budgets_are_refused_before_work() {
     let plain: Vec<_> = (0..3).map(|_| servers(Limits::default())).collect();
     let pooled = servers(Limits {
