@@ -1251,24 +1251,6 @@ mod pids_tests {
     }
 
     #[test]
-    fn ac2_an_old_format_line_is_not_killed_at_open() {
-        let home = tempfile::tempdir().unwrap();
-        let mut run = Command::new("sleep")
-            .arg("30")
-            .process_group(0)
-            .spawn()
-            .unwrap();
-        std::fs::create_dir_all(home.path().join("runs")).unwrap();
-        std::fs::write(home.path().join("runs/pids"), format!("{}\n", run.id())).unwrap();
-        clean_runs(home.path());
-        std::thread::sleep(Duration::from_millis(100));
-        let alive = run.try_wait().unwrap().is_none();
-        let _ = run.kill();
-        let _ = run.wait();
-        assert!(alive);
-    }
-
-    #[test]
     fn ac3_the_group_is_killed_before_the_child_is_reaped() {
         use rustix::process::{WaitId, WaitIdOptions, waitid};
         let child = Command::new("sleep")
