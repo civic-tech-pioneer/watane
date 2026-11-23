@@ -1091,6 +1091,34 @@ mod tests {
         }
     }
 
+    /// 19.3 step 5 (review r7, F7.1): the pending of the chains in flight counts each stream's
+    /// own items and bytes, summed over the chains, beside the origin's and host's bytes.
+    #[test]
+    fn s100_fix19_pending_counts_each_streams_items_and_bytes_over_the_chains() {
+        let push = |id: &str, n: usize, origin: &str| Effect::Push {
+            id: id.into(),
+            body: vec![0; n],
+            hop: 0,
+            by: ModRef {
+                local: LocalName::parse("m").unwrap(),
+                identity: "i".into(),
+            },
+            origin: origin.into(),
+        };
+        let one = pending_of(&[push("a", 3, "o"), push("a", 5, "o"), push("b", 7, "p")]);
+        let two = pending_of(&[push("a", 11, "o")]);
+        let (by_origin, all, by_stream) = sum_pending(vec![one, two]);
+        assert_eq!(
+            by_origin,
+            std::collections::HashMap::from([("o".into(), 19), ("p".into(), 7)])
+        );
+        assert_eq!(all, 26);
+        assert_eq!(
+            by_stream,
+            std::collections::HashMap::from([("a".into(), (3, 19)), ("b".into(), (1, 7))])
+        );
+    }
+
     #[test]
     fn ac5_a_link_that_is_unbound_ends_the_stream_gone() {
         let (_dir, host, s) = with_stream();
