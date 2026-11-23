@@ -3104,7 +3104,14 @@ not keep a credential from a mod on their own. Three rules do:
    budgets when its ask or check opens, which is refused `full` when item and reserve
    do not fit; the close takes the reserve, and the stream's end frees what is left.
    So the end of a run never waits on a consumer that stopped reading or on a budget
-   (review r3, F3.2). Every line the writer reported written
+   (review r3, F3.2). The budget check, the enqueue and the reserve of an ask or
+   check are one step under one lock: a stream that ends meanwhile takes nothing
+   from the budgets. While an ask or check is open, the input the host keeps of it
+   counts against its origin client's and the host's byte budgets, beside its close
+   reserve, and is freed when it closes or the stream ends; at most 64 asks and
+   checks are open on one stream at a time, and a `can_use_tool` or `hook_callback`
+   past that is answered deny at once and pushes nothing (fail closed; S100's sixth
+   adversary pass). Every line the writer reported written
    has its `ask-resolved {by: answered}` pushed before `ended`; a write that did not
    complete (failed, or given up) pushes none, and none is pushed after the stream
    ended. No thread of the run outlives the bounds, but for the one that reaps
