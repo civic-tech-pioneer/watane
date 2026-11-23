@@ -1464,6 +1464,9 @@ These are true but are now what the specs say. Acting on any of them is a spec c
   rule there; `watane-dev add` drops the provider's `Mod::read` error (both dev).
 - [S109 review] (guard) the log directory's owner is never checked: root running over a 0700 log dir another user owns
   lets that user swap or roll back the identity key. A check that the dir is owned by the effective user.
+- [S100 CI] (guard) flake: `net/tests/it/budget.rs:98` `budget::s9_requests_over_limits_and_budgets_are_refused_before_work`
+  got `over_budget` for `too_large` on macOS (fdb3d9a, an empty commit over green code): the same connection-budget
+  timing class S106 fixed in `pair::s4`. Next net upkeep: check every net test that shares that budget.
 - [S37] `{"release"}` in a home with no record answers 200 from dist's cache
   (app/src/api.rs:321, dist/src/fetch.rs:68). Documented as deliberate; no app test covers the
   link-then-release sequence.
