@@ -1290,7 +1290,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
 - [~] **S108 (upkeep) pkg names what it refuses at the right path.** (in flight, cloud, builder codex, reviewer claude;
   sketched 2026-11-23 by the deputy; Codex task https://chatgpt.com/local/6b047765-d63c-83ed-aded-e08349b8d06a;
   DELIVERED as PR #22 (+300 -88, pkg/ only; user-sim ACCEPTED, boundary HELD); r1 to Claude, routine
-  `trig_01GeQd1KUiKu71BDnQJHHQfT`, 17:48 UTC.) Leftovers items, all in `pkg/`; each outcome is its item's check:
+  `trig_01GeQd1KUiKu71BDnQJHHQfT`, 17:48 UTC; r1: 1/2 (blocking/polish; the deputy's triage: F1.1 blocking, the user-sim
+  rejected outcome 3; F1.2, F1.3 polish, fixed on the way); answer round to Codex.) Leftovers items, all in `pkg/`; each outcome is its item's check:
   1. [S15] a link inside a hidden folder (`ui/.git/x`) is named as the hidden folder's rule, not rule `path` at the link
      (pkg/TECHNICAL.md:288; `ac1_s46_hidden_link_named` changes to match).
   2. [S57] `pack` has no list-then-stat window (as `Mod::read` was fixed): a directory swapped in for a file is named as
@@ -1446,6 +1447,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
   tried (`dist/src/fetch.rs` ~107-125, older than S104).
 - [S105 adversary] (guard) dist's local ranges (5.9) miss 100.64/10, 198.18/15, 0/8, fec0::/10 and NAT64/6to4 forms of a
   local IPv4 address; add them (deputy decision 2026-11-23).
+- [S108 review] `watane-dev check` scans for links itself before `Mod::read`, so a maker never sees the hidden-folder
+  rule there; `watane-dev add` drops the provider's `Mod::read` error (both dev).
 - [S37] `{"release"}` in a home with no record answers 200 from dist's cache
   (app/src/api.rs:321, dist/src/fetch.rs:68). Documented as deliberate; no app test covers the
   link-then-release sequence.
