@@ -319,7 +319,7 @@ parse, the cross checks that need it are skipped. Tests check `rule` and
 
 | Rule | File | Refused when |
 |---|---|---|
-| `path` | the path | `mod.toml`, `deps.json`, `logic.wasm`, `ui`, `wit` or anything below `ui/` or `wit/` is a symbolic link; in `wit/`: a directory other than `wit/deps` and `wit/deps/<segment>`, a `.wit` file deeper than `wit/deps/<segment>/`, a name that starts with `.` and is a directory or ends in `.wit`, a `.wasm` or `.wat` file in `wit/deps/`, a name outside the segment grammar (6.2). Other files in `wit/` are ignored. |
+| `path` | the path, or the outermost hidden directory that contains the link | `mod.toml`, `deps.json`, `logic.wasm`, `ui`, `wit` or anything below `ui/` or `wit/` is a symbolic link; in `wit/`: a directory other than `wit/deps` and `wit/deps/<segment>`, a `.wit` file deeper than `wit/deps/<segment>/`, a name that starts with `.` and is a directory or ends in `.wit`, a `.wasm` or `.wat` file in `wit/deps/`, a name outside the segment grammar (6.2). Other files in `wit/` are ignored. |
 | `limit` | the file | a `.wit` file over 1 MiB, all `.wit` files over 4 MiB, nesting over 32; more than 32 exports, events, calls or subscriptions |
 | `mod-toml` | `mod.toml` | missing, over 16 KiB, not UTF-8 TOML, an unknown key, a missing key, a bad value |
 | `deps-json` | `deps.json` | over 64 KiB, not a JSON object, more than 32 members, a bad key or value |
@@ -353,6 +353,9 @@ neither a regular file nor a directory is rule `path`,
 `not a regular file or a directory (a FIFO, socket or device); replace or remove it`. Both the
 reader and pack ignore hidden special files (S46).
 
+For a link inside a hidden directory, pack names the link (6.4) and `Mod::read` names the
+outermost hidden directory.
+
 Pack and `Mod::read` share refusal text for special files and violations named at the link (S57).
 A link where a file or directory may stand is `a symbolic link; replace it with a regular file or
 directory`; a link where only a file may stand (`mod.toml`, `deps.json`, `logic.wasm`, `read_file`)
@@ -360,7 +363,8 @@ is `a symbolic link; replace it with a regular file`. `PackageError::Symlink` di
 `` `<path>`: `` followed by the text for that path. A directory that was listed and is gone or no
 longer a directory when the reader opens it is rule `path` at that directory, `changed while the
 mod was read; read it again`. A child that vanishes before its listing stat gives the same rule
-at the directory being listed. Other I/O errors stay `ModError::Io`.
+at the child’s path. If listing fails before it knows the child’s name, it reports the directory
+being listed. Other I/O errors stay `ModError::Io`.
 
 ### 4.8 `add_provider` (step 2)
 

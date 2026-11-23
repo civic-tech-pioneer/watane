@@ -284,12 +284,11 @@ fn list_entries(
 ) -> Result<Option<Vec<crate::open::Entry>>, ModError> {
     match crate::open::entries(handle) {
         Ok(list) => Ok(Some(list)),
-        Err(e)
-            if matches!(
-                e.source.kind(),
-                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
-            ) =>
-        {
+        Err(e) if e.source.kind() == std::io::ErrorKind::NotFound => {
+            add(violations, Rule::Path, &e.relative_path(relative), CHANGED);
+            Ok(None)
+        }
+        Err(e) if e.source.kind() == std::io::ErrorKind::NotADirectory => {
             add(violations, Rule::Path, relative, CHANGED);
             Ok(None)
         }

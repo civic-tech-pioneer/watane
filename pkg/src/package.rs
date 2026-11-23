@@ -685,7 +685,11 @@ mod tests {
         ));
     }
     #[cfg(unix)]
-    fn pack_with_listing_change(relative: &str, change: impl Fn(&Path) + 'static) -> PackageError {
+    fn pack_with_listing_change(
+        relative: &str,
+        listing: usize,
+        change: impl Fn(&Path) + 'static,
+    ) -> PackageError {
         let tmp = open_fixture();
         for (path, bytes) in [
             (
@@ -708,11 +712,14 @@ mod tests {
         let path = tmp.path().join(relative);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, "listed file").unwrap();
-        let changed = std::cell::Cell::new(false);
+        let seen = std::cell::Cell::new(0);
         crate::open::BEFORE_ENTRY_STAT.with(|hook| {
             hook.replace(Some(Box::new(move |name| {
-                if path.file_name() == Some(name) && !changed.replace(true) {
-                    change(&path);
+                if path.file_name() == Some(name) {
+                    seen.set(seen.get() + 1);
+                    if seen.get() == listing {
+                        change(&path);
+                    }
                 }
             })));
         });
@@ -724,7 +731,7 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn ac2_s108_listed_file_replaced_by_a_directory() {
-        let error = pack_with_listing_change("ui/entry", |path| {
+        let error = pack_with_listing_change("ui/entry", 1, |path| {
             fs::remove_file(path).unwrap();
             fs::create_dir(path).unwrap();
         });
@@ -738,12 +745,31 @@ mod tests {
     #[test]
     fn ac3_s108_listing_entry_gone_is_changed() {
         for relative in ["ui/entry", "ui/.hidden/entry"] {
-            let error = pack_with_listing_change(relative, |path| fs::remove_file(path).unwrap());
+            let error =
+                pack_with_listing_change(relative, 1, |path| fs::remove_file(path).unwrap());
             assert_eq!(
                 path_reason(error, relative),
                 "changed while the mod was read; read it again"
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn regress_s108_pack_entry_gone_in_read_listing_named_at_entry() {
+        // The first listing belongs to pack. The second belongs to Mod::read.
+        let error = pack_with_listing_change("ui/entry", 2, |path| fs::remove_file(path).unwrap());
+        let PackageError::Mod(ModError::Invalid(violations)) = error else {
+            panic!("expected a mod validation refusal, got {error:?}");
+        };
+        assert_eq!(
+            violations,
+            [crate::Violation {
+                rule: crate::Rule::Path,
+                file: "ui/entry".into(),
+                message: "changed while the mod was read; read it again".into(),
+            }]
+        );
     }
 
     #[test]

@@ -35,7 +35,7 @@ fn fixture(name: &str) -> std::path::PathBuf {
 /// found a directory"), never rule `limit` "expected a regular file" and never `Io`.
 /// Seen through `watane-dev add` as `[limit] expected a regular file` (S91 acceptance).
 #[test]
-#[ignore = "slow: exercises the real atomic exchange during add_provider"]
+#[ignore = "slow: a real rename-exchange race checks for windows the add.rs hook tests do not stage"]
 fn regress_s91_add_provider_wit_file_swapped_for_directory() {
     let p = tempfile::tempdir().unwrap();
     copy(&fixture("reading-list"), p.path());
