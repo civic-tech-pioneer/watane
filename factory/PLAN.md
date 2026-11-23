@@ -1219,7 +1219,9 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   https://chatgpt.com/local/6b041e07-d008-83eb-b737-65d3b6dc704c, ~11:05 UTC; PR #18 opened at 8ce07e4
   (+2162, app/ only); r1 to Claude, routine `trig_01AWD7ghXiLTs1pS7i7VmPm6`, 11:54 UTC; BLOCKED at ca0d904: the app's new dependencies need the root Cargo.lock, outside app/;
   the deputy allowed Cargo.lock and workspace-hack (generated; a rebase regenerates them), answered in the Codex task; DELIVERED at dac59df; r1 `changes (8)` (adversary HELD, user-sim ACCEPTED; F1.1 the lock, already fixed), answered at 5d35804; r2 `changes (3)` (adversary BREACHED: a gzip body escapes
-  the 1 MiB limit; 4 missed mutants; a macOS test), answer round to Codex.) Settings gets the groups
+  the 1 MiB limit; 4 missed mutants; a macOS test); r3 `changes (1)` (a cut gzip read `bad_input`); r4 `changes (2)`
+  (adversary HELD, user-sim 58/58; a truncated gzip in a complete body reads `unavailable`; the macOS version test fails
+  again); answer round to Codex, round 5 the last.) Settings gets the groups
   `ChatGPT` and `Claude Code`, so the agent layer's two accounts can be set up before the host stages that
   use them land. Outcomes (app FUNCTIONAL, on the real app with stand-ins):
   1. S54: Alice chooses `Sign in with ChatGPT`; the browser stand-in opens at the stand-in issuer, the
@@ -1269,7 +1271,9 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
 - [~] **S106 (guard) the net pair test stops flaking on macOS.** (in flight, cloud, builder codex, reviewer claude;
   sketched 2026-11-23 by the deputy; Codex task https://chatgpt.com/local/6b045b02-1260-83eb-960d-5bddbca75041; DELIVERED as PR #20 (test-only:
   frobnicate on its own unknown key, the fixture's shared byte allowance raised to 16 MiB/s; 50 runs in a row on Linux);
-  r1 to Claude, routine `trig_01NSUQhchSAyP6ZAGaPLUgUo`, 16:05 UTC.)
+  r1 to Claude, routine `trig_01NSUQhchSAyP6ZAGaPLUgUo`, 16:05 UTC; r1 `changes (2)` (validator PASS, user-sim ACCEPTED
+  200 runs; the brief must say the fixture runs off the production budget, and a test must prove that budget); answer
+  round to Codex.)
   `net/tests/it/pair.rs:259` `s4_an_unknown_node_gets_hello_and_nothing_else`
   failed with `over_budget` instead of `unknown_op` on macOS CI for two unrelated PRs (S100 cafe7fa, S102 820c46f). The
   loop above it uses a fresh key per call because one unknown key's connection budget is small; the last call
