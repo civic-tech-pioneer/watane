@@ -9,7 +9,10 @@ mod backup;
 mod concurrency;
 mod corrupt;
 mod entry_codec;
+#[cfg(unix)] // Uses POSIX mode bits, symlinks and directory permissions.
 mod identity_file;
+#[cfg(windows)] // Uses NTFS reparse points and Windows ACL tools.
+mod identity_windows;
 mod ingest;
 mod key_text;
 mod keyless;
