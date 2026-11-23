@@ -28,7 +28,7 @@ const SCRATCH: TableDefinition<&str, &str> = TableDefinition::new("scratch");
 pub(crate) struct Stats {
     pub commits: AtomicU64,
     pub commit_nanos: AtomicU64,
-    /// The commits of the host's own writes (timers, scratch rows, the generation), and their time (part of the two above).
+    /// The commits of the host's own writes (timers, scratch rows, the generation, a removed mod's state), and their time (part of the two above).
     pub host_commits: AtomicU64,
     pub host_commit_nanos: AtomicU64,
     pub bytes_read: AtomicU64,
@@ -342,7 +342,7 @@ impl State {
                 .remove(id.as_str())
                 .map_err(|e| HostError::Internal(e.to_string()))?;
         }
-        txn.commit()
+        self.commit_host(txn)
             .map_err(|e| HostError::Internal(e.to_string()))?;
         Ok(())
     }
@@ -578,6 +578,12 @@ mod tests {
         assert_eq!(host(), 3);
         state.scratch_removed("o").unwrap();
         assert_eq!(host(), 4);
-        assert_eq!(state.stats.commits.load(Relaxed), 4);
+        state
+            .timers_removed("o", &std::collections::BTreeMap::new())
+            .unwrap();
+        assert_eq!(host(), 5);
+        state.delete("o").unwrap();
+        assert_eq!(host(), 6);
+        assert_eq!(state.stats.commits.load(Relaxed), 6);
     }
 }

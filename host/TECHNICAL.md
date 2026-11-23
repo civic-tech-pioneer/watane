@@ -3634,7 +3634,7 @@ pub struct TestNet { pub routes: Vec<(String, SocketAddr)>, pub root_pem: String
   - `Host::test_stats()` reads the counters of the state writer (7) since
     open: commits, the wall time spent in them (redb commit, fsync included), and
     the part of both that the host's own writes made (every commit of `state.rs` that is not a
-    mod's transaction: timer writes, the scratch rows added, deleted or removed, the generation;
+    mod's transaction: timer writes, the scratch rows added, deleted or removed, the generation, a removed mod's state;
     the rest are the mods' transactions),
     and the state bytes read and written by calls (keys and values through
     `state`, host tables excluded). The load test of A1 takes the writer
