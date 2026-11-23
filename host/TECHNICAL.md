@@ -470,8 +470,14 @@ which `Host::open` creates (3.1 step 6).
    A group is killed only when the boot id matches and its leader still has
    that start time; a record without them, or with no live leader, is
    dropped unkilled (S100-CAP, item 5). A record is validated before any process
-   handle is opened: a pgid of at least 2 and a start time and boot id that parse;
-   anything else is discarded and logged, and the cleanup goes on (review r7, F7.2). The check and the signal are one step
+   handle is opened: a pgid of at least 2 and a start time and boot id that parse
+   (Linux: a boot id of the form of `/proc/sys/kernel/random/boot_id`, a UUID;
+   macOS: a non-empty token); anything else is discarded and logged, and the
+   cleanup goes on (review r7, F7.2). `runs/pids` is read as bytes and split
+   into lines; each line is parsed into a full record on its own, so a line that
+   is not UTF-8 or fails to parse is logged and skipped and the next line is
+   still handled; `runs/` is removed only after every line was handled (review
+   r8, F8.1 and F8.2; the deputy's ruling). The check and the signal are one step
    (review r6, F6.3; the deputy's ruling): on Linux the host opens a pidfd of
    the leader, checks the start time and boot id with it open, and sends
    SIGKILL to that exact process through the pidfd (`pidfd_send_signal`), so
