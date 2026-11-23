@@ -469,7 +469,16 @@ which `Host::open` creates (3.1 step 6).
    recorded start is the limit of the check there).
    A group is killed only when the boot id matches and its leader still has
    that start time; a record without them, or with no live leader, is
-   dropped unkilled (S100-CAP, item 5).
+   dropped unkilled (S100-CAP, item 5). The check and the signal are one step
+   (review r6, F6.3; the deputy's ruling): on Linux the host opens a pidfd of
+   the leader first, which pins its pid (and so the group's number) for as
+   long as it is open, checks the start time and boot id with it open, then
+   signals the group and closes it. Where that cannot be done (macOS, where
+   `lstart` resolves to a second and there is no pidfd), no group is signalled
+   at open: the record is dropped and the leftover is logged; a leftover
+   process is a lesser harm than a signal to an unrelated group. A record is
+   identified by its whole line (pgid, boot id, start time); a run removes
+   only its own line (review r6, F6.4).
 4. Read each installed mod with `Mod::read`, compile its `logic.wasm` when
    `logic()` is `Some`, and build the registry (section 6.4). A mod that fails to
    load keeps its record and gets `error`; the host still opens.
@@ -3129,13 +3138,14 @@ not keep a credential from a mod on their own. Three rules do:
    budgets is not denied: its open fails `full` and the run stops reading `claude`
    until it fits, as every host push waits (19.2, In flight); the lag clock bounds
    that wait, so a stream whose budget stays held ends `lagging` (19.2, Lag clock).
-   A refused push or open that later succeeds clears its refusal: the stream's
-   `full_since` and lag clock stop at that admission, so no earlier refusal can
-   end it `lagging` (review r5, F5.2). A close that frees budget bytes wakes a
-   waiting producer only when the producer's refused push fits with the pending
-   bytes of every chain in flight counted, as admission counts them, and a chain's
-   end (commit or rollback) scans the waiting producers again with those bytes
-   (review r5, F5.1). The input an open ask or check keeps is held as the bytes of its JSON
+   A refusal and its wake come from the one admission check (review r6, F6.1 and
+   F6.2; the deputy's ruling): whether a waiting producer is woken is decided by
+   that check, run under the same lock, on the current pending bytes of every chain
+   in flight, against both the origin's and the host's budget, so a woken producer's
+   retry is admitted. A stream's refusal and lag state change only when a push to it
+   commits (its refusal then clears and its lag clock stops); a tentative push in a
+   chain that rolls back leaves them exactly as they were. A close and a chain's end
+   (commit or rollback) run that check for the waiting producers (review r5 and r6). The input an open ask or check keeps is held as the bytes of its JSON
    text, not as a parsed value, and counted by that length, so the count is what
    the host holds; it is parsed again when needed (S100-CAP). When `claude` exits,
    the waiter kills what is left of its group while the exited process is not yet
