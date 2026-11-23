@@ -469,7 +469,9 @@ which `Host::open` creates (3.1 step 6).
    recorded start is the limit of the check there).
    A group is killed only when the boot id matches and its leader still has
    that start time; a record without them, or with no live leader, is
-   dropped unkilled (S100-CAP, item 5). The check and the signal are one step
+   dropped unkilled (S100-CAP, item 5). A record is validated before any process
+   handle is opened: a pgid of at least 2 and a start time and boot id that parse;
+   anything else is discarded and logged, and the cleanup goes on (review r7, F7.2). The check and the signal are one step
    (review r6, F6.3; the deputy's ruling): on Linux the host opens a pidfd of
    the leader, checks the start time and boot id with it open, and sends
    SIGKILL to that exact process through the pidfd (`pidfd_send_signal`), so
@@ -3142,7 +3144,9 @@ not keep a credential from a mod on their own. Three rules do:
    until it fits, as every host push waits (19.2, In flight); the lag clock bounds
    that wait, so a stream whose budget stays held ends `lagging` (19.2, Lag clock).
    A refusal and its wake come from the one admission check (review r6, F6.1 and
-   F6.2; the deputy's ruling): whether a waiting producer is woken is decided by
+   F6.2; review r7, F7.1: the scan calls the same function as a retry with the
+   same arguments, the stream's own pending items and bytes included, so the two
+   cannot disagree; the deputy's ruling): whether a waiting producer is woken is decided by
    that check, run under the same lock, on the current pending bytes of every chain
    in flight, against both the origin's and the host's budget, so a woken producer's
    retry is admitted. A stream's refusal and lag state change only when a push to it
