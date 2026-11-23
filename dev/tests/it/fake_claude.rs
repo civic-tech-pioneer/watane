@@ -413,10 +413,11 @@ fn ac6_ask_check_cancel_and_answers() {
     assert_eq!(ask["request"]["tool_use_id"], "t1");
     // Nothing more until the host answers.
     s.rx.recv_timeout(Duration::from_millis(200)).unwrap_err();
-    let deny = json!({"type":"control_response","response":{"subtype":"success",
+    // An allow: the turn goes on (a deny ends it, see `ac3_deny_ends_the_turn_...`).
+    let allow = json!({"type":"control_response","response":{"subtype":"success",
         "request_id":ask["request_id"],"response":{"behavior":"allow","updatedInput":{}}}});
-    let denied = deny.to_string();
-    s.send(&deny);
+    let allowed = allow.to_string();
+    s.send(&allow);
     let check = s.line();
     assert_eq!(check["request"]["subtype"], "hook_callback");
     assert_eq!(check["request"]["callback_id"], "cb1");
@@ -440,7 +441,7 @@ fn ac6_ask_check_cancel_and_answers() {
     assert!(
         f.log()
             .iter()
-            .any(|l| l["stdin"].as_str() == Some(denied.as_str())),
+            .any(|l| l["stdin"].as_str() == Some(allowed.as_str())),
         "the answer is logged"
     );
 }
@@ -943,6 +944,7 @@ fn s100_fix5_ac5_load_rate_counts_and_interrupt() {
             "stream_event" => deltas += 1,
             "assistant" => {
                 assert_eq!(text_of(&v).len(), 4096);
+                assert!(text_of(&v).starts_with(&format!("entry {} x", entries + 1)));
                 assert_eq!(
                     deltas,
                     entries * 10 + 10,
@@ -970,13 +972,19 @@ fn s100_fix5_ac5_load_rate_counts_and_interrupt() {
     s.initialize(false);
     std::thread::sleep(Duration::from_secs(1));
     interrupt(&mut s, "i1");
+    let (mut deltas, mut answered) = (0, false);
     loop {
         let v = s.line();
-        if v["type"] == "result" {
+        if v == interrupt_answer("i1") {
+            answered = true;
+        } else if v["type"] == "stream_event" {
+            deltas += 1;
+        } else if v["type"] == "result" {
             assert_eq!(v["subtype"], "error_during_execution");
             break;
         }
     }
+    assert!(answered && deltas < 100, "{deltas}");
     assert_eq!(s.line()["state"], "idle");
 }
 
