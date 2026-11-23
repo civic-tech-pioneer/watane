@@ -1284,7 +1284,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   change retries the sync first, fails closed, then finishes the recorded pending work); r4 answer through the routine,
   20:31 UTC, session cse_01LxwP91BTERFGtyj13B1Xys; answered at b10ab90 (20:40, all three and P4.1, gate green); r5 to
   Codex. Round 5 is worth it: blocking 5, 5, 3, 3, but r4's three were one cause, now closed by one rule with red
-  tests; r5 checks one answer commit, and S107 waits on this merge.) Three Leftovers items, all in `dist/`:
+  tests; r5 checks one answer commit, and S107 waits on this merge; r5's output was withheld by Codex's cybersecurity filter ("This content can't be
+  shown"), sent again as a new task ~21:13 UTC, https://chatgpt.com/local/6b04ac8b-cd24-83eb-8242-3d0d0316a06d.) Three Leftovers items, all in `dist/`:
   1. (guard) a redirect from a listed or hint base is checked like the base itself: a redirect target on `localhost`
      or a local IP literal is refused, as A35/A37 refuse the base (dist/TECHNICAL.md:1273, 1278). Deputy decision: check
      each redirect target (not "Not protected"); the 5-redirect limit stays.
@@ -2106,6 +2107,8 @@ The human may veto each one.
   Rejected: accepting the race (two runs can interleave swaps in one home).
 
 ## Friction
+
+- (2026-11-23, deputy-2) Codex withheld S105's r5 review behind its cybersecurity filter (adversary output); re-sent once as a new task asking for findings as defects and red tests, not attack steps. A second hit sends that round to Claude.
 
 - (2026-11-21, S98) no `gh` or raw job logs in the cloud (logs read through a subagent with GitHub MCP); CI's concurrency group runs one at a time, so 5 green runs took ~2 h; no IPv6 in the container, so check.sh reports 8 app tests failed there.
 - (2026-11-21, S94) strace dies on a traced group's STOP/KILL (process counts need retries); RUSTC_BOOTSTRAP for --report-time rebuilt the workspace; no shellcheck in the cloud; a cloud slice's timing margins (2 s on 4 cores) failed on a loaded Mac, and a test expected `/private/var` where macOS shows `/var`: the fourth macOS-only miss from the cloud, now caught by CI's macOS job before merge.
