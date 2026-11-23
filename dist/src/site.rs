@@ -44,6 +44,11 @@ pub(crate) fn read_plain(path: &Path) -> Result<Option<Vec<u8>>, DistError> {
         Err(e) => Err(io(path, e)),
     }
 }
+#[cfg(test)]
+thread_local! {
+    /// Test seam: the next directory sync after a rename on this thread fails with EIO.
+    pub(crate) static TEST_FAIL_DIR_SYNC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
 pub(crate) fn write_equal(path: &Path, bytes: &[u8], mode: u32) -> Result<bool, DistError> {
     if read_plain(path)?.as_deref() == Some(bytes) {
         return Ok(false);
@@ -57,6 +62,10 @@ pub(crate) fn write_equal(path: &Path, bytes: &[u8], mode: u32) -> Result<bool, 
         .map_err(|e| io(tmp.path(), e))?;
     tmp.as_file().sync_all().map_err(|e| io(tmp.path(), e))?;
     tmp.persist(path).map_err(|e| io(path, e.error))?;
+    #[cfg(test)]
+    if TEST_FAIL_DIR_SYNC.with(|fail| fail.replace(false)) {
+        return Err(io(parent, std::io::Error::from_raw_os_error(5)));
+    }
     fs::File::open(parent)
         .and_then(|f| f.sync_all())
         .map_err(|e| io(parent, e))?;

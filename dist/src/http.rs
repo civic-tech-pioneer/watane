@@ -1266,6 +1266,43 @@ mod tests {
         }
     }
 
+    /// F3.2 (Codex r3): a directory sync that fails after the rename still installed the
+    /// new `follows.json`; the save reports the error, and the records and tombstones in
+    /// memory are the ones in the file.
+    #[test]
+    fn f3_2_a_failed_dir_sync_after_the_rename_keeps_memory_on_the_file() {
+        let w = world();
+        let (dir, eve) = w.eve(&[&w.a]);
+        let (_zdir, zed, _zhost) = listed_record(&w, &eve);
+        let zed_key = zed.identity().unwrap();
+        let id = zed.own().unwrap().listings[0].entry;
+        zed.unlist(&id).unwrap();
+        eve.refresh_channel(&zed_key).unwrap();
+        assert!(!eve.test_tomb_keys().contains(&w.key.to_string()));
+        crate::site::TEST_FAIL_DIR_SYNC.with(|fail| fail.set(true));
+        let err = eve.prune_listed().unwrap_err();
+        assert!(
+            matches!(&err, DistError::Io { source, .. } if source.raw_os_error() == Some(5)),
+            "the save reports the sync error: {err:?}"
+        );
+        let file = follows_file(dir.path());
+        let on_disk: Vec<String> = file["seen"]
+            .as_object()
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default();
+        assert!(on_disk.contains(&w.key.to_string()), "the prune was installed: {file}");
+        assert_eq!(eve.test_tomb_keys(), on_disk, "tombstones in memory");
+        let records: Vec<String> = eve
+            .follows
+            .lock()
+            .unwrap()
+            .keys()
+            .map(ToString::to_string)
+            .collect();
+        let in_file: Vec<String> = file["channels"].as_object().unwrap().keys().cloned().collect();
+        assert_eq!(records, in_file, "records in memory");
+    }
+
     /// F2.4: a failed kept ingest that cannot take its record back leaves the tombstones
     /// as the first save left them (the record took its channel's tombstone).
     #[test]
