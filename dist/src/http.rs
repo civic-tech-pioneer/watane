@@ -1362,12 +1362,20 @@ mod tests {
             .unwrap();
         let got = eve.fetch_for(&w.reference, Some(&dave_key)).unwrap();
         let derived = got.link.expect("a provider fetch names its base");
-        assert_eq!(derived, w.link(&w.a), "the link is built from the hint base");
+        assert_eq!(
+            derived,
+            w.link(&w.a),
+            "the link is built from the hint base"
+        );
         // The app installs from the fetched link; the hint host now redirects home.
         w.a.redirect("/head", &format!("{}head", w.b.url));
         let _ = eve.follow(&derived);
         let _ = eve.refresh_channel(&w.key);
-        assert_eq!(w.b.count(), 0, "a hint base led dist into the local network");
+        assert_eq!(
+            w.b.count(),
+            0,
+            "a hint base led dist into the local network"
+        );
     }
 
     /// r7: the same for a listed-only record: a hint base the record never held becomes
@@ -1394,6 +1402,10 @@ mod tests {
         a2.redirect("/head", &format!("{}head", w.b.url));
         let _ = eve.follow(&derived);
         let _ = eve.refresh_channel(&w.key);
-        assert_eq!(w.b.count(), 0, "a hint base led dist into the local network");
+        assert_eq!(
+            w.b.count(),
+            0,
+            "a hint base led dist into the local network"
+        );
     }
 }
