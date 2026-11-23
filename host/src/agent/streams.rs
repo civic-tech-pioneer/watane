@@ -1423,8 +1423,17 @@ mod tests {
         );
         hub.test_take(&s);
         assert_eq!(budgets(&hub), (2 * CLOSE_RESERVE, Some(2 * CLOSE_RESERVE)));
+        // A second stream of the origin keeps its reserve when the first one ends.
+        let other = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        hub.host_open_push(&other, b"ask").unwrap();
+        hub.test_take(&other);
         hub.test_close(&s, json!("cancelled"));
         hub.test_take(&s);
+        assert_eq!(budgets(&hub), (CLOSE_RESERVE, Some(CLOSE_RESERVE)));
+        hub.test_close(&other, json!("cancelled"));
+        hub.test_take(&other);
         assert_eq!(budgets(&hub), (0, None));
     }
 
@@ -1440,6 +1449,18 @@ mod tests {
         hub.lock().host_bytes -= 1;
         hub.host_open_push(&s, b"ask").unwrap();
         assert_eq!(hub.lock().host_bytes, HOST_BUDGET);
+        // The same for the origin client's budget.
+        let s = hub
+            .test_open(Consumer::Held { origin: "p".into() }, "p".into())
+            .unwrap();
+        hub.lock().host_bytes = 0;
+        hub.lock()
+            .origin_bytes
+            .insert("p".into(), ORIGIN_BUDGET - 3 - CLOSE_RESERVE + 1);
+        assert_eq!(hub.host_open_push(&s, b"ask"), Err(StreamError::Full));
+        *hub.lock().origin_bytes.get_mut("p").unwrap() -= 1;
+        hub.host_open_push(&s, b"ask").unwrap();
+        assert_eq!(hub.lock().origin_bytes["p"], ORIGIN_BUDGET);
     }
 
     /// 19.6 (At apply): a stream handed from A to X and back to A is A's again, but a `cancel`
