@@ -25,6 +25,9 @@ const BATCH_ITEMS: usize = 256;
 const BATCH_BYTES: usize = 1 << 20;
 const ORIGIN_BUDGET: usize = 128 << 20;
 const HOST_BUDGET: usize = 512 << 20;
+/// The most a close item (`ask-resolved`) can take: a decimal `u64` id, `by` and `outcome` from
+/// fixed sets.
+pub(crate) const CLOSE_RESERVE: usize = 128;
 const CONN_BUDGET: usize = 16 << 20;
 pub(crate) const MAX_OPEN: usize = 32;
 const LAG: Duration = Duration::from_secs(10);
@@ -107,6 +110,8 @@ struct Stream {
     next_seq: u64,
     queue: VecDeque<Item>,
     bytes: usize,
+    /// Bytes held in the budgets for the closes of the asks and checks that are open (19.2).
+    reserved: usize,
     state: State,
     retry_len: Option<usize>,
     failed_once: bool,
@@ -139,6 +144,7 @@ impl Stream {
             next_seq: 1,
             queue: VecDeque::new(),
             bytes: 0,
+            reserved: 0,
             state: State::Idle,
             retry_len: None,
             failed_once: false,
@@ -414,22 +420,17 @@ impl Hub {
         origin_pending: usize,
         host_pending: usize,
     ) -> Result<(), StreamError> {
-        self.check_push_in(
-            id,
-            len,
-            chain,
-            (origin, origin_pending, host_pending),
-            false,
-        )
+        self.check_push_in(id, len, chain, (origin, origin_pending, host_pending), 0)
     }
-    /// `check_push`; `close` skips the stream's own in-flight limit, not the budgets.
+    /// `check_push`; `reserve` more bytes must fit the origin and host budgets (not the
+    /// stream's limit), for the close item of an ask that this push opens.
     fn check_push_in(
         &self,
         id: &str,
         len: usize,
         chain: (usize, usize),
         (origin, origin_pending, host_pending): (&str, usize, usize),
-        close: bool,
+        reserve: usize,
     ) -> Result<(), StreamError> {
         let mut inner = self.lock();
         let now = inner.clock.now();
@@ -438,17 +439,16 @@ impl Hub {
         let Some(s) = inner.streams.get_mut(id) else {
             return Ok(());
         };
-        let refused = if !close
-            && (s.queue.len() + chain.0 + 1 > MAX_ITEMS || s.bytes + chain.1 + len > MAX_BYTES)
-        {
-            Some(Refused::Stream)
-        } else if origin_now + origin_pending + len > ORIGIN_BUDGET {
-            Some(Refused::Origin(len))
-        } else if host_now + host_pending + len > HOST_BUDGET {
-            Some(Refused::Host(len))
-        } else {
-            None
-        };
+        let refused =
+            if s.queue.len() + chain.0 + 1 > MAX_ITEMS || s.bytes + chain.1 + len > MAX_BYTES {
+                Some(Refused::Stream)
+            } else if origin_now + origin_pending + len + reserve > ORIGIN_BUDGET {
+                Some(Refused::Origin(len + reserve))
+            } else if host_now + host_pending + len + reserve > HOST_BUDGET {
+                Some(Refused::Host(len + reserve))
+            } else {
+                None
+            };
         let Some(refused) = refused else {
             return Ok(());
         };
@@ -894,14 +894,26 @@ impl Hub {
     /// A push by the host as producer (19.2): `full` when the stream, the origin client or the
     /// host is at its limit, so that the source waits.
     pub fn host_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
-        self.push_as_host(id, body, false)
+        self.push_as_host(id, body, 0, false)
     }
-    /// A push of an item that closes an ask or check (19.3, step 5): past the stream's in-flight
-    /// limit, so the end of a run never waits on a consumer; the budgets still count it.
+    /// A push of the item that opens an ask or check (19.3, step 5): the budgets must hold the
+    /// item and `CLOSE_RESERVE` more bytes, which stay reserved until its close is pushed.
+    pub fn host_open_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
+        self.push_as_host(id, body, CLOSE_RESERVE, false)
+    }
+    /// A push of an item that closes an ask or check: it takes the bytes reserved when the ask
+    /// opened and goes past the stream's in-flight limit, so it waits on neither the stream nor
+    /// a budget and the end of a run never waits on a consumer (19.2, In flight).
     pub fn host_close_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
-        self.push_as_host(id, body, true)
+        self.push_as_host(id, body, 0, true)
     }
-    fn push_as_host(&self, id: &str, body: &[u8], close: bool) -> Result<(), StreamError> {
+    fn push_as_host(
+        &self,
+        id: &str,
+        body: &[u8],
+        reserve: usize,
+        close: bool,
+    ) -> Result<(), StreamError> {
         if body.len() > MAX_ITEM {
             return Err(StreamError::TooLarge);
         }
@@ -912,8 +924,34 @@ impl Hub {
                 _ => return Err(StreamError::UnknownStream),
             }
         };
-        self.check_push_in(id, body.len(), (0, 0), (&origin, 0, 0), close)?;
-        self.lock().enqueue(id, body.to_vec(), 0);
+        if close {
+            let mut inner = self.lock();
+            let reserved = inner
+                .streams
+                .get_mut(id)
+                .filter(|s| s.reserved >= CLOSE_RESERVE)
+                .map(|s| {
+                    s.reserved -= CLOSE_RESERVE;
+                });
+            if reserved.is_some() {
+                inner.free(&origin, CLOSE_RESERVE);
+                inner.enqueue(id, body.to_vec(), 0);
+                drop(inner);
+                self.cv.notify_all();
+                return Ok(());
+            }
+        }
+        self.check_push_in(id, body.len(), (0, 0), (&origin, 0, 0), reserve)?;
+        let mut inner = self.lock();
+        inner.enqueue(id, body.to_vec(), 0);
+        if reserve > 0 {
+            if let Some(s) = inner.streams.get_mut(id) {
+                s.reserved += reserve;
+            }
+            *inner.origin_bytes.entry(origin).or_default() += reserve;
+            inner.host_bytes += reserve;
+        }
+        drop(inner);
         self.cv.notify_all();
         Ok(())
     }
@@ -959,6 +997,11 @@ impl Hub {
     /// A push by the host as producer, applied at once.
     pub fn test_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
         self.host_push(id, body)
+    }
+    /// Puts the host budget at its limit (19.2), for the tests of the close reserve.
+    #[cfg(test)]
+    pub(crate) fn test_fill_host_budget(&self) {
+        self.lock().host_bytes = HOST_BUDGET;
     }
     pub fn test_paused(&self, id: &str) -> bool {
         self.lock().streams.get(id).is_some_and(|s| {
@@ -1285,7 +1328,7 @@ impl Inner {
             return;
         };
         let outcome = s.closing.clone().unwrap_or(Value::Null);
-        self.free(&s.origin, s.bytes);
+        self.free(&s.origin, s.bytes + s.reserved);
         self.waiting.remove(id);
         if let Some(key) = s.consumer.key() {
             self.dec_open(&key);

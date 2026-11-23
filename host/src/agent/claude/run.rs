@@ -905,12 +905,20 @@ mod join_tests {
     #[test]
     fn s100_fix12_ac3_a_close_waits_on_no_consumer_and_goes_before_ended_in_order() {
         let rig = rig();
-        for _ in 0..crate::agent::streams::MAX_ITEMS {
-            rig.hub.test_push(&rig.stream, b"{}").unwrap();
+        let bash = super::super::control::Fields {
+            tool_use_id: "t".into(),
+            tool: "Bash".into(),
+            input: serde_json::json!({"command": "ls"}),
+        };
+        for rid in ["r7", "r8"] {
+            rig.session
+                .open_request(&rig.hub, rid, false, &bash, Duration::from_secs(60))
+                .unwrap();
         }
+        while rig.hub.test_push(&rig.stream, b"{}").is_ok() {}
         assert!(rig.hub.test_push(&rig.stream, b"{}").is_err());
-        rig.session.answered(&rig.hub, "7", "allow");
-        rig.session.answered(&rig.hub, "8", "deny");
+        rig.session.answered(&rig.hub, "1", "allow");
+        rig.session.answered(&rig.hub, "2", "deny");
         let start = std::time::Instant::now();
         rig.session.drain(&rig.hub);
         assert!(start.elapsed() < Duration::from_secs(1));
@@ -921,12 +929,13 @@ mod join_tests {
             .into_iter()
             .map(|(_, b)| String::from_utf8(b).unwrap())
             .collect();
+        // The stream was full, and both resolutions are past its limit, in order, last.
         assert_eq!(items.len(), crate::agent::streams::MAX_ITEMS + 2);
         assert_eq!(
             items[crate::agent::streams::MAX_ITEMS..],
             [
-                r#"{"type":"ask-resolved","id":"7","by":"answered","outcome":"allow"}"#,
-                r#"{"type":"ask-resolved","id":"8","by":"answered","outcome":"deny"}"#
+                r#"{"type":"ask-resolved","id":"1","by":"answered","outcome":"allow"}"#,
+                r#"{"type":"ask-resolved","id":"2","by":"answered","outcome":"deny"}"#
             ]
         );
     }

@@ -2803,7 +2803,7 @@ A stream carries numbered items from a producer to one consumer, in order.
 | Commit | `push`, `close`, `cancel`, `hand-off` and `resume` follow the chain rule of requests (19.6): they take effect after the top-level invoke of the chain succeeds and its writes commit, in call order, `close` and `cancel` after the pushes before them; a call that is rolled back, deferred or failed, and every call nested in it, drops them. The checks of the call (`not-yours`, `unknown-stream`, `full`, `too-large`) count what every chain in flight has queued, not only the current chain: a call checks and queues its effect under one lock of the host, and a chain releases its reservation when it applies or rolls back. So the in-flight limit, the budgets, the 32 open streams, the 256 live timers (their cancels count only in the chain that made them) and the single hand-off hold across chains running at once. `streams.open` is a request (19.6); a stream opened in a chain can be pushed to and closed in the same chain. A host stream that `claude-code.start` or `claude-code-shell.start` opened in a chain is visible to that chain's later stream and session calls as an `Open` is: its consumer, the starting mod, can `say`, `interrupt`, `compact`, `cancel` and `hand-off` it there, and a `cancel` of the chain starts no process |
 | Item call's caller | `host` for host streams, `mod:<producer>` for mod streams |
 | Hops | an item call that pushes on passes its hop count; at `limits.hops` (8) the item is dropped and logged |
-| In flight | items queued and not yet taken, 256 items or 4 MiB per stream; `push` past it fails `full`; the producer's `ready` runs once when it drops below half after a `push` to it failed `full` (never without such a push); host streams stop reading their source; the host's `ask-resolved` items bypass the item and byte limit (not the budgets), 19.3 step 5 |
+| In flight | items queued and not yet taken, 256 items or 4 MiB per stream; `push` past it fails `full`; the producer's `ready` runs once when it drops below half after a `push` to it failed `full` (never without such a push); host streams stop reading their source; the host's `ask-resolved` items bypass the item and byte limit; their bytes are reserved in the budgets when the ask or check opens, 19.3 step 5 |
 | Page queue | lossless, one per connection, apart from the page bus of 9.3. The host takes a batch for a page when its SSE write completes |
 | Ends | close, cancel, `lagging`, `replaced`, disable, removal or update of either side, lost grant or consent (a mod stream depends on the consumer's `Call` grant of the link through which `open` ran, the link and its provider too: revoked, withdrawn (`manage.withdraw`) or unbound, it ends `gone` for both sides at once, after the catalog write (Q24, Q46), or at apply for an `open` of a chain still in flight (19.6, At apply); a side disabled and enabled again while that `open` was in flight keeps the stream, which did not exist at the disable; none for a page or a host stream until A2), closed page connection, `consumer-failed`, `idle-timeout`, app quit; each side gets `ended(outcome)` (`stream-sink.ended`, `stream-producer.ended`; a page gets the message of 8.4) |
 | Forwarding | a mod that forwards defers when a `push` to its own downstream stream fails `full`, and resumes in its `stream-producer.ready` for that stream. When that downstream stream ends with any outcome (closed, `replaced`, `lagging`, page gone), `stream-producer.ended` runs and the mod resumes every deferred upstream of it |
@@ -3093,9 +3093,13 @@ not keep a credential from a mod on their own. Three rules do:
    queued line), so no write starts after it (review r3, F3.1). If the host cannot
    make its write end non-blocking, the start ends `failed("stdin")` before any line
    is written (fail closed). The `ask-resolved` items that close asks and checks are
-   host items, few and small (one per ask or check), and do not wait for room in the
-   stream: they go on the stream past its in-flight limit, in order, so the end of a
-   run never waits on a consumer that stopped reading (review r3, F3.2). Every line the writer reported written
+   host items, few and small (one per ask or check), and wait on neither the stream
+   nor a budget: they go on the stream past its in-flight limit, in order, and the
+   bytes of each (128, the most one can take) are reserved in the origin and host
+   budgets when its ask or check opens, which is refused `full` when item and reserve
+   do not fit; the close takes the reserve, and the stream's end frees what is left.
+   So the end of a run never waits on a consumer that stopped reading or on a budget
+   (review r3, F3.2). Every line the writer reported written
    has its `ask-resolved {by: answered}` pushed before `ended`; a write that did not
    complete (failed, or given up) pushes none, and none is pushed after the stream
    ended. No thread of the run outlives the bounds, but for the one that reaps

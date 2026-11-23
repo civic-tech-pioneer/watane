@@ -146,7 +146,7 @@ impl Session {
         let start = hub.now();
         let (ms, dropped) = now_ms();
         let expires_at = ms.saturating_add(u64::try_from(ttl.as_millis()).unwrap_or(0));
-        hub.host_push(
+        hub.host_open_push(
             &self.id,
             &control::request_item(hook, &id, fields, path.as_deref(), expires_at),
         )?;
@@ -227,21 +227,11 @@ impl Session {
         });
     }
 
-    /// Pushes every close that waits, waiting while the stream is full; gives up when the
-    /// stream is gone or stopped.
+    /// Pushes every close that waits. A close waits on neither the stream nor a budget: its bytes
+    /// were reserved when its ask opened (19.2, In flight), so this is one flush.
     pub(crate) fn drain(&self, hub: &Hub) {
-        loop {
-            let result = {
-                let mut asks = self.asks();
-                self.flush(hub, &mut asks)
-            };
-            match result {
-                Err(StreamError::Full) if !self.stopped() => {
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-                _ => return,
-            }
-        }
+        let mut asks = self.asks();
+        let _ = self.flush(hub, &mut asks);
     }
 
     /// The stream is ending, after the writer ended and `drain` ran: a writer that was let go
@@ -351,6 +341,44 @@ mod tests {
     }
 
     #[test]
+    fn s100_fix12_ac3_a_close_waits_on_no_budget_because_its_bytes_were_reserved_at_open() {
+        use crate::agent::streams::Consumer;
+        let hub = Hub::new();
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let session = Session::new(s.clone(), "o".into(), None);
+        session
+            .open_request(&hub, "r1", false, &bash(), Duration::from_secs(10))
+            .unwrap();
+        // The host budget is at its limit, the reserve of the open ask inside it.
+        hub.test_fill_host_budget();
+        assert_eq!(hub.host_push(&s, b"{}"), Err(StreamError::Full));
+        session.apply_answer(&hub, "1", &Decision::Allow(None));
+        // The writer reports the answer: the resolution goes on at once, as the last item.
+        session.answered(&hub, "1", "allow");
+        let start = std::time::Instant::now();
+        session.drain(&hub);
+        assert!(start.elapsed() < Duration::from_millis(500));
+        session.seal();
+        let last = hub.test_take(&s).pop().map(|(_, b)| b);
+        assert_eq!(
+            last.as_deref(),
+            Some(&br#"{"type":"ask-resolved","id":"1","by":"answered","outcome":"allow"}"#[..])
+        );
+    }
+
+    #[test]
+    fn s100_fix12_ac3_the_largest_close_item_fits_the_reserve() {
+        let item = control::resolved_item("18446744073709551615", "cancelled", Some("allow"));
+        assert!(
+            item.len() <= crate::agent::streams::CLOSE_RESERVE,
+            "{}",
+            item.len()
+        );
+    }
+
+    #[test]
     fn ac4_an_answer_whose_apply_comes_after_the_deadline_writes_only_the_expiry_deny() {
         let (hub, session, rx, clock) = rig();
         session
@@ -426,6 +454,9 @@ mod tests {
             .test_open(Consumer::Held { origin: "o".into() }, "o".into())
             .unwrap();
         let session = Session::new(s.clone(), "o".into(), None);
+        session
+            .open_request(&hub, "r1", false, &bash(), Duration::from_secs(10))
+            .unwrap();
         while hub.test_push(&s, b"{}").is_ok() {}
         // The stream is full: a close goes past the limit and nothing waits (review r3, F3.2).
         session.answered(&hub, "1", "allow");
@@ -436,20 +467,6 @@ mod tests {
             last.as_deref(),
             Some(&br#"{"type":"ask-resolved","id":"1","by":"answered","outcome":"allow"}"#[..])
         );
-    }
-
-    #[test]
-    fn ac5_drain_gives_up_on_a_full_stream_when_the_session_is_stopped() {
-        use crate::agent::streams::Consumer;
-        let hub = Hub::new();
-        let s = hub
-            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
-            .unwrap();
-        let session = Session::new(s.clone(), "o".into(), None);
-        while hub.test_push(&s, b"{}").is_ok() {}
-        session.answered(&hub, "1", "allow");
-        session.stop();
-        session.drain(&hub);
     }
 
     #[test]
