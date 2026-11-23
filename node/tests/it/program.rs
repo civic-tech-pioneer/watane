@@ -113,6 +113,7 @@ impl Prog {
     fn stderr(&self) -> String {
         self.stderr.lock().unwrap().clone()
     }
+    #[cfg(unix)] // Invokes the POSIX kill command.
     fn signal(&self, name: &str) {
         let status = Command::new("kill")
             .arg(format!("-{name}"))
@@ -218,6 +219,7 @@ fn free_port() -> u16 {
         .port()
 }
 
+#[cfg(unix)] // Sends POSIX signals to the node process.
 #[test]
 fn s11_run_relay_serves_a_relay_and_two_homes_connect_through_it() {
     let dirs: Vec<_> = (0..3).map(|_| tempfile::tempdir().unwrap()).collect();
@@ -415,6 +417,7 @@ impl Holdings for Liar {
     }
 }
 
+#[cfg(unix)] // Sends POSIX signals to the node process.
 #[test]
 fn s13_run_prints_one_refused_line_for_a_machine_that_sends_a_bad_entry() {
     let dir = tempfile::tempdir().unwrap();
@@ -528,6 +531,7 @@ fn program_bad_arguments_exit_2_with_the_usage_and_the_environment_stands_in_for
     assert_eq!(out.status.code(), Some(0));
 }
 
+#[cfg(unix)] // Sends POSIX signals to the node process.
 #[test]
 fn program_run_ends_on_sigterm_and_sigint_with_net_off_and_status_says_where_it_stands() {
     let dir = tempfile::tempdir().unwrap();
@@ -562,6 +566,7 @@ fn program_run_ends_on_sigterm_and_sigint_with_net_off_and_status_says_where_it_
     }
 }
 
+#[cfg(unix)] // Sends POSIX signals to the node process.
 #[test]
 fn s10_a_signal_during_join_ends_it_with_net_off() {
     let dirs = [tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap()];
@@ -618,6 +623,7 @@ fn ac1_help_prints_the_usage_on_stdout_with_no_home() {
 
 const BUSY: &str = "another watane-node is running on this home";
 
+#[cfg(unix)] // Sends POSIX signals to the node process.
 #[test]
 fn ac2_ac3_status_reads_beside_run_and_a_second_command_says_who_is_running() {
     let dir = tempfile::tempdir().unwrap();
