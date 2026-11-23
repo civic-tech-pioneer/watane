@@ -2815,7 +2815,7 @@ A stream carries numbered items from a producer to one consumer, in order.
 | Lag clock | a stream's clock starts when a `push` to it fails `full` and stops and resets when the host calls `ready` for it; after 10 s on one run of the clock the stream ends `lagging` and both sides get `ended`. So a consumer that stops taking items, or takes a few and stops (a page that stays connected but stops reading), cannot hold its producer, nor the producer's deferred upstream, for longer |
 | Deferral | a stream whose consumer has deferred it has no lag clock (a running one stops when the consumer defers; a new one starts only at a failed push after `resume`; its producer's pushes fail `full` because the consumer chose to wait). Backstop: a stream deferred for 5 minutes without `resume` ends `consumer-failed`. Neither needs a timer of the mod |
 | Restart | streams are memory only; old ids are `unknown-stream` |
-| Byte budgets | queued items (in flight and kept by a deferral) count against the host's budget of 512 MiB in all, 128 MiB per origin client (the consumer's 32 streams × 4 MiB), and 16 MiB per page connection. A `push` that would pass the origin client's or the host's budget fails `full`, as the in-flight limit does; its `ready` then waits until the stream is below half and the budget that refused it has room for the refused push again (Q44). A page connection past its 16 MiB ends; its streams end `lagging` |
+| Byte budgets | queued items (in flight and kept by a deferral), and the close reserve and kept input of each open ask or check (19.3 step 5), count against the host's budget of 512 MiB in all, 128 MiB per origin client (the consumer's 32 streams × 4 MiB), and 16 MiB per page connection. A `push` that would pass the origin client's or the host's budget fails `full`, as the in-flight limit does; its `ready` then waits until the stream is below half and the budget that refused it has room for the refused push again (Q44). A page connection past its 16 MiB ends; its streams end `lagging` |
 | Limits | 32 open streams per consumer (`streams.open` and a host start past it fail `full`); 4 MiB per item (`too-large`); 4 `claude` processes per origin client, 8 in all (a start past it ends `failed("too many claude processes")`) |
 
 A deferral is how a consumer says "not now" without losing order: the
@@ -3111,7 +3111,11 @@ not keep a credential from a mod on their own. Three rules do:
    reserve, and is freed when it closes or the stream ends; at most 64 asks and
    checks are open on one stream at a time, and a `can_use_tool` or `hook_callback`
    past that is answered deny at once and pushes nothing (fail closed; S100's sixth
-   adversary pass). Every line the writer reported written
+   adversary pass). One whose item, close reserve and kept input do not fit those
+   budgets is not denied: its open fails `full` and the run stops reading `claude`
+   until it fits, as every host push waits (19.2, In flight); the lag clock bounds
+   that wait, so a stream whose budget stays held ends `lagging` (19.2, Lag clock).
+   Every line the writer reported written
    has its `ask-resolved {by: answered}` pushed before `ended`; a write that did not
    complete (failed, or given up) pushes none, and none is pushed after the stream
    ended. No thread of the run outlives the bounds, but for the one that reaps

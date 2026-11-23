@@ -405,19 +405,21 @@ mod tests {
                 .open_request(&hub, &format!("r{n}"), false, &big, ASK_TTL)
                 .unwrap();
         }
-        assert!(hub.test_budget(&s).0 > 5 * 10_000);
+        // The items are taken: what is left is the kept input and the close reserves.
+        assert_eq!(hub.test_take(&s).len(), 5);
+        let (host, origin) = hub.test_budget(&s);
+        assert!(host > 5 * 10_000 && origin == host, "{host} {origin}");
         session.interrupt(&hub, b"{}".to_vec());
         session.drain(&hub);
-        hub.test_take(&s);
-        let (host, origin) = hub.test_budget(&s);
-        assert!(host < 5 * 10_000 && origin < 5 * 10_000, "{host} {origin}");
+        assert_eq!(hub.test_take(&s).len(), 5);
+        assert_eq!(hub.test_budget(&s), (0, 0));
         hub.test_close(&s, json!("cancelled"));
         hub.test_take(&s);
         assert_eq!(hub.test_budget(&s), (0, 0));
     }
 
     #[test]
-    fn s100_fix14_ac3_an_ask_whose_input_passes_the_budget_opens_nothing() {
+    fn s100_fix14_ac3_an_ask_whose_kept_input_passes_the_budget_waits_full() {
         use crate::agent::streams::Consumer;
         let hub = Hub::new();
         let s = hub
@@ -427,15 +429,21 @@ mod tests {
         let huge = Fields {
             tool_use_id: "t".into(),
             tool: "Bash".into(),
-            input: json!({"command": "x"}),
+            input: json!({"command": "x".repeat(10_000)}),
         };
-        hub.test_fill_host_budget();
+        // Room for the item (about 10 kB) and its close reserve, not for the kept input too.
+        hub.test_fill_host_budget_but(15_000);
         assert_eq!(
             session.open_request(&hub, "r1", false, &huge, ASK_TTL),
             Err(StreamError::Full)
         );
         assert!(hub.test_take(&s).is_empty());
         assert_eq!(session.asks().kept.len(), 0);
+        hub.test_fill_host_budget_but(25_000);
+        assert_eq!(
+            session.open_request(&hub, "r1", false, &huge, ASK_TTL),
+            Ok(())
+        );
     }
 
     #[test]
@@ -458,6 +466,12 @@ mod tests {
         );
         assert_eq!(hub.test_budget(&s), before);
         assert_eq!(hub.test_take(&s).len(), MAX_OPEN_ASKS);
+        // A close pushed frees its place.
+        session.cancel_request(&hub, "r0");
+        assert_eq!(
+            session.open_request(&hub, "r65", false, &bash(), ASK_TTL),
+            Ok(())
+        );
     }
 
     #[test]

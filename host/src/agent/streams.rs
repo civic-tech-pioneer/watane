@@ -867,7 +867,7 @@ impl Hub {
     /// A push by the host as producer (19.2): `full` when the stream, the origin client or the
     /// host is at its limit, so that the source waits.
     pub fn host_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
-        self.push_as_host(id, body, 0, None)
+        self.push_as_host(id, body, 0, false)
     }
     /// A push of the item that opens an ask or check (19.3, step 5): the budgets must hold the
     /// item, `CLOSE_RESERVE` bytes and the `retained` input of the ask, which stay reserved
@@ -879,7 +879,7 @@ impl Hub {
         body: &[u8],
         retained: usize,
     ) -> Result<(), StreamError> {
-        self.push_as_host(id, body, CLOSE_RESERVE + retained, Some(false))
+        self.push_as_host(id, body, CLOSE_RESERVE + retained, false)
     }
     /// `host_open_keeping` for an ask that keeps no input.
     #[cfg(test)]
@@ -896,21 +896,20 @@ impl Hub {
         body: &[u8],
         retained: usize,
     ) -> Result<(), StreamError> {
-        self.push_as_host(id, body, CLOSE_RESERVE + retained, Some(true))
+        self.push_as_host(id, body, CLOSE_RESERVE + retained, true)
     }
     /// `host_close_keeping` for an ask that kept no input.
     #[cfg(test)]
     pub fn host_close_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
         self.host_close_keeping(id, body, 0)
     }
-    /// `reserve` is what an open adds to the budgets, or what a close (`Some(true)`) takes
-    /// back; `close` is `None` for a plain push.
+    /// `reserve` is what an open adds to the budgets, or what a `close` takes back.
     fn push_as_host(
         &self,
         id: &str,
         body: &[u8],
         reserve: usize,
-        close: Option<bool>,
+        close: bool,
     ) -> Result<(), StreamError> {
         if body.len() > MAX_ITEM {
             return Err(StreamError::TooLarge);
@@ -920,7 +919,7 @@ impl Hub {
             Some(s) if s.closing.is_none() && s.producer == Producer::Host => s.origin.clone(),
             _ => return Err(StreamError::UnknownStream),
         };
-        if close == Some(true) {
+        if close {
             let taken = inner
                 .streams
                 .get_mut(id)
@@ -934,7 +933,7 @@ impl Hub {
                 return Ok(());
             }
         }
-        let reserve = if close == Some(true) { 0 } else { reserve };
+        let reserve = if close { 0 } else { reserve };
         inner.check_in(id, body.len(), (0, 0), (&origin, 0, 0), reserve)?;
         inner.enqueue(id, body.to_vec(), 0);
         if reserve > 0 {
@@ -995,6 +994,11 @@ impl Hub {
     #[cfg(test)]
     pub(crate) fn test_fill_host_budget(&self) {
         self.lock().host_bytes = HOST_BUDGET;
+    }
+    /// Fills the host's budget but for `room` bytes.
+    #[cfg(test)]
+    pub(crate) fn test_fill_host_budget_but(&self, room: usize) {
+        self.lock().host_bytes = HOST_BUDGET - room;
     }
     /// The host and origin bytes held now for the stream's origin client.
     #[cfg(test)]
