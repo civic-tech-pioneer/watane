@@ -411,14 +411,14 @@ impl Dist {
         for (channel, had) in std::mem::take(&mut done.take_back) {
             self.take_back_kept(&channel, had);
         }
-        if !done.unfollowed.is_empty() || !done.dropped.is_empty() {
-            if let Err(cause) = self.prune_listed() {
-                self.leave_pending(|state| {
-                    state.unfollowed.append(&mut done.unfollowed);
-                    state.dropped.append(&mut done.dropped);
-                });
-                return Err(cause);
-            }
+        if (!done.unfollowed.is_empty() || !done.dropped.is_empty())
+            && let Err(cause) = self.prune_listed()
+        {
+            self.leave_pending(|state| {
+                state.unfollowed.append(&mut done.unfollowed);
+                state.dropped.append(&mut done.dropped);
+            });
+            return Err(cause);
         }
         Ok(done)
     }
