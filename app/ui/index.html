@@ -42,6 +42,14 @@
 </section><section id="site"><h2>Site</h2><p id="site-dir"></p><label>Site URL <input id="site-url" type="url"></label><button class="btn primary" id="set-site">Set site URL</button>
 <p id="own-link"></p><button class="btn" id="copy-link">Copy link</button></section>
 </section>
+<section id="chatgpt" aria-labelledby="chatgpt-heading"><h2 id="chatgpt-heading">ChatGPT</h2>
+<p id="chatgpt-status" role="status">Not signed in</p>
+<button class="btn primary" id="chatgpt-sign-in">Sign in with ChatGPT</button><button class="btn" id="chatgpt-sign-out" hidden>Sign out</button>
+<p id="chatgpt-error" role="alert"></p></section>
+<section id="claude" aria-labelledby="claude-heading"><h2 id="claude-heading">Claude Code</h2>
+<p id="claude-path"></p><p id="claude-status" role="status">No program chosen</p>
+<button class="btn" id="claude-choose">Choose…</button><button class="btn" id="claude-clear" disabled>Clear</button>
+<p id="claude-error" role="alert"></p></section>
 <section id="agents"><h2>Agents</h2>
 <label>Toolset name <input id="toolset-name"></label><div id="tools"></div><button class="btn" id="save-toolset">Save toolset</button><div id="toolsets"></div>
 <label>Toolset <select id="token-toolset"></select></label><label>Agent handle <input id="handle"></label><button class="btn primary" id="issue-token">Issue token</button>

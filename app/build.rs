@@ -2,6 +2,10 @@ fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "status",
+            "chatgpt_sign_in",
+            "chatgpt_sign_out",
+            "claude_binary_pick",
+            "claude_binary_clear",
             "mods_list",
             "mod_open",
             "mod_disable",

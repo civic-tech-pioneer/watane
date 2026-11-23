@@ -295,6 +295,10 @@ impl App {
     pub fn pick(&self, paths: &[PathBuf]) {
         assert_eq!(self.call(json!({"op":"pick", "paths":paths})), true);
     }
+    #[cfg(all(feature = "driver", unix))]
+    pub fn open_url(&self) -> Value {
+        self.call(json!({"op":"open_url"}))
+    }
     pub fn log(&self) -> Value {
         self.call(json!({"op":"log"}))
     }

@@ -1,6 +1,9 @@
 //! The app (TECHNICAL 3): Config, run, AppState, startup and exit.
 
+mod accounts;
 mod build_on;
+mod chatgpt;
+mod claude_bin;
 #[cfg(all(feature = "driver", not(debug_assertions)))]
 compile_error!("the driver feature is only for debug test builds");
 pub mod api;
@@ -178,6 +181,7 @@ pub(crate) struct AppState {
     broker: Arc<Broker>,
     core: OnceLock<Arc<core::Core>>,
     consent_id: Mutex<Option<AskId>>,
+    accounts: Arc<accounts::Accounts>,
     #[cfg(feature = "driver")]
     driver: driver::DriverState,
     #[cfg(feature = "driver")]
@@ -260,6 +264,7 @@ pub fn run(config: Config) -> Result<(), AppError> {
         let _ = failed.set(e.clone());
     }
     let state = AppState {
+        accounts: Arc::new(accounts::Accounts::new(&config.home)),
         home: config.home,
         port: config.port,
         mark: mark.ok(),
@@ -279,6 +284,10 @@ pub fn run(config: Config) -> Result<(), AppError> {
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::status,
+            commands::chatgpt_sign_in,
+            commands::chatgpt_sign_out,
+            commands::claude_binary_pick,
+            commands::claude_binary_clear,
             commands::mods_list,
             commands::mod_open,
             commands::mod_disable,

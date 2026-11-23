@@ -36,6 +36,7 @@ pub(crate) struct DriverState {
     pages: Mutex<HashSet<String>>,
     changed: Condvar,
     commands: Mutex<Vec<Value>>,
+    opened_urls: Mutex<std::collections::VecDeque<String>>,
     blocked: Mutex<Vec<Value>>,
 }
 impl DriverState {
@@ -56,6 +57,12 @@ impl DriverState {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
             .push(json!({"label":label,"cmd":cmd}));
+    }
+    pub fn open_url(&self, url: &tauri::Url) {
+        self.opened_urls
+            .lock()
+            .expect("driver browser lock")
+            .push_back(url.to_string());
     }
     pub fn blocked(&self, label: &str, kind: &str, url: &str) {
         self.blocked
@@ -278,6 +285,14 @@ fn dispatch(app: &tauri::AppHandle, v: &Value) -> Result<Value, String> {
                 .map_err(|e| e.to_string())??;
             Ok(json!(true))
         }
+        "open_url" => Ok(json!(
+            state
+                .driver
+                .opened_urls
+                .lock()
+                .expect("driver browser lock")
+                .pop_front()
+        )),
         "pick" => {
             let paths: Vec<std::path::PathBuf> =
                 serde_json::from_value(v["paths"].clone()).map_err(|e| e.to_string())?;

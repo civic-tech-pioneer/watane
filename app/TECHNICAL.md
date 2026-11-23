@@ -1782,6 +1782,7 @@ setup and the first page load of the startup window (`main` or
 | `close` | `label` | `true`; closes as the user does (close handlers run) |
 | `log` | — | `{commands: [{label, cmd}], blocked: [{label, kind, url}]}`; kind `navigation`, `new_window` or `download` |
 | `pick` | `paths: [string]` | `true`; the next dialog returns these paths and shows nothing |
+| `open_url` | — | The next queued authorization URL, or null. Only the driver issuer override queues URLs (19.6). |
 | `ask` | `request: Request` | the `Answer` as JSON, when answered |
 | `quit` | — | the app exits 0 |
 
@@ -2639,7 +2640,10 @@ Settings gets a group `Claude Code` (5.3) with the path of the program, or
 - **Storing.** `<home>/app/claude.json`, `{"version":1,"path":"<abs path>"}`,
   0600, atomic as in 19.1. `claude_binary_clear` deletes it.
   `status.claude` is `{path, version}` or `null`; the line reads `Claude Code
-  <version>` beside the path.
+  <version>` beside the path. The app checks the version once per app process
+  when it first reads a saved choice. If the program cannot be checked,
+  Settings keeps its path and makes Clear available. `version` is then null
+  and `error` gives the cause.
 - **What the host gets.** `AccountSource::claude_binary()` returns the stored
   path, or `AccountError::NoAccount` when none is stored (the host's `no-binary` outcome,
   agentic-harness 12, follows). The app does not recheck the version at each
@@ -2730,8 +2734,8 @@ log (the arguments `key` of `judge_set` are logged as `<redacted>`).
 | `judge_remove` | `local` | `null` |
 | `consent_withdraw` | `local`, `key` | `null` |
 
-`Status` gains `chatgpt: {signedIn, plan, error}` and `claude: {path, version} |
-null`. `CmdError.code` gains no value: a failed check is `bad_input`, an
+`Status` gains `chatgpt: {signedIn, plan, error}` and `claude: {path, version, error?} |
+null` (19.3). `CmdError.code` gains no value: a failed check is `bad_input`, an
 unreachable OpenAI is `unavailable`, an I/O error is `io`. `build.rs` and
 `capabilities/main.json` list the seven commands in stage L (section 14).
 
