@@ -175,7 +175,7 @@ pub fn add_provider(
     let handle = below(dir, &wit, "wit/deps", true)?.expect("created");
     let target = below(dir, &handle, &relative, false)?;
     // Finish all conflict and input checks before the first write.
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     hook::run();
     write_files(dir, &handle, &relative, target, &main)?;
     for (name, files) in copies {
@@ -184,7 +184,7 @@ pub fn add_provider(
     deps.write(dir)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) mod hook {
     use std::cell::RefCell;
     type Hook = Option<Box<dyn FnOnce()>>;

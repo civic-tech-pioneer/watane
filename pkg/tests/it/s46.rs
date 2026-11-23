@@ -10,6 +10,7 @@ const GOLDEN: &str = concat!(
     "0866e9df433265eaf0d959c589d82f1c2020d5b07faf7a530b012ec9f62ff87b",
     "189ff4808080f6"
 );
+#[cfg(unix)]
 const LINK: &str = "a symbolic link; replace it with a regular file or directory";
 
 #[cfg(unix)]
@@ -23,7 +24,6 @@ fn mkfifo(path: &Path) {
             .success()
     );
 }
-#[cfg(unix)]
 fn violations(dir: &Path) -> Vec<Violation> {
     match Mod::read(dir) {
         Err(ModError::Invalid(v)) => v,
@@ -70,7 +70,6 @@ fn ac1_s46_hidden_link_named() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn ac1_s46_wit_directory_rule_without_link() {
     let dir = support::built_fixture("hello");
