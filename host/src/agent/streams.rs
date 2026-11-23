@@ -1628,6 +1628,83 @@ mod tests {
         assert!(hub.lock().streams[&other].full_since.is_none());
     }
 
+    /// 19.3 step 5 (review r5, F5.1): a scan wakes a producer only when its whole refused push
+    /// fits beside the pending bytes, in the origin budget and in the host budget.
+    #[test]
+    fn s100_fix16_ac1_a_scan_counts_the_refused_push_and_the_pending_bytes_of_both_budgets() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let hub = &host.hub;
+        for (origin, pending) in [("o", ORIGIN_BUDGET - 300), ("p", HOST_BUDGET - 300)] {
+            let s = hub
+                .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+                .unwrap();
+            let mut push = pending_push(pending);
+            if let Effect::Push { origin: o, .. } = &mut push {
+                *o = origin.into();
+            }
+            let chain = crate::runtime::call::test_chain(&host, vec![push]);
+            assert_eq!(hub.host_push(&s, &[0; 512]), Err(StreamError::Full));
+            // A scan with nothing freed: 300 bytes are not room for 512.
+            let idle = crate::runtime::call::test_chain(&host, vec![]);
+            crate::runtime::call::test_rollback(&host, &idle);
+            assert!(hub.lock().streams[&s].needs_ready.is_some(), "{origin}");
+            crate::runtime::call::test_rollback(&host, &chain);
+            assert!(hub.lock().streams[&s].needs_ready.is_none(), "{origin}");
+            hub.host_push(&s, &[0; 512]).unwrap();
+            hub.test_take(&s);
+        }
+    }
+
+    /// 19.3 step 5 (review r5, F5.1): a push that fills a budget to the byte does not fit beside
+    /// one pending byte, in the origin budget and in the host budget.
+    #[test]
+    fn s100_fix16_ac1_one_pending_byte_keeps_a_push_that_fills_the_budget_waiting() {
+        for host_budget in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+            let hub = &host.hub;
+            let open = |origin: &str| {
+                hub.test_open(
+                    Consumer::Held {
+                        origin: origin.into(),
+                    },
+                    origin.into(),
+                )
+                .unwrap()
+            };
+            // Open asks keep all but about 2 MiB of the budget.
+            let origins: &[&str] = if host_budget {
+                &["q1", "q2", "q3", "q4"]
+            } else {
+                &["o"]
+            };
+            let keep = if host_budget {
+                ORIGIN_BUDGET - (512 << 10)
+            } else {
+                ORIGIN_BUDGET - (2 << 20)
+            };
+            for o in origins {
+                hub.host_open_keeping(&open(o), b"ask", keep).unwrap();
+            }
+            let s = open("o");
+            let (host_now, origin_now) = hub.test_budget(&s);
+            let n = if host_budget {
+                HOST_BUDGET - host_now
+            } else {
+                ORIGIN_BUDGET - origin_now
+            };
+            let _chain = crate::runtime::call::test_chain(&host, vec![pending_push(1)]);
+            assert_eq!(hub.host_push(&s, &vec![0; n]), Err(StreamError::Full));
+            let idle = crate::runtime::call::test_chain(&host, vec![]);
+            crate::runtime::call::test_rollback(&host, &idle);
+            assert!(
+                hub.lock().streams[&s].needs_ready.is_some(),
+                "{host_budget}"
+            );
+        }
+    }
+
     /// 19.3 step 5 (review r5, F5.2): an admission after a refusal clears the refusal and its lag
     /// timer, so the stream does not end `lagging`.
     #[test]
