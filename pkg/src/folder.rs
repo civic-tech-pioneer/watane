@@ -199,12 +199,12 @@ fn links_below(
             found |= violations.len() > before;
             continue;
         };
-        for (name, m) in list.into_iter().rev() {
+        for crate::open::Entry { name, stat, .. } in list.into_iter().rev() {
             let path = format!("{relative}/{}", name.to_string_lossy());
-            match m.kind {
+            match stat.kind {
                 Kind::Link => {
                     found = true;
-                    add(violations, Rule::Path, &path, LINK);
+                    record_link(violations, &path);
                 }
                 Kind::Dir => stack.push(path),
                 _ => {}
@@ -214,6 +214,29 @@ fn links_below(
     Ok(found)
 }
 use crate::refusal::{CHANGED, LINK_ENTRY as LINK, LINK_FILE, SPECIAL};
+const WIT_DIRECTORY: &str = "WIT directories must be wit/deps/<segment>";
+
+fn record_link(violations: &mut Vec<Violation>, path: &str) {
+    let hidden = path
+        .match_indices('/')
+        .map(|(end, _)| &path[..end])
+        .find(|parent| {
+            parent
+                .rsplit('/')
+                .next()
+                .is_some_and(|name| name.starts_with('.'))
+        });
+    let (file, message) = match hidden {
+        Some(folder) if folder.starts_with("wit/") => (folder, WIT_DIRECTORY),
+        Some(folder) => (
+            folder,
+            "a hidden directory contains a symbolic link. Remove the link.",
+        ),
+        None => (path, LINK),
+    };
+    add(violations, Rule::Path, file, message);
+}
+
 #[cfg(test)]
 type OpenHook = Option<Box<dyn FnMut(&str)>>;
 #[cfg(test)]
@@ -237,7 +260,7 @@ fn open_listed(
     match crate::open::dir(root, relative) {
         Ok(handle) => Ok(Some(handle)),
         Err((part, e)) if crate::open::is_link(&e) => {
-            add(violations, Rule::Path, &part, LINK);
+            record_link(violations, &part);
             Ok(None)
         }
         Err((_, e))
@@ -258,19 +281,19 @@ fn list_entries(
     root: &Path,
     relative: &str,
     violations: &mut Vec<Violation>,
-) -> Result<Option<Vec<(std::ffi::OsString, crate::open::Stat)>>, ModError> {
+) -> Result<Option<Vec<crate::open::Entry>>, ModError> {
     match crate::open::entries(handle) {
         Ok(list) => Ok(Some(list)),
         Err(e)
             if matches!(
-                e.kind(),
+                e.source.kind(),
                 std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
             ) =>
         {
-            add(violations, Rule::Path, relative, CHANGED);
+            add(violations, Rule::Path, &e.relative_path(relative), CHANGED);
             Ok(None)
         }
-        Err(e) => Err(io(&root.join(relative), e)),
+        Err(e) => Err(io(&root.join(e.relative_path(relative)), e.source)),
     }
 }
 fn segment(s: &str) -> bool {
@@ -297,7 +320,7 @@ fn inspect(dir: &Path, violations: &mut Vec<Violation>) -> Result<Vec<String>, M
     }
     while let Some((relative, m)) = stack.pop() {
         if m.kind == Kind::Link {
-            add(violations, Rule::Path, &relative, LINK);
+            record_link(violations, &relative);
             continue;
         }
         let wit = relative == "wit" || relative.starts_with("wit/");
@@ -310,12 +333,7 @@ fn inspect(dir: &Path, violations: &mut Vec<Violation>) -> Result<Vec<String>, M
                     && relative.rsplit('/').next().is_some_and(segment))
             {
                 if !links_below(dir, &relative, violations)? {
-                    add(
-                        violations,
-                        Rule::Path,
-                        &relative,
-                        "WIT directories must be wit/deps/<segment>",
-                    );
+                    add(violations, Rule::Path, &relative, WIT_DIRECTORY);
                 }
                 continue;
             }
@@ -325,7 +343,7 @@ fn inspect(dir: &Path, violations: &mut Vec<Violation>) -> Result<Vec<String>, M
             let Some(list) = list_entries(&handle, dir, &relative, violations)? else {
                 continue;
             };
-            for (name, child) in list.into_iter().rev() {
+            for crate::open::Entry { name, stat, .. } in list.into_iter().rev() {
                 let Some(name) = name.to_str() else {
                     add(
                         violations,
@@ -338,10 +356,10 @@ fn inspect(dir: &Path, violations: &mut Vec<Violation>) -> Result<Vec<String>, M
                 let path = format!("{relative}/{name}");
                 // Hidden content is not part of a package: only its links matter.
                 let hidden = !wit && path.split('/').any(|s| s.starts_with('.'));
-                if hidden && !matches!(child.kind, Kind::Link | Kind::Dir) {
+                if hidden && !matches!(stat.kind, Kind::Link | Kind::Dir) {
                     continue;
                 }
-                stack.push((path, child));
+                stack.push((path, stat));
             }
         } else if wit {
             if relative == "wit" || relative == "wit/deps" {

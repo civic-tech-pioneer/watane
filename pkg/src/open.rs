@@ -66,15 +66,19 @@ fn stat_of(s: &rustix::fs::Stat) -> Stat {
 }
 
 /// Stat one entry of `dir` without following it.
-pub(crate) fn stat(dir: &Dir, name: &str) -> io::Result<Stat> {
+pub(crate) fn stat(dir: &Dir, name: impl AsRef<std::ffi::OsStr>) -> io::Result<Stat> {
     #[cfg(unix)]
     {
         use rustix::fs::{AtFlags, statat};
-        Ok(stat_of(&statat(&dir.fd, name, AtFlags::SYMLINK_NOFOLLOW)?))
+        Ok(stat_of(&statat(
+            &dir.fd,
+            name.as_ref(),
+            AtFlags::SYMLINK_NOFOLLOW,
+        )?))
     }
     #[cfg(not(unix))]
     {
-        let m = std::fs::symlink_metadata(dir.path.join(name))?;
+        let m = std::fs::symlink_metadata(dir.path.join(name.as_ref()))?;
         Ok(Stat {
             kind: if m.file_type().is_symlink() {
                 Kind::Link
@@ -90,30 +94,94 @@ pub(crate) fn stat(dir: &Dir, name: &str) -> io::Result<Stat> {
     }
 }
 
+#[cfg(all(test, unix))]
+type EntryHook = Option<Box<dyn Fn(&std::ffi::OsStr)>>;
+#[cfg(all(test, unix))]
+thread_local!(pub(crate) static BEFORE_ENTRY_STAT: std::cell::RefCell<EntryHook> =
+    const { std::cell::RefCell::new(None) });
+
+pub(crate) struct Entry {
+    pub name: OsString,
+    pub stat: Stat,
+    pub listed_as_file: bool,
+}
+
+#[derive(Debug)]
+pub(crate) struct ListingError {
+    pub name: Option<OsString>,
+    pub source: io::Error,
+}
+impl ListingError {
+    pub(crate) fn relative_path(&self, parent: &str) -> String {
+        self.name.as_ref().map_or_else(
+            || parent.to_owned(),
+            |name| format!("{parent}/{}", name.to_string_lossy()),
+        )
+    }
+}
+
 /// The entries of `dir`, sorted by name, each stat-ed without following it.
-pub(crate) fn entries(dir: &Dir) -> io::Result<Vec<(OsString, Stat)>> {
+pub(crate) fn entries(dir: &Dir) -> Result<Vec<Entry>, ListingError> {
     let mut list = Vec::new();
+    let unnamed = |source| ListingError { name: None, source };
+    let read_entry = |name: OsString, listed_as_file| {
+        #[cfg(all(test, unix))]
+        BEFORE_ENTRY_STAT.with(|hook| {
+            if let Some(change) = hook.borrow().as_ref() {
+                change(&name);
+            }
+        });
+        let stat = stat(dir, &name).map_err(|source| ListingError {
+            name: Some(name.clone()),
+            source,
+        })?;
+        Ok(Entry {
+            name,
+            stat,
+            listed_as_file,
+        })
+    };
     #[cfg(unix)]
     {
-        use rustix::fs::{AtFlags, statat};
         use std::os::unix::ffi::OsStringExt;
-        for entry in rustix::fs::Dir::read_from(&dir.fd)? {
-            let entry = entry?;
+        for entry in rustix::fs::Dir::read_from(&dir.fd).map_err(|e| unnamed(e.into()))? {
+            let entry = entry.map_err(|e| unnamed(e.into()))?;
             let name = entry.file_name();
             if name == c"." || name == c".." {
                 continue;
             }
-            let s = statat(&dir.fd, name, AtFlags::SYMLINK_NOFOLLOW)?;
-            list.push((OsString::from_vec(name.to_bytes().to_vec()), stat_of(&s)));
+            // Where available, retain the type from readdir before looking up the size.
+            #[cfg(not(any(
+                target_os = "aix",
+                target_os = "haiku",
+                target_os = "illumos",
+                target_os = "nto",
+                target_os = "solaris",
+                target_os = "vita"
+            )))]
+            let listed_as_file = entry.file_type() == rustix::fs::FileType::RegularFile;
+            #[cfg(any(
+                target_os = "aix",
+                target_os = "haiku",
+                target_os = "illumos",
+                target_os = "nto",
+                target_os = "solaris",
+                target_os = "vita"
+            ))]
+            let listed_as_file = false;
+            list.push(read_entry(
+                OsString::from_vec(name.to_bytes().to_vec()),
+                listed_as_file,
+            )?);
         }
     }
     #[cfg(not(unix))]
-    for entry in std::fs::read_dir(&dir.path)? {
-        let name = entry?.file_name();
-        let s = stat(dir, &name.to_string_lossy())?;
-        list.push((name, s));
+    for entry in std::fs::read_dir(&dir.path).map_err(unnamed)? {
+        let entry = entry.map_err(unnamed)?;
+        let listed_as_file = entry.file_type().is_ok_and(|kind| kind.is_file());
+        list.push(read_entry(entry.file_name(), listed_as_file)?);
     }
-    list.sort_by(|a, b| a.0.cmp(&b.0));
+    list.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(list)
 }
 
@@ -183,7 +251,7 @@ pub(crate) fn create_file(dir: &Dir, name: &str, bytes: &[u8]) -> io::Result<()>
 
 /// Remove everything inside `dir`; a link is unlinked, never followed.
 pub(crate) fn clear(dir: &Dir) -> io::Result<()> {
-    for (name, stat) in entries(dir)? {
+    for Entry { name, stat, .. } in entries(dir).map_err(|e| e.source)? {
         let name = name.to_string_lossy();
         if stat.kind == Kind::Dir {
             clear(&child(dir, &name)?)?;
@@ -349,6 +417,6 @@ mod tests {
         let d = dir(&t.path().join("root"), "ui").unwrap();
         let list = entries(&d).unwrap();
         assert_eq!(list.len(), 1);
-        assert_eq!(list[0].1.kind, Kind::File);
+        assert_eq!(list[0].stat.kind, Kind::File);
     }
 }

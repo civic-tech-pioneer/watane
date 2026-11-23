@@ -306,12 +306,13 @@ fn pack_error(root: &Path, part: String, e: std::io::Error) -> PackageError {
         io(&root.join(part), e)
     }
 }
-// A listing or stat that fails because the entry vanished is the CHANGED cause.
-fn listing(root: &Path, relative: &str, e: std::io::Error) -> PackageError {
-    if e.kind() == std::io::ErrorKind::NotFound {
-        path_error(relative, crate::refusal::CHANGED)
+// A failed entry stat retains its name; a failure before enumeration names the directory.
+fn listing(root: &Path, relative: &str, e: crate::open::ListingError) -> PackageError {
+    let path = e.relative_path(relative);
+    if e.source.kind() == std::io::ErrorKind::NotFound {
+        path_error(&path, crate::refusal::CHANGED)
     } else {
-        io(&root.join(relative), e)
+        io(&root.join(path), e.source)
     }
 }
 fn open_pack_file(root: &Path, relative: &str) -> Result<fs::File, PackageError> {
@@ -365,9 +366,11 @@ fn hidden_links(root: &Path, relative: &str) -> Result<(), PackageError> {
     let mut stack = vec![relative.to_string()];
     while let Some(relative) = stack.pop() {
         let dir = open_pack_dir(root, &relative)?;
-        for (name, m) in crate::open::entries(&dir).map_err(|e| listing(root, &relative, e))? {
+        for crate::open::Entry { name, stat, .. } in
+            crate::open::entries(&dir).map_err(|e| listing(root, &relative, e))?
+        {
             let path = format!("{relative}/{}", name.to_string_lossy());
-            match m.kind {
+            match stat.kind {
                 Kind::Link => return Err(PackageError::Symlink { path }),
                 Kind::Dir => stack.push(path),
                 _ => {}
@@ -387,10 +390,13 @@ impl Input {
         root: &Path,
         relative: &str,
         m: crate::open::Stat,
+        listed_as_file: bool,
     ) -> Result<(), PackageError> {
         use crate::open::Kind;
         // Filter before descending: build output and unrelated files are never entered.
-        if !directory(relative) && class(relative).is_none() {
+        let allow_directory = directory(relative);
+        let allow_file = class(relative).is_some();
+        if !allow_directory && !allow_file {
             return Ok(());
         }
         if m.kind == Kind::Link {
@@ -399,14 +405,20 @@ impl Input {
             });
         }
         grammar(relative)?;
-        if m.kind == Kind::Dir && directory(relative) {
+        if m.kind == Kind::Dir {
+            if listed_as_file || !allow_directory {
+                return Err(path_error(relative, crate::refusal::DIRECTORY));
+            }
             let dir = open_pack_dir(root, relative)?;
-            for (name, child) in
-                crate::open::entries(&dir).map_err(|e| listing(root, relative, e))?
+            for crate::open::Entry {
+                name,
+                stat,
+                listed_as_file,
+            } in crate::open::entries(&dir).map_err(|e| listing(root, relative, e))?
             {
                 if name.to_string_lossy().starts_with('.') {
                     let path = format!("{relative}/{}", name.to_string_lossy());
-                    match child.kind {
+                    match stat.kind {
                         Kind::Link => return Err(PackageError::Symlink { path }),
                         Kind::Dir => hidden_links(root, &path)?,
                         _ => {}
@@ -419,12 +431,12 @@ impl Input {
                         "path must be ASCII",
                     )
                 })?;
-                self.walk(root, &format!("{relative}/{name}"), child)?;
+                self.walk(root, &format!("{relative}/{name}"), stat, listed_as_file)?;
             }
-        } else if m.kind == Kind::File && class(relative).is_none() {
+        } else if m.kind == Kind::File && !allow_file {
             // A regular file beside the content, such as wit/deps/README.md, is not
             // package content (section 6.1) and Mod::read ignores it (section 4.7).
-        } else if m.kind == Kind::File && class(relative).is_some() {
+        } else if m.kind == Kind::File {
             if self.files.len() == MAX_FILES {
                 return Err(PackageError::TooManyFiles);
             }
@@ -449,13 +461,13 @@ pub fn pack(dir: &Path, include_source: bool) -> Result<Package, PackageError> {
     };
     for path in ["mod.toml", "deps.json", "logic.wasm", "wit", "ui"] {
         if let Some(m) = lstat(dir, path)? {
-            input.walk(dir, path, m)?;
+            input.walk(dir, path, m, false)?;
         }
     }
     if include_source {
         for path in ["logic", "tests"] {
             if let Some(m) = lstat(dir, path)? {
-                input.walk(dir, path, m)?;
+                input.walk(dir, path, m, false)?;
             }
         }
     }
@@ -664,17 +676,92 @@ mod tests {
         };
         assert_eq!(pipe.kind(), std::io::ErrorKind::InvalidInput);
     }
-    // An entry gone between getdents and its stat cannot be staged; pin the mapping itself.
+    #[test]
+    fn ac2_s108_directory_at_a_file_only_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir(tmp.path().join("mod.toml")).unwrap();
+        let error = pack(tmp.path(), false).unwrap_err();
+        assert!(matches!(error, PackageError::Path { path, reason }
+            if path == "mod.toml" && reason == "expected a regular file, found a directory"
+        ));
+    }
+    #[cfg(unix)]
+    fn pack_with_listing_change(relative: &str, change: impl Fn(&Path) + 'static) -> PackageError {
+        let tmp = open_fixture();
+        for (path, bytes) in [
+            (
+                "mod.toml",
+                &include_bytes!("../tests/fixtures/hello/mod.toml")[..],
+            ),
+            (
+                "ui/index.html",
+                &include_bytes!("../tests/fixtures/hello/ui/index.html")[..],
+            ),
+            (
+                "wit/world.wit",
+                &include_bytes!("../tests/fixtures/hello/wit/world.wit")[..],
+            ),
+        ] {
+            let path = tmp.path().join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, bytes).unwrap();
+        }
+        let path = tmp.path().join(relative);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "listed file").unwrap();
+        let changed = std::cell::Cell::new(false);
+        crate::open::BEFORE_ENTRY_STAT.with(|hook| {
+            hook.replace(Some(Box::new(move |name| {
+                if path.file_name() == Some(name) && !changed.replace(true) {
+                    change(&path);
+                }
+            })));
+        });
+        let result = pack(tmp.path(), false);
+        crate::open::BEFORE_ENTRY_STAT.with(|hook| hook.replace(None));
+        result.unwrap_err()
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn ac2_s108_listed_file_replaced_by_a_directory() {
+        let error = pack_with_listing_change("ui/entry", |path| {
+            fs::remove_file(path).unwrap();
+            fs::create_dir(path).unwrap();
+        });
+        assert_eq!(
+            path_reason(error, "ui/entry"),
+            "expected a regular file, found a directory"
+        );
+    }
+
     #[cfg(unix)]
     #[test]
-    fn ac2_s91_listing_entry_gone_is_changed() {
-        let gone = listing(Path::new("/m"), "ui", std::io::ErrorKind::NotFound.into());
-        assert_eq!(path_reason(gone, "ui"), crate::refusal::CHANGED);
+    fn ac3_s108_listing_entry_gone_is_changed() {
+        for relative in ["ui/entry", "ui/.hidden/entry"] {
+            let error = pack_with_listing_change(relative, |path| fs::remove_file(path).unwrap());
+            assert_eq!(
+                path_reason(error, relative),
+                "changed while the mod was read; read it again"
+            );
+        }
+    }
+
+    #[test]
+    fn listing_permission_denied_stays_io() {
         let denied = listing(
             Path::new("/m"),
             "ui",
-            std::io::ErrorKind::PermissionDenied.into(),
+            crate::open::ListingError {
+                name: Some("entry".into()),
+                source: std::io::ErrorKind::PermissionDenied.into(),
+            },
         );
-        assert!(matches!(denied, PackageError::Io { .. }), "{denied:?}");
+        assert!(
+            matches!(denied, PackageError::Io { ref path, .. }
+                if path == Path::new("/m/ui/entry")
+            ),
+            "{denied:?}"
+        );
     }
 }
