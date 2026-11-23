@@ -326,11 +326,11 @@ function refresh() {
   })().finally(() => { refreshing = null; });
   return refreshing;
 }
+setupAgentSettings(readRefresh);
 window.addEventListener('focus', () => readRefresh().catch(showError));
 document.addEventListener('visibilitychange', () => readRefresh().catch(showError));
 setInterval(() => { if (!document.hidden) readRefresh().catch(showError); }, 2000);
 setInterval(() => { if (document.hidden) readRefresh().catch(showError); }, 10000);
-setupAgentSettings(readRefresh);
 readRefresh().catch(showError);
 
 let lastReleases = '', canSign = false;
