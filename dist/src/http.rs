@@ -1654,4 +1654,29 @@ mod tests {
         assert_eq!(eve.test_tomb_keys(), before);
         assert!(!dir.path().join("dist/follows.json").exists());
     }
+
+    /// r8: a followed channel's `read_link` notes a new link base in the record before any
+    /// request; the own channel notes nothing (DD-48).
+    #[test]
+    fn read_link_notes_a_record_base_first_and_never_the_own_key() {
+        let w = world();
+        let (dir, eve) = w.eve(&[&w.a, &w.b]);
+        eve.follow(&w.link(&w.a)).unwrap();
+        let requests = (w.a.count(), w.b.count());
+        *eve.test_fail_saves.lock().unwrap() = Some(0);
+        assert!(matches!(
+            eve.read_link(&w.link(&w.b)),
+            Err(DistError::Io { .. })
+        ));
+        assert_eq!((w.a.count(), w.b.count()), requests, "read before the note");
+        *eve.test_fail_saves.lock().unwrap() = None;
+        eve.read_link(&w.link(&w.b)).unwrap();
+        let seen = follows_file(dir.path())["channels"][w.key.to_string()]["seen"].clone();
+        assert!(
+            seen.as_array().unwrap().contains(&w.b.url.clone().into()),
+            "{seen}"
+        );
+        *w.publisher.test_fail_saves.lock().unwrap() = Some(0);
+        w.publisher.read_link(&w.link(&w.a)).unwrap();
+    }
 }
