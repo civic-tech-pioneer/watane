@@ -1208,6 +1208,7 @@ mod tests {
         let before = w.a.count();
         let got = eve.read_link(&w.link(&w.a)).unwrap();
         assert_eq!(got.package.id().to_string(), w.package["packages/".len()..]);
+        assert!(got.link.is_none(), "a cached read names no base: {:?}", got.link);
         assert_eq!(w.a.count(), before, "no request to the unknown local base");
         let package = w.package.trim_start_matches("packages/").to_owned();
         std::fs::remove_file(eve.cache_path(&package.parse().unwrap())).unwrap();
@@ -1217,8 +1218,9 @@ mod tests {
 
     /// F2.2: `held_ungiven` classifies from one snapshot. A `keep` that moves the
     /// tombstone into a record between the two lookups must not turn a seen, never-given
-    /// base into a given-looking one. The hook waits for the `keep` to finish, or for a
-    /// lock the classifier still holds to refuse it (the wait only bounds that case).
+    /// base into a given-looking one: at the gap between the record and the tombstone
+    /// lookup, the classifier still holds the follows lock, so no `keep` can run there
+    /// (Codex r3 P3.2: shown by the lock itself, with no timeout).
     #[test]
     fn adv_s105_r2_held_ungiven_reads_one_snapshot() {
         let w = world();
@@ -1228,19 +1230,25 @@ mod tests {
         let done_rx = std::sync::Mutex::new(done_rx);
         *eve.test_held_gap.lock().unwrap() = Some(Box::new(move || {
             gap_tx.send(()).unwrap();
-            let _ = done_rx
-                .lock()
-                .unwrap()
-                .recv_timeout(Duration::from_millis(500));
+            done_rx.lock().unwrap().recv().unwrap();
         }));
-        let held = std::thread::scope(|s| {
+        let (locked, held) = std::thread::scope(|s| {
             let classify = s.spawn(|| eve.held_ungiven(w.key, &w.a.url));
             gap_rx.recv().unwrap();
-            eve.keep(&w.key).unwrap();
+            let locked = matches!(
+                eve.follows.try_lock(),
+                Err(std::sync::TryLockError::WouldBlock)
+            );
             done_tx.send(()).unwrap();
-            classify.join().unwrap()
+            (locked, classify.join().unwrap())
         });
+        assert!(locked, "the follows lock was free at the lookup gap");
         assert!(held, "a seen, never-given base was classified as given");
+        eve.keep(&w.key).unwrap();
+        assert!(
+            eve.held_ungiven(w.key, &w.a.url),
+            "the kept record forgot the tombstone"
+        );
     }
 
     /// F2.4: a failed save leaves the tombstones as they were, also when 1024 were held.
