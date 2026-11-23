@@ -1292,7 +1292,9 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   flat, but F5.1 is a panic that must close, the gate closes the class by construction, and a r6 return of the class
   that loses no seen/given is accepted until S107 (pre-announced on the PR); r5 answered at 8f253ba (22:35, all three,
   P5.1, P5.2); r6 to Claude again, in the r5 reviewer's session (Codex's filter withheld this slice's review twice: the
-  reviewer for this slice is Claude until it merges), 22:38 UTC.) Three Leftovers items, all in `dist/`:
+  reviewer for this slice is Claude until it merges), 22:38 UTC; r6 (Claude, ~23:00) 0/3, VERDICT approve, call merge;
+  CI lint, Ubuntu and macOS green at 8f253ba; deputy accepts R6.1 (availability only, until S107); merge refused by the
+  auto-mode classifier, waiting on the human's go-ahead.) Three Leftovers items, all in `dist/`:
   1. (guard) a redirect from a listed or hint base is checked like the base itself: a redirect target on `localhost`
      or a local IP literal is refused, as A35/A37 refuse the base (dist/TECHNICAL.md:1273, 1278). Deputy decision: check
      each redirect target (not "Not protected"); the 5-redirect limit stays.
