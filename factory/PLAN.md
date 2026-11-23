@@ -1234,7 +1234,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   the slices that build host A3 and A5. A security boundary (an OAuth flow, tokens on disk): the adversary
   rule applies. Runs beside S100 (host/, dev/): no shared file.
 - [~] **S104 (upkeep) dist reads past a bad mirror and says what is stale.** (in flight, cloud, builder codex,
-  reviewer claude; sketched 2026-11-23 by the deputy.) Three Leftovers items, all in `dist/`; each outcome is
+  reviewer claude; sketched 2026-11-23 by the deputy; Codex task
+  https://chatgpt.com/local/6b041e6f-437c-83ed-a25f-004fef586048, ~11:10 UTC.) Three Leftovers items, all in `dist/`; each outcome is
   its item's check:
   1. [S49] (core) a mirror that answers 404 for the package makes dist try the next base, as a down
      base does; the package comes from the first base that has it (dist/TECHNICAL.md:990).
