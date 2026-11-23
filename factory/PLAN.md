@@ -1282,7 +1282,9 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   provenance before a failed dir sync succeeded: the other side of the F3.2 fix), F4.2 kept mark left by a failed
   ingest, F4.3 prune skipped after a failed sync; posted with a deputy ruling (an unsynced state: every later read or
   change retries the sync first, fails closed, then finishes the recorded pending work); r4 answer through the routine,
-  20:31 UTC, session cse_01LxwP91BTERFGtyj13B1Xys.) Three Leftovers items, all in `dist/`:
+  20:31 UTC, session cse_01LxwP91BTERFGtyj13B1Xys; answered at b10ab90 (20:40, all three and P4.1, gate green); r5 to
+  Codex. Round 5 is worth it: blocking 5, 5, 3, 3, but r4's three were one cause, now closed by one rule with red
+  tests; r5 checks one answer commit, and S107 waits on this merge.) Three Leftovers items, all in `dist/`:
   1. (guard) a redirect from a listed or hint base is checked like the base itself: a redirect target on `localhost`
      or a local IP literal is refused, as A35/A37 refuse the base (dist/TECHNICAL.md:1273, 1278). Deputy decision: check
      each redirect target (not "Not protected"); the 5-redirect limit stays.
