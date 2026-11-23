@@ -1398,6 +1398,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
   tried (`dist/src/fetch.rs` ~107-125, older than S104).
 - [S100 CI] flake: `net/tests/it/pair.rs:259` `s4_an_unknown_node_gets_hello_and_nothing_else` got `over_budget`
   for `unknown_op` on macOS once (cafe7fa); the raw client may idle out.
+- [S105 adversary] (guard) dist's local ranges (5.9) miss 100.64/10, 198.18/15, 0/8, fec0::/10 and NAT64/6to4 forms of a
+  local IPv4 address; add them (deputy decision 2026-11-23).
 - [S37] `{"release"}` in a home with no record answers 200 from dist's cache
   (app/src/api.rs:321, dist/src/fetch.rs:68). Documented as deliberate; no app test covers the
   link-then-release sequence.
@@ -1692,6 +1694,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Deputy decisions
 
+- 2026-11-23 (S105, the adversary's two RISKs) (1) dist's local ranges (5.9) grow to cover 100.64/10 (CGNAT), 198.18/15,
+  0/8, fec0::/10, and NAT64 (64:ff9b::/96) and 6to4 (2002::/16) addresses that wrap a local IPv4 address: an upkeep item,
+  not in S105. (2) A `follows.json` written before S105 may keep a listing's base on a followed record; accepted as a
+  known limit (only data from before the fix; a per-base origin would change the format).
 - 2026-11-23 (S105) dist follows a redirect from a listed or hint base only to a target that passes the same local-address rule as the base (A35/A37); redirects are not left under "Not protected".
 - 2026-11-23 (S102 BLOCKED) A slice scoped to one folder may still change the root `Cargo.lock` and `workspace-hack` for its own dependencies: they are generated, and a rebase regenerates them.
 - 2026-11-23 (the human's answer, through the monitor: "Yes, tell it"; on throughput) Last night ran only two
