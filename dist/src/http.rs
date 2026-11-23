@@ -1369,4 +1369,31 @@ mod tests {
         let _ = eve.refresh_channel(&w.key);
         assert_eq!(w.b.count(), 0, "a hint base led dist into the local network");
     }
+
+    /// r7: the same for a listed-only record: a hint base the record never held becomes
+    /// `Fetched.link`, and a follow of it gives that base (not in `seen`).
+    #[test]
+    fn adv_s105_r7_listed_record_provider_link_gives_a_hint_base() {
+        let w = world();
+        let a2 = Host::serve(&w.publisher.site_dir());
+        let (_dave_dir, dave) = home("Dave", true);
+        dave.list(&w.link(&a2), "hint").unwrap();
+        let dave_host = Host::serve(&dave.site_dir());
+        let dave_key = dave.identity().unwrap();
+        let (_dir, eve) = w.eve(&[&w.a, &a2, &dave_host]);
+        let _z = listed_record(&w, &eve);
+        eve.follow(&crate::Link::new(dave_key, &dave_host.url, None).unwrap())
+            .unwrap();
+        // The listed base fails its package (a refused redirect); the hint base serves it.
+        let target = format!("{}{}", w.b.url, w.package);
+        w.a.redirect(&format!("/{}", w.package), &target);
+        let got = eve.fetch_for(&w.reference, Some(&dave_key)).unwrap();
+        let derived = got.link.expect("a provider fetch names its base");
+        assert_eq!(derived, w.link(&a2), "the link is built from the hint base");
+        assert_eq!(w.b.count(), 0);
+        a2.redirect("/head", &format!("{}head", w.b.url));
+        let _ = eve.follow(&derived);
+        let _ = eve.refresh_channel(&w.key);
+        assert_eq!(w.b.count(), 0, "a hint base led dist into the local network");
+    }
 }
