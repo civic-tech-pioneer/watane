@@ -1117,9 +1117,11 @@ listings are hints for the providers.
 
 **After an install** the caller follows `Fetched.link` of each installed
 release whose channel is not followed (DD-29; app 9.4), so that updates and
-withdrawals of a provider keep coming, as for a hit (5.10). That base is
-the most trusted one that served the channel (step 5); like every follow
-it is read alone afterwards (5.9), and the participant can unfollow it.
+withdrawals of a provider keep coming, as for a hit (5.10). On a cache
+miss, the link uses the first base, in trust order, that served the
+channel and the verified package (5.11 step 5). On a cache hit, link
+selection follows 5.7 step 8. The follow is read as in 5.9, and the
+participant can unfollow it.
 
 ### 5.12 Own machines: the keyless home and the holder (step 8)
 
@@ -1274,7 +1276,7 @@ sets the site URL again.
 | A listing cannot redirect a follow | the base of a followed or chosen channel wins over any listing | `index_base_*` |
 | A provider hint cannot swap a provider (step 5) | the key comes from the consumer's signed `deps.json` grants; every entry read from a hinted base is verified against that key; a hint only says where to read | A36 |
 | A provider hint cannot reach the local network or read without bound | the local-address rule and the limits of a listed read (5.9) hold for hint bases and for `read_link`; at most 4 bases per fetch | A37 |
-| A third party cannot crowd out the consumer's hint | hint channels by trust: own, the consumer, followed, chosen, listed; the follow after an install uses the most trusted base that served | A39 |
+| A third party cannot crowd out the consumer's hint | hint channels by trust: own, the consumer, followed, chosen, listed; on a cache miss, the follow after an install uses the first base, in trust order, that served the channel and the verified package (5.11 step 5); cache-hit links follow 5.7 step 8 | A39 |
 | A local program cannot add a follow | `read_link` creates no record; only the participant's own acts follow (open a link, install) | A40 |
 | A replica cannot sign (W33, step 8) | `open_keyless` over `Log::open_keyless`: no key file; every signing path is `NoIdentity` before `confirm`; `log` refuses again | A42 |
 | An own machine cannot store an unverified object (step 8) | `ingest` goes through `log.ingest` (decode, chain, fork); `store_package` runs the hash, package and release checks of 5.7 against a stored live release | A44, A46 |
