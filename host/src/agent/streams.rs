@@ -1529,14 +1529,29 @@ mod tests {
             by: by.clone(),
             origin: "o".into(),
         };
+        host.hub.lock().create(
+            "mod-stream".into(),
+            Consumer::Held { origin: "o".into() },
+            (Producer::Mod(by.clone()), ("o".into(), None), None),
+            false,
+        );
         let chain = crate::runtime::call::test_chain(&host, vec![push(ORIGIN_BUDGET - 10)]);
         assert_eq!(
             host.hub.host_open_keeping(&s, b"ask", 1000),
             Err(StreamError::Full)
         );
         assert_eq!(budgets(&host.hub), (0, None));
+        // The chain commits, as `take_and_apply` does: its push lands within the budget.
+        {
+            let _gate = host.chains.lock().unwrap();
+            host.apply_effects(std::mem::take(&mut *chain.log.lock().unwrap()));
+        }
+        assert_eq!(budgets(&host.hub).1, Some(ORIGIN_BUDGET - 10));
         drop(chain);
-        host.hub.host_open_keeping(&s, b"ask", 1000).unwrap();
+        assert_eq!(
+            host.hub.host_open_keeping(&s, b"ask", 1000),
+            Err(StreamError::Full)
+        );
         assert!(budgets(&host.hub).1.unwrap() <= ORIGIN_BUDGET);
     }
 

@@ -384,7 +384,7 @@ impl Job {
         if self.session.stopped() {
             return json!("gone");
         }
-        let mut child = match Command::new(&program)
+        let child = match Command::new(&program)
             .args(&args)
             .current_dir(&cwd)
             .env_clear()
@@ -401,8 +401,8 @@ impl Job {
         let pgid = i32::try_from(child.id()).unwrap_or(0);
         cleanup.pgid = Some(pgid);
         self.sessions.record_pid(&self.home, pgid);
-        let stdin = match take_stdin(&mut child, pgid, make_non_blocking) {
-            Ok(stdin) => stdin,
+        let (mut child, stdin) = match take_stdin(child, pgid, make_non_blocking) {
+            Ok(taken) => taken,
             Err(failed) => return failed,
         };
         self.session.set_roots(cwd.clone(), roots, run_root);
@@ -700,20 +700,26 @@ fn write_all_by(stdin: &impl std::os::fd::AsFd, mut line: &[u8], giveup: &Giveup
 }
 
 /// Takes the write end of the child's stdin and sets it up. When `setup` fails, the group is
-/// killed and the child reaped here, before the waiter exists, so no zombie is left; the start
-/// ends `failed("stdin")` (19.3, step 5).
+/// killed and a thread reaps the child, so no zombie is left; the start ends `failed("stdin")`
+/// after at most `EXIT_WAIT`, the reaper staying only for a process stuck in the kernel
+/// (19.3, step 5).
 fn take_stdin(
-    child: &mut std::process::Child,
+    mut child: std::process::Child,
     pgid: i32,
     setup: impl FnOnce(&std::process::ChildStdin) -> Result<(), Value>,
-) -> Result<std::process::ChildStdin, Value> {
+) -> Result<(std::process::Child, std::process::ChildStdin), Value> {
     let stdin = child.stdin.take().expect("piped");
     if let Err(failed) = setup(&stdin) {
         killpg(pgid);
-        let _ = child.wait();
+        let (reaped, wait) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = child.wait();
+            let _ = reaped.send(());
+        });
+        let _ = wait.recv_timeout(EXIT_WAIT);
         return Err(failed);
     }
-    Ok(stdin)
+    Ok((child, stdin))
 }
 
 /// Makes the write end of stdin non-blocking; the start ends `failed("stdin")` when it cannot.
@@ -924,14 +930,14 @@ mod join_tests {
     #[test]
     fn s100_fix15_ac1_a_failed_stdin_setup_reaps_the_child() {
         use std::os::unix::process::CommandExt;
-        let mut child = Command::new("sleep")
+        let child = Command::new("sleep")
             .arg("60")
             .stdin(Stdio::piped())
             .process_group(0)
             .spawn()
             .unwrap();
         let pid = child.id();
-        let failed = take_stdin(&mut child, i32::try_from(pid).unwrap(), |_| {
+        let failed = take_stdin(child, i32::try_from(pid).unwrap(), |_| {
             Err(Job::failed("stdin"))
         })
         .unwrap_err();
