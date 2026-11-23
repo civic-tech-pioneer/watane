@@ -270,6 +270,7 @@ impl Dist {
             _last_attempt: time,
             last_success: None,
         });
+        follow::adopt_given_base(r, link.base());
         r.index = true;
         let learned = follow::learn_base(r, link.base());
         r._last_attempt = time;

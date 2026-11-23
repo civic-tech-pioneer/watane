@@ -930,7 +930,7 @@ nor chosen has a listed record (`followed: false`, `index: false`). Its
 `bases` are the distinct bases of the listings that name it, at most 4:
 first learned in the order of the walk (own channel first, then chosen
 indexes in key order), then reordered by the read below. A listing never changes the `bases` or `base` of a followed or chosen
-channel; only a link the participant gives does (below). dist creates a listed record when the walk first
+channel; only a link the participant gives does (below). A listed-only record that `follow` or `choose_index` turns followed or chosen drops the listing's `bases` and takes the link's base as `base` (DD-46). dist creates a listed record when the walk first
 reaches the channel, before it reads it, and removes it after a refresh in
 which no read set holds it.
 
@@ -1566,3 +1566,4 @@ are `list` and `include` statements of 4.1.
 | DD-43 | A listed read follows redirects itself and checks each target against the local-address rule before requesting it; a refused target is `BadUrl { cause: "local address" }`. Followed and chosen bases keep ureq's redirects. Deputy decision S105. | A listed base must not lead dist into the local network by a 302 (A35, A37); the participant's own links keep DD-6. Undo: cheap (http.rs). |
 | DD-44 | `local_base` ignores trailing dots of a host name; an IPv4 literal with a trailing dot is read as the literal. | `localhost.` is the same host as `localhost`; the rule must not be bypassed by spelling. Undo: cheap (one check). |
 | DD-45 | A listed record on a cache miss tries the record's base first, then the provider bases of 5.11 (at most 4 in all), without changing the record. | A dead record base must not end a fetch that another listing of the channel can serve, as for a channel with no record (S104). Undo: cheap (fetch.rs). |
+| DD-46 | A listed-only record that becomes followed or chosen by `follow` or `choose_index` holds only the base the link gave: `base` is the link's base, `bases` is empty. Foreman decision S105. | The listing's bases were read as the participant's own, which skipped the redirect check of DD-43 (A35). The alternative, a per-base origin in `follows.json`, is a format change. Undo: cheap (follow.rs). |
