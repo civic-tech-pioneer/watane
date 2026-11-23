@@ -150,7 +150,7 @@ fn boot_id() -> Option<String> {
     #[cfg(target_os = "linux")]
     let text = std::fs::read_to_string("/proc/sys/kernel/random/boot_id").ok()?;
     #[cfg(not(target_os = "linux"))]
-    let text = tool_output("sysctl", &["-n", "kern.boottime"])?;
+    let text = tool_output("/usr/sbin/sysctl", &["-n", "kern.boottime"])?;
     let token: String = text
         .trim()
         .chars()
@@ -171,7 +171,7 @@ fn start_time(pid: i32) -> Option<String> {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let text = tool_output("ps", &["-o", "lstart=", "-p", &pid.to_string()])?;
+        let text = tool_output("/bin/ps", &["-o", "lstart=", "-p", &pid.to_string()])?;
         let token: String = text
             .trim()
             .chars()
@@ -181,22 +181,21 @@ fn start_time(pid: i32) -> Option<String> {
     }
 }
 
-/// The standard output of a system tool, in the C locale: `/usr/sbin/sysctl`, `/bin/ps`.
+/// The standard output of a system tool (`/usr/sbin/sysctl`, `/bin/ps`), in the C locale and an
+/// empty environment otherwise, so a `TZ` of the host does not change what `ps` prints.
 #[cfg(not(target_os = "linux"))]
 fn tool_output(program: &str, args: &[&str]) -> Option<String> {
-    ["/usr/sbin", "/bin"].iter().find_map(|dir| {
-        let out = Command::new(format!("{dir}/{program}"))
-            .args(args)
-            .env_clear()
-            .env("LC_ALL", "C")
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .output()
-            .ok()?;
-        out.status
-            .success()
-            .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
-    })
+    let out = Command::new(program)
+        .args(args)
+        .env_clear()
+        .env("LC_ALL", "C")
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// The line of `runs/pids` for the group `pgid`, led by the process of the same id:
@@ -1248,6 +1247,19 @@ mod pids_tests {
         let status = run.wait().unwrap();
         assert_eq!(status.signal(), Some(9));
         assert!(!home.path().join("runs").exists());
+    }
+
+    /// macOS: `sysctl` and `ps` give a boot id and a start time (CI's macos job is the check).
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn ac2_the_boot_id_and_a_start_time_are_read() {
+        let me = i32::try_from(std::process::id()).unwrap();
+        let (boot, start) = (boot_id(), start_time(me));
+        assert!(
+            boot.is_some() && start.is_some(),
+            "boot {boot:?}, start {start:?}"
+        );
+        assert_eq!(start_time(me), start, "the start time is stable");
     }
 
     #[test]
