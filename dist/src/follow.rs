@@ -17,6 +17,20 @@ pub(crate) fn now() -> u64 {
 /// 4 (the oldest learned base after the front one goes). True when the record changed
 /// its set of bases, so the caller reads them all (5.9).
 pub(crate) fn learn_base(record: &mut Follow, base: &str) -> bool {
+    if !record.given.iter().any(|b| b == base) {
+        record.given.push(base.into());
+    }
+    let learned = add_base(record, base);
+    let Follow {
+        base: front,
+        bases,
+        given,
+        ..
+    } = record;
+    given.retain(|b| b == front || bases.contains(b));
+    learned
+}
+fn add_base(record: &mut Follow, base: &str) -> bool {
     if record.base.is_empty() {
         record.base = base.into();
         return false;
@@ -33,13 +47,24 @@ pub(crate) fn learn_base(record: &mut Follow, base: &str) -> bool {
     }
     true
 }
+/// Whether a read of `base` of this record uses the listed-address rule: the record is
+/// listed-only, or the participant never gave this base by a link (5.9, DD-47).
+pub(crate) fn listed_read(record: &Follow, base: &str) -> bool {
+    (!record.followed && !record.index) || !record.given.iter().any(|b| b == base)
+}
 /// A listed-only record that turns followed or chosen holds only the base the participant
 /// gave (5.9): the listing's bases are dropped.
 pub(crate) fn adopt_given_base(record: &mut Follow, base: &str) {
     if !record.followed && !record.index {
         record.base = base.into();
         record.bases.clear();
+        record.given.clear();
     }
+}
+/// A link's base the record does not have, or has but was never given by a link.
+fn follow_unseen(record: &Follow, base: &str) -> bool {
+    (record.base != base && !record.bases.iter().any(|b| b == base))
+        || !record.given.iter().any(|b| b == base)
 }
 impl Dist {
     pub(crate) fn save_follows(
@@ -91,6 +116,7 @@ impl Dist {
             index: false,
             kept: false,
             bases: Vec::new(),
+            given: Vec::new(),
             _followed_at: time,
             _last_attempt: time,
             last_success: None,
@@ -121,11 +147,7 @@ impl Dist {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
             .get(&key)
-            .is_some_and(|r| {
-                !r.base.is_empty()
-                    && r.base != link.base()
-                    && !r.bases.iter().any(|b| b == link.base())
-            });
+            .is_some_and(|r| !r.base.is_empty() && follow_unseen(r, link.base()));
         if !unknown {
             return Ok(false);
         }
