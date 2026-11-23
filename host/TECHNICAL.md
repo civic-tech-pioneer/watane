@@ -3124,12 +3124,16 @@ not keep a credential from a mod on their own. Three rules do:
    `full_since` and lag clock stop at that admission, so no earlier refusal can
    end it `lagging` (review r5, F5.2). A close that frees budget bytes wakes a
    waiting producer only when the producer's refused push fits with the pending
-   bytes of every chain in flight counted, as admission counts them (review r5,
-   F5.1). The input an open ask or check keeps is held as the bytes of its JSON
+   bytes of every chain in flight counted, as admission counts them, and a chain's
+   end (commit or rollback) scans the waiting producers again with those bytes
+   (review r5, F5.1). The input an open ask or check keeps is held as the bytes of its JSON
    text, not as a parsed value, and counted by that length, so the count is what
-   the host holds; it is parsed again when needed (S100-CAP). When the reaper has
-   reaped `claude`, the recorded process group is cleared, so a later `stop()`
-   signals no group and a pid reused since is never killed (S100-CAP).
+   the host holds; it is parsed again when needed (S100-CAP). When `claude` exits,
+   the waiter kills what is left of its group while the exited process is not yet
+   reaped (its pid still held), clears the recorded group, and only then reaps it;
+   every other kill of the group (`stop()`, the end of the run) goes through that
+   record under one lock, so no kill follows the reap and a pid reused since is
+   never killed (S100-CAP).
    Every line the writer reported written
    has its `ask-resolved {by: answered}` pushed before `ended`; a write that did not
    complete (failed, or given up) pushes none, and none is pushed after the stream

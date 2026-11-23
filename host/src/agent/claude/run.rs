@@ -209,6 +209,7 @@ pub(crate) struct Job {
 
 /// Removes the run folder and forgets the pid when the run ends, however it ends.
 struct Cleanup {
+    session: Arc<Session>,
     sessions: Arc<Sessions>,
     home: PathBuf,
     folder: Option<PathBuf>,
@@ -217,7 +218,8 @@ struct Cleanup {
 impl Drop for Cleanup {
     fn drop(&mut self) {
         if let Some(pgid) = self.pgid {
-            killpg(pgid);
+            // Through the session: a group whose leader was reaped is cleared there.
+            self.session.kill_group();
             self.sessions.forget_pid(&self.home, pgid);
         }
         if let Some(folder) = &self.folder {
@@ -359,6 +361,7 @@ impl Job {
             return json!("gone");
         }
         let mut cleanup = Cleanup {
+            session: Arc::clone(&self.session),
             sessions: Arc::clone(&self.sessions),
             home: self.home.clone(),
             folder: None,
@@ -430,16 +433,15 @@ impl Job {
                 write_lines(&stdin, &rx, &held, &writer_session, &writer_hub, &giveup);
             })
         };
-        // The waiter reaps the child and then kills what is left of its group, so that a
-        // grandchild cannot keep the pipe open.
+        // The waiter waits for the child to exit, kills what is left of its group, so that a
+        // grandchild cannot keep the pipe open, and only then reaps it: until the reap the pid
+        // is held, so no kill reaches a process that reused it (19.3 step 5, S100-CAP).
         let (exited, exit) = std::sync::mpsc::channel();
-        let reaped = Arc::clone(&self.session);
+        let session = Arc::clone(&self.session);
         let waiter = std::thread::spawn(move || {
-            let status = child.wait();
-            // The leader is reaped: its pid may be reused, so `stop` signals no group any more.
-            reaped.reaped();
-            killpg(pgid);
-            let _ = exited.send(status);
+            wait_unreaped(pgid);
+            session.exited();
+            let _ = exited.send(child.wait());
         });
         let request_id = self.session.request_id.clone();
         let mut reader = Reading {
@@ -455,7 +457,7 @@ impl Job {
         // The output is at its end: the process gets `EXIT_WAIT` to exit, then its group is
         // killed (19.3, step 5).
         let status = exit.recv_timeout(EXIT_WAIT).or_else(|_| {
-            killpg(pgid);
+            self.session.kill_group();
             exit.recv_timeout(EXIT_WAIT)
         });
         if status.is_ok() {
@@ -700,6 +702,16 @@ fn write_all_by(stdin: &impl std::os::fd::AsFd, mut line: &[u8], giveup: &Giveup
         }
     }
     true
+}
+
+/// Waits until the child `pid` has exited, leaving it unreaped (`WNOWAIT`).
+fn wait_unreaped(pid: i32) {
+    use rustix::process::{WaitId, WaitIdOptions, waitid};
+    let Some(pid) = rustix::process::Pid::from_raw(pid) else {
+        return;
+    };
+    let options = WaitIdOptions::EXITED | WaitIdOptions::NOWAIT;
+    while let Err(rustix::io::Errno::INTR) = waitid(WaitId::Pid(pid), options) {}
 }
 
 /// Takes the write end of the child's stdin and sets it up. When `setup` fails, the group is

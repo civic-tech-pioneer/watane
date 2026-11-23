@@ -967,6 +967,14 @@ impl Hub {
         }
         self.push_as_host_in(id, body, CLOSE_RESERVE + retained, false, pending)
     }
+    /// The ready scan with the pending bytes counted under the chains gate, which the caller holds
+    /// (19.2, In flight).
+    pub(crate) fn scan_ready_with(&self, pending: crate::agent::Pending) {
+        let mut inner = self.lock();
+        inner.scan_ready_in(Some(&pending));
+        drop(inner);
+        self.cv.notify_all();
+    }
     /// `push_as_host` with the bytes (`origin`, `host`) that chains in flight have queued.
     fn push_as_host_in(
         &self,
@@ -1333,12 +1341,17 @@ impl Inner {
             return;
         }
         // The hub lock is held, so the chains gate is only tried: a gate that is busy leaves the
-        // pending bytes seen at the refusal in place.
+        // pending bytes seen at the refusal in place; the chain's end scans again (19.2, In flight).
         let pending = self
             .host
             .as_ref()
             .and_then(Weak::upgrade)
             .and_then(|h| h.try_pending());
+        self.scan_ready_in(pending.as_ref());
+    }
+    /// `scan_ready` with the pending bytes of the chains in flight, or `None` for those seen at
+    /// each refusal.
+    fn scan_ready_in(&mut self, pending: Option<&crate::agent::Pending>) {
         let waiting: Vec<String> = self.waiting.iter().cloned().collect();
         for id in waiting {
             let Some(s) = self.streams.get(&id) else {
@@ -1355,14 +1368,12 @@ impl Inner {
             let room = match refused {
                 Refused::Stream => true,
                 Refused::Origin(n, seen) => {
-                    let held = pending
-                        .as_ref()
-                        .map_or(seen, |p| p.0.get(&s.origin).copied().unwrap_or(0));
+                    let held = pending.map_or(seen, |p| p.0.get(&s.origin).copied().unwrap_or(0));
                     self.origin_bytes.get(&s.origin).copied().unwrap_or(0) + held + n
                         <= ORIGIN_BUDGET
                 }
                 Refused::Host(n, seen) => {
-                    let held = pending.as_ref().map_or(seen, |p| p.1);
+                    let held = pending.map_or(seen, |p| p.1);
                     self.host_bytes + held + n <= HOST_BUDGET
                 }
             };
@@ -1596,6 +1607,25 @@ mod tests {
         hub.host_close_keeping(&ask2, b"close", 1000).unwrap();
         assert!(hub.lock().streams[&other].needs_ready.is_none());
         hub.host_push(&other, &[0; 512]).unwrap();
+    }
+
+    /// 19.3 step 5 (review r5, F5.1): a chain that rolls back frees the room it held, and the
+    /// producer it kept waiting gets `ready` with no close after it.
+    #[test]
+    fn s100_fix16_ac1_a_rolled_back_chain_wakes_the_producer_it_kept_waiting() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let hub = &host.hub;
+        let other = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let chain =
+            crate::runtime::call::test_chain(&host, vec![pending_push(ORIGIN_BUDGET - 100)]);
+        assert_eq!(hub.host_push(&other, &[0; 512]), Err(StreamError::Full));
+        assert!(hub.lock().streams[&other].needs_ready.is_some());
+        crate::runtime::call::test_rollback(&host, &chain);
+        assert!(hub.lock().streams[&other].needs_ready.is_none());
+        assert!(hub.lock().streams[&other].full_since.is_none());
     }
 
     /// 19.3 step 5 (review r5, F5.2): an admission after a refusal clears the refusal and its lag

@@ -244,21 +244,33 @@ fn register(host: &Host, chain: &Arc<Chain>) {
 /// chain succeeded; else they are given back (a harness) or dropped. Either way the chain's
 /// reservation ends.
 fn take_and_apply(host: &Host, chain: &Chain, apply: bool) -> Vec<Effect> {
-    let _gate = host
-        .chains
-        .lock()
-        .expect("lock poisoned: another thread panicked while holding it");
-    let log = std::mem::take(
-        &mut *chain
-            .log
+    let log = {
+        let _gate = host
+            .chains
             .lock()
-            .expect("lock poisoned: another thread panicked while holding it"),
-    );
-    if apply {
-        host.apply_effects(log);
-        return Vec::new();
-    }
+            .expect("lock poisoned: another thread panicked while holding it");
+        let log = std::mem::take(
+            &mut *chain
+                .log
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it"),
+        );
+        if apply {
+            host.apply_effects(log);
+            Vec::new()
+        } else {
+            log
+        }
+    };
+    // Its pending bytes are no longer held: a producer refused for them may fit now.
+    host.chain_ended();
     log
+}
+
+/// Ends a chain of `test_chain` as a failed call does: its effects are dropped.
+#[cfg(test)]
+pub(crate) fn test_rollback(host: &Host, chain: &Chain) {
+    take_and_apply(host, chain, false);
 }
 
 /// A chain in flight that holds `effects` and commits nothing, for the tests of the budgets.

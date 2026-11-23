@@ -851,19 +851,30 @@ impl Host {
     /// The pending bytes of the chains in flight, by origin and in all, without waiting for their
     /// gate: `None` when the gate or a chain's log is busy. The hub lock is held by the caller,
     /// which is after the gate in the lock order, so it may only try (19.2, Commit).
-    pub(crate) fn try_pending(&self) -> Option<(std::collections::HashMap<String, usize>, usize)> {
+    pub(crate) fn try_pending(&self) -> Option<Pending> {
         let chains = self.chains.try_lock().ok()?;
-        let (mut by_origin, mut all) = (std::collections::HashMap::new(), 0);
-        for chain in chains.iter().filter_map(std::sync::Weak::upgrade) {
-            let log = chain.log.try_lock().ok()?;
-            for e in log.iter() {
-                if let Effect::Push { body, origin, .. } = e {
-                    *by_origin.entry(origin.clone()).or_insert(0) += body.len();
-                    all += body.len();
-                }
-            }
-        }
-        Some((by_origin, all))
+        let logs: Option<Vec<_>> = chains
+            .iter()
+            .filter_map(std::sync::Weak::upgrade)
+            .map(|c| c.log.try_lock().ok().map(|log| pending_of(&log)))
+            .collect();
+        Some(sum_pending(logs?))
+    }
+    /// A chain ended, committed or rolled back: its pending bytes are no longer held, so the
+    /// producers refused for them are scanned again, with the gate held (19.2, In flight).
+    pub(crate) fn chain_ended(&self) {
+        let chains = self
+            .chains
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
+        let logs = chains.iter().filter_map(std::sync::Weak::upgrade).map(|c| {
+            pending_of(
+                &c.log
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it"),
+            )
+        });
+        self.hub.scan_ready_with(sum_pending(logs.collect()));
     }
     /// Applies the effects of a succeeded chain, in call order (19.6, At apply).
     pub(crate) fn apply_effects(&self, effects: Vec<Effect>) {
@@ -969,6 +980,30 @@ impl Host {
             self.claude_run(job);
         }
     }
+}
+
+/// The bytes that chains in flight have queued, by origin and in all (19.2, Commit).
+pub(crate) type Pending = (std::collections::HashMap<String, usize>, usize);
+
+fn pending_of(log: &[Effect]) -> Pending {
+    let (mut by_origin, mut all) = (std::collections::HashMap::new(), 0);
+    for e in log {
+        if let Effect::Push { body, origin, .. } = e {
+            *by_origin.entry(origin.clone()).or_insert(0) += body.len();
+            all += body.len();
+        }
+    }
+    (by_origin, all)
+}
+fn sum_pending(logs: Vec<Pending>) -> Pending {
+    let (mut by_origin, mut all) = (std::collections::HashMap::new(), 0);
+    for (o, a) in logs {
+        for (k, v) in o {
+            *by_origin.entry(k).or_insert(0) += v;
+        }
+        all += a;
+    }
+    (by_origin, all)
 }
 
 #[cfg(test)]

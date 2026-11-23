@@ -94,22 +94,33 @@ impl Session {
     }
     /// Kills the group and closes the queue. Safe to call again.
     pub(crate) fn stop(&self) {
-        let pgid = {
+        {
             let mut state = self.running();
             state.stopped = true;
-            state.pgid
+            Self::kill_in(&state)
         };
-        if let Some(pgid) = pgid {
-            run::kill_group(pgid);
-        }
         self.tx
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
             .take();
     }
-    /// The reaper has reaped `claude`: the group is no longer recorded.
-    pub(crate) fn reaped(&self) {
-        self.running().pgid = None;
+    /// Kills the recorded group, if any. The lock is held across the signal, and `exited` clears
+    /// the group under it before `claude` is reaped, so no kill reaches a pid reused since.
+    fn kill_in(state: &Running) {
+        if let Some(pgid) = state.pgid {
+            run::kill_group(pgid);
+        }
+    }
+    /// Kills the recorded group, if `claude` is not reaped yet.
+    pub(crate) fn kill_group(&self) {
+        Self::kill_in(&self.running());
+    }
+    /// `claude` has exited and is not reaped yet (its pid is still held): kills what is left of
+    /// its group, and clears the group, so no later kill signals one (19.3 step 5, S100-CAP).
+    pub(crate) fn exited(&self) {
+        let mut state = self.running();
+        Self::kill_in(&state);
+        state.pgid = None;
     }
     /// The process started: its group, and the queue of its stdin.
     pub(crate) fn started(&self, pgid: i32) -> Receiver<Out> {
@@ -469,29 +480,39 @@ impl Host {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::process::CommandExt;
+    use std::os::unix::process::{CommandExt, ExitStatusExt};
     use std::time::Duration;
 
-    /// 19.3 step 5 (S100-CAP): once the reaper has reaped `claude`, the recorded group is
-    /// cleared and a later `stop()` signals none (a pid reused since is never killed).
+    /// 19.3 step 5 (S100-CAP): when `claude` has exited, its group is killed while its pid is
+    /// still held, then cleared, so a later `stop()` signals no group.
     #[test]
-    fn s100_fix16_ac3_stop_after_the_reap_signals_no_group() {
-        // A stand-in for a process whose pid was reused: alive, leader of its own group.
-        let mut other = std::process::Command::new("sleep")
-            .arg("30")
-            .process_group(0)
-            .spawn()
-            .unwrap();
-        let pgid = i32::try_from(other.id()).unwrap();
+    fn s100_fix16_ac3_exited_kills_the_group_then_clears_it() {
+        let group = || {
+            std::process::Command::new("sleep")
+                .arg("30")
+                .process_group(0)
+                .spawn()
+                .unwrap()
+        };
+        let mut left = group();
         let session = Session::new("s".into(), "o".into(), None);
-        let _rx = session.started(pgid);
-        session.reaped();
+        let _rx = session.started(i32::try_from(left.id()).unwrap());
+        session.exited();
         assert_eq!(session.running().pgid, None);
+        let status = left.wait().unwrap();
+        assert_eq!(
+            status.signal(),
+            Some(9),
+            "the group left by claude is killed"
+        );
+        // A later `stop()` (and the run's cleanup) signals nothing.
+        let mut other = group();
         session.stop();
+        session.kill_group();
         std::thread::sleep(Duration::from_millis(200));
         let alive = other.try_wait().unwrap().is_none();
         let _ = other.kill();
         let _ = other.wait();
-        assert!(alive, "stop() signalled the group of a reaped process");
+        assert!(alive);
     }
 }
