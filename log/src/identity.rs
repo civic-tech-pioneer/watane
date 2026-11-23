@@ -342,7 +342,7 @@ pub(crate) fn decrypt(backup: &[u8], passphrase: &str) -> Result<SigningKey, Err
 
 #[cfg(test)]
 mod tests {
-    use super::{check_key_owner, open, publish_key, read};
+    use super::{check_key_owner, effective_uid, open, publish_key, read};
     use crate::Error;
     use std::fs;
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -401,5 +401,13 @@ mod tests {
             ),
             "{result:?}"
         );
+    }
+
+    #[test]
+    fn regress_s109_effective_uid_matches_file_owner() {
+        let file = tempfile::tempfile().expect("create a file owned by this process");
+        let owner = file.metadata().expect("stat the file handle").uid();
+        let current = effective_uid(Path::new("identity.key")).expect("get the effective UID");
+        assert_eq!(current, owner);
     }
 }
