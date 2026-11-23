@@ -63,7 +63,7 @@ pub mod api;      // router
 | `tauri-build` | `=2.7.4` | `build.rs`, the app ACL manifest | same probes |
 | `tauri-plugin-dialog` | `=2.8.4` | folder and file dialogs, from Rust only | needs `tauri ^2.12`, rust 1.90 |
 | `axum` | `0.8` | the routes of section 8; the same major as host's | colos skeleton |
-| `tokio` | `1`, features `rt-multi-thread macros sync time` | broker, refresh loop | colos skeleton |
+| `tokio` | `1`, features `rt-multi-thread macros net sync time` | broker, refresh loop, OAuth callback | colos skeleton |
 | `serde`, `serde_json` | `1` (`derive`) | view types | |
 | `thiserror` | `2` | `AppError` | |
 | `getrandom` | `0.3` | `AskId`, the mark (`getrandom::fill`) | |
@@ -2452,12 +2452,17 @@ New files: `src/accounts.rs` (the account files, 0600 and atomic writes, the
 judge section of the details). `words.rs` holds the words of this section;
 `ui/words.js` repeats none of them (the page shows what the commands return).
 
-Libraries added by stage L (section 2 holds the others): `reqwest` `0.12`
-(`rustls-tls`, `json`; the dev dependency of the same name stays) for the token
-endpoint and the JWKS; `jsonwebtoken` `9` to check the ID token (RS256 with
-the key of the JWKS; no other algorithm); `sha2` `0.10` and `base64` `0.22` for
-PKCE; `open` `5` to open the participant's browser from Rust (no plugin, no
-page command, section 14). Each is a `watane-app` dependency only.
+Libraries used by Sign in with ChatGPT (section 2 holds the others):
+`ureq` 3 with `json` for discovery, token exchange and JWKS, using the
+workspace's Rustls HTTP client configuration; `ring` 0.17 for RS256
+signature verification and PKCE's SHA-256; `base64` 0.23 for URL-safe
+encoding; `subtle` 2 without default features for constant-time state
+and nonce comparison; and `open` 5 to open the participant's browser
+from Rust (section 14). The app deliberately parses the compact token
+and enforces the narrow claim and JWKS rules of 19.1 itself, with the
+RSA signature check delegated to `ring`. This keeps the verifier confined
+to the specified algorithm and reuses the workspace's existing crypto
+and HTTP dependency set. `reqwest` 0.12 remains a test dependency.
 
 ### 19.1 Sign in with ChatGPT
 
