@@ -242,28 +242,35 @@ impl Fake {
     /// `load` with `rate`: each second `deltas` text deltas and `entries` finished entries,
     /// spread evenly; an `interrupt` ends it (TECHNICAL 18.2).
     fn rate_load(&mut self, rate: &Value) {
-        let deltas = rate["deltas"].as_u64().unwrap_or(50).max(1);
+        let deltas = rate["deltas"].as_u64().unwrap_or(50);
         let entries = rate["entries"].as_u64().unwrap_or(5);
         let bytes = usize::try_from(rate["bytes"].as_u64().unwrap_or(4096)).unwrap_or(4096);
         let seconds = rate["seconds"].as_u64().unwrap_or(10);
+        // One tick per second-fraction of the larger count; a delta or an entry is written on
+        // the ticks where its running total steps up, so each gets exactly its count.
+        let ticks = deltas.max(entries).max(1);
         let start = std::time::Instant::now();
         let mut interrupted = false;
-        for i in 0..deltas * seconds {
-            let due = start + Duration::from_secs(1).mul_f64(i as f64 / deltas as f64);
+        let (mut sent_deltas, mut sent_entries) = (0, 0);
+        for i in 0..ticks * seconds {
+            let due = start + Duration::from_secs(1).mul_f64(i as f64 / ticks as f64);
             if self.poll(due.saturating_duration_since(std::time::Instant::now())) {
                 interrupted = true;
                 break;
             }
-            let text = format!("delta {i} ");
-            emit(
-                &json!({"type":"stream_event","session_id":SESSION,"uuid":"fake-uuid",
-                "event":{"type":"content_block_delta","index":0,
-                    "delta":{"type":"text_delta","text":text}}}),
-            );
-            // Entry k of a second is due after delta (k + 1) * deltas / entries - 1 of it.
-            let at = i % deltas + 1;
-            if entries > 0 && (at * entries) % deltas < entries {
-                let mut text = format!("entry {} ", i / deltas * entries + at * entries / deltas);
+            let at = i % ticks + 1;
+            if at * deltas / ticks > (at - 1) * deltas / ticks {
+                let text = format!("delta {sent_deltas} ");
+                sent_deltas += 1;
+                emit(
+                    &json!({"type":"stream_event","session_id":SESSION,"uuid":"fake-uuid",
+                    "event":{"type":"content_block_delta","index":0,
+                        "delta":{"type":"text_delta","text":text}}}),
+                );
+            }
+            if at * entries / ticks > (at - 1) * entries / ticks {
+                sent_entries += 1;
+                let mut text = format!("entry {sent_entries} ");
                 while text.len() < bytes {
                     text.push('x');
                 }

@@ -930,6 +930,32 @@ fn s100_ac5_load_writes_ten_thousand_entries() {
 }
 
 #[test]
+fn s100_fix11_ac1_load_rate_writes_every_entry_at_any_ratio() {
+    for (d, e) in [(2, 5), (0, 3), (4, 0)] {
+        let f = Folder::new(&format!(
+            r#"{{"steps":[{{"do":"load","rate":{{"deltas":{d},"entries":{e},"bytes":64,"seconds":1}}}}]}}"#
+        ));
+        let mut s = f.start(&[]);
+        s.initialize(false);
+        let (mut deltas, mut entries) = (0, 0);
+        loop {
+            let v: Value = s.line();
+            match v["type"].as_str().unwrap() {
+                "stream_event" => deltas += 1,
+                "assistant" => {
+                    entries += 1;
+                    assert!(text_of(&v).starts_with(&format!("entry {entries} ")));
+                }
+                "result" => break,
+                other => panic!("{other}"),
+            }
+        }
+        assert_eq!((deltas, entries), (d, e));
+        assert_eq!(s.line()["state"], "idle");
+    }
+}
+
+#[test]
 fn s100_fix5_ac5_load_rate_counts_and_interrupt() {
     let f = Folder::new(
         r#"{"steps":[{"do":"load","rate":{"deltas":50,"entries":5,"bytes":4096,"seconds":2}}]}"#,
