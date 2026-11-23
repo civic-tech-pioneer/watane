@@ -7,6 +7,9 @@ use std::time::{Duration, Instant};
 /// The most redirects one read follows (TECHNICAL 4.5).
 pub(crate) const MAX_REDIRECTS: usize = 5;
 
+/// The local-address rule applied to one redirect target.
+pub(crate) type Check = dyn Fn(&str) -> Result<(), DistError>;
+
 /// What one hop of a listed read answers: the bytes, or the next URL.
 pub(crate) enum Hop<T> {
     Done(T),
@@ -17,7 +20,7 @@ pub(crate) enum Hop<T> {
 /// the current URL and passes `check` before any request to it (TECHNICAL 4.5).
 pub(crate) fn follow_hops<T>(
     first: &str,
-    check: &dyn Fn(&str) -> Result<(), DistError>,
+    check: &Check,
     mut step: impl FnMut(&str) -> Result<Hop<T>, DistError>,
 ) -> Result<T, DistError> {
     let mut current = first.to_owned();
@@ -78,7 +81,7 @@ impl Dist {
         limit: u64,
         timeout: Duration,
         head: bool,
-        check: Option<&dyn Fn(&str) -> Result<(), DistError>>,
+        check: Option<&Check>,
     ) -> Result<Vec<u8>, DistError> {
         let deadline = Instant::now() + timeout;
         let mut waits = RETRY_WAITS.iter();
@@ -108,7 +111,7 @@ impl Dist {
         limit: u64,
         timeout: Duration,
         head: bool,
-        check: Option<&dyn Fn(&str) -> Result<(), DistError>>,
+        check: Option<&Check>,
     ) -> Result<Vec<u8>, DistError> {
         let Some(check) = check else {
             return match self.get_hop(url, limit, timeout, head, &self.agent)? {
@@ -307,7 +310,7 @@ mod tests {
                 })
             })
         };
-        assert!(hops(5).is_ok());
+        hops(5).unwrap();
         assert!(matches!(hops(6), Err(DistError::Network { .. })));
     }
     /// A tiny_http server: path -> (status, location or body).
@@ -317,7 +320,7 @@ mod tests {
         let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
         let base = format!("http://{}", server.server_addr().to_ip().unwrap());
         let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
-        let log = seen.clone();
+        let log = Arc::clone(&seen);
         std::thread::spawn(move || {
             for request in server.incoming_requests() {
                 let url = request.url().to_owned();
