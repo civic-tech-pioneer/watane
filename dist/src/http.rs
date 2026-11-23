@@ -1344,4 +1344,29 @@ mod tests {
         let record = &file["channels"][w.key.to_string()];
         assert_eq!(record["given"], serde_json::json!([w.a.url]));
     }
+
+    /// r7: a provider hint's base (another channel's listing, 5.11) becomes
+    /// `Fetched.link` of a channel with no record; dist keeps it in no `seen` and no
+    /// tombstone, so a follow of that derived link gives the hint's base, and its
+    /// redirect into the local network is followed (A35, A37, DD-48).
+    #[test]
+    fn adv_s105_r7_provider_fetched_link_gives_a_hint_base() {
+        let w = world();
+        // Dave lists the publisher at `a`: for Eve that base is only a hint.
+        let (_dave_dir, dave) = home("Dave", true);
+        dave.list(&w.link(&w.a), "hint").unwrap();
+        let dave_host = Host::serve(&dave.site_dir());
+        let dave_key = dave.identity().unwrap();
+        let (_dir, eve) = w.eve(&[&w.a, &dave_host]);
+        eve.follow(&crate::Link::new(dave_key, &dave_host.url, None).unwrap())
+            .unwrap();
+        let got = eve.fetch_for(&w.reference, Some(&dave_key)).unwrap();
+        let derived = got.link.expect("a provider fetch names its base");
+        assert_eq!(derived, w.link(&w.a), "the link is built from the hint base");
+        // The app installs from the fetched link; the hint host now redirects home.
+        w.a.redirect("/head", &format!("{}head", w.b.url));
+        let _ = eve.follow(&derived);
+        let _ = eve.refresh_channel(&w.key);
+        assert_eq!(w.b.count(), 0, "a hint base led dist into the local network");
+    }
 }
