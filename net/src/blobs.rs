@@ -294,8 +294,6 @@ async fn download(
     #[cfg(windows)]
     let create = watane_log_windows_fs::create_file(&path);
     let mut file = create.map_err(io)?;
-    #[cfg(windows)]
-    watane_log_windows_fs::check_owner_only(&file).map_err(io)?;
     // the size is verified above, so this holds at most `size` bytes
     let bytes = get_blob(conn.clone(), hash)
         .bytes()

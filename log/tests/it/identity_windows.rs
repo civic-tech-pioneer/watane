@@ -20,6 +20,38 @@ fn s110_key_is_private_and_reopens() {
 }
 
 #[test]
+fn s110_multiple_links_to_the_key_are_refused() {
+    let temp = crate::oracle::directory();
+    let dir = temp.path();
+    drop(Log::open(dir).expect("create private identity"));
+    let path = dir.join("identity.key");
+    let alias = dir.join("other.key");
+    fs::hard_link(&path, &alias).expect("give identity.key two names");
+    let error = Log::open(dir).expect_err("refuse a multiply linked identity");
+    assert!(matches!(error, Error::KeyLinks { links: 2, .. }));
+}
+
+#[test]
+fn s110_simultaneous_first_opens_share_the_published_identity() {
+    let temp = crate::oracle::directory();
+    let dir = temp.path();
+    let start = std::sync::Barrier::new(8);
+    std::thread::scope(|scope| {
+        let openers: Vec<_> = (0..8)
+            .map(|_| {
+                scope.spawn(|| {
+                    start.wait();
+                    Log::open(dir).expect("open identity under lock").identity()
+                })
+            })
+            .collect();
+        let mut identities = openers.into_iter().map(|open| open.join().expect("worker"));
+        let first = identities.next().expect("at least one opener");
+        assert!(identities.all(|identity| identity == first));
+    });
+}
+
+#[test]
 fn s110_key_reparse_point_is_refused() {
     let temp = crate::oracle::directory();
     let dir = temp.path();

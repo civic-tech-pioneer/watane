@@ -74,8 +74,6 @@ pub(crate) fn write_atomic(dir: &Path, name: &str, data: &[u8]) -> Result<(), Ne
         #[cfg(windows)]
         let create = watane_log_windows_fs::create_file(&tmp);
         let mut file = create.map_err(|e| io_error(&tmp, e))?;
-        #[cfg(windows)]
-        watane_log_windows_fs::check_owner_only(&file).map_err(|e| io_error(&tmp, e))?;
         file.write_all(data).map_err(|e| io_error(&tmp, e))?;
         file.sync_all().map_err(|e| io_error(&tmp, e))?;
         drop(file);
