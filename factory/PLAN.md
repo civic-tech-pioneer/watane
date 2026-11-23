@@ -1184,7 +1184,12 @@ names the same interface in its sketch and fakes it until this one merges.
 - [x] **S101 (upkeep, cloud, routine `trig_01HEyZRTMir1EQSfMN8pKuw5`) [deputy, 2026-11-22: DONE, PR #14 merged with --admin at aa2b76fb, ~0.75 h in flight, 1 round. Bob's cloud agent's preview starts on 127.0.0.1 alone (stderr notice) when the container has no IPv6. User-sim ACCEPTED, adversary HELD, validator PASS round 1; implementer runs 2. Decisions: EAFNOSUPPORT also falls back; adversary RISK (root adds ::1 after bind) recorded in host 8.1 and 14 'Not protected' - deputy accepts it (root is outside the boundary). Host suite in the cloud: 295+28 pass, 0 fail (was 75 failing). Friction: `/usr/bin/time` missing in the cloud; dev `api::tests::ac5_search_timeout_is_thirty_seconds` (ignored, timing) red in the cloud; the ready line advertises `localhost` on a v4-only host.] A preview starts in a container without IPv6.** Bob's cloud agent runs `watane --preview` / `watane-dev serve` in a Linux container whose kernel has no IPv6, and the preview starts on 127.0.0.1 instead of refusing. host TECHNICAL 8.1: when binding `[::1]:<port>` fails with `AddrNotAvailable` (the machine has no `::1`; nobody else can bind it either), serve `127.0.0.1:<port>` alone and say so in the ready line or log; every other `[::1]` failure (in use, permission) stays `port_in_use`, and the 8-try clash loop for port 0 is unchanged. Tests: the error-kind decision as a unit test (AddrNotAvailable → v4 only; AddrInUse → port_in_use), plus the preview and serve tests that need IPv6 now running in the cloud container. Protects: host 8.1, no 14 check changes. Touches: `host/src/server.rs`, `host/TECHNICAL.md` 8.1, its tests. No adversary beyond the validator's look at the in-use branch.
 - [~] **S100 (cloud, routine `trig_016gAuKd1gbWk68PFJgY2G8D`, fired 21:00 UTC, branch `slice/s100`, PR #15 DELIVERED febcb24 at ~23:30 UTC (user-sim ACCEPTED, adversary HELD after BREACHED 4); r1: Codex review dispatched 23:55 UTC, https://chatgpt.com/local/6b0380f0-4bb8-83ed-a541-5896ae4c707a; r1 (00:45): Codex `changes (10)` (validator RETURN, adversary BREACHED, user-sim ACCEPTED), posted with the agentic-harness contract excerpt and deputy rulings on F1.8/F1.9; the foreman (subscribed to the PR) answered all 10 at 3ed5316 (2026-11-23 02:42 UTC, s100-fix4..8; adversary BREACHED 1 then HELD, user-sim ACCEPTED); r2 to Codex in the same task (~06:45 UTC, late: the deputy's watcher died silently); r2 (06:54 UTC) `changes (8)` (adversary HELD, user-sim ACCEPTED), posted on the PR; r2 answered at d9beda1 (fix9..11; adversary 5th pass HELD, user-sim ACCEPTED); r3 to Codex; r3 (09:47 UTC, at d9beda1) `changes (6)` (adversary BREACHED: the stdin writer can run past its teardown deadline; user-sim ACCEPTED), posted on the PR; r3 answered at cafe7fa (fix12..14; adversary 6th pass BREACHED 1 fixed, 7th HELD); r4 to Codex; r4 (12:45 UTC) `changes (3)` (6 of 6 r3 closed; adversary BREACHED: an unreaped child on the stdin-setup failure path; two budget-accounting gaps), posted; r4 answered at 3033f1a (fix15; adversary 8th pass HELD); r5 (the last) to Codex; r5 (14:40 UTC) `changes (2)`: ROUND CAP, held for the human (S100-CAP); the human: one more round (F5.1, F5.2 and two vetoed risks), posted on the PR; item 5 added by the deputy (clean_runs/probe pgid); r5 answered at fdb3d9a (all five, each red first);
   r6 to Codex, limited to the five items. Round 6 is worth it: blocking went 10, 8, 6, 3, 2; the product owner asked for
-  it, and what is left is five narrow items, each with a red test; builder claude (rule 3: the last three were Claude, but it went out while the deputy misread Codex as signed out), reviewer codex) Stage B, end to end: Alice steers a turn (the watane half).** After S99.
+  it, and what is left is five narrow items, each with a red test; r6 (~20:20 UTC, at fdb3d9a) 4/0, call stalled (F6.1/F6.2 regressions of the
+  F5.1/F5.2 fixes, F6.3 signal after identity check, F6.4 record removed by bare pgid), posted with a deputy ruling
+  (one admission check under one lock; refusal changes only on commit; signal only with an atomic identity check, else
+  leave the group; records keyed by whole identity) for the foreman's r6 answer. Round 7 is worth it: all four are narrow
+  with red tests, F6.3 is a boundary defect that must close before any merge, and the ruling removes the code paths that
+  bred the regressions; the human may stop it instead (asked, deputy-2); builder claude (rule 3: the last three were Claude, but it went out while the deputy misread Codex as signed out), reviewer codex) Stage B, end to end: Alice steers a turn (the watane half).** After S99.
   One story in two repositories: agentic-harness S36 is the kernel and console half (its PLAN), handed
   out after S35 merges. In a session on dev's fake `claude`, Claude asks to use a tool and Alice
   answers it; she sends a second message while the first turn runs (the kernel queues it); she presses
@@ -1332,6 +1337,23 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Outcomes: app S58 and S60 on the real app; host case 31 `consent` part; a withdrawal mid-turn ends that
   session's stream. Touches: `host/src/agent/`, `host/src/` consent, `app/` consent view and details. The
   agentic-harness half (console consent activity and plan line) follows S35/S36. Builder by rule 3.
+- [~] **S110 (guard) CI is green on Windows, so its check can be required.** (asked by the human, 2026-11-23;
+  in flight, cloud, builder codex, reviewer claude; rule 3: last three S36 claude, S109 codex, S108 codex - Codex builds
+  2 in 3.) Today Windows CI reports but does not block (`continue-on-error`, factory/README "Windows"): it stops in
+  `log`'s key-file open, then whatever comes next. Outcomes: (1) `test (windows-latest)` is green on the PR's head, twice
+  (a re-run), with `continue-on-error` removed from `.github/workflows/ci.yml`; (2) `log`'s identity key file on Windows
+  keeps the same guarantees as on Unix: no-follow (`FILE_FLAG_OPEN_REPARSE_POINT`, a reparse point is refused) and an
+  owner-only ACL on create, refused with a clear error otherwise, each with a test that runs on Windows CI; (3) Linux
+  and macOS stay green and their suite times do not grow by more than 10%. Constraints: never a `cfg` that skips a
+  security check (spec/TECHNICAL.md 6): a check without a Windows equivalent makes that feature refuse on Windows with
+  a clear error, and its tests assert the refusal; tests of macOS/Unix-only features (`sandbox-exec`, the AppKit
+  driver, `install.sh`, process groups) are gated to their OS, each gate with a one-line reason. The app's front
+  tests may stay off on Windows (no driver yet), said in ci.yml. Making the check required in the ruleset is the
+  human's (an account setting). The human's request is the go-ahead on the key-file design that factory/README
+  "Windows" held for them (deputy reading, vetoable). Touches: `log/`, `.github/workflows/ci.yml`, factory/README
+  "Windows", and `cfg` gates across crates. Overlaps S100 (`host/src/agent/`) and S105 (`dist/`): do those crates
+  last and rebase onto main once they merge; never edit their files on `slice/s110` while they are in flight. The
+  adversary runs on the `log` change. Size: a whole capability (Windows as a checked platform).
 
 ## Suite time
 
