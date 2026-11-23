@@ -1360,6 +1360,9 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   "Windows", and `cfg` gates across crates. Overlaps S100 (`host/src/agent/`) and S105 (`dist/`): do those crates
   last and rebase onto main once they merge; never edit their files on `slice/s110` while they are in flight. The
   adversary runs on the `log` change. Size: a whole capability (Windows as a checked platform).
+  Progress: draft PR #23; BLOCKED at 80ffd54 (20:56 UTC) as briefed: log (native no-follow handles, owner-only ACLs,
+  refusal tests), net, pkg, install ported; Windows build now fails only in host/src/agent/ and dist/. Resume after S100
+  and S105 merge: a build brief "continue from branch slice/s110; rebase onto main" into the same Codex task.
 
 ## Suite time
 
