@@ -560,6 +560,39 @@ fn ac4_cache_hit_no_record_skips_dead_base() {
     assert_eq!(&dead.requests.lock().unwrap()[..], ["/head"]);
     assert_eq!(&live.requests.lock().unwrap()[count..], ["/head"]);
 }
+#[test]
+fn cache_hit_local_record_base_uses_cache() {
+    let carol = SearchHome::new("Carol");
+    let zed = SearchHome::new("Zed");
+    let eve = SearchHome::new("Eve");
+    carol
+        .dist
+        .publish(named_fixture("ratings", "Ratings"))
+        .unwrap();
+    zed.dist.list(&carol.link(Some("ratings")), "real").unwrap();
+    eve.dist.choose_index(&zed.link(None)).unwrap();
+    let reference = reference(&carol, "ratings");
+    let id = eve.dist.fetch(&reference).unwrap().package.id();
+    assert!(
+        records(&eve)["channels"]
+            .get(carol.dist.identity().unwrap().to_string())
+            .is_some()
+    );
+    drop(eve.dist);
+    let strict = Dist::open(
+        eve.dir.path(),
+        std::sync::Arc::new(RecordingConfirm::new([])),
+        fast_options(),
+    )
+    .unwrap();
+    let host = carol.host.as_ref().unwrap();
+    let before = host.count();
+    let got = strict.fetch(&reference).unwrap();
+    assert_eq!(got.package.id(), id);
+    assert_eq!(got.link, None);
+    assert_eq!(host.count(), before);
+}
+
 fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
     std::fs::create_dir_all(to).unwrap();
     for entry in std::fs::read_dir(from).unwrap() {
@@ -673,6 +706,53 @@ fn ac3_missing_slug_is_not_found_after_all_bases_are_read() {
     }
 }
 #[test]
+fn ac3_two_stale_mirrors_known_slug_is_stale_bases() {
+    let (carol, dave, eve, mirror, old) = stale_setup();
+    let second = TestHost::serve(old.path());
+    let link = Link::new(
+        carol.dist.identity().unwrap(),
+        &second.url,
+        Some(&"one".parse().unwrap()),
+    )
+    .unwrap();
+    dave.dist.list(&link, "second stale mirror").unwrap();
+    eve.dist.follow(&dave.link(None)).unwrap();
+    carol
+        .dist
+        .publish(origin_fixture("one", "1.1.0", None))
+        .unwrap();
+
+    let newer: ReleaseRef = format!("{}/one@1.1.0", carol.dist.identity().unwrap())
+        .parse()
+        .unwrap();
+    let before = [mirror.count(), second.count()];
+    let error = eve
+        .dist
+        .fetch_for(&newer, Some(&dave.dist.identity().unwrap()))
+        .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            DistError::StaleBases {
+                release,
+                bases: 2,
+                slug_held: true,
+            } if release == &newer
+        ),
+        "{error}"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("2 bases hold an older copy of the channel")
+    );
+    for (host, before) in [&mirror, &second].into_iter().zip(before) {
+        let requests = host.requests.lock().unwrap();
+        assert_eq!(&requests[before..], ["/head"]);
+    }
+}
+
+#[test]
 fn ac3_stale_base_holding_slug_says_older_copy() {
     let (carol, _dave, eve, _mirror, _old) = stale_setup();
     carol
@@ -699,4 +779,88 @@ fn ac3_stale_base_holding_slug_says_older_copy() {
         text.contains("1 base holds an older copy of the channel"),
         "{text}"
     );
+}
+
+fn cached_provider_with_dead_hints(
+    slugs: &[&str],
+) -> (SearchHome, SearchHome, PackageId, Vec<TestHost>) {
+    let carol = SearchHome::new("Carol");
+    let zed = SearchHome::new("Zed");
+    let eve = SearchHome::new("Eve");
+    let channel = carol.dist.identity().unwrap();
+    for slug in slugs {
+        carol.dist.publish(named_fixture(slug, slug)).unwrap();
+    }
+    let listing = zed
+        .dist
+        .list(&carol.link(Some("ratings")), "provider")
+        .unwrap();
+    eve.dist.choose_index(&zed.link(None)).unwrap();
+    let id = PackageId::of(&named_fixture("ratings", "ratings"));
+    eve.dist.fetch(&reference(&carol, "ratings")).unwrap();
+
+    // An index-only refresh sees the unlist without rebuilding the index's read set.
+    zed.dist.unlist(&listing.id()).unwrap();
+    let report = eve
+        .dist
+        .refresh_channel(&zed.dist.identity().unwrap())
+        .unwrap();
+    assert!(matches!(report.outcome, Outcome::Current { .. }));
+    assert_eq!(
+        records(&eve)["channels"][channel.to_string()]["base"],
+        carol.url
+    );
+
+    let empty = eve.dir.path().join("empty");
+    std::fs::create_dir(&empty).unwrap();
+    let dead: Vec<_> = slugs
+        .iter()
+        .map(|slug| {
+            let host = TestHost::serve(&empty);
+            let link = Link::new(channel, &host.url, Some(&slug.parse().unwrap())).unwrap();
+            eve.dist.list(&link, "dead hint").unwrap();
+            host
+        })
+        .collect();
+    (carol, eve, id, dead)
+}
+
+#[test]
+fn ac4_cached_provider_links_distinct_listed_base_after_dead_hint() {
+    let (carol, eve, id, dead) = cached_provider_with_dead_hints(&["ratings"]);
+    let live = carol.host.as_ref().unwrap();
+    let before = live.count();
+
+    let got = eve.dist.fetch(&reference(&carol, "ratings")).unwrap();
+
+    assert_eq!(got.package.id(), id);
+    assert_eq!(got.link, Some(carol.link(Some("ratings"))));
+    assert_eq!(dead[0].requests.lock().unwrap().as_slice(), ["/head"]);
+    assert_eq!(&live.requests.lock().unwrap()[before..], ["/head"]);
+
+    // Once the record base is also a hint, a failed read must not be repeated.
+    eve.dist.include(&carol.link(None), "same base").unwrap();
+    std::fs::remove_file(carol.dist.site_dir().join("head")).unwrap();
+    let before = live.count();
+    let got = eve.dist.fetch(&reference(&carol, "ratings")).unwrap();
+    assert_eq!(got.package.id(), id);
+    assert_eq!(got.link, None);
+    assert_eq!(&live.requests.lock().unwrap()[before..], ["/head"]);
+}
+
+#[test]
+fn ac4_cached_provider_with_four_hints_does_not_read_listed_base() {
+    let (carol, eve, id, dead) =
+        cached_provider_with_dead_hints(&["ratings", "one", "two", "three"]);
+    let live = carol.host.as_ref().unwrap();
+    let before = live.count();
+
+    let got = eve.dist.fetch(&reference(&carol, "ratings")).unwrap();
+
+    assert_eq!(got.package.id(), id);
+    assert_eq!(got.link, None);
+    for host in &dead {
+        assert_eq!(host.requests.lock().unwrap().as_slice(), ["/head"]);
+    }
+    assert_eq!(live.count(), before);
 }

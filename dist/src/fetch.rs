@@ -94,16 +94,13 @@ impl Dist {
         {
             let (mut bases, _) = self.provider_bases(key, consumer)?;
             if bases.len() < MAX_PROVIDER_BASES
-                && let Some(base) = record
-                    .as_ref()
-                    .map(|r| &r.base)
-                    .filter(|base| !base.is_empty() && !bases.contains(base))
+                && let Some(base) = record.as_ref().map(|r| &r.base).filter(|base| {
+                    !base.is_empty()
+                        && !bases.contains(base)
+                        && self.check_listed_base(base).is_ok()
+                })
             {
-                match self.check_listed_base(base) {
-                    Ok(()) => bases.push(base.clone()),
-                    Err(error) if bases.is_empty() => return Err(error),
-                    Err(_) => {}
-                }
+                bases.push(base.clone());
             }
             return self.fetch_from_providers(key, reference, &bases, true);
         } else if record
@@ -164,7 +161,7 @@ impl Dist {
                     cause @ (DistError::NotFound { .. }
                     | DistError::Timeout { .. }
                     | DistError::Network { .. }),
-                ) if !cached => {
+                ) => {
                     package_failure.get_or_insert(cause);
                 }
                 result => return result,
