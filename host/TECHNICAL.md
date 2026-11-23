@@ -1804,7 +1804,12 @@ client's whole 128 MiB budget, so the owner's other streams get `full` and end
 and sums the pending pushes of every chain in flight, so a mod that keeps many
 chains with many queued pushes makes every line slower, and an apply that holds
 the gate delays them; a running per-origin total of pending push bytes would
-make it constant time. A cost, not a wrong decision; not built.
+make it constant time. A cost, not a wrong decision; not built. Open after a crash (S100's ninth adversary pass, for the product owner): `clean_runs` (3.1
+step 3) kills every pgid recorded in `<home>/runs/pids` with no check that the group is still a
+run of this home, so after a reboot or a pid wrap it can kill an unrelated process group of the
+participant; `probe()` (`claude --version`) also kills its group after its thread reaped the child.
+Not built in S100 (its last round was limited to four items); the red test and a fix direction are
+in factory/tasks/s100-followup-clean-runs.md.
 
 ## 15. Build plan
 
