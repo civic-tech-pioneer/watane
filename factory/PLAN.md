@@ -1266,7 +1266,9 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   bases get unchecked redirects; F1.5 not a finding, deputy), posted; BLOCKED (how dist knows a base was given), option B chosen;
   DELIVERED at 497bf37 with r1 answered (adversary r4 to r6 found three routes, all fixed or accepted until S107;
   user-sim ACCEPTED); r2 `changes (5)` (adversary BREACHED: a race in the first-read classifier; user-sim
-  REJECTED: follow reached a local first base), posted with the S105-CHURN fail-closed rule for the same round.) Three Leftovers items, all in `dist/`:
+  REJECTED: follow reached a local first base), posted with the S105-CHURN fail-closed rule for the same round;
+  answered at bad89cf (all five and S105-CHURN; adversary broke the fixes twice more, fixed, ninth pass HELD; user-sim
+  ACCEPTED twice); r3 to Codex under the review-lead brief.) Three Leftovers items, all in `dist/`:
   1. (guard) a redirect from a listed or hint base is checked like the base itself: a redirect target on `localhost`
      or a local IP literal is refused, as A35/A37 refuse the base (dist/TECHNICAL.md:1273, 1278). Deputy decision: check
      each redirect target (not "Not protected"); the 5-redirect limit stays.
@@ -1749,6 +1751,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Deputy decisions
 
+- 2026-11-23 (S105, the 'gone' filter) Accepted until S107: the 32768-bit gone filter saturates under listing churn, after which a new channel's link at a LAN mirror stays a listed read (availability only, fails closed; same kind as the seen_full lock).
 - 2026-11-23 (S100, ninth adversary pass) Not accepted: `clean_runs` killing a recorded pgid at open without checking it is still this home's run, and `probe()` killing its group after the reap. Same class as the stop() pgid reuse the human vetoed; added to S100's last answer round as item 5.
 - 2026-11-23 (S109 R1.1) Accepted: on macOS the key-path open can reach a device driver's open routine before the fstat refusal. Planting a device node in the user's 0700 log dir needs root, which spec/TECHNICAL 6 does not protect against, and nothing is read; cheap to undo (a symlink_metadata pre-check).
 - 2026-11-23 (the human, with the monitor; watane-mods PR #5) New review rules from the next dispatch: the review lead
