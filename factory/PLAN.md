@@ -1266,6 +1266,12 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
      of S104 does without a record (`dist/src/fetch.rs` ~107-125).
   Touches: `dist/` only. Runs beside S100 (host/, dev/) and S102 (app/): no shared file. Remove the three items from
   Leftovers when it merges.
+- [~] **S106 (guard) the net pair test stops flaking on macOS.** (in flight, cloud, builder codex, reviewer claude;
+  sketched 2026-11-23 by the deputy.) `net/tests/it/pair.rs:259` `s4_an_unknown_node_gets_hello_and_nothing_else`
+  failed with `over_budget` instead of `unknown_op` on macOS CI for two unrelated PRs (S100 cafe7fa, S102 820c46f). The
+  loop above it uses a fresh key per call because one unknown key's connection budget is small; the last call
+  (`frobnicate`) reuses `seed`. Outcome: the test asserts `unknown_op` without depending on that budget, and passes 50
+  runs in a row; no product change unless the budget itself is wrong (then say so). Touches: `net/tests/` only.
 - [ ] **S103 Alice gives a mod's agents a folder, and can take it back (stage C, the watane half: host A3,
   app 19.2).** (sketch ahead; after S100 merges: it touches host/src/agent/, as S100 does.) agentic-harness
   stage C: the workspace consent held before `initialized`, the consent view's words (app S58, S60),
@@ -1397,8 +1403,6 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 - [S104 review] `localhost.` (trailing dot) gets past `local_base` (`dist/src/index.rs:577`): strip one trailing dot.
 - [S104 review] once a listed record exists, a cache miss reads only the record's base, so Eve's own mirrors are never
   tried (`dist/src/fetch.rs` ~107-125, older than S104).
-- [S100 CI] flake: `net/tests/it/pair.rs:259` `s4_an_unknown_node_gets_hello_and_nothing_else` got `over_budget`
-  for `unknown_op` on macOS once (cafe7fa); the raw client may idle out.
 - [S105 adversary] (guard) dist's local ranges (5.9) miss 100.64/10, 198.18/15, 0/8, fec0::/10 and NAT64/6to4 forms of a
   local IPv4 address; add them (deputy decision 2026-11-23).
 - [S37] `{"release"}` in a home with no record answers 200 from dist's cache
