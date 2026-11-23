@@ -2782,9 +2782,12 @@ control protocol, as `claude` does:
 next step; a deny writes a `message` `denied: <message>`, a `result` and `idle`,
 and skips the steps up to the next `expect-user` or `reply-per-say` (the turn
 ended). An `interrupt` that arrives in its place is answered and ends the turn
-the same way (`result` `error_during_execution` and `idle`). A deny ends the turn only when a
-later `expect-user` or `reply-per-say` step exists; with none, the script goes on with its next
-step (a script that only checks what the host wrote). An `interrupt` that no step awaits is answered and logged, never an
+the same way (`result` `error_during_execution` and `idle`). A deny ends the turn also at the
+end of the script: the steps up to the next `expect-user` or `reply-per-say`, or to the end, are
+skipped (review r1 of S100). An awaited `ask` or `check` takes only the `control_response`
+whose `request_id` is its own; every wait (`expect-user`, `expect-interrupt`, an awaited ask
+or check) first consumes and logs a `control_response` to an earlier ask or check the fake
+wrote. An `interrupt` that no step awaits is answered and logged, never an
 exit 70: the host writes one whenever the consumer asks (host 19.3 step 5); so is a `control_response` to an `ask` or `check` the fake wrote that no step awaits (the deny of host 19.3 step 5), which is logged and consumed, while one whose `request_id` names none exits 70. The
 program accepts `--permission-prompts=host` with `--permission-prompt-tool=stdio`
 (a launch with `ask: true`) as it accepts `--permission-prompts=none`.

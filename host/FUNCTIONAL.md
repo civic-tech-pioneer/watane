@@ -405,7 +405,7 @@ otherwise `relay` holds no grant beyond storage and its call of `latch`.
   `t1` becomes the item
   `{"type":"ask","id":"1","tool_use_id":"t1","tool":"Read","input":{"file_path":"a.txt"},"expires-at":<ms>}`;
   `answer` `allow(none)` writes the `control_response` with `updatedInput` and the stream
-  gets `{"type":"ask-resolved","ask":"1","by":"answered","outcome":"allow"}`; a second
+  gets `{"type":"ask-resolved","id":"1","by":"answered","outcome":"allow"}`; a second
   `answer` fails `unknown-ask`; no written line holds `updatedPermissions`.
 - **S58 Consent** (HOST-F-68). Given a launch with `"profile":"coder"` and a
   workspace new for the origin client, and a fake app that holds the answer,
@@ -463,7 +463,7 @@ otherwise `relay` holds no grant beyond storage and its call of `latch`.
   folder; the ask stays open and is denied at its `expires-at`.
 - **S100 Asks that end** (HOST-F-67). With a test clock: an unanswered ask at its
   `expires-at` gets the deny written to `fake-claude`'s stdin and the item
-  `{"type":"ask-resolved","ask":"1","by":"expired"}`; an unanswered check at its
+  `{"type":"ask-resolved","id":"1","by":"expired"}`; an unanswered check at its
   `expires-at` gets the same item and nothing on stdin; an `answer` after either is
   `unknown-ask`. A `control_cancel_request` for an open ask gives
   `ask-resolved {by: "cancelled"}`, is never pushed, and a later `answer` is

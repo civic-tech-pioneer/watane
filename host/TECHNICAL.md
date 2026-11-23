@@ -2056,29 +2056,24 @@ the run with no write: item delay source to page p95 3.25 ms (budget 50 ms);
 percentile); writer busy share 0.0% (budget 10%); state bytes written per item
 0, read per item 103 (the routing keys, see above). All within the budgets.
 
-**Budgets of stage B, the host part** (S100's foreman, 2026-11-22: agentic-harness
-TECHNICAL 15 names the load, 8 sessions, 2 owners, 10 and 10 000 entries; its
-kernel budgets are the kernel's, S36; the numbers below are the host's share and
-cheap to change). A slow test, `tests/it/agent_load.rs::stage_b`: 8 `claude-code`
-streams on host's fixture fake, 4 started and consumed by each of 2 consumer mods
-(`claude` and `claude-b`, the same fixture: its quiet sink stamps each item and writes
-one small tally per batch), each fake writing, after a `say`, a turn of 10 entries (an
-`assistant` line of about 1 KiB each) and an `ask` that the consumer answers, then
-after a second `say` a turn of 10 000 entries after two asks (one answered, one left
-for the `interrupt`). All p95 over the 8 streams. Every entry arrives once and in
-order. The fake is a shell script and cannot stamp its writes, so a turn's clock
-starts when the `say` that triggers it has returned. Budgets: entries taken in the
-10-entry turn at most 100 ms; the 10 000-entry turn taken whole within 10 s; an `ask`
-taken at most 100 ms (same clock); `answer` to the `control_response` on the fake's
-stdin at most 50 ms; `interrupt` during the 10 000-entry turn to its `ask-resolved`
-item taken at most 250 ms; `cancel` to `ended` at most 250 ms; writer busy share at
-most 10% (the fixture's own per-batch tally is in it). The host itself writes no state
-for an entry; the one byte per entry that the run shows is the fixture's tally. The 10-entry turn and the
-`ask` have 100 ms, not 50, because their clock includes the fake's fork of `read` and
-`sed` after the `say` (S100 fix3, 2026-11-22: p95 24 to 40 ms with the load tests
-serialised, yet over 50 ms in 1 run of 7, and 66 ms once beside other load).
+**Budgets of stage B, the host part** (review r1 of S100, 2026-11-23, after
+agentic-harness TECHNICAL 15's stage B contract; the numbers are the stage A
+budgets, which hold for the host's share). A slow test,
+`tests/it/agent_load.rs::stage_b`: 8 `claude-code` streams on host's fixture fake,
+4 started by each of 2 consumer mods (the owners), each mod forwarding its items to a
+page connection as `relay` does in stage A. Each fake writes, for at least 10 s, 50
+`stream_event` deltas and 5 finished `assistant` entries of 4 KiB per second, and
+stamps each line with its write time on the host's clock, so delay is measured source
+to page. The run is made twice: once after a transcript of 10 entries and once after
+one of 10 000 entries already went through the same streams. Budgets, all p95 over the
+8 streams: a line, source to page, at most 50 ms; an `ask` written to its item taken
+by the consumer at most 50 ms; `answer` to the `control_response` on the fake's stdin
+at most 50 ms; `interrupt` to the fake's idle line at the page at most 250 ms;
+`cancel` to `ended` at most 250 ms; writer busy share at most 10%; state bytes the
+host reads and writes per item, recorded for both transcript sizes (the host writes
+none; the consumer's own are recorded apart). Every line arrives once and in order.
 
-**Stage B host record** (S100, 2026-11-22; `Linux vm 6.18.44-fc-v726 #1 SMP
+**Stage B host record, superseded** (the burst load before review r1; S100, 2026-11-22; `Linux vm 6.18.44-fc-v726 #1 SMP
 PREEMPT_DYNAMIC x86_64`, `nproc` 4; three runs, every budget met): 80 080 entries each,
 none out of order or missing; entries taken in the 10-entry turn p95 31 / 36 / 35 ms;
 `ask` taken 31 / 36 / 35 ms; `answer` to stdin 10.5 / 3.6 / 7.0 ms; the 10 000-entry
@@ -3002,6 +2997,7 @@ not keep a credential from a mod on their own. Three rules do:
 |---|---|
 | `control_request` `can_use_tool` | `{"type":"ask","id":<host id>,"tool_use_id":<the request's>,"tool":…,"input":…,"expires-at":<ms>}` |
 | `control_request` `hook_callback` (PreToolUse) | `{"type":"check","id":<host id>,"tool_use_id":<the request's>,"tool":…,"input":…,"expires-at":<ms>}` |
+|  | (review r1 of S100) An `ask` of `Read`, `Glob`, `Grep`, `Edit`, `Write` or `NotebookEdit` also carries `"path":"<absolute path>"` after `input`: its path input (absent: the working folder) resolved as the third rule of Protected reads resolves it (symlinks resolved), so the kernel can scope a session allow before it answers (agentic-harness TECHNICAL 15); a path the host cannot resolve, or that the rule refuses, gives no `path` key. `input` stays as `claude` sent it |
 |  | (S100's foreman) The host id is a decimal counter from `"1"` per stream, one count for asks and checks. An ask's `tool` and `input` are the request's `tool_name` and `input`; a check's are its `input.tool_name` and `input.tool_input`; `tool_use_id` is the request's `tool_use_id` for both. A `tool` that is not a string or an `input` that is not an object is answered deny at once and pushes nothing, as a missing `tool_use_id` is |
 | a line whose top-level `type` is a watane item type that can share the stream: `ask`, `check`, `ask-resolved`, `initialized`, `wrapped`, `consent-pending`, and the checked provider's `verdict` and `checking` | never passed through (Q36, option 1): the line goes on the stream as `{"type":"wrapped","line":"<the line as a JSON string>"}`, so that no `claude` line can pass as a host item |
 | a line that is not UTF-8, is not one JSON object, or has a duplicate top-level key | `{"type":"wrapped","line":"<the line as a JSON string>"}`, the bytes decoded with U+FFFD for the invalid ones |
@@ -3017,7 +3013,7 @@ not keep a credential from a mod on their own. Three rules do:
    its own parsed value and serializes it itself; it never copies bytes of a
    `claude` line into an item, so no `claude` line can pass as a host item. An
    ask or check closes with one item, built by the host as well:
-   `{"type":"ask-resolved","ask":"<the id of the ask or check>","by":<by>}`, with
+   `{"type":"ask-resolved","id":"<the id of the ask or check>","by":<by>}` (the key is `id`, as agentic-harness TECHNICAL 4.5 and 9.4 read it; review r1 of S100), with
    `by` one of: `answered` (a `claude-session.answer` was written, and the item
    also carries `"outcome":"allow"|"deny"|"none"`, the answer the host sent to
    `claude`; `none` only for a check, Q35); `expired` (an ask that the host
@@ -3042,6 +3038,15 @@ not keep a credential from a mod on their own. Three rules do:
    that is not answered at its `expires-at` is closed with `ask-resolved
    {by: expired}` and nothing is written to stdin for it. A second
    answer, or an answer to an ask or check that is closed, is `unknown-ask`.
+   No ask or check is opened before the `system/init` line has passed step 3
+   (review r1 of S100): a `can_use_tool` or `hook_callback` that comes before it is
+   answered deny at once and pushes nothing. An ask or check whose `expires-at` has
+   come is closed at that instant, whether or not the host's sweep has run: an
+   `answer` at or after it is `unknown-ask` at the call, and one whose apply comes at
+   or after it writes nothing (the expiry's deny, for an ask, is written once). An
+   `ask-resolved {by: answered}` is pushed only after its line was written to
+   `claude`'s stdin; a write that fails (stdin closed) pushes no `answered`, and
+   the stream ends as the process does.
    The checks of an `answer` are made at the call against the asks open then
    (`unknown-ask` for an id that is not open on `s`); one that closes between the
    call and its apply (expired, cancelled, a second answer applied first) writes
