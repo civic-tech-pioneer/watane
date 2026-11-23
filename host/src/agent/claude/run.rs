@@ -204,56 +204,88 @@ pub(crate) fn pid_record(pgid: i32) -> Option<String> {
     Some(format!("{pgid} {} {}", boot_id()?, start_time(pgid)?))
 }
 
-/// The group that a `runs/pids` line records, when it is still that run: the boot id is this
-/// boot's and the leader has the recorded start time. Anything else is `None`.
-fn recorded_group(line: &str, boot: &str, start_of: impl Fn(i32) -> Option<String>) -> Option<i32> {
-    let mut fields = line.split_whitespace();
-    let pgid = fields.next()?.parse::<i32>().ok().filter(|p| *p > 1)?;
-    let (recorded_boot, recorded_start) = (fields.next()?, fields.next()?);
-    if fields.next().is_some() || recorded_boot != boot {
-        return None;
-    }
-    (start_of(pgid)? == recorded_start).then_some(pgid)
+/// One parsed line of `runs/pids`: `pgid boot-id start-time`.
+#[derive(Debug, PartialEq)]
+struct Record {
+    pgid: i32,
+    boot: String,
+    start: String,
 }
 
-/// What startup does with one line of `runs/pids`: the leader is held first (`hold`), its
+/// Whether `boot` is a boot id as `boot_id` prints it: the UUID form of
+/// `/proc/sys/kernel/random/boot_id` on Linux, one non-empty token elsewhere.
+fn valid_boot(boot: &str) -> bool {
+    if !cfg!(target_os = "linux") {
+        return !boot.is_empty();
+    }
+    let groups: Vec<&str> = boot.split('-').collect();
+    groups.len() == 5
+        && groups
+            .iter()
+            .zip([8, 4, 4, 4, 12])
+            .all(|(g, n)| g.len() == n && g.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f')))
+}
+
+/// The one parser of a `runs/pids` line, run before any handle opens: UTF-8, three fields, a
+/// group id of 2 or more, a valid boot id, a start time (Linux: a decimal tick count). Anything
+/// else is `None` (3.1 step 3, review r7 F7.2 and r8 F8.1, F8.2).
+fn parse_record(line: &[u8]) -> Option<Record> {
+    let text = std::str::from_utf8(line).ok()?;
+    let mut fields = text.split_whitespace();
+    let pgid = fields.next()?.parse::<i32>().ok().filter(|p| *p >= 2)?;
+    let (boot, start) = (fields.next()?, fields.next()?);
+    if fields.next().is_some()
+        || !valid_boot(boot)
+        || (cfg!(target_os = "linux") && start.parse::<u64>().is_err())
+    {
+        return None;
+    }
+    Some(Record {
+        pgid,
+        boot: boot.to_owned(),
+        start: start.to_owned(),
+    })
+}
+
+/// Whether `record` is still that run: the boot id is this boot's and the leader has the recorded
+/// start time.
+fn still_run(record: &Record, boot: &str, start_of: impl Fn(i32) -> Option<String>) -> bool {
+    record.boot == boot && start_of(record.pgid).is_some_and(|t| t == record.start)
+}
+
+/// What startup does with one line of `runs/pids`: the line is parsed into a full record first
+/// (`parse_record`); a bad one is logged and skipped. Then the leader is held (`hold`), its
 /// identity is checked while it is held, and the signal goes to that held process (`signal`),
 /// never to the group by its number. Without a hold nothing is signalled, and a recorded group
 /// that still matches is logged as a leftover; so are the other members of a group whose leader
 /// was signalled (3.1 step 3, review r6, F6.3).
 fn clean_line<H>(
-    line: &str,
+    line: &[u8],
     boot: &str,
     hold: impl FnOnce(i32) -> Option<H>,
     start_of: impl Fn(i32) -> Option<String>,
     signal: impl FnOnce(&H),
 ) {
-    // The record is validated before any handle opens: a group id of 2 or more, then a boot id
-    // and a start time that parse (Linux: a decimal tick count), and nothing else (review r7,
-    // F7.2). A boot id is any one token.
-    let fields: Vec<&str> = line.split_whitespace().collect();
-    let pgid = match fields.as_slice() {
-        [pgid, _boot, start] if !cfg!(target_os = "linux") || start.parse::<u64>().is_ok() => {
-            pgid.parse::<i32>().ok().filter(|p| *p >= 2)
-        }
-        _ => None,
-    };
-    let Some(pgid) = pgid else {
-        eprintln!("watane: a bad record in runs/pids is dropped: {line:?}");
+    let Some(record) = parse_record(line) else {
+        eprintln!(
+            "watane: a bad record in runs/pids is dropped: {:?}",
+            String::from_utf8_lossy(line)
+        );
         return;
     };
+    let pgid = record.pgid;
     let held = hold(pgid);
-    match (recorded_group(line, boot, start_of), held) {
-        (Some(pgid), Some(held)) => {
+    match (still_run(&record, boot, start_of), held) {
+        (true, Some(held)) => {
             signal(&held);
             eprintln!(
                 "watane: the other processes of a claude group (pgid {pgid}) of an earlier run may be left running"
             );
         }
-        (Some(pgid), None) => {
+        (true, None) => {
             eprintln!("watane: a claude group (pgid {pgid}) of an earlier run may be left running")
         }
-        (None, _) => {}
+        (false, _) => {}
     }
 }
 
@@ -282,8 +314,8 @@ fn kill_held(_held: &()) {}
 /// and empties `runs/` (3.1 step 3).
 pub(crate) fn clean_runs(home: &Path) {
     let runs = home.join("runs");
-    if let (Ok(text), Some(boot)) = (std::fs::read_to_string(runs.join("pids")), boot_id()) {
-        for line in text.lines() {
+    if let (Ok(bytes), Some(boot)) = (std::fs::read(runs.join("pids")), boot_id()) {
+        for line in bytes.split(|b| *b == b'\n') {
             clean_line(line, &boot, hold_leader, start_time, kill_held);
         }
     }
@@ -1270,28 +1302,70 @@ mod pids_tests {
         }
     }
 
+    /// A boot id in the form that `boot_id` prints on Linux, a token elsewhere.
+    const BOOT: &str = "0a1b2c3d-4e5f-6789-abcd-ef0123456789";
+    const OTHER: &str = "ffffffff-4e5f-6789-abcd-ef0123456789";
+
+    /// The pgid of `line` when it is a record of the run `boot` that `live` still shows.
+    fn recorded_group(line: &str, boot: &str, live: impl Fn(i32) -> Option<String>) -> Option<i32> {
+        let record = parse_record(line.as_bytes())?;
+        still_run(&record, boot, live).then_some(record.pgid)
+    }
+
     #[test]
     fn ac2_a_matching_line_is_killed() {
-        let got = recorded_group("4242 boot-a 99", "boot-a", start(&[(4242, "99")]));
-        assert_eq!(got, Some(4242));
+        let line = format!("4242 {BOOT} 99");
+        assert_eq!(
+            recorded_group(&line, BOOT, start(&[(4242, "99")])),
+            Some(4242)
+        );
     }
 
     #[test]
     fn ac2_other_lines_are_dropped() {
         let live = start(&[(4242, "99")]);
         for line in [
-            "4242",
-            "4242 boot-a",
-            "4242 boot-a 99 extra",
-            "4242 boot-b 99",
-            "4242 boot-a 100",
-            "4243 boot-a 99",
-            "abc boot-a 99",
-            "1 boot-a 99",
-            "-5 boot-a 99",
-            "",
+            "4242".to_owned(),
+            format!("4242 {BOOT}"),
+            format!("4242 {BOOT} 99 extra"),
+            format!("4242 {OTHER} 99"),
+            format!("4242 {BOOT} 100"),
+            format!("4243 {BOOT} 99"),
+            format!("abc {BOOT} 99"),
+            format!("1 {BOOT} 99"),
+            format!("-5 {BOOT} 99"),
+            String::new(),
         ] {
-            assert_eq!(recorded_group(line, "boot-a", &live), None, "{line:?}");
+            assert_eq!(recorded_group(&line, BOOT, &live), None, "{line:?}");
+        }
+    }
+
+    /// 3.1 step 3: one parser; a boot id has the UUID form on Linux, bytes that are not UTF-8
+    /// are no record.
+    #[test]
+    fn s100_fix20_ac3_parse_record_takes_bytes_and_checks_every_field() {
+        assert_eq!(
+            parse_record(format!("7 {BOOT} 100").as_bytes()),
+            Some(Record {
+                pgid: 7,
+                boot: BOOT.to_owned(),
+                start: "100".to_owned()
+            })
+        );
+        assert_eq!(parse_record(b"\xff 7 b 1"), None);
+        assert_eq!(parse_record(b"7 \xff 1"), None);
+        if cfg!(target_os = "linux") {
+            for boot in [
+                "bogus",
+                "0A1B2C3D-4e5f-6789-abcd-ef0123456789",
+                "0a1b2c3d4e5f6789abcdef0123456789",
+            ] {
+                assert_eq!(
+                    parse_record(format!("7 {boot} 1").as_bytes()),
+                    None,
+                    "{boot}"
+                );
+            }
         }
     }
 
@@ -1309,8 +1383,8 @@ mod pids_tests {
     fn s100_fix18_ac3_the_signal_goes_out_only_while_the_leader_is_held_and_checked() {
         let events = std::cell::RefCell::new(vec![]);
         clean_line(
-            "4242 boot-a 99",
-            "boot-a",
+            format!("4242 {BOOT} 99").as_bytes(),
+            BOOT,
             |pgid| {
                 assert_eq!(pgid, 4242);
                 events.borrow_mut().push("open");
@@ -1331,8 +1405,8 @@ mod pids_tests {
     fn s100_fix18_ac3_a_leader_that_cannot_be_held_is_never_signalled() {
         let signalled = std::cell::Cell::new(false);
         clean_line(
-            "4242 boot-a 99",
-            "boot-a",
+            format!("4242 {BOOT} 99").as_bytes(),
+            BOOT,
             |_| None::<Held>,
             |_| Some("99".to_owned()),
             |_: &Held| signalled.set(true),
@@ -1346,20 +1420,20 @@ mod pids_tests {
     fn s100_fix19_ac2_a_bad_record_is_dropped_before_any_handle_and_the_next_is_handled() {
         let held = std::cell::RefCell::new(vec![]);
         for bad in [
-            "-5 bogus 100",
-            "0 b 1",
-            "1 b 1",
-            "7 b",
-            "x b 1",
-            "7 b 1 extra",
+            "-5 bogus 100".to_owned(),
+            format!("0 {BOOT} 1"),
+            format!("1 {BOOT} 1"),
+            format!("7 {BOOT}"),
+            format!("x {BOOT} 1"),
+            format!("7 {BOOT} 1 extra"),
             #[cfg(target_os = "linux")]
-            "7 b x",
+            format!("7 {BOOT} x"),
             #[cfg(target_os = "linux")]
-            "7 b -1",
+            format!("7 {BOOT} -1"),
         ] {
             clean_line(
-                bad,
-                "b",
+                bad.as_bytes(),
+                BOOT,
                 |pgid| {
                     held.borrow_mut().push(pgid);
                     None::<Held>
@@ -1390,6 +1464,53 @@ mod pids_tests {
             run.kill().unwrap();
             run.wait().unwrap();
         }
+        assert!(!home.path().join("runs").exists());
+    }
+
+    /// 3.1 step 3 (review r8, F8.1): a boot id that is not a boot id opens no handle.
+    #[test]
+    fn s100_fix20_ac1_a_bogus_boot_id_opens_no_handle() {
+        let opened = std::cell::Cell::new(0);
+        clean_line(
+            b"7 bogus 100",
+            "bogus",
+            |_| {
+                opened.set(opened.get() + 1);
+                None::<Held>
+            },
+            |_| Some("100".to_owned()),
+            |_: &Held| {},
+        );
+        assert_eq!(opened.get(), if cfg!(target_os = "linux") { 0 } else { 1 });
+    }
+
+    /// 3.1 step 3 (review r8, F8.2): an undecodable line is skipped, the valid record after it is
+    /// still handled, and `runs/` is removed.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn s100_fix20_ac2_an_invalid_utf8_line_is_skipped_and_the_next_record_is_handled() {
+        let home = tempfile::tempdir().unwrap();
+        let mut run = Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pgid = i32::try_from(run.id()).unwrap();
+        std::fs::create_dir_all(home.path().join("runs")).unwrap();
+        let mut file = b"\xff\xfe 7 bad\n".to_vec();
+        file.extend(pid_record(pgid).expect("the leader is alive").bytes());
+        file.push(b'\n');
+        std::fs::write(home.path().join("runs/pids"), file).unwrap();
+        clean_runs(home.path());
+        let killed = (0..50).find_map(|_| {
+            std::thread::sleep(Duration::from_millis(20));
+            run.try_wait().unwrap()
+        });
+        if killed.is_none() {
+            run.kill().unwrap();
+            run.wait().unwrap();
+        }
+        assert_eq!(killed.and_then(|s| s.signal()), Some(9));
         assert!(!home.path().join("runs").exists());
     }
 
