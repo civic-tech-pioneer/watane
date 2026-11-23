@@ -561,14 +561,24 @@ pub(crate) async fn identity_backup(
         };
         let bytes = dist.backup(&passphrase)?;
         use std::io::Write;
-        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-        let mut f = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .mode(0o600)
-            .open(&path)?;
-        f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        #[cfg(unix)]
+        let mut f = {
+            use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .mode(0o600)
+                .open(&path)?;
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+            file
+        };
+        #[cfg(windows)]
+        let mut f = {
+            let file = watane_log_windows_fs::open_or_create_private_file(&path)?;
+            file.set_len(0)?;
+            file
+        };
         f.write_all(&bytes)?;
         Ok(json!({"path":path}))
     })

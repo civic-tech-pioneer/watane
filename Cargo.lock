@@ -8411,6 +8411,7 @@ dependencies = [
  "ureq",
  "watane-dist",
  "watane-host",
+ "watane-log-windows-fs",
  "watane-node",
  "webkit2gtk",
  "workspace-hack",

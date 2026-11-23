@@ -18,6 +18,7 @@ mod j4;
 mod j5;
 mod j8;
 mod j9;
+#[cfg(unix)] // The Linux runner harness uses executable Bash fixtures.
 mod linux_runner;
 mod look;
 mod machines;

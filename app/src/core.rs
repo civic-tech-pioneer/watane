@@ -2020,12 +2020,17 @@ fn index_row(
 // Dist does not attach the refused release to Refused. Decode it through pkg,
 // only on denial, to use the same slug and version validation as publication.
 pub(crate) fn publish_denied(bytes: Vec<u8>) -> Result<String, CmdError> {
-    use std::os::unix::fs::DirBuilderExt;
     let mut random = [0u8; 16];
     getrandom::fill(&mut random).map_err(|e| CmdError::new("io", e.to_string()))?;
     let suffix: String = random.iter().map(|b| format!("{b:02x}")).collect();
     let path = std::env::temp_dir().join(format!("watane-denied-{suffix}"));
-    std::fs::DirBuilder::new().mode(0o700).create(&path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new().mode(0o700).create(&path)?
+    };
+    #[cfg(windows)]
+    watane_log_windows_fs::create_dir(&path)?;
     struct Cleanup(std::path::PathBuf);
     impl Drop for Cleanup {
         fn drop(&mut self) {
@@ -2082,7 +2087,7 @@ pub(crate) struct ChannelMemo {
     #[cfg(test)]
     builds: std::sync::atomic::AtomicUsize,
 }
-type Stamp = Option<(std::time::SystemTime, u64, u64)>;
+type Stamp = Option<(std::time::SystemTime, u64, (u64, u64))>;
 type FollowedKeys = (Stamp, Vec<watane_dist::PublicKey>);
 struct MemoEntry {
     head: Option<watane_dist::HeadState>,
@@ -2092,14 +2097,32 @@ struct MemoEntry {
 }
 // Dist rewrites both files by rename, so the inode tells apart two writes of
 // equal length within one mtime tick.
+#[cfg(unix)]
 fn file_stamp(path: &std::path::Path) -> std::io::Result<Stamp> {
     use std::os::unix::fs::MetadataExt;
     match std::fs::metadata(path) {
-        Ok(meta) => Ok(Some((meta.modified()?, meta.len(), meta.ino()))),
+        Ok(meta) => Ok(Some((
+            meta.modified()?,
+            meta.len(),
+            (meta.dev(), meta.ino()),
+        ))),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e),
     }
 }
+
+#[cfg(windows)]
+fn file_stamp(path: &std::path::Path) -> std::io::Result<Stamp> {
+    let file = match watane_log_windows_fs::open_path(path, false) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let metadata = file.metadata()?;
+    let id = watane_log_windows_fs::file_id(&file)?;
+    Ok(Some((metadata.modified()?, metadata.len(), id)))
+}
+
 impl ChannelMemo {
     pub(crate) fn channel(
         &self,

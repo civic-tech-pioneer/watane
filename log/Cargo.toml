@@ -28,7 +28,7 @@ unicode-normalization = "0.1.26"
 workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [target.'cfg(windows)'.dependencies]
-watane-log-windows-fs = { path = "windows-fs" }
+watane-log-windows-fs = { version = "0.1", path = "windows-fs" }
 
 [dev-dependencies]
 tempfile = "3.27"
