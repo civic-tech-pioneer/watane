@@ -1263,7 +1263,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   https://chatgpt.com/local/6b044a3f-725c-83ed-9b8f-699e84a7b005; r1 `changes (5)` (adversary BREACHED: old records'
   bases get unchecked redirects; F1.5 not a finding, deputy), posted; BLOCKED (how dist knows a base was given), option B chosen;
   DELIVERED at 497bf37 with r1 answered (adversary r4 to r6 found three routes, all fixed or accepted until S107;
-  user-sim ACCEPTED); r2 to Codex.) Three Leftovers items, all in `dist/`:
+  user-sim ACCEPTED); r2 `changes (5)` (adversary BREACHED: a race in the first-read classifier; user-sim
+  REJECTED: follow reached a local first base), posted with the S105-CHURN fail-closed rule for the same round.) Three Leftovers items, all in `dist/`:
   1. (guard) a redirect from a listed or hint base is checked like the base itself: a redirect target on `localhost`
      or a local IP literal is refused, as A35/A37 refuse the base (dist/TECHNICAL.md:1273, 1278). Deputy decision: check
      each redirect target (not "Not protected"); the 5-redirect limit stays.
