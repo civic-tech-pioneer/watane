@@ -255,15 +255,14 @@ fn read_decoded_json<T: DeserializeOwned>(reader: impl Read, action: &str) -> Re
         .read_to_end(&mut body)
         .map_err(|error| match ureq::Error::from(error) {
             ureq::Error::Io(_) | ureq::Error::Timeout(_) => issuer_unavailable(action),
-            // The decoder can wrap a socket failure along with format errors.
+            // flate2 reports truncated encoding as UnexpectedEof too. ureq 3.5.1
+            // labels its HTTP-body disconnect "Peer disconnected"; OS errors retain their code.
             ureq::Error::Decompress(_, cause)
-                if matches!(
-                    cause.kind(),
-                    ErrorKind::ConnectionAborted
-                        | ErrorKind::ConnectionReset
-                        | ErrorKind::TimedOut
-                        | ErrorKind::UnexpectedEof
-                ) =>
+                if cause.raw_os_error().is_some()
+                    || (cause.kind() == ErrorKind::UnexpectedEof
+                        && cause
+                            .get_ref()
+                            .is_some_and(|source| source.to_string() == "Peer disconnected")) =>
             {
                 issuer_unavailable(action)
             }
@@ -789,19 +788,22 @@ mod tests {
     #[test]
     fn ac1_decoder_distinguishes_transport_errors_from_corrupt_encoding() {
         let action = "read the OpenID issuer";
-        for kind in [
-            io::ErrorKind::ConnectionAborted,
-            io::ErrorKind::ConnectionReset,
-            io::ErrorKind::TimedOut,
-            io::ErrorKind::UnexpectedEof,
+        for cause in [
+            io::Error::new(io::ErrorKind::UnexpectedEof, "Peer disconnected"),
+            io::Error::from_raw_os_error(1),
         ] {
-            let error = http_body_read_error(ureq::Error::Decompress("gzip", kind.into()), action);
-            assert_eq!(error.code, "unavailable", "{kind:?}");
+            let error = http_body_read_error(ureq::Error::Decompress("gzip", cause), action);
+            assert_eq!(error.code, "unavailable");
             assert_eq!(error.message, "Could not read the OpenID issuer.");
         }
-        for kind in [io::ErrorKind::InvalidInput, io::ErrorKind::InvalidData] {
-            let error = http_body_read_error(ureq::Error::Decompress("gzip", kind.into()), action);
-            assert_eq!(error.code, "bad_input", "{kind:?}");
+        for cause in [
+            io::Error::new(io::ErrorKind::UnexpectedEof, "incomplete deflate stream"),
+            io::ErrorKind::UnexpectedEof.into(),
+            io::ErrorKind::InvalidInput.into(),
+            io::ErrorKind::InvalidData.into(),
+        ] {
+            let error = http_body_read_error(ureq::Error::Decompress("gzip", cause), action);
+            assert_eq!(error.code, "bad_input");
             assert_eq!(
                 error.message,
                 "The response could not be read to read the OpenID issuer."
