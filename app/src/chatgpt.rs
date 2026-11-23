@@ -11,7 +11,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use ring::{digest, signature};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use std::io::Read;
+use std::io::{ErrorKind, Read};
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, SystemTimeError, UNIX_EPOCH};
@@ -255,6 +255,18 @@ fn read_decoded_json<T: DeserializeOwned>(reader: impl Read, action: &str) -> Re
         .read_to_end(&mut body)
         .map_err(|error| match ureq::Error::from(error) {
             ureq::Error::Io(_) | ureq::Error::Timeout(_) => issuer_unavailable(action),
+            // The decoder can wrap a socket failure along with format errors.
+            ureq::Error::Decompress(_, cause)
+                if matches!(
+                    cause.kind(),
+                    ErrorKind::ConnectionAborted
+                        | ErrorKind::ConnectionReset
+                        | ErrorKind::TimedOut
+                        | ErrorKind::UnexpectedEof
+                ) =>
+            {
+                issuer_unavailable(action)
+            }
             _ => unreadable(),
         })?;
     if body.len() > HTTP_BODY_LIMIT {
@@ -748,28 +760,52 @@ mod tests {
         );
     }
 
-    #[test]
-    fn ac1_http_body_transport_errors_are_unavailable() {
+    fn http_body_read_error(error: ureq::Error, action: &str) -> crate::CmdError {
         struct FailedRead(Option<ureq::Error>);
         impl Read for FailedRead {
             fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
                 Err(self.0.take().unwrap().into_io())
             }
         }
+        let response = ureq::http::Response::builder()
+            .status(200)
+            .body(ureq::Body::builder().reader(FailedRead(Some(error))))
+            .unwrap();
+        http_json::<serde_json::Value>(Ok(response), action).unwrap_err()
+    }
 
+    #[test]
+    fn ac1_http_body_transport_errors_are_unavailable() {
         for error in [
             ureq::Error::Io(io::ErrorKind::ConnectionReset.into()),
             ureq::Error::Timeout(ureq::Timeout::Global),
         ] {
-            let response = ureq::http::Response::builder()
-                .status(200)
-                .body(ureq::Body::builder().reader(FailedRead(Some(error))))
-                .unwrap();
-            let error =
-                http_json::<serde_json::Value>(Ok(response), "read the OpenID signing keys")
-                    .unwrap_err();
+            let error = http_body_read_error(error, "read the OpenID signing keys");
             assert_eq!(error.code, "unavailable");
             assert_eq!(error.message, "Could not read the OpenID signing keys.");
+        }
+    }
+
+    #[test]
+    fn ac1_decoder_distinguishes_transport_errors_from_corrupt_encoding() {
+        let action = "read the OpenID issuer";
+        for kind in [
+            io::ErrorKind::ConnectionAborted,
+            io::ErrorKind::ConnectionReset,
+            io::ErrorKind::TimedOut,
+            io::ErrorKind::UnexpectedEof,
+        ] {
+            let error = http_body_read_error(ureq::Error::Decompress("gzip", kind.into()), action);
+            assert_eq!(error.code, "unavailable", "{kind:?}");
+            assert_eq!(error.message, "Could not read the OpenID issuer.");
+        }
+        for kind in [io::ErrorKind::InvalidInput, io::ErrorKind::InvalidData] {
+            let error = http_body_read_error(ureq::Error::Decompress("gzip", kind.into()), action);
+            assert_eq!(error.code, "bad_input", "{kind:?}");
+            assert_eq!(
+                error.message,
+                "The response could not be read to read the OpenID issuer."
+            );
         }
     }
 
