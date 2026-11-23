@@ -250,8 +250,8 @@ fn write(path: &Path, value: &impl Serialize) -> io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
+        options.mode(0o600)
+    };
     let mut file = options.open(&temp)?;
     let result = (|| {
         serde_json::to_writer(&mut file, value)?;
@@ -329,8 +329,8 @@ mod tests {
             assert_eq!(
                 accounts.chatgpt(),
                 json!({"signedIn":false,"plan":null,"error":null})
-            );
-        }
+            )
+        };
         accounts.sign_out().unwrap();
         assert!(!path.exists());
         assert!(!path.with_extension("json.tmp").exists());
