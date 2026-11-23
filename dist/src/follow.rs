@@ -269,10 +269,7 @@ impl Dist {
             }
             let mut all = records.clone();
             all.insert(key, next);
-            let next = all;
-            self.save_staged(&next, None)?;
-            *records = next;
-            return Ok(());
+            return self.save_staged(&mut records, all, None);
         }
         let mut tombs = self
             .tombs
@@ -293,21 +290,27 @@ impl Dist {
             return Ok(());
         }
         add_tombstone(&mut tombs, name, tomb);
-        self.save_staged(&records, Some(tombs))
+        let same = records.clone();
+        self.save_staged(&mut records, same, Some(tombs))
     }
-    /// Saves `records`; a channel with a record has no tombstone (4.4).
+    /// Saves `next` and makes it the records in `live`; a channel with a record has no
+    /// tombstone (4.4).
     pub(crate) fn save_follows(
         &self,
-        records: &BTreeMap<PublicKey, Follow>,
+        live: &mut BTreeMap<PublicKey, Follow>,
+        next: BTreeMap<PublicKey, Follow>,
     ) -> Result<(), DistError> {
-        self.save_staged(records, None)
+        self.save_staged(live, next, None)
     }
-    /// The one write path of `follows.json`. `staged` is the next tombstone map a caller
-    /// built on a copy; the tombstones change in memory only once the file is written, so
-    /// a failed save leaves records and tombstones as they were (4.4).
+    /// The one write path of `follows.json`. `next` are the records and `staged` the
+    /// tombstone map a caller built on a copy. Memory changes exactly when the file is
+    /// replaced: a save that fails before the rename leaves records and tombstones as they
+    /// were; once the rename installed the file, both become what it holds, and a failed
+    /// directory sync after it is still returned (4.4, Codex r3 F3.2).
     pub(crate) fn save_staged(
         &self,
-        records: &BTreeMap<PublicKey, Follow>,
+        live: &mut BTreeMap<PublicKey, Follow>,
+        records: BTreeMap<PublicKey, Follow>,
         staged: Option<Tombs>,
     ) -> Result<(), DistError> {
         #[cfg(test)]
@@ -341,13 +344,14 @@ impl Dist {
             seen: next.map.clone(),
             gone: next.gone.to_text(),
         };
-        site::write_equal(
+        let (_, synced) = site::replace_equal(
             &self.home.join("dist/follows.json"),
             &serde_json::to_vec(&file).expect("follows JSON"),
             0o600,
         )?;
         *tombs = next;
-        Ok(())
+        *live = records;
+        synced
     }
     pub fn follow(&self, link: &Link) -> Result<RefreshReport, DistError> {
         if Some(link.channel()) == self.identity() {
@@ -385,8 +389,7 @@ impl Dist {
         if matches!(report.outcome, Outcome::Current { .. }) {
             record.last_success = Some(time);
         }
-        self.save_follows(&next)?;
-        *records = next;
+        self.save_follows(&mut records, next)?;
         drop(records);
         self.after_learning(link.channel(), report, learned)
     }
@@ -426,8 +429,7 @@ impl Dist {
         if let Some(record) = next.get_mut(&key) {
             learn_base(record, link.base());
         }
-        self.save_follows(&next)?;
-        *records = next;
+        self.save_follows(&mut records, next)?;
         drop(records);
         self.read_record(key)?;
         Ok(true)
@@ -461,8 +463,7 @@ impl Dist {
             .filter(|r| r.followed)
             .ok_or(DistError::NothingToUnfollow { channel: *channel })?;
         record.followed = false;
-        self.save_follows(&next)?;
-        *records = next;
+        self.save_follows(&mut records, next)?;
         drop(records);
         self.prune_listed()
     }
@@ -558,8 +559,7 @@ impl Dist {
             ) {
                 record.last_success = Some(record._last_attempt);
             }
-            self.save_follows(&next)?;
-            *records = next;
+            self.save_follows(&mut records, next)?;
         }
         result
     }

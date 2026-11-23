@@ -225,8 +225,7 @@ impl Dist {
             .filter(|r| r.index && Some(*channel) != self.identity())
             .ok_or(DistError::NotIndex { channel: *channel })?;
         record.index = false;
-        self.save_follows(&next)?;
-        *records = next;
+        self.save_follows(&mut records, next)?;
         drop(records);
         self.prune_listed()
     }
@@ -271,8 +270,7 @@ impl Dist {
         if matches!(report.outcome, Outcome::Current { .. }) {
             r.last_success = Some(time);
         }
-        self.save_follows(&next)?;
-        *records = next;
+        self.save_follows(&mut records, next)?;
         drop(records);
         let report = self.after_learning(link.channel(), report, learned)?;
         let mut reports = vec![report];
@@ -367,8 +365,7 @@ impl Dist {
                 follow::note_seen(&mut record.seen, &mut record.seen_full, base);
             }
         }
-        self.save_follows(&next)?;
-        *records = next;
+        self.save_follows(&mut records, next)?;
         Ok(())
     }
     pub(crate) fn read_record(&self, key: PublicKey) -> Result<RefreshReport, DistError> {
@@ -454,8 +451,7 @@ impl Dist {
             if any_current {
                 r.last_success = Some(r._last_attempt);
             }
-            self.save_follows(&next)?;
-            *records = next;
+            self.save_follows(&mut records, next)?;
         }
         let mut report = best.unwrap_or(RefreshReport {
             channel: key,
@@ -538,10 +534,8 @@ impl Dist {
                 record.bases.clear();
             }
         }
-        self.save_staged(&next, Some(tombs))
-            .map_err(|cause| Box::new((channel, cause)))?;
-        *records = next;
-        Ok(())
+        self.save_staged(&mut records, next, Some(tombs))
+            .map_err(|cause| Box::new((channel, cause)))
     }
 }
 #[derive(Default)]

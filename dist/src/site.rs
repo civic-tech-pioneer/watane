@@ -50,8 +50,20 @@ thread_local! {
     pub(crate) static TEST_FAIL_DIR_SYNC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 pub(crate) fn write_equal(path: &Path, bytes: &[u8], mode: u32) -> Result<bool, DistError> {
+    let (written, synced) = replace_equal(path, bytes, mode)?;
+    synced?;
+    Ok(written)
+}
+/// `write_equal` that tells the two failures apart: `Err` when `path` was not replaced
+/// (it keeps its old bytes); `Ok((_, Err))` when the rename installed the new bytes but
+/// the directory sync failed, so they are in place but may not survive a crash.
+pub(crate) fn replace_equal(
+    path: &Path,
+    bytes: &[u8],
+    mode: u32,
+) -> Result<(bool, Result<(), DistError>), DistError> {
     if read_plain(path)?.as_deref() == Some(bytes) {
-        return Ok(false);
+        return Ok((false, Ok(())));
     }
     let parent = path.parent().expect("file parent");
     // Holder writes may run alongside a web fetch. Each writer owns its temporary name.
@@ -64,12 +76,12 @@ pub(crate) fn write_equal(path: &Path, bytes: &[u8], mode: u32) -> Result<bool, 
     tmp.persist(path).map_err(|e| io(path, e.error))?;
     #[cfg(test)]
     if TEST_FAIL_DIR_SYNC.with(|fail| fail.replace(false)) {
-        return Err(io(parent, std::io::Error::from_raw_os_error(5)));
+        return Ok((true, Err(io(parent, std::io::Error::from_raw_os_error(5)))));
     }
-    fs::File::open(parent)
+    let synced = fs::File::open(parent)
         .and_then(|f| f.sync_all())
-        .map_err(|e| io(parent, e))?;
-    Ok(true)
+        .map_err(|e| io(parent, e));
+    Ok((true, synced))
 }
 impl Dist {
     pub fn set_site_url(&self, url: &str) -> Result<(), DistError> {
