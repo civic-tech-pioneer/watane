@@ -1214,7 +1214,9 @@ describes except for where it runs. Moving it inside makes the thing that built 
 serious thing built on watane, and is the sharpest test of the premise: if the substrate cannot host
 its own factory, the premise is weaker than it looks. Not sketched; it needs its own design slice.
 
-- [~] **S102 Alice connects her agent accounts in Settings (app stage L, part: 19.1, 19.3).** (in flight,
+- [x] **S102 Alice connects her agent accounts in Settings (app stage L, part: 19.1, 19.3).** DONE 2026-11-23: PR #18
+  merged with --admin at cdbfd4d, ~7 h in flight, 5 Claude rounds (8, 3, 1, 2 findings, then approve; validator PASS,
+  adversary HELD, user-sim 61/61). Found and fixed on the way: a macOS EINVAL in the `claude --version` probe. (Was: in flight,
   cloud, builder codex, reviewer claude; sketched 2026-11-23 by the deputy; Codex task
   https://chatgpt.com/local/6b041e07-d008-83eb-b737-65d3b6dc704c, ~11:05 UTC; PR #18 opened at 8ce07e4
   (+2162, app/ only); r1 to Claude, routine `trig_01AWD7ghXiLTs1pS7i7VmPm6`, 11:54 UTC; BLOCKED at ca0d904: the app's new dependencies need the root Cargo.lock, outside app/;
@@ -1303,8 +1305,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   (regular file, nlink 1, owner the user, mode 0600); a symlink, a hard link, a FIFO or a device node at the key path is
   refused with a clear error and the key is never read from it; each has a test. Unix only: the Windows design waits on
   the human (factory/README "Windows"). A security boundary (spec/TECHNICAL.md 6): the adversary runs. Touches: `log/`.
-- [ ] **S107 (guard) a base reached through dist's own links is never given (S105 option A).** (sketch ahead; after S102
-  merges: it touches app/src/core.rs.) A follow from a derived link (a search-hit install, the app's `follow_fetched` after
+- [ ] **S107 (guard) a base reached through dist's own links is never given (S105 option A).** (sketch ahead; S102 merged;
+  waits for S105 to merge, since both touch dist/.) A follow from a derived link (a search-hit install, the app's `follow_fetched` after
   an install, DD-29) never gives its base; only a link the participant opens or pastes (`open_link`, a pasted follow,
   `choose_index`) does. dist gets a way to say which (e.g. `follow_derived(link)` or a `Given` flag), and the app calls it.
   Outcomes: the adversary's S105 r3 and r4 routes and the prune route all fail with the 'seen' list removed. Touches:
