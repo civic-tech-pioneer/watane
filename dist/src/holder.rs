@@ -2,7 +2,8 @@
 //! that `node` serves to and stores from other machines. Takes no read lock.
 
 use crate::{
-    Dist, DistError, Entry, EntryId, Follow, Package, PackageId, PublicKey, ReleaseInfo, site, view,
+    Dist, DistError, Entry, EntryId, Follow, Package, PackageId, PublicKey, ReleaseInfo, follow,
+    site, view,
 };
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -219,7 +220,20 @@ impl Dist {
         match next.get_mut(channel) {
             // A follow between step 2 and here keeps the record, not the mark.
             Some(r) if had || r.followed => r.kept = false,
+            // The record took its channel's tombstone (4.4, DD-48): leave it again.
             Some(r) if !r.followed => {
+                if !r.seen.is_empty() || !r.given.is_empty() {
+                    let tomb = crate::Tombstone {
+                        seen: r.seen.clone(),
+                        given: r.given.clone(),
+                        at: follow::now(),
+                    };
+                    let mut tombs = self
+                        .tombs
+                        .lock()
+                        .expect("lock poisoned: another thread panicked while holding it");
+                    follow::add_tombstone(&mut tombs, channel.to_string(), tomb);
+                }
                 next.remove(channel);
             }
             _ => return,

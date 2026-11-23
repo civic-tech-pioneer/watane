@@ -507,8 +507,43 @@ fn ac3_failed_kept_ingest_leaves_earlier_record_as_it_was() {
         ));
         // Reading the file adds the held base to `seen` (DD-48); the rest is as it was.
         let mut saved = follows_keys(h.path()).unwrap()[key.to_string()].clone();
-        saved.as_object_mut().unwrap().remove("seen");
+        let seen = saved.as_object_mut().unwrap().remove("seen");
+        // Only a save writes `seen`, and then just the held base.
+        if let Some(seen) = seen {
+            assert!(followed);
+            assert_eq!(seen, serde_json::json!([record["base"]]));
+        }
         assert_eq!(saved, record);
         assert_eq!(d.channel(&key).unwrap().kept, kept);
     }
+}
+
+/// DD-48: a failed kept ingest of a channel with a tombstone takes its record back but
+/// leaves the tombstone, so a pruned channel's seen bases are not lost.
+#[test]
+fn a_failed_kept_ingest_keeps_the_tombstone() {
+    let a = tempfile::tempdir().unwrap();
+    let alice = open(a.path());
+    alice.set_name("A").unwrap();
+    alice.set_name("B").unwrap();
+    let key = alice.identity().unwrap();
+    let gap = entries(&alice, 1)[1].clone();
+    let tomb = serde_json::json!({"seen": ["http://127.0.0.1:9/"], "given": [], "at": 1});
+    let h = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(h.path().join("dist")).unwrap();
+    let file = serde_json::json!({"version": 1, "channels": {}, "seen": {key.to_string(): tomb}});
+    std::fs::write(h.path().join("dist/follows.json"), file.to_string()).unwrap();
+    let d = Dist::open_keyless(h.path(), fast_options()).unwrap();
+    assert!(matches!(
+        d.ingest(&key, vec![gap], Reason::Kept),
+        Ingested::Failed(DistError::Gap { .. })
+    ));
+    let saved: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(h.path().join("dist/follows.json")).unwrap())
+            .unwrap();
+    assert!(saved["channels"].get(key.to_string()).is_none());
+    assert_eq!(
+        saved["seen"][key.to_string()]["seen"],
+        serde_json::json!(["http://127.0.0.1:9/"])
+    );
 }

@@ -1070,33 +1070,46 @@ fn ac8_index_local_check_after_reopen() {
     assert_eq!(alice.host.count(), 0);
 }
 
+/// An explicit link at a base no listing gave reads under the regular cap; a link at the
+/// base the listing gave is seen and never given, so its first read is listed (4.4, DD-48).
 #[test]
 fn ac6_explicit_links_use_regular_entry_cap() {
-    for choose in [false, true] {
+    for (choose, at_listed) in [(false, false), (true, false), (false, true), (true, true)] {
         let alice = Home::new();
         let ivy = Home::new();
         alice.dist.publish(fixture("1.0.0", false)).unwrap();
         alice.dist.set_name("Alice").unwrap();
-        ivy.dist.list(&alice.mod_link(), "").unwrap();
+        let copy = tempfile::tempdir().unwrap();
+        alice.dist.export(copy.path()).unwrap();
+        let mirror = TestHost::serve(copy.path());
+        let key = alice.dist.identity().unwrap();
+        let listed = if at_listed {
+            alice.mod_link()
+        } else {
+            Link::new(key, &mirror.url, Some(&"reading-list".parse().unwrap())).unwrap()
+        };
+        ivy.dist.list(&listed, "").unwrap();
         let carol = Home::with_options(Options {
             listed_local: true,
             max_listed_entries: 0,
             ..fast_options()
         });
         carol.dist.choose_index(&ivy.link()).unwrap();
-        if choose {
-            carol.dist.choose_index(&alice.link()).unwrap();
+        let got = if choose {
+            carol.dist.choose_index(&alice.link()).map(|_| ())
         } else {
-            carol.dist.follow(&alice.link()).unwrap();
+            carol.dist.follow(&alice.link()).map(|_| ())
+        };
+        if at_listed {
+            assert!(
+                matches!(got, Err(DistError::TooManyEntries { .. })),
+                "the listed cap applies to a link at the listed base"
+            );
+            assert_eq!(carol.dist.channel(&key).unwrap().head, None);
+        } else {
+            got.unwrap();
+            assert_eq!(carol.dist.channel(&key).unwrap().head, Some(2));
         }
-        assert_eq!(
-            carol
-                .dist
-                .channel(&alice.dist.identity().unwrap())
-                .unwrap()
-                .head,
-            Some(2)
-        );
     }
 }
 
