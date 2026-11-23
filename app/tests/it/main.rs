@@ -4,6 +4,7 @@
 #[path = "../support/mod.rs"]
 mod support;
 
+mod agent;
 mod api;
 mod build_on;
 mod find;

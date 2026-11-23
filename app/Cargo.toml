@@ -22,6 +22,11 @@ watane-node = { path = "../node" }
 watane-host = { path = "../host" }
 watane-dist = { path = "../dist" }
 axum = "0.8"
+base64 = "0.23"
+open = "5"
+ring = { version = "0.17", features = ["std"] }
+subtle = "2"
+ureq = { version = "3", features = ["json"] }
 tauri-plugin-dialog = "=2.8.4"
 tauri = "=2.12.5"
 serde = { version = "1", features = ["derive"] }
@@ -38,8 +43,6 @@ tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["fs", "set-header"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "blocking"] }
-
-ureq = "3" # Real Pages harness: HTTPS with the same rustls client as dist.
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Driver-only: let popup attempts reach the native deny hook, as on macOS.

@@ -36,17 +36,125 @@ pub(crate) async fn status(
 ) -> Result<Value, CmdError> {
     record(&webview, "status");
     let mut value = json!({"home":state.home,"port":state.core.get().map_or(state.port, |c| c.port()),"mark":state.mark,"error":state.failed.get(),"identity":null,"site":null,"checkedAt":state.core.get().and_then(|c| c.checked_at())});
+    value["chatgpt"] = json!({"signedIn":false,"plan":null,"error":null});
+    value["claude"] = Value::Null;
     if let Some(core) = state.core.get().cloned() {
-        match blocking(move || core.status()).await {
-            Ok((identity, site)) => {
+        let accounts = Arc::clone(&state.accounts);
+        match blocking(move || {
+            let (identity, site) = core.status()?;
+            Ok((identity, site, accounts.chatgpt(), accounts.claude()))
+        })
+        .await
+        {
+            Ok((identity, site, chatgpt, claude)) => {
                 value["identity"] = identity;
                 value["site"] = site;
+                value["chatgpt"] = chatgpt;
+                value["claude"] = json!(claude);
             }
             Err(e) => value["error"] = json!(e.message),
         }
     }
     Ok(value)
 }
+
+#[tauri::command]
+pub(crate) async fn chatgpt_sign_in(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+) -> Result<Value, CmdError> {
+    record(&webview, "chatgpt_sign_in");
+    core(&state)?;
+    let accounts = Arc::clone(&state.accounts);
+    let attempt = accounts
+        .sign_in
+        .try_lock()
+        .map_err(|_| CmdError::new("unavailable", "A ChatGPT sign-in is already in progress."))?;
+    let app = webview.app_handle().clone();
+    let account = crate::chatgpt::sign_in(move |url| {
+        #[cfg(feature = "driver")]
+        if std::env::var_os("WATANE_APP_OPENAI_ISSUER").is_some() {
+            app.state::<AppState>().driver.open_url(url);
+            return Ok(());
+        }
+        let _ = app;
+        open::that(url.as_str())
+            .map_err(|_| CmdError::new("unavailable", "Could not open the browser."))
+    })
+    .await?;
+    let plan = json!({"plan":account.plan});
+    blocking({
+        let accounts = Arc::clone(&accounts);
+        move || accounts.keep_openai(&account)
+    })
+    .await?;
+    drop(attempt);
+    Ok(plan)
+}
+
+#[tauri::command]
+pub(crate) async fn chatgpt_sign_out(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), CmdError> {
+    record(&webview, "chatgpt_sign_out");
+    core(&state)?;
+    let accounts = Arc::clone(&state.accounts);
+    let _attempt = accounts
+        .sign_in
+        .try_lock()
+        .map_err(|_| CmdError::new("unavailable", "A ChatGPT sign-in is already in progress."))?;
+    blocking({
+        let accounts = Arc::clone(&accounts);
+        move || accounts.sign_out()
+    })
+    .await
+}
+
+#[tauri::command]
+pub(crate) async fn claude_binary_pick(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<crate::claude_bin::ClaudeStatus>, CmdError> {
+    record(&webview, "claude_binary_pick");
+    core(&state)?;
+    let app = webview.app_handle().clone();
+    let accounts = Arc::clone(&state.accounts);
+    #[cfg(feature = "driver")]
+    let picked = state.driver.pick.lock().expect("driver picker lock").take();
+    #[cfg(not(feature = "driver"))]
+    let picked: Option<Vec<std::path::PathBuf>> = None;
+
+    blocking(move || {
+        use tauri_plugin_dialog::DialogExt;
+        let path = match picked {
+            Some(paths) => paths.into_iter().next(),
+            None => app
+                .dialog()
+                .file()
+                .blocking_pick_file()
+                .map(|file| {
+                    file.into_path()
+                        .map_err(|error| CmdError::new("bad_input", error.to_string()))
+                })
+                .transpose()?,
+        };
+        path.map(|path| accounts.choose_claude(&path)).transpose()
+    })
+    .await
+}
+
+#[tauri::command]
+pub(crate) async fn claude_binary_clear(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), CmdError> {
+    record(&webview, "claude_binary_clear");
+    core(&state)?;
+    let accounts = Arc::clone(&state.accounts);
+    blocking(move || accounts.clear_claude()).await
+}
+
 #[tauri::command]
 pub(crate) async fn mods_list(
     webview: tauri::Webview,

@@ -12,6 +12,10 @@ fn read(path: &str) -> String {
 fn ac8_static_security_configuration() {
     let main = [
         "status",
+        "chatgpt_sign_in",
+        "chatgpt_sign_out",
+        "claude_binary_pick",
+        "claude_binary_clear",
         "mods_list",
         "mod_open",
         "mod_disable",
@@ -101,6 +105,10 @@ fn ac8_static_security_configuration() {
         commands,
         [
             "status",
+            "chatgpt_sign_in",
+            "chatgpt_sign_out",
+            "claude_binary_pick",
+            "claude_binary_clear",
             "mods_list",
             "mod_open",
             "mod_disable",

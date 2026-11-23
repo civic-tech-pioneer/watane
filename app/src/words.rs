@@ -287,6 +287,27 @@ pub(crate) fn update_declined(version: &str) -> String {
     format!("You declined the update to {version}.")
 }
 
+pub(crate) enum ClaudeBinary<'a> {
+    NotProgram(&'a std::path::Path),
+    NoAnswer(&'a std::path::Path),
+    TooOld { found: &'a str, need: &'a str },
+}
+
+impl std::fmt::Display for ClaudeBinary<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotProgram(path) => write!(f, "{} is not a program you can run.", path.display()),
+            Self::NoAnswer(path) => write!(f, "{} did not answer --version.", path.display()),
+            Self::TooOld { found, need } => {
+                write!(
+                    f,
+                    "Claude Code {found} is too old; watane needs {need} or later."
+                )
+            }
+        }
+    }
+}
+
 pub(crate) const OWN_INDEX: &str = "Your own channel is always your index.";
 pub(crate) fn bad_note(cause: &str) -> String {
     if cause == "invalid character count" {

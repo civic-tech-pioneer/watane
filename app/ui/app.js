@@ -1,4 +1,5 @@
 import { call } from './ipc.js';
+import { setupAgentSettings, agentSettingsView } from './settings-agents.js';
 import {setupMachines, machinesView} from './machines.js';
 import {connections, dependents, matchesLibrary, updateOffers, libraryOrder, badge, problem} from './manager.js';
 import { ownWithdrawal, offerLabel, offerNotice, partyLabel, modCount, viaLabels, derivedAction, actionErrors, visibleIndexes, monogram, searchWords, ago, when, foundCount } from './words.js';
@@ -310,8 +311,9 @@ function refresh() {
   refreshing = (async () => {
     const status = await call('status');
     checkedAt = status.checkedAt ?? checkedAt; renderCheck();
-    if (status.error) { document.querySelector('main').textContent = status.error; $('#agents').hidden = true; $('#distribution').hidden = true; $('#find').hidden = true; $('#install').disabled = true; document.body.dataset.ready = 'true'; return; }
+    if (status.error) { document.querySelector('main').textContent = status.error; $('#agents').hidden = true; $('#chatgpt').hidden = true; $('#claude').hidden = true; $('#distribution').hidden = true; $('#find').hidden = true; $('#install').disabled = true; document.body.dataset.ready = 'true'; return; }
     for (const mark of document.querySelectorAll('.mark')) mark.textContent = status.mark;
+    agentSettingsView(status);
     const machines = await machinesView(status);
     identityView(status, machines);
     await channelsView();
@@ -328,6 +330,7 @@ window.addEventListener('focus', () => readRefresh().catch(showError));
 document.addEventListener('visibilitychange', () => readRefresh().catch(showError));
 setInterval(() => { if (!document.hidden) readRefresh().catch(showError); }, 2000);
 setInterval(() => { if (document.hidden) readRefresh().catch(showError); }, 10000);
+setupAgentSettings(readRefresh);
 readRefresh().catch(showError);
 
 let lastReleases = '', canSign = false;
