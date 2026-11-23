@@ -1217,7 +1217,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
 - [~] **S102 Alice connects her agent accounts in Settings (app stage L, part: 19.1, 19.3).** (in flight,
   cloud, builder codex, reviewer claude; sketched 2026-11-23 by the deputy; Codex task
   https://chatgpt.com/local/6b041e07-d008-83eb-b737-65d3b6dc704c, ~11:05 UTC; PR #18 opened at 8ce07e4
-  (+2162, app/ only); r1 to Claude, routine `trig_01AWD7ghXiLTs1pS7i7VmPm6`, 11:54 UTC.) Settings gets the groups
+  (+2162, app/ only); r1 to Claude, routine `trig_01AWD7ghXiLTs1pS7i7VmPm6`, 11:54 UTC; BLOCKED at ca0d904: the app's new dependencies need the root Cargo.lock, outside app/;
+  the deputy allowed Cargo.lock and workspace-hack (generated; a rebase regenerates them), answered in the Codex task.) Settings gets the groups
   `ChatGPT` and `Claude Code`, so the agent layer's two accounts can be set up before the host stages that
   use them land. Outcomes (app FUNCTIONAL, on the real app with stand-ins):
   1. S54: Alice chooses `Sign in with ChatGPT`; the browser stand-in opens at the stand-in issuer, the
@@ -1673,6 +1674,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Deputy decisions
 
+- 2026-11-23 (S102 BLOCKED) A slice scoped to one folder may still change the root `Cargo.lock` and `workspace-hack` for its own dependencies: they are generated, and a rebase regenerates them.
 - 2026-11-23 (the human's answer, through the monitor: "Yes, tell it"; on throughput) Last night ran only two
   slices, one per project, with nothing sketched ahead; earlier nights merged 10 to 17 a day. Follow deputy
   section 1 strictly: as many slices in flight as can run without sharing files, across both projects, plus
