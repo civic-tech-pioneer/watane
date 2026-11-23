@@ -808,9 +808,9 @@ mod tests {
         assert_eq!(w.a.count(), before, "the listing's base was read again");
     }
     /// AC1 (F1.1): a record without `given` (saved before S105) is read under the listed
-    /// rule, redirects included, until a link at that base is given.
+    /// rule, redirects included; no link gives its seen base (DD-48).
     #[test]
-    fn ac2_ac3_an_old_followed_record_base_is_given_only_by_unfollow_then_follow() {
+    fn ac2_ac3_an_old_followed_record_base_is_never_given_by_a_link() {
         let w = world();
         let c = Host::serve(&w.publisher.site_dir());
         let (dir, eve) = w.eve(&[&w.a]);
@@ -839,14 +839,17 @@ mod tests {
         let report = eve.refresh_channel(&w.key).unwrap();
         assert_refused(failure(Ok(report)), &format!("{}head", w.b.url));
         assert_eq!(w.b.count(), 0, "a repeated link gives no base");
-        // AC3: unfollow, then follow by a link gives it: the redirect is followed.
+        // DD-48: unfollow, then follow by a link at the seen base gives nothing either.
         eve.unfollow(&w.key).unwrap();
+        let redirects = w.a.redirects.lock().unwrap().clone();
+        w.a.redirects.lock().unwrap().clear();
         eve.follow(&w.link(&w.a)).unwrap();
-        assert!(w.b.count() > 0);
-        eve.follow(&w.link(&w.a)).unwrap();
-        let before = w.b.count();
-        eve.fetch(&w.reference).unwrap();
-        assert!(w.b.count() > before, "the package redirect was followed");
+        *w.a.redirects.lock().unwrap() = redirects;
+        let report = eve.refresh_channel(&w.key).unwrap();
+        assert_refused(failure(Ok(report)), &format!("{}head", w.b.url));
+        let got = eve.fetch(&w.reference).map(|_| ()).err();
+        assert_refused(got, &format!("{}{}", w.b.url, w.package));
+        assert_eq!(w.b.count(), 0, "a link never gives a seen base");
     }
     /// DD-47 as a listed record: an unknown local base still gives a cached package,
     /// and refuses the base on a miss.
@@ -969,5 +972,53 @@ mod tests {
             before,
             "no request to the local redirect target of a listing-learned base"
         );
+    }
+
+    /// Adversary S105 r4 (prune): `unfollow` prunes the record, but its `seen` stays as a
+    /// tombstone, so a kept hit link makes a new record that gives nothing (DD-48).
+    #[test]
+    fn adv_s105_r4_prune_then_hit_install_gives_nothing() {
+        let w = world();
+        let c = Host::serve(&w.publisher.site_dir());
+        let (dir, eve) = w.eve(&[&w.a]);
+        eve.follow(&w.link(&c)).unwrap();
+        drop(eve);
+        let old = serde_json::json!({"version": 1, "channels": {w.key.to_string(): {
+            "base": w.a.url, "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
+        std::fs::write(dir.path().join("dist/follows.json"), old.to_string()).unwrap();
+        let eve = Dist::open(dir.path(), Arc::new(Yes), Options::default()).unwrap();
+        exempt(&eve, &[&w.a]);
+        let hits = eve
+            .search(&crate::Query {
+                text: String::new(),
+                publisher: Some(w.key),
+                origin: None,
+                interface: None,
+            })
+            .unwrap();
+        let hit = hits[0].link.clone().expect("hit link");
+        assert_eq!(hit.base(), w.a.url);
+        eve.unfollow(&w.key).unwrap();
+        let file = || -> serde_json::Value {
+            serde_json::from_slice(&std::fs::read(dir.path().join("dist/follows.json")).unwrap())
+                .unwrap()
+        };
+        let key = w.key.to_string();
+        assert!(
+            file()["channels"].get(&key).is_none(),
+            "the record is pruned"
+        );
+        assert_eq!(file()["seen"][&key]["seen"], serde_json::json!([w.a.url]));
+        let _ = eve.follow(&hit);
+        let record = &file()["channels"][&key];
+        assert!(record["given"].as_array().is_none_or(|g| g.is_empty()));
+        assert!(
+            file()["seen"].get(&key).is_none(),
+            "the tombstone is used up"
+        );
+        w.a.redirect("/head", &format!("{}head", w.b.url));
+        let before = w.b.count();
+        let _ = eve.refresh_channel(&w.key);
+        assert_eq!(w.b.count(), before, "no request to the redirect target");
     }
 }
