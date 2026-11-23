@@ -261,6 +261,35 @@ fn take_and_apply(host: &Host, chain: &Chain, apply: bool) -> Vec<Effect> {
     log
 }
 
+/// A chain in flight that holds `effects` and commits nothing, for the tests of the budgets.
+#[cfg(test)]
+pub(crate) fn test_chain(host: &Host, effects: Vec<Effect>) -> Arc<Chain> {
+    let chain = Arc::new(Chain {
+        host: host.weak.upgrade().expect("host open"),
+        snapshot: Arc::new(
+            host.catalog
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .clone(),
+        ),
+        fakes: None,
+        deadline: Instant::now() + std::time::Duration::from_secs(60),
+        effects: Mutex::new(Effects::default()),
+        publish: false,
+        ready: AtomicBool::new(false),
+        job: Arc::new(Job::new()),
+        failed_fuel: AtomicU64::new(0),
+        log: Mutex::new(effects),
+        connection: None,
+        defers: false,
+        deferred: AtomicBool::new(false),
+        timer: None,
+        unavailable: AtomicBool::new(false),
+    });
+    register(host, &chain);
+    chain
+}
+
 pub(crate) fn run_start(host: &Host, start: Start) -> Done {
     let failed = |error: CallError| Done {
         result: Err(error),

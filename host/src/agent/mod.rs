@@ -821,6 +821,33 @@ impl Host {
         };
         self.hub.end_gone(&lost);
     }
+    /// Runs `f` with the bytes that the chains in flight have queued for `origin` and in all,
+    /// holding their gate (19.2, Commit): host admission counts them as a mod's push does.
+    pub(crate) fn with_pending<R>(&self, origin: &str, f: impl FnOnce((usize, usize)) -> R) -> R {
+        let chains = self
+            .chains
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
+        let (mut origin_pending, mut host_pending) = (0, 0);
+        for chain in chains.iter().filter_map(std::sync::Weak::upgrade) {
+            let log = chain
+                .log
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
+            for e in log.iter() {
+                if let Effect::Push {
+                    body, origin: o, ..
+                } = e
+                {
+                    if o == origin {
+                        origin_pending += body.len();
+                    }
+                    host_pending += body.len();
+                }
+            }
+        }
+        f((origin_pending, host_pending))
+    }
     /// Applies the effects of a succeeded chain, in call order (19.6, At apply).
     pub(crate) fn apply_effects(&self, effects: Vec<Effect>) {
         // A `claude` process starts after the whole chain is applied, so that a `cancel` of the

@@ -401,10 +401,10 @@ impl Job {
         let pgid = i32::try_from(child.id()).unwrap_or(0);
         cleanup.pgid = Some(pgid);
         self.sessions.record_pid(&self.home, pgid);
-        let stdin = child.stdin.take().expect("piped");
-        if let Err(failed) = make_non_blocking(&stdin) {
-            return failed;
-        }
+        let stdin = match take_stdin(&mut child, pgid, make_non_blocking) {
+            Ok(stdin) => stdin,
+            Err(failed) => return failed,
+        };
         self.session.set_roots(cwd.clone(), roots, run_root);
         let ticker = Arc::clone(&self.session);
         let hub = Arc::clone(&self.hub);
@@ -699,6 +699,23 @@ fn write_all_by(stdin: &impl std::os::fd::AsFd, mut line: &[u8], giveup: &Giveup
     true
 }
 
+/// Takes the write end of the child's stdin and sets it up. When `setup` fails, the group is
+/// killed and the child reaped here, before the waiter exists, so no zombie is left; the start
+/// ends `failed("stdin")` (19.3, step 5).
+fn take_stdin(
+    child: &mut std::process::Child,
+    pgid: i32,
+    setup: impl FnOnce(&std::process::ChildStdin) -> Result<(), Value>,
+) -> Result<std::process::ChildStdin, Value> {
+    let stdin = child.stdin.take().expect("piped");
+    if let Err(failed) = setup(&stdin) {
+        killpg(pgid);
+        let _ = child.wait();
+        return Err(failed);
+    }
+    Ok(stdin)
+}
+
 /// Makes the write end of stdin non-blocking; the start ends `failed("stdin")` when it cannot.
 fn make_non_blocking(stdin: &impl std::os::fd::AsFd) -> Result<(), Value> {
     rustix::fs::fcntl_setfl(stdin, rustix::fs::OFlags::NONBLOCK).map_err(|_| Job::failed("stdin"))
@@ -900,6 +917,30 @@ mod join_tests {
         );
         let (_reader, writer) = std::io::pipe().unwrap();
         make_non_blocking(&writer).unwrap();
+    }
+
+    /// 19.3 step 5: a stdin setup that fails after the spawn leaves no zombie child.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn s100_fix15_ac1_a_failed_stdin_setup_reaps_the_child() {
+        use std::os::unix::process::CommandExt;
+        let mut child = Command::new("sleep")
+            .arg("60")
+            .stdin(Stdio::piped())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let failed = take_stdin(&mut child, i32::try_from(pid).unwrap(), |_| {
+            Err(Job::failed("stdin"))
+        })
+        .unwrap_err();
+        assert_eq!(failed, serde_json::json!({"failed": "stdin"}));
+        let waited = rustix::process::waitpid(
+            rustix::process::Pid::from_raw(i32::try_from(pid).unwrap()),
+            rustix::process::WaitOptions::NOHANG,
+        );
+        assert_eq!(waited.unwrap_err(), rustix::io::Errno::CHILD);
     }
 
     #[test]

@@ -284,6 +284,8 @@ struct Inner {
 pub(crate) struct Hub {
     inner: Mutex<Inner>,
     cv: Condvar,
+    /// The host, once `start` ran: the chains in flight whose pending bytes an ask counts.
+    host: std::sync::OnceLock<Weak<Host>>,
 }
 impl std::fmt::Debug for Hub {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -322,6 +324,7 @@ impl Hub {
         Arc::new(Self {
             inner: Mutex::new(Inner::default()),
             cv: Condvar::new(),
+            host: std::sync::OnceLock::new(),
         })
     }
     fn lock(&self) -> MutexGuard<'_, Inner> {
@@ -334,6 +337,7 @@ impl Hub {
     pub fn start(self: &Arc<Self>, host: &Arc<Host>) -> std::io::Result<()> {
         let hub = Arc::clone(self);
         let weak = Arc::downgrade(host);
+        let _ = self.host.set(Weak::clone(&weak));
         std::thread::Builder::new()
             .name("watane-streams".into())
             .spawn(move || hub.run(&weak))
@@ -914,6 +918,34 @@ impl Hub {
         if body.len() > MAX_ITEM {
             return Err(StreamError::TooLarge);
         }
+        if close {
+            return self.push_as_host_in(id, body, reserve, close, (0, 0));
+        }
+        // An admission counts what the chains in flight have queued, as a mod's push does, and
+        // holds their gate until the item is queued (19.2, Commit).
+        let origin = {
+            let inner = self.lock();
+            match inner.streams.get(id) {
+                Some(s) if s.closing.is_none() && s.producer == Producer::Host => s.origin.clone(),
+                _ => return Err(StreamError::UnknownStream),
+            }
+        };
+        match self.host.get().and_then(Weak::upgrade) {
+            Some(host) => host.with_pending(&origin, |pending| {
+                self.push_as_host_in(id, body, reserve, close, pending)
+            }),
+            None => self.push_as_host_in(id, body, reserve, close, (0, 0)),
+        }
+    }
+    /// `push_as_host` with the bytes (`origin`, `host`) that chains in flight have queued.
+    fn push_as_host_in(
+        &self,
+        id: &str,
+        body: &[u8],
+        reserve: usize,
+        close: bool,
+        (origin_pending, host_pending): (usize, usize),
+    ) -> Result<(), StreamError> {
         let mut inner = self.lock();
         let origin = match inner.streams.get(id) {
             Some(s) if s.closing.is_none() && s.producer == Producer::Host => s.origin.clone(),
@@ -928,13 +960,21 @@ impl Hub {
             if taken.is_some() {
                 inner.free(&origin, reserve);
                 inner.enqueue(id, body.to_vec(), 0);
+                // The close turned its reserve into one item: the net charge went down.
+                inner.scan_ready();
                 drop(inner);
                 self.cv.notify_all();
                 return Ok(());
             }
         }
         let reserve = if close { 0 } else { reserve };
-        inner.check_in(id, body.len(), (0, 0), (&origin, 0, 0), reserve)?;
+        inner.check_in(
+            id,
+            body.len(),
+            (0, 0),
+            (&origin, origin_pending, host_pending),
+            reserve,
+        )?;
         inner.enqueue(id, body.to_vec(), 0);
         if reserve > 0 {
             if let Some(s) = inner.streams.get_mut(id) {
@@ -1445,6 +1485,59 @@ mod tests {
     fn budgets(hub: &Hub) -> (usize, Option<usize>) {
         let inner = hub.lock();
         (inner.host_bytes, inner.origin_bytes.get("o").copied())
+    }
+
+    /// 19.2 (In flight): a close that turns its ask's reserve into one queued item frees bytes,
+    /// so a producer refused `full` that now fits is told `ready`.
+    #[test]
+    fn s100_fix15_ac2_a_close_that_frees_budget_wakes_a_waiting_producer() {
+        let hub = Hub::new();
+        let ask = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let other = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        hub.host_open_keeping(&ask, b"ask", 1000).unwrap();
+        hub.lock()
+            .origin_bytes
+            .insert("o".into(), ORIGIN_BUDGET - 100);
+        assert_eq!(hub.host_push(&other, &[0; 512]), Err(StreamError::Full));
+        assert!(hub.lock().streams[&other].needs_ready.is_some());
+        hub.host_close_keeping(&ask, b"close", 1000).unwrap();
+        assert!(hub.lock().streams[&other].needs_ready.is_none());
+    }
+
+    /// 19.2 (Commit, Byte budgets): a host ask counts the bytes that admitted mod pushes still
+    /// have queued in their chains, so it cannot take capacity promised to one of them.
+    #[test]
+    fn s100_fix15_ac3_a_host_ask_counts_the_pending_bytes_of_mod_pushes() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let s = host
+            .hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let by = ModRef {
+            local: LocalName::parse("m").unwrap(),
+            identity: "local/m".into(),
+        };
+        let push = |len| Effect::Push {
+            id: "mod-stream".into(),
+            body: vec![0; len],
+            hop: 0,
+            by: by.clone(),
+            origin: "o".into(),
+        };
+        let chain = crate::runtime::call::test_chain(&host, vec![push(ORIGIN_BUDGET - 10)]);
+        assert_eq!(
+            host.hub.host_open_keeping(&s, b"ask", 1000),
+            Err(StreamError::Full)
+        );
+        assert_eq!(budgets(&host.hub), (0, None));
+        drop(chain);
+        host.hub.host_open_keeping(&s, b"ask", 1000).unwrap();
+        assert!(budgets(&host.hub).1.unwrap() <= ORIGIN_BUDGET);
     }
 
     /// 19.2 (In flight): a close takes its ask's reserve once; the stream's end frees the rest.
