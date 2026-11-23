@@ -1275,6 +1275,12 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   loop above it uses a fresh key per call because one unknown key's connection budget is small; the last call
   (`frobnicate`) reuses `seed`. Outcome: the test asserts `unknown_op` without depending on that budget, and passes 50
   runs in a row; no product change unless the budget itself is wrong (then say so). Touches: `net/tests/` only.
+- [ ] **S107 (guard) a base reached through dist's own links is never given (S105 option A).** (sketch ahead; after S102
+  merges: it touches app/src/core.rs.) A follow from a derived link (a search-hit install, the app's `follow_fetched` after
+  an install, DD-29) never gives its base; only a link the participant opens or pastes (`open_link`, a pasted follow,
+  `choose_index`) does. dist gets a way to say which (e.g. `follow_derived(link)` or a `Given` flag), and the app calls it.
+  Outcomes: the adversary's S105 r3 and r4 routes and the prune route all fail with the 'seen' list removed. Touches:
+  `dist/`, `app/src/core.rs`. A security boundary: the adversary runs.
 - [ ] **S103 Alice gives a mod's agents a folder, and can take it back (stage C, the watane half: host A3,
   app 19.2).** (sketch ahead; after S100 merges: it touches host/src/agent/, as S100 does.) agentic-harness
   stage C: the workspace consent held before `initialized`, the consent view's words (app S58, S60),
@@ -1713,6 +1719,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Deputy decisions
 
+- 2026-11-23 (S105 BLOCKED: how dist knows the participant gave a base) Option B now, in dist/ only: each record keeps a
+  capped 'seen' list of every base it ever held (kept across eviction, a tombstone after prune); a link at a seen base
+  never given does not give it. Option A, the root fix (a follow from a derived link, a search-hit install or the app's
+  follow_fetched, never gives its base; a dist<->app interface change), is sketched as S107 after S102 merges.
 - 2026-11-23 (S105, the adversary's two RISKs) (1) dist's local ranges (5.9) grow to cover 100.64/10 (CGNAT), 198.18/15,
   0/8, fec0::/10, and NAT64 (64:ff9b::/96) and 6to4 (2002::/16) addresses that wrap a local IPv4 address: an upkeep item,
   not in S105. (2) A `follows.json` written before S105 may keep a listing's base on a followed record. First accepted as a
