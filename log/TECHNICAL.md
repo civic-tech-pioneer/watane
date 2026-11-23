@@ -359,12 +359,12 @@ later hardening.
    The effective UID comes from `/usr/bin/id -u`. Linux uses `O_PATH` to
    inspect the inode without opening a device for I/O. After the checks,
    open the held descriptor through `/proc/self/fd` and check the read
-   handle again. macOS uses `O_NONBLOCK | O_NOCTTY` and checks the opened
-   handle before reading any bytes. A device driver can still receive an
-   open request on macOS. Planting a device node in the private log
-   directory requires root, which is outside the threat model in
-   spec/TECHNICAL.md section 6. The type check refuses the device before
-   any bytes are read.
+   handle again. Linux needs procfs mounted at `/proc` to read the key.
+   macOS uses `O_NONBLOCK | O_NOCTTY` and checks the handle before reading
+   any bytes. A device driver can still receive an open request on macOS.
+   Planting a device node in the private log directory requires root,
+   which is outside the threat model in spec/TECHNICAL.md section 6. The
+   type check refuses the device before any bytes are read.
 
    Read the seed from the validated handle. A length other than 32 is
    `CorruptKey`.
