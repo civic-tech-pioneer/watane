@@ -361,7 +361,10 @@ later hardening.
    open the held descriptor through `/proc/self/fd` and check the read
    handle again. macOS uses `O_NONBLOCK | O_NOCTTY` and checks the opened
    handle before reading any bytes. A device driver can still receive an
-   open request on macOS.
+   open request on macOS. Planting a device node in the private log
+   directory requires root, which is outside the threat model in
+   spec/TECHNICAL.md section 6. The type check refuses the device before
+   any bytes are read.
 
    Read the seed from the validated handle. A length other than 32 is
    `CorruptKey`.
@@ -369,17 +372,13 @@ later hardening.
 
 Create the key: 32 bytes from `getrandom::fill`. Write them to
 `.identity.key.<32 hex random>.tmp` with `create_new`. Set mode 0600 on the
-open file, then
-`sync_all`, then `fs::hard_link` to `identity.key`, which fails if the name
-exists. On `AlreadyExists` another opener won: remove the temporary file and
-read the winner's file. Then remove the temporary file and `sync_all` the
-directory. The directory lock keeps concurrent openers from observing the
-temporary second link. If creation is interrupted between linking and removing
-the temporary name, a later open refuses the multiply linked key. Hold the
-seed in `zeroize::Zeroizing`.
+open file and `sync_all` it. While still holding the directory lock, use
+`fs::rename` to publish it as `identity.key`, then `sync_all` the directory.
+The key has one name as soon as it is published. Hold the seed in
+`zeroize::Zeroizing`.
 
-Replace the key (restore only): write the temporary file in the same way,
-then `fs::rename` it over `identity.key`, then `sync_all` the directory.
+Replace the key (restore only): take the same directory lock and publish the
+new key over `identity.key` using the same write, rename and sync sequence.
 
 ### 4.8 The channel store
 
@@ -620,7 +619,7 @@ colos file `src/zbase32.rs` does exactly this.
 | Property | Enforced by |
 |---|---|
 | The secret key stays on the device | It is read into `Zeroizing` and a `SigningKey` (zeroized on drop). No API returns it. `Debug` shows only the public key. The only output is the encrypted backup. |
-| Other users cannot read or plant the key | The directory must be 0700-like and the key 0600-like (no group or other bit); a link or a non-regular file is refused. The key is created with `create_new` and published by `hard_link`, so it never overwrites. |
+| Other users cannot read or plant the key | The directory must deny group and other access. The key must be a regular file with mode 0600, one link, and the effective user as its owner. Creation checks for an absent key and publishes by renaming under the directory lock. |
 | No signing oracle | No public `sign`. A signature only exists inside an entry of the own channel, with a domain prefix (section 4.4). |
 | One rule for everyone | `Entry` has no public constructor except `decode` and `append`, and `decode` applies section 4.6 in full. |
 | One byte form, one id | The decoder re-encodes and compares (section 4.6 step 3). |

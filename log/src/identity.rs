@@ -111,11 +111,12 @@ fn read(path: &Path) -> Result<Option<SigningKey>, Error> {
     let file = match OpenOptions::new().read(true).custom_flags(flags).open(path) {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+        #[cfg(not(target_os = "linux"))]
         Err(e) if e.raw_os_error() == Some(libc::ELOOP) => {
             return Err(not_plain(path, "regular file", true));
         }
-        // A socket cannot be opened (ENXIO on Linux, EOPNOTSUPP on macOS): it is not a regular
-        // file either.
+        // macOS can reject a socket at open. On Linux, O_PATH lets fstat classify it.
+        #[cfg(not(target_os = "linux"))]
         Err(e) if matches!(e.raw_os_error(), Some(libc::ENXIO | libc::EOPNOTSUPP)) => {
             return Err(not_plain(path, "regular file", false));
         }
@@ -181,54 +182,39 @@ pub(crate) fn open_keyless(dir: &Path) -> Result<(), Error> {
         Err(e) => Err(io_error(&path, e)),
     }
 }
-pub(crate) fn open(dir: &Path) -> Result<SigningKey, Error> {
-    prepare_dir(dir)?;
+fn publish_key(tmp: &Path, path: &Path) -> Result<(), Error> {
+    fs::rename(tmp, path).map_err(|e| io_error(path, e))
+}
+fn lock_dir(dir: &Path) -> Result<File, Error> {
     let directory = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
         .open(dir)
         .map_err(|e| io_error(dir, e))?;
-    // Publishing a new key temporarily gives it two names. Wait for another
-    // opener to remove its temporary name before testing the link count.
+    // Serialize the lookup and first publication with other opens and restores.
     directory.lock().map_err(|e| io_error(dir, e))?;
+    Ok(directory)
+}
+pub(crate) fn open(dir: &Path) -> Result<SigningKey, Error> {
+    prepare_dir(dir)?;
+    let directory = lock_dir(dir)?;
     let path = dir.join("identity.key");
     if let Some(key) = read(&path)? {
         return Ok(key);
     }
     let mut seed = Zeroizing::new([0; 32]);
     getrandom::fill(&mut *seed).map_err(|e| io_error(&path, io::Error::other(e)))?;
-    let mut random = [0; 16];
-    getrandom::fill(&mut random).map_err(|e| io_error(&path, io::Error::other(e)))?;
-    let tmp = dir.join(format!(
-        ".identity.key.{}.tmp",
-        data_encoding::HEXLOWER.encode(&random)
-    ));
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&tmp)
-        .map_err(|e| io_error(&tmp, e))?;
-    let result = (|| {
-        file.set_permissions(fs::Permissions::from_mode(0o600))
-            .map_err(|e| io_error(&tmp, e))?;
-        file.write_all(&seed[..]).map_err(|e| io_error(&tmp, e))?;
-        file.sync_all().map_err(|e| io_error(&tmp, e))?;
-        match fs::hard_link(&tmp, &path) {
-            Ok(()) => {}
-            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
-            Err(e) => return Err(io_error(&path, e)),
-        }
-        Ok(())
-    })();
-    // Only remove the temporary file created by this call.
-    fs::remove_file(&tmp).map_err(|e| io_error(&tmp, e))?;
-    result?;
-    directory.sync_all().map_err(|e| io_error(dir, e))?;
+    write_key(dir, &directory, &path, &seed)?;
     read(&path)?.ok_or_else(|| io_error(&path, io::ErrorKind::NotFound.into()))
 }
 
 pub(crate) fn replace(dir: &Path, key: &SigningKey) -> Result<(), Error> {
+    let directory = lock_dir(dir)?;
+    let seed = Zeroizing::new(key.to_bytes());
+    write_key(dir, &directory, &dir.join("identity.key"), &seed)
+}
+
+fn write_key(dir: &Path, directory: &File, path: &Path, seed: &[u8; 32]) -> Result<(), Error> {
     let mut random = [0; 16];
     getrandom::fill(&mut random).map_err(|e| io_error(dir, io::Error::other(e)))?;
     let tmp = dir.join(format!(
@@ -242,21 +228,17 @@ pub(crate) fn replace(dir: &Path, key: &SigningKey) -> Result<(), Error> {
         .open(&tmp)
         .map_err(|e| io_error(&tmp, e))?;
     let result = (|| {
-        let seed = Zeroizing::new(key.to_bytes());
         file.set_permissions(fs::Permissions::from_mode(0o600))
             .map_err(|e| io_error(&tmp, e))?;
-        file.write_all(&seed[..]).map_err(|e| io_error(&tmp, e))?;
+        file.write_all(seed).map_err(|e| io_error(&tmp, e))?;
         file.sync_all().map_err(|e| io_error(&tmp, e))?;
-        let path = dir.join("identity.key");
-        fs::rename(&tmp, &path).map_err(|e| io_error(&path, e))?;
-        File::open(dir)
-            .and_then(|f| f.sync_all())
-            .map_err(|e| io_error(dir, e))
+        publish_key(&tmp, path)
     })();
-    if result.is_err() {
+    if let Err(error) = result {
         let _ = fs::remove_file(&tmp);
+        return Err(error);
     }
-    result
+    directory.sync_all().map_err(|e| io_error(dir, e))
 }
 use chacha20poly1305::aead::{Aead, Payload};
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
@@ -360,10 +342,34 @@ pub(crate) fn decrypt(backup: &[u8], passphrase: &str) -> Result<SigningKey, Err
 
 #[cfg(test)]
 mod tests {
-    use super::{check_key_owner, read};
+    use super::{check_key_owner, open, publish_key, read};
     use crate::Error;
-    use std::os::unix::fs::MetadataExt;
+    use std::fs;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
     use std::path::Path;
+
+    #[test]
+    fn regress_s109_creation_publishes_a_single_name() {
+        let dir = tempfile::tempdir().expect("create log directory");
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700))
+            .expect("set private directory mode");
+        let tmp = dir.path().join(".identity.key.test.tmp");
+        let path = dir.path().join("identity.key");
+        let seed = [7; 32];
+        fs::write(&tmp, seed).expect("write seed");
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600)).expect("set key mode");
+
+        publish_key(&tmp, &path).expect("publish the seed");
+
+        // Assert the state an interruption immediately after publication leaves.
+        let meta = fs::metadata(&path).expect("stat published key");
+        assert_eq!(meta.nlink(), 1);
+        assert!(!tmp.exists());
+        assert_eq!(
+            open(dir.path()).expect("reopen published key").to_bytes(),
+            seed
+        );
+    }
 
     #[test]
     fn s109_ac4_device_is_refused() {
