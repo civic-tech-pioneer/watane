@@ -9,7 +9,6 @@ use std::io::{self, Read, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
-use std::process::Command;
 use zeroize::Zeroizing;
 fn io_error(path: &Path, source: io::Error) -> Error {
     Error::Io {
@@ -67,27 +66,8 @@ fn key_metadata(path: &Path, file: &File) -> Result<fs::Metadata, Error> {
     }
     Ok(meta)
 }
-fn effective_uid(path: &Path) -> Result<u32, Error> {
-    let output = Command::new("/usr/bin/id")
-        .arg("-u")
-        .env_clear()
-        .output()
-        .map_err(|e| {
-            io_error(
-                path,
-                io::Error::other(format!("cannot determine the current user: {e}")),
-            )
-        })?;
-    if output.status.success()
-        && let Ok(text) = str::from_utf8(&output.stdout)
-        && let Ok(uid) = text.trim().parse()
-    {
-        return Ok(uid);
-    }
-    Err(io_error(
-        path,
-        io::Error::other("cannot determine the current user with /usr/bin/id -u"),
-    ))
+fn effective_uid() -> u32 {
+    rustix::process::geteuid().as_raw()
 }
 fn check_key_owner(path: &Path, meta: &fs::Metadata, current: u32) -> Result<(), Error> {
     let owner = meta.uid();
@@ -123,7 +103,7 @@ fn read(path: &Path) -> Result<Option<SigningKey>, Error> {
         Err(e) => return Err(io_error(path, e)),
     };
     let meta = key_metadata(path, &file)?;
-    let current = effective_uid(path)?;
+    let current = effective_uid();
     check_key_owner(path, &meta, current)?;
 
     #[cfg(target_os = "linux")]
@@ -407,7 +387,7 @@ mod tests {
     fn regress_s109_effective_uid_matches_file_owner() {
         let file = tempfile::tempfile().expect("create a file owned by this process");
         let owner = file.metadata().expect("stat the file handle").uid();
-        let current = effective_uid(Path::new("identity.key")).expect("get the effective UID");
+        let current = effective_uid();
         assert_eq!(current, owner);
     }
 }
