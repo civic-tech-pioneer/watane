@@ -1229,6 +1229,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   4. The sign-in listener answers only its own path, closes after one matching request or 5 minutes, and a
      second sign-in while one runs is `unavailable` (19.1).
   Touches: `app/` only (`src/chatgpt.rs`, `src/accounts.rs`, `src/claude_bin.rs`, the Settings UI, `tests/it/`).
+  No `deputy compares`: Settings has no design board (spec/design/manager/COMPARISON-2026-11-16.md, "Settings
+  (no design board)"); the new groups only need to match the existing Settings sections.
   Constraints: no host change: the host's `AccountSource` (A4) and `Confirm::consent` (A3) are not built yet,
   so the stored account and program are read by app tests and Settings only; wiring them to the host comes
   with A3/A4. Q12 (the registered client) stays open: `CLIENT_ID`, the issuer and `SCOPES` are constants the
