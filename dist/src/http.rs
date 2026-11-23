@@ -1345,6 +1345,56 @@ mod tests {
         assert_eq!(record["given"], serde_json::json!([w.a.url]));
     }
 
+    /// S105-CHURN (a): the `gone` filter is written to `follows.json` and read back on open,
+    /// so a restart does not forget an evicted channel.
+    #[test]
+    fn adv_s105_churn_the_gone_filter_survives_a_reopen() {
+        let w = world();
+        let (dir, eve) = w.eve(&[]);
+        eve.test_add_tombstone(&w.key.to_string(), tomb(&[], 1));
+        for n in 0..1024 {
+            eve.test_add_tombstone(&format!("k{n}"), tomb(&[], n + 2));
+        }
+        eve.save_follows(&std::collections::BTreeMap::new())
+            .unwrap();
+        drop(eve);
+        let path = dir.path().join("dist/follows.json");
+        let mut file: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(file["gone"].as_str().map(str::len), Some(8192));
+        // The throwaway tombstone keys are no channel keys: keep only the filter.
+        file.as_object_mut().unwrap().remove("seen");
+        std::fs::write(&path, file.to_string()).unwrap();
+        let eve = strict(dir.path());
+        assert!(
+            eve.held_ungiven(w.key, &w.a.url),
+            "the reopened filter forgot"
+        );
+    }
+
+    /// S105-CHURN (a): the filter rules only a channel with no tombstone; a gone channel
+    /// that was pruned again starts from its new tombstone, which gives a new base.
+    #[test]
+    fn adv_s105_churn_a_new_tombstone_wins_over_the_filter() {
+        let w = world();
+        let (dir, eve) = w.eve(&[]);
+        let key = w.key.to_string();
+        eve.test_add_tombstone(&key, tomb(&[], 1));
+        for n in 0..1024 {
+            eve.test_add_tombstone(&format!("k{n}"), tomb(&[], n + 2));
+        }
+        eve.test_add_tombstone(&key, tomb(&[], u64::MAX));
+        assert!(eve.test_tomb_keys().contains(&key));
+        eve.follow(&w.link(&w.a)).unwrap();
+        let file: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.path().join("dist/follows.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            file["channels"][&key]["given"],
+            serde_json::json!([w.a.url])
+        );
+    }
+
     /// r7: a provider hint's base (another channel's listing, 5.11) becomes
     /// `Fetched.link` of a channel with no record; dist keeps it in no `seen` and no
     /// tombstone, so a follow of that derived link gives the hint's base, and its
