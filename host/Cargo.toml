@@ -30,6 +30,7 @@ wasmtime-wasi = "=48.0.10"
 redb = "4.5"
 blake3 = "1.8"
 unicode-normalization = "0.1.26"
+rustix = { version = "1", features = ["event", "fs", "process"] }
 wit-parser = "=0.254.2"
 workspace-hack = { version = "0.1", path = "../workspace-hack" }
 

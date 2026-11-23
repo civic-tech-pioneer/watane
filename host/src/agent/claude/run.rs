@@ -129,17 +129,12 @@ pub(crate) fn environment(depth: u8) -> Vec<(String, String)> {
     env
 }
 
-/// Sends SIGKILL to a process group. The workspace forbids `unsafe`, so this runs `kill`.
+/// Sends SIGKILL to a process group.
 fn killpg(pgid: i32) {
-    if pgid > 1 {
-        let _ = Command::new("kill")
-            .args(["-KILL", "--", &format!("-{pgid}")])
-            .env_clear()
-            .env("PATH", PATH)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+    if pgid > 1
+        && let Some(pid) = rustix::process::Pid::from_raw(pgid)
+    {
+        let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
     }
 }
 pub(crate) fn kill_group(pgid: i32) {
@@ -407,6 +402,7 @@ impl Job {
         cleanup.pgid = Some(pgid);
         self.sessions.record_pid(&self.home, pgid);
         let stdin = child.stdin.take().expect("piped");
+        let _ = rustix::fs::fcntl_setfl(&stdin, rustix::fs::OFlags::NONBLOCK);
         self.session.set_roots(cwd.clone(), roots, run_root);
         let ticker = Arc::clone(&self.session);
         let hub = Arc::clone(&self.hub);
@@ -425,38 +421,13 @@ impl Job {
         let writer_session = Arc::clone(&self.session);
         let writer_hub = Arc::clone(&self.hub);
         let (release, held) = std::sync::mpsc::channel::<Vec<Vec<u8>>>();
-        let writer = std::thread::spawn(move || {
-            use std::io::Write;
-            let mut stdin = stdin;
-            let mut released = false;
-            for mut out in rx {
-                out.line.push(b'\n');
-                if stdin
-                    .write_all(&out.line)
-                    .and_then(|()| stdin.flush())
-                    .is_err()
-                {
-                    break;
-                }
-                // `answered` only after the answer reached `claude` (19.3, step 5).
-                if let Some((id, outcome)) = &out.answered {
-                    writer_session.answered(&writer_hub, id, outcome);
-                }
-                if !released {
-                    // The denies of the requests that came before the answer go first.
-                    let Ok(early) = held.recv() else {
-                        break;
-                    };
-                    released = true;
-                    for mut line in early {
-                        line.push(b'\n');
-                        if stdin.write_all(&line).and_then(|()| stdin.flush()).is_err() {
-                            return;
-                        }
-                    }
-                }
-            }
-        });
+        let giveup = Arc::new(std::sync::OnceLock::new());
+        let writer = {
+            let giveup = Arc::clone(&giveup);
+            std::thread::spawn(move || {
+                write_lines(&stdin, &rx, &held, &writer_session, &writer_hub, &giveup);
+            })
+        };
         // The waiter reaps the child and then kills what is left of its group, so that a
         // grandchild cannot keep the pipe open.
         let (exited, exit) = std::sync::mpsc::channel();
@@ -489,7 +460,7 @@ impl Job {
         // Before the stream ends: the writer reports every answer it wrote, then each waiting
         // `ask-resolved` goes on the stream, so `ended` never overtakes one (19.3, step 5).
         drop(reader);
-        end_writer(&self.session, writer, WRITER_WAIT);
+        end_writer(&self.session, writer, &giveup, WRITER_WAIT);
         self.session.drain(&self.hub);
         self.session.seal();
         if let Some(outcome) = ended {
@@ -693,20 +664,88 @@ pub(crate) fn shell_waits() -> Value {
 const EXIT_WAIT: Duration = Duration::from_secs(2);
 const WRITER_WAIT: Duration = Duration::from_secs(2);
 
-/// Closes the queue of the writer and waits at most `limit` for it, so that the writer reports
-/// every line it wrote. `true` when it ended. By now the process group is dead, so the read end of
-/// stdin is closed and a write that was blocked has failed; only a process outside the group
-/// that holds the pipe could keep it blocked, and then the thread is let go.
-fn end_writer(session: &Session, writer: std::thread::JoinHandle<()>, limit: Duration) -> bool {
-    session.close_queue();
-    let start = std::time::Instant::now();
-    while !writer.is_finished() {
-        if start.elapsed() >= limit {
-            return false;
+/// When the writer gives up a write that blocks: set by `end_writer`.
+type Giveup = std::sync::OnceLock<std::time::Instant>;
+
+/// Writes all of `line` to the non-blocking `stdin`. On a full pipe it waits for room in slices of
+/// 20 ms and gives up (`false`) once `giveup` has passed. `false` too when the write fails.
+fn write_all_by(stdin: &impl std::os::fd::AsFd, mut line: &[u8], giveup: &Giveup) -> bool {
+    use rustix::event::{PollFd, PollFlags, poll};
+    use rustix::io::Errno;
+    while !line.is_empty() {
+        match rustix::io::write(stdin, line) {
+            Ok(n) => line = &line[n..],
+            Err(Errno::INTR) => {}
+            Err(Errno::AGAIN) => {
+                if giveup
+                    .get()
+                    .is_some_and(|d| std::time::Instant::now() >= *d)
+                {
+                    return false;
+                }
+                let slice = rustix::fs::Timespec {
+                    tv_sec: 0,
+                    tv_nsec: 20_000_000,
+                };
+                let mut fds = [PollFd::new(stdin, PollFlags::OUT)];
+                let _ = poll(&mut fds, Some(&slice));
+            }
+            Err(_) => return false,
         }
-        std::thread::sleep(Duration::from_millis(5));
     }
-    writer.join().is_ok()
+    true
+}
+
+/// The writer thread: the one place that writes to stdin; a line goes through its queue.
+/// `initialize` goes at once; every later line waits for `held`, which the reader sends once the
+/// answer passed step 2 (with the denies of the requests that came before it). When the reader
+/// ends without it, `held` drops and nothing more is written (19.3, step 5). A write that does not
+/// complete by `giveup` ends the writer with no `answered`.
+fn write_lines(
+    stdin: &impl std::os::fd::AsFd,
+    rx: &std::sync::mpsc::Receiver<super::Out>,
+    held: &std::sync::mpsc::Receiver<Vec<Vec<u8>>>,
+    session: &Session,
+    hub: &Hub,
+    giveup: &Giveup,
+) {
+    let mut released = false;
+    for mut out in rx {
+        out.line.push(b'\n');
+        if !write_all_by(stdin, &out.line, giveup) {
+            return;
+        }
+        // `answered` only after the answer reached `claude` (19.3, step 5).
+        if let Some((id, outcome)) = &out.answered {
+            session.answered(hub, id, outcome);
+        }
+        if !released {
+            // The denies of the requests that came before the answer go first.
+            let Ok(early) = held.recv() else {
+                return;
+            };
+            released = true;
+            for mut line in early {
+                line.push(b'\n');
+                if !write_all_by(stdin, &line, giveup) {
+                    return;
+                }
+            }
+        }
+    }
+}
+
+/// Closes the queue of the writer and joins it: a write that blocks gives up at `limit`, so the
+/// join ends within it and no thread of the run outlives the bound (19.3, step 5).
+fn end_writer(
+    session: &Session,
+    writer: std::thread::JoinHandle<()>,
+    giveup: &Giveup,
+    limit: Duration,
+) {
+    let _ = giveup.set(std::time::Instant::now() + limit);
+    session.close_queue();
+    let _ = writer.join();
 }
 
 #[cfg(test)]
@@ -714,111 +753,130 @@ mod join_tests {
     use super::*;
     use crate::agent::streams::Consumer;
 
-    /// A held stream and a session on it, with the queue's receiver for a fake writer.
-    fn rig() -> (
-        Arc<Hub>,
-        String,
-        Arc<Session>,
-        std::sync::mpsc::Receiver<super::super::Out>,
-    ) {
+    /// A held stream, a session on it, and a real non-blocking pipe for the writer to write to.
+    struct Rig {
+        hub: Arc<Hub>,
+        stream: String,
+        session: Arc<Session>,
+        writer: Option<std::thread::JoinHandle<()>>,
+        giveup: Arc<Giveup>,
+        reader: Option<std::io::PipeReader>,
+        release: Option<std::sync::mpsc::Sender<Vec<Vec<u8>>>>,
+    }
+    fn rig() -> Rig {
         let hub = Hub::new();
-        let s = hub
+        let stream = hub
             .test_open(Consumer::Held { origin: "o".into() }, "o".into())
             .unwrap();
-        let session = Arc::new(Session::new(s.clone(), "o".into(), None));
+        let session = Arc::new(Session::new(stream.clone(), "o".into(), None));
         let rx = session.started(0);
-        (hub, s, session, rx)
+        let (reader, writer_end) = std::io::pipe().unwrap();
+        rustix::fs::fcntl_setfl(&writer_end, rustix::fs::OFlags::NONBLOCK).unwrap();
+        let (release, held) = std::sync::mpsc::channel();
+        let giveup = Arc::new(Giveup::new());
+        let thread = {
+            let (hub, session, giveup) =
+                (Arc::clone(&hub), Arc::clone(&session), Arc::clone(&giveup));
+            std::thread::spawn(move || {
+                write_lines(&writer_end, &rx, &held, &session, &hub, &giveup)
+            })
+        };
+        Rig {
+            hub,
+            stream,
+            session,
+            writer: Some(thread),
+            giveup,
+            reader: Some(reader),
+            release: Some(release),
+        }
     }
-    fn items(hub: &Hub, s: &str) -> Vec<String> {
-        hub.test_take(s)
-            .into_iter()
-            .map(|(_, b)| String::from_utf8(b).unwrap())
-            .collect()
+    impl Rig {
+        fn out(&self, line: Vec<u8>) {
+            self.session.enqueue(super::super::Out {
+                line,
+                answered: Some(("7".into(), "allow")),
+            });
+        }
+        fn end(&mut self, limit: Duration) -> Duration {
+            // As the run does: the reader is dropped first, and with it the release.
+            self.release.take();
+            let start = std::time::Instant::now();
+            end_writer(
+                &self.session,
+                self.writer.take().unwrap(),
+                &self.giveup,
+                limit,
+            );
+            start.elapsed()
+        }
+        fn items(&self) -> Vec<String> {
+            self.session.drain(&self.hub);
+            self.session.seal();
+            self.hub
+                .test_take(&self.stream)
+                .into_iter()
+                .map(|(_, b)| String::from_utf8(b).unwrap())
+                .collect()
+        }
     }
 
     #[test]
     fn s100_fix9_ac4_a_writer_that_waits_on_its_queue_ends_when_the_queue_closes() {
-        let (_hub, _s, session, rx) = rig();
-        let writer = std::thread::spawn(move || for _ in rx {});
-        let start = std::time::Instant::now();
-        assert!(end_writer(&session, writer, Duration::from_secs(5)));
-        assert!(start.elapsed() < Duration::from_secs(1));
+        let mut rig = rig();
+        let _reader = rig.reader.take();
+        assert!(rig.end(Duration::from_secs(5)) < Duration::from_secs(1));
     }
 
     #[test]
     fn s100_fix9_ac4_a_write_that_completes_during_the_teardown_gets_its_answered_before_ended() {
-        let (hub, s, session, rx) = rig();
-        // The writer is in the middle of a write when the teardown starts; it completes
-        // 150 ms later and reports, as the real writer does.
-        let writer = {
-            let (hub, session) = (Arc::clone(&hub), Arc::clone(&session));
-            std::thread::spawn(move || {
-                for out in rx {
-                    std::thread::sleep(Duration::from_millis(150));
-                    if let Some((id, outcome)) = &out.answered {
-                        session.answered(&hub, id, outcome);
-                    }
-                }
-            })
-        };
-        session.enqueue(super::super::Out {
-            line: b"x".to_vec(),
-            answered: Some(("7".into(), "allow")),
+        let mut rig = rig();
+        rig.release.as_ref().unwrap().send(vec![]).unwrap();
+        // The reader takes the pipe empty slowly, so the 300 KB line completes only while the
+        // teardown waits for the writer.
+        let mut reader = rig.reader.take().unwrap();
+        let taker = std::thread::spawn(move || {
+            let mut buf = vec![0; 4096];
+            let mut total = 0;
+            while total < 300_000 {
+                std::thread::sleep(Duration::from_millis(2));
+                total += reader.read(&mut buf).unwrap();
+            }
         });
-        assert!(end_writer(&session, writer, Duration::from_secs(5)));
-        session.drain(&hub);
-        session.seal();
+        rig.out(vec![b'x'; 300_000]);
+        assert!(rig.end(Duration::from_secs(10)) < Duration::from_secs(10));
+        taker.join().unwrap();
         assert_eq!(
-            items(&hub, &s),
+            rig.items(),
             [r#"{"type":"ask-resolved","id":"7","by":"answered","outcome":"allow"}"#]
         );
     }
 
     #[test]
     fn s100_fix9_ac4_a_write_that_fails_pushes_no_answered() {
-        let (hub, s, session, rx) = rig();
-        let writer = std::thread::spawn(move || {
-            // The write of the first line fails: the writer ends without reporting.
-            drop(rx);
-        });
-        session.enqueue(super::super::Out {
-            line: b"x".to_vec(),
-            answered: Some(("7".into(), "allow")),
-        });
-        assert!(end_writer(&session, writer, Duration::from_secs(5)));
-        session.drain(&hub);
-        assert_eq!(items(&hub, &s), Vec::<String>::new());
+        let mut rig = rig();
+        rig.release.as_ref().unwrap().send(vec![]).unwrap();
+        // The read end is gone: the write fails (EPIPE).
+        drop(rig.reader.take());
+        rig.out(b"x".to_vec());
+        assert!(rig.end(Duration::from_secs(5)) < Duration::from_secs(2));
+        assert_eq!(rig.items(), Vec::<String>::new());
     }
 
     #[test]
-    fn s100_fix9_ac4_a_writer_that_stays_blocked_is_let_go_after_the_limit_and_pushes_nothing() {
-        let (hub, s, session, rx) = rig();
-        let (unblock, blocked) = std::sync::mpsc::channel::<()>();
-        let writer = {
-            let (hub, session) = (Arc::clone(&hub), Arc::clone(&session));
-            std::thread::spawn(move || {
-                for out in rx {
-                    let _ = blocked.recv();
-                    if let Some((id, outcome)) = &out.answered {
-                        session.answered(&hub, id, outcome);
-                    }
-                }
-            })
-        };
-        session.enqueue(super::super::Out {
-            line: b"x".to_vec(),
-            answered: Some(("7".into(), "allow")),
-        });
-        let start = std::time::Instant::now();
-        assert!(!end_writer(&session, writer, Duration::from_millis(200)));
-        let took = start.elapsed();
-        assert!(took >= Duration::from_millis(200) && took < Duration::from_secs(2));
-        session.drain(&hub);
-        session.seal();
-        // It completes after the stream ended: nothing more goes on the stream.
-        drop(unblock);
+    fn s100_fix9_ac4_a_write_blocked_on_a_pipe_nobody_reads_gives_up_at_the_limit() {
+        let mut rig = rig();
+        rig.release.as_ref().unwrap().send(vec![]).unwrap();
+        // The read end is held and never read: a 1 MB line cannot complete.
+        let _reader = rig.reader.take();
+        rig.out(vec![b'x'; 1_000_000]);
         std::thread::sleep(Duration::from_millis(100));
-        assert_eq!(items(&hub, &s), Vec::<String>::new());
+        let took = rig.end(Duration::from_millis(300));
+        assert!(
+            took >= Duration::from_millis(150) && took < Duration::from_secs(2),
+            "{took:?}"
+        );
+        assert_eq!(rig.items(), Vec::<String>::new());
     }
 }
 

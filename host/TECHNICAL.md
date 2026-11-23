@@ -3069,12 +3069,16 @@ not keep a credential from a mod on their own. Three rules do:
    `claude`'s stdin; a write that fails (stdin closed) pushes no `answered`, and
    the stream ends as the process does. The end of a run is bounded (review r2,
    F2.3 and F2.4): once `claude`'s stdout reaches its end, the host waits at most
-   2 s for the process to exit and then kills its group, which closes the read end
-   of `claude`'s stdin, so a write still blocked fails (safe Rust cannot wake a write
-   by closing the host's own handle, which the writer drops when it ends); it closes
-   the writer's queue and waits at most 2 s more for the writer. Every line the writer reported written has its
-   `ask-resolved {by: answered}` pushed before `ended`; a write that did not
-   complete pushes none. No thread of the run outlives that second bound.
+   2 s for the process to exit and then kills its group; it then closes the
+   writer's queue and waits at most 2 s more for the stdin writer. The host's write
+   end of `claude`'s stdin is non-blocking: a write that finds the pipe full waits for
+   room in short slices and gives up at that second bound, so a stray process that
+   keeps the pipe open cannot hold the writer. Every line the writer reported written
+   has its `ask-resolved {by: answered}` pushed before `ended`; a write that did not
+   complete (failed, or given up) pushes none, and none is pushed after the stream
+   ended. No thread of the run outlives the bounds, but for the one that reaps
+   `claude` if the process is still not reaped 2 s after its group got SIGKILL (a
+   process stuck in the kernel).
    The checks of an `answer` are made at the call against the asks open then
    (`unknown-ask` for an id that is not open on `s`); one that closes between the
    call and its apply (expired, cancelled, a second answer applied first) writes

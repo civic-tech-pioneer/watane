@@ -19,6 +19,7 @@ allocator-api2 = { version = "0.2", default-features = false, features = ["alloc
 anyhow = { version = "1" }
 base64 = { version = "0.23" }
 base64ct = { version = "1", default-features = false, features = ["alloc"] }
+bitflags = { version = "2", default-features = false, features = ["std"] }
 bumpalo = { version = "3", features = ["allocator-api2"] }
 byteorder = { version = "1" }
 bytes = { version = "1", features = ["serde"] }
@@ -108,6 +109,7 @@ allocator-api2 = { version = "0.2", default-features = false, features = ["alloc
 anyhow = { version = "1" }
 base64 = { version = "0.23" }
 base64ct = { version = "1", default-features = false, features = ["alloc"] }
+bitflags = { version = "2", default-features = false, features = ["std"] }
 bumpalo = { version = "3", features = ["allocator-api2"] }
 byteorder = { version = "1" }
 bytes = { version = "1", features = ["serde"] }
@@ -197,7 +199,7 @@ wit-component = { version = "0.254", default-features = false, features = ["dumm
 zeroize = { version = "1", features = ["derive"] }
 
 [target.x86_64-unknown-linux-gnu.dependencies]
-bitflags = { version = "2", default-features = false, features = ["serde", "std"] }
+bitflags = { version = "2", default-features = false, features = ["serde"] }
 futures-channel = { version = "0.3", features = ["sink"] }
 futures-executor = { version = "0.3" }
 hyper = { version = "1", default-features = false, features = ["http2"] }
@@ -210,7 +212,7 @@ tower = { version = "0.5", default-features = false, features = ["log", "make", 
 tower-http = { version = "0.6", features = ["follow-redirect", "fs", "set-header"] }
 
 [target.x86_64-unknown-linux-gnu.build-dependencies]
-bitflags = { version = "2", default-features = false, features = ["serde", "std"] }
+bitflags = { version = "2", default-features = false, features = ["serde"] }
 futures-channel = { version = "0.3", features = ["sink"] }
 futures-executor = { version = "0.3" }
 hyper = { version = "1", default-features = false, features = ["http2"] }
@@ -223,7 +225,7 @@ tower = { version = "0.5", default-features = false, features = ["log", "make", 
 tower-http = { version = "0.6", features = ["follow-redirect", "fs", "set-header"] }
 
 [target.aarch64-apple-darwin.dependencies]
-bitflags = { version = "2", default-features = false, features = ["serde", "std"] }
+bitflags = { version = "2", default-features = false, features = ["serde"] }
 block2 = { version = "0.6" }
 dispatch2 = { version = "0.3" }
 errno = { version = "0.3" }
@@ -240,7 +242,7 @@ tower = { version = "0.5", default-features = false, features = ["log", "make", 
 tower-http = { version = "0.6", features = ["follow-redirect", "fs", "set-header"] }
 
 [target.aarch64-apple-darwin.build-dependencies]
-bitflags = { version = "2", default-features = false, features = ["serde", "std"] }
+bitflags = { version = "2", default-features = false, features = ["serde"] }
 block2 = { version = "0.6" }
 dispatch2 = { version = "0.3" }
 errno = { version = "0.3" }
