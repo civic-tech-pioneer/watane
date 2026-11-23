@@ -17,6 +17,10 @@ pub(crate) struct Unsynced {
     /// Channels whose unfollow or drop_index still has to prune.
     pub(crate) unfollowed: BTreeSet<PublicKey>,
     pub(crate) dropped: BTreeSet<PublicKey>,
+    /// Channels whose left prune `settle` finished: a retry of that unfollow or drop_index
+    /// answers `Ok` once, whichever call settled first.
+    pub(crate) unfollow_done: BTreeSet<PublicKey>,
+    pub(crate) drop_done: BTreeSet<PublicKey>,
 }
 pub(crate) fn now() -> u64 {
     std::time::SystemTime::now()
@@ -376,8 +380,9 @@ impl Dist {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
     }
-    /// Retries the directory sync an earlier save left failed; `Err` while it fails.
-    fn sync_pending(&self) -> Result<(), DistError> {
+    /// Retries the directory sync an earlier save left failed; `Err` while it fails. A call
+    /// runs it again before a request that follows a save of its own (4.4).
+    pub(crate) fn sync_pending(&self) -> Result<(), DistError> {
         let mut state = self.unsynced_state();
         if state.dirty {
             site::sync_dir(&self.home.join("dist"))?;
@@ -385,16 +390,22 @@ impl Dist {
         }
         Ok(())
     }
+    /// True once after `settle` finished the prune a failed drop_index of `channel` left.
+    pub(crate) fn take_drop_done(&self, channel: &PublicKey) -> bool {
+        self.unsynced_state().drop_done.remove(channel)
+    }
     /// Records work a failed call left, for `settle` to finish (4.4).
     pub(crate) fn leave_pending(&self, add: impl FnOnce(&mut Unsynced)) {
         add(&mut self.unsynced_state());
     }
-    /// Called first by each call that reads provenance or changes `follows.json` (4.4):
-    /// retries a failed directory sync, returning its error without further work, then
-    /// finishes the work earlier calls left: the kept marks to take back and, when `prune`
-    /// (the caller holds the read lock; a holder method does not), the prune of an unfollow
-    /// or drop_index. Returns what it finished. The caller holds no `follows` lock.
-    pub(crate) fn settle(&self, prune: bool) -> Result<Unsynced, DistError> {
+    /// The one gate, called first by each call that reads provenance, makes a request or
+    /// changes `follows.json` (4.4): retries a failed directory sync, returning its error
+    /// without further work, then finishes the work earlier calls left: the kept marks to
+    /// take back and, when `prune` (the caller holds the read lock; a holder method does
+    /// not), the prune of an unfollow or drop_index. When that work fails, also when its
+    /// save left the store unsynced, it returns the error and leaves the work pending. The
+    /// caller holds no `follows` lock and reads its records only after this.
+    pub(crate) fn settle(&self, prune: bool) -> Result<(), DistError> {
         self.sync_pending()?;
         let mut done = {
             let mut state = self.unsynced_state();
@@ -408,19 +419,32 @@ impl Dist {
             }
             work
         };
+        // A take-back whose save fails is left pending again, and its error stops the call:
+        // a rename with a failed directory sync leaves the store unsynced (F5.2).
+        let mut failed = None;
         for (channel, had) in std::mem::take(&mut done.take_back) {
-            self.take_back_kept(&channel, had);
+            if let Err(cause) = self.take_back_kept(&channel, had) {
+                failed.get_or_insert(cause);
+            }
         }
-        if (!done.unfollowed.is_empty() || !done.dropped.is_empty())
-            && let Err(cause) = self.prune_listed()
-        {
+        let pruned = match failed {
+            Some(cause) => Err(cause),
+            None if !done.unfollowed.is_empty() || !done.dropped.is_empty() => self.prune_listed(),
+            None => Ok(()),
+        };
+        if let Err(cause) = pruned {
             self.leave_pending(|state| {
                 state.unfollowed.append(&mut done.unfollowed);
                 state.dropped.append(&mut done.dropped);
             });
             return Err(cause);
         }
-        Ok(done)
+        {
+            let mut state = self.unsynced_state();
+            state.unfollow_done.append(&mut done.unfollowed);
+            state.drop_done.append(&mut done.dropped);
+        }
+        Ok(())
     }
     pub fn follow(&self, link: &Link) -> Result<RefreshReport, DistError> {
         if Some(link.channel()) == self.identity() {
@@ -470,6 +494,7 @@ impl Dist {
             .read_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
+        self.settle(true)?;
         let key = link.channel();
         let unknown = self
             .follows
@@ -522,15 +547,17 @@ impl Dist {
             .read_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        // A retry of an unfollow whose prune was left finishes it here (4.4).
-        let done = self.settle(true)?;
+        // A retry of an unfollow whose prune was left finishes it here, or finds it
+        // finished by an earlier call (4.4).
+        self.settle(true)?;
+        let finished = self.unsynced_state().unfollow_done.remove(channel);
         let mut records = self
             .follows
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
         let Some(record) = next.get_mut(channel).filter(|r| r.followed) else {
-            if done.unfollowed.contains(channel) {
+            if finished {
                 return Ok(());
             }
             return Err(DistError::NothingToUnfollow { channel: *channel });
@@ -597,6 +624,7 @@ impl Dist {
             .read_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
+        // `read_record` passes the gate before it reads the record (4.4).
         self.read_record(*channel)
     }
     pub(crate) fn read_channel(
@@ -651,6 +679,8 @@ impl Dist {
         base: &str,
         listed: bool,
     ) -> Result<RefreshReport, DistError> {
+        // No request from an unsynced store, also after a save in this call (4.4).
+        self.sync_pending()?;
         // A listed read checks its first base as it checks a redirect target (5.9).
         if listed {
             self.check_listed_base(base)?;

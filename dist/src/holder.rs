@@ -210,15 +210,16 @@ impl Dist {
             }
         })();
         if let (Some(had), true) = (added, result.is_err()) {
-            self.take_back_kept(channel, had);
+            // A save that fails leaves the take-back to `settle`; the ingest has failed.
+            let _ = self.take_back_kept(channel, had);
         }
         result.unwrap_or_else(Ingested::Failed)
     }
     /// Takes back the kept mark a failed `ingest` added, when nothing is stored. A save that
-    /// fails leaves it to `settle` (4.4).
-    pub(crate) fn take_back_kept(&self, channel: &PublicKey, had: bool) {
+    /// fails leaves it to `settle` and returns the error (4.4).
+    pub(crate) fn take_back_kept(&self, channel: &PublicKey, had: bool) -> Result<(), DistError> {
         if self.log.head(channel).ok().flatten().is_some() {
-            return;
+            return Ok(());
         }
         let mut records = self
             .follows
@@ -248,12 +249,14 @@ impl Dist {
                 }
                 next.remove(channel);
             }
-            _ => return,
+            _ => return Ok(()),
         }
-        if self.save_staged(&mut records, next, staged).is_err() {
+        let saved = self.save_staged(&mut records, next, staged);
+        if saved.is_err() {
             drop(records);
             self.leave_pending(|state| state.take_back.push((*channel, had)));
         }
+        saved
     }
 }
 
