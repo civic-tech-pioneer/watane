@@ -422,15 +422,25 @@ impl Job {
         // once the answer passed step 2. When the reader ends without it, `release` drops and
         // nothing more is written (19.3, step 5).
         let rx = self.session.started(pgid);
+        let writer_session = Arc::clone(&self.session);
+        let writer_hub = Arc::clone(&self.hub);
         let (release, held) = std::sync::mpsc::channel::<()>();
         std::thread::spawn(move || {
             use std::io::Write;
             let mut stdin = stdin;
             let mut released = false;
-            for mut line in rx {
-                line.push(b'\n');
-                if stdin.write_all(&line).and_then(|()| stdin.flush()).is_err() {
+            for mut out in rx {
+                out.line.push(b'\n');
+                if stdin
+                    .write_all(&out.line)
+                    .and_then(|()| stdin.flush())
+                    .is_err()
+                {
                     break;
+                }
+                // `answered` only after the answer reached `claude` (19.3, step 5).
+                if let Some((id, outcome)) = &out.answered {
+                    writer_session.answered(&writer_hub, id, outcome);
                 }
                 if !released {
                     if held.recv().is_err() {
@@ -515,7 +525,9 @@ impl Reading<'_> {
         } else {
             launch.ask
         };
-        let (true, true, Some(fields)) = (wanted, self.answered, fields) else {
+        // Nothing is opened before `system/init` passed (19.3, step 5).
+        let (true, true, Some(fields)) = (wanted, self.answered && !self.awaiting_init, fields)
+        else {
             session.write(control::deny(request_id, hook, REFUSED));
             return Ok(());
         };

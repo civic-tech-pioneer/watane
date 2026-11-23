@@ -10,6 +10,8 @@
 #   after.N  raw lines to write after the Nth line of stdin (`initialize` is the first); `@P@`
 #            in them is replaced by the program's pid, so that streams can tell their lines apart
 #   exit     with this file the program exits with its content as status after the lines
+#   closein  with this file the program closes its stdin after the lines and waits for a file
+#            `go`, then exits (a write to it fails)
 #   spawn    with this file the program starts a `sleep` in its group and logs its pid
 # It logs its arguments, environment and stdin to `claude.log` beside it, one `ARG`, `ENV`,
 # `IN`, `PID`, `CHILD` or `CWD` entry per line.
@@ -36,6 +38,11 @@ reply='{"hook_on_failure_supported":true}'
 printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":%s}}\n' "$rid" "$reply"
 [ -f "$dir/init" ] && cat "$dir/init"
 [ -f "$dir/lines" ] && cat "$dir/lines"
+if [ -f "$dir/closein" ]; then
+  exec 0<&-
+  while [ ! -f "$dir/go" ]; do sleep 0.05; done
+  exit 0
+fi
 if [ -f "$dir/exit" ]; then exit "$(cat "$dir/exit")"; fi
 n=1
 [ -f "$dir/after.$n" ] && sed "s/@P@/$$/g" "$dir/after.$n"

@@ -250,13 +250,20 @@ pub(crate) fn pass(request_id: &str) -> Vec<u8> {
     respond(request_id, json!({}))
 }
 
-/// `{"type":"ask"|"check","id":..,"tool_use_id":..,"tool":..,"input":..,"expires-at":<ms>}`,
+/// `{"type":"ask"|"check","id":..,"tool_use_id":..,"tool":..,"input":..,["path":..,]"expires-at":<ms>}`,
 /// built from the host's own parsed values; the key order is part of the item.
-pub(crate) fn request_item(hook: bool, id: &str, fields: &Fields, expires_at: u64) -> Vec<u8> {
+pub(crate) fn request_item(
+    hook: bool,
+    id: &str,
+    fields: &Fields,
+    path: Option<&str>,
+    expires_at: u64,
+) -> Vec<u8> {
     let kind = if hook { "check" } else { "ask" };
     let text = |s: &str| Value::String(s.to_owned());
+    let path = path.map_or_else(String::new, |p| format!(r#","path":{}"#, text(p)));
     format!(
-        r#"{{"type":"{kind}","id":{},"tool_use_id":{},"tool":{},"input":{},"expires-at":{expires_at}}}"#,
+        r#"{{"type":"{kind}","id":{},"tool_use_id":{},"tool":{},"input":{}{path},"expires-at":{expires_at}}}"#,
         text(id),
         text(&fields.tool_use_id),
         text(&fields.tool),
@@ -264,12 +271,12 @@ pub(crate) fn request_item(hook: bool, id: &str, fields: &Fields, expires_at: u6
     )
     .into_bytes()
 }
-/// `{"type":"ask-resolved","ask":<id>,"by":<by>}` with `"outcome"` when the answer was written.
+/// `{"type":"ask-resolved","id":<id>,"by":<by>}` with `"outcome"` when the answer was written.
 pub(crate) fn resolved_item(id: &str, by: &str, outcome: Option<&str>) -> Vec<u8> {
     let id = Value::String(id.to_owned());
     match outcome {
-        Some(o) => format!(r#"{{"type":"ask-resolved","ask":{id},"by":"{by}","outcome":"{o}"}}"#),
-        None => format!(r#"{{"type":"ask-resolved","ask":{id},"by":"{by}"}}"#),
+        Some(o) => format!(r#"{{"type":"ask-resolved","id":{id},"by":"{by}","outcome":"{o}"}}"#),
+        None => format!(r#"{{"type":"ask-resolved","id":{id},"by":"{by}"}}"#),
     }
     .into_bytes()
 }
@@ -318,6 +325,18 @@ mod tests {
             Line::Item(b) => String::from_utf8(b).unwrap(),
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn ac1_ask_resolved_names_the_ask_by_id() {
+        let v: Value =
+            serde_json::from_slice(&resolved_item("1", "answered", Some("allow"))).unwrap();
+        assert_eq!(
+            v,
+            json!({"type":"ask-resolved","id":"1","by":"answered","outcome":"allow"})
+        );
+        let v: Value = serde_json::from_slice(&resolved_item("2", "expired", None)).unwrap();
+        assert_eq!(v, json!({"type":"ask-resolved","id":"2","by":"expired"}));
     }
 
     #[test]

@@ -403,7 +403,9 @@ otherwise `relay` holds no grant beyond storage and its call of `latch`.
   `bad-launch {field: "pre-tool-check"}`, and one of 5 to 120 puts the PreToolUse hook in
   `initialize`. A `can_use_tool` for `Read` with `{"file_path":"a.txt"}` and `tool_use_id`
   `t1` becomes the item
-  `{"type":"ask","id":"1","tool_use_id":"t1","tool":"Read","input":{"file_path":"a.txt"},"expires-at":<ms>}`;
+  `{"type":"ask","id":"1","tool_use_id":"t1","tool":"Read","input":{"file_path":"a.txt"},"path":"<workspace>/a.txt","expires-at":<ms>}`
+  (a file tool's ask or check carries the path it reaches, symlinks resolved: `link.txt`, a link to
+  `real.txt`, gives `<workspace>/real.txt`; a refused path gives no `path`);
   `answer` `allow(none)` writes the `control_response` with `updatedInput` and the stream
   gets `{"type":"ask-resolved","id":"1","by":"answered","outcome":"allow"}`; a second
   `answer` fails `unknown-ask`; no written line holds `updatedPermissions`.

@@ -35,6 +35,14 @@ pub(crate) enum Write {
     Answer { ask: String, decision: Decision },
 }
 
+/// One line for `claude`'s stdin. `answered` is `(ask id, outcome)` when the line is the
+/// answer to an ask or check: the writer reports it after the line is written (19.3, step 5).
+#[derive(Debug)]
+pub(crate) struct Out {
+    pub line: Vec<u8>,
+    pub answered: Option<(String, &'static str)>,
+}
+
 #[derive(Debug, Default)]
 struct Running {
     pgid: i32,
@@ -51,8 +59,8 @@ pub(crate) struct Session {
     /// The group and the stop flag under one lock: `stop` and `started` each read what the
     /// other wrote, so one of them always kills the group.
     state: Mutex<Running>,
-    tx: Mutex<Option<Sender<Vec<u8>>>>,
-    rx: Mutex<Option<Receiver<Vec<u8>>>>,
+    tx: Mutex<Option<Sender<Out>>>,
+    rx: Mutex<Option<Receiver<Out>>>,
     /// The open asks and checks (19.3, steps 4 and 5).
     asks: Mutex<Asks>,
 }
@@ -62,7 +70,10 @@ impl Session {
         let (tx, rx) = channel();
         let request_id = super::streams::random_id();
         // `initialize` is the first line, whatever else is queued while the process starts.
-        let _ = tx.send(control::initialize(&request_id, hook_timeout));
+        let _ = tx.send(Out {
+            line: control::initialize(&request_id, hook_timeout),
+            answered: None,
+        });
         Self {
             id,
             origin,
@@ -95,7 +106,7 @@ impl Session {
             .take();
     }
     /// The process started: its group, and the queue of its stdin.
-    pub(crate) fn started(&self, pgid: i32) -> Receiver<Vec<u8>> {
+    pub(crate) fn started(&self, pgid: i32) -> Receiver<Out> {
         let stopped = {
             let mut state = self.running();
             state.pgid = pgid;
@@ -110,16 +121,26 @@ impl Session {
             .take()
             .unwrap_or_else(|| channel().1)
     }
-    /// Queues one line for stdin (the writer adds the newline).
-    pub(crate) fn write(&self, line: Vec<u8>) {
-        if let Some(tx) = self
+    /// Queues one line for stdin (the writer adds the newline). `false` when it could not be
+    /// queued (the stream is stopped, or the writer has gone because stdin failed): the session
+    /// is then stopped, so the stream ends as the process does (19.3, step 5).
+    pub(crate) fn write(&self, line: Vec<u8>) -> bool {
+        self.enqueue(Out {
+            line,
+            answered: None,
+        })
+    }
+    fn enqueue(&self, out: Out) -> bool {
+        let sent = self
             .tx
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
             .as_ref()
-        {
-            let _ = tx.send(line);
+            .is_some_and(|tx| tx.send(out).is_ok());
+        if !sent {
+            self.stop();
         }
+        sent
     }
 }
 
@@ -319,7 +340,7 @@ pub(crate) fn session_call(
             let decision = decision_arg(args.get(2))?;
             // A stream started in this chain has no ask open yet.
             let live = (!view.in_chain).then(|| host.sessions.get(&id)).flatten();
-            match live.map(|s| s.check_answer(&ask, &decision)) {
+            match live.map(|s| s.check_answer(&host.hub, &ask, &decision)) {
                 Some(Ok(())) => Write::Answer { ask, decision },
                 Some(Err(refused)) => return err(refused.case()),
                 None => return err("unknown-ask"),
@@ -418,8 +439,12 @@ impl Host {
             return;
         }
         match what {
-            Write::Say(text) => session.write(control::user(&text)),
-            Write::Compact => session.write(control::user("/compact")),
+            Write::Say(text) => {
+                session.write(control::user(&text));
+            }
+            Write::Compact => {
+                session.write(control::user("/compact"));
+            }
             Write::Interrupt => {
                 session.interrupt(&self.hub, control::interrupt(&super::streams::random_id()));
             }

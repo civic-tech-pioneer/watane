@@ -143,6 +143,34 @@ pub(crate) fn refused(tool: &str, input: &Value, cwd: &Path, roots: &[PathBuf]) 
     false
 }
 
+/// The absolute path that an ask or check of `tool` with `input` reaches, symlinks resolved, as
+/// the item's `path` (19.3, step 4): the first of `file_path`, `path`, `notebook_path` (absent:
+/// the working folder), resolved as `claude` does. `None` for a tool that is not a file tool,
+/// a path that the answer rule refuses, or one that cannot be resolved or is not UTF-8.
+pub(crate) fn resolved(
+    tool: &str,
+    input: &Value,
+    cwd: &Path,
+    roots: &[PathBuf],
+    run: &Path,
+) -> Option<String> {
+    if !FILE_TOOLS.contains(&tool) || refused_for_answer(tool, input, cwd, roots, run) {
+        return None;
+    }
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let text = ["file_path", "path", "notebook_path"]
+        .iter()
+        .find_map(|key| input.get(*key)?.as_str());
+    let real = match text {
+        None => resolve(cwd, Path::new("/"), &mut 0)?,
+        Some(text) => {
+            let joined = cwd.join(expand(text, home.as_deref())?);
+            resolve(&lexical(&joined), Path::new("/"), &mut 0)?
+        }
+    };
+    real.to_str().map(str::to_owned)
+}
+
 /// `refused` for an answer: the run folder `run` (one of `roots`) is read-only, so it counts
 /// for `Read`, `Glob` and `Grep` only (19.3), also when a workspace holds it or a link leads in.
 pub(crate) fn refused_for_answer(
@@ -488,5 +516,32 @@ mod adv_s100 {
                 "{pattern:?} passes the host; the glob expands to one that leaves"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod resolved_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn ac2_the_path_of_an_ask_is_the_one_it_reaches_with_links_resolved() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = dir.path().canonicalize().unwrap().join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        std::fs::write(work.join("real.txt"), "r").unwrap();
+        std::os::unix::fs::symlink(work.join("real.txt"), work.join("link.txt")).unwrap();
+        let roots = [work.clone()];
+        let run = PathBuf::from("/nonexistent-run");
+        let got = |tool: &str, input: Value| resolved(tool, &input, &work, &roots, &run);
+        let real = work.join("real.txt").to_str().unwrap().to_owned();
+        assert_eq!(got("Read", json!({"file_path":"link.txt"})), Some(real));
+        assert_eq!(
+            got("Grep", json!({"pattern":"x"})),
+            Some(work.to_str().unwrap().to_owned())
+        );
+        assert_eq!(got("Read", json!({"file_path":"/etc/passwd"})), None);
+        assert_eq!(got("Glob", json!({"pattern":"/etc/*"})), None);
+        assert_eq!(got("Bash", json!({"command":"ls"})), None);
     }
 }

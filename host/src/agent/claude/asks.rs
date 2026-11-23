@@ -3,7 +3,7 @@
 //! of a close go out in the order the asks were pushed.
 
 use super::control::{self, Fields};
-use super::{Session, paths};
+use super::{Out, Session, paths};
 use crate::agent::streams::{Hub, StreamError};
 use serde_json::Value;
 use std::collections::VecDeque;
@@ -124,10 +124,17 @@ impl Session {
         let mut asks = self.asks();
         self.flush(hub, &mut asks)?;
         let id = (asks.next + 1).to_string();
+        let path = paths::resolved(
+            &fields.tool,
+            &fields.input,
+            &asks.cwd,
+            &asks.roots,
+            &asks.run,
+        );
         let expires_at = now_ms().saturating_add(u64::try_from(ttl.as_millis()).unwrap_or(0));
         hub.host_push(
             &self.id,
-            &control::request_item(hook, &id, fields, expires_at),
+            &control::request_item(hook, &id, fields, path.as_deref(), expires_at),
         )?;
         asks.next += 1;
         asks.open.push(Open {
@@ -142,9 +149,11 @@ impl Session {
     }
 
     /// The checks of an `answer`, made at the call against the asks open then (19.3, step 5).
-    pub(crate) fn check_answer(&self, ask: &str, d: &Decision) -> Result<(), Refused> {
+    pub(crate) fn check_answer(&self, hub: &Hub, ask: &str, d: &Decision) -> Result<(), Refused> {
         let asks = self.asks();
-        let Some(open) = asks.open.iter().find(|o| o.id == ask) else {
+        let now = hub.now();
+        // An ask whose `expires-at` has come is closed, whether or not the sweep has run.
+        let Some(open) = asks.open.iter().find(|o| o.id == ask && o.deadline > now) else {
             return Err(Refused::UnknownAsk);
         };
         let ok = if open.hook {
@@ -173,10 +182,13 @@ impl Session {
         }
     }
 
-    /// Applies an `answer` of a committed chain: when the ask is still open, writes the answer
-    /// and closes it `answered`. Otherwise nothing.
+    /// Applies an `answer` of a committed chain: when the ask is still open and not due, queues
+    /// the answer; the writer reports it (`answered`) once the line is written. An ask due at or
+    /// before now is closed `expired` first, so an answer that arrives late writes nothing
+    /// (19.3, step 5).
     pub(crate) fn apply_answer(&self, hub: &Hub, ask: &str, d: &Decision) {
         let mut asks = self.asks();
+        self.expire(hub, &mut asks);
         let Some(i) = asks.open.iter().position(|o| o.id == ask) else {
             return;
         };
@@ -193,8 +205,20 @@ impl Session {
             }
             _ => return,
         };
-        self.write(line);
-        self.close(hub, &mut asks, &[i], "answered", Some(outcome));
+        let open = asks.open.remove(i);
+        // A failed enqueue stops the session: no `answered`, the stream ends as the process does.
+        self.enqueue(Out {
+            line,
+            answered: Some((open.id, outcome)),
+        });
+    }
+
+    /// The writer wrote the line of an answer: now `answered` goes on the stream.
+    pub(crate) fn answered(&self, hub: &Hub, id: &str, outcome: &str) {
+        let mut asks = self.asks();
+        asks.pending
+            .push_back(control::resolved_item(id, "answered", Some(outcome)));
+        let _ = self.flush(hub, &mut asks);
     }
 
     /// `claude` cancelled a request: closes the ask or check it names, if it is open.
@@ -217,11 +241,10 @@ impl Session {
         self.close(hub, &mut asks, &all, "cancelled", None);
     }
 
-    /// Closes what is due at `now`: an ask is denied, a check closes with nothing written.
-    /// Also pushes closes that waited for room.
-    pub(crate) fn tick(&self, hub: &Hub) {
+    /// Closes what is due at the hub's now: an ask is denied, a check closes with nothing
+    /// written.
+    fn expire(&self, hub: &Hub, asks: &mut Asks) {
         let now = hub.now();
-        let mut asks = self.asks();
         let due: Vec<usize> = (0..asks.open.len())
             .filter(|i| asks.open[*i].deadline <= now)
             .collect();
@@ -231,7 +254,119 @@ impl Session {
                 self.write(control::deny(&open.request_id, false, "the ask expired"));
             }
         }
-        self.close(hub, &mut asks, &due, "expired", None);
+        self.close(hub, asks, &due, "expired", None);
+    }
+
+    /// Closes what is due; also pushes closes that waited for room.
+    pub(crate) fn tick(&self, hub: &Hub) {
+        let mut asks = self.asks();
+        self.expire(hub, &mut asks);
         let _ = self.flush(hub, &mut asks);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::LocalName;
+    use crate::agent::ModRef;
+    use crate::agent::streams::TestClock;
+    use serde_json::json;
+
+    /// A host stream `s`, a session on it with its queue read, and a clock the test moves.
+    fn rig() -> (
+        std::sync::Arc<Hub>,
+        Session,
+        std::sync::mpsc::Receiver<Out>,
+        TestClock,
+    ) {
+        let hub = Hub::new();
+        let clock = TestClock::new();
+        hub.set_clock(&clock);
+        hub.open_host(
+            "s".into(),
+            ModRef {
+                local: LocalName::parse("m").unwrap(),
+                identity: "i".into(),
+            },
+            ("o".into(), None),
+            Box::new(|| {}),
+        );
+        let session = Session::new("s".into(), "o".into(), None);
+        let rx = session.started(0);
+        rx.try_recv().unwrap(); // `initialize`
+        (hub, session, rx, clock)
+    }
+    fn bash() -> Fields {
+        Fields {
+            tool_use_id: "t1".into(),
+            tool: "Bash".into(),
+            input: json!({"command": "ls"}),
+        }
+    }
+
+    #[test]
+    fn ac4_an_answer_whose_apply_comes_after_the_deadline_writes_only_the_expiry_deny() {
+        let (hub, session, rx, clock) = rig();
+        session
+            .open_request(&hub, "r1", false, &bash(), Duration::from_secs(10))
+            .unwrap();
+        // Accepted at the call, before the deadline ...
+        assert_eq!(
+            session.check_answer(&hub, "1", &Decision::Allow(None)),
+            Ok(())
+        );
+        // ... its apply comes at the deadline, before any sweep ran.
+        clock.advance(Duration::from_secs(10));
+        session.apply_answer(&hub, "1", &Decision::Allow(None));
+        let out = rx.try_recv().unwrap();
+        assert_eq!(out.answered, None);
+        let line: Value = serde_json::from_slice(&out.line).unwrap();
+        assert_eq!(
+            line["response"]["response"],
+            json!({"behavior":"deny","message":"the ask expired"})
+        );
+        session.tick(&hub);
+        assert!(rx.try_recv().is_err(), "the expiry deny is written once");
+    }
+
+    #[test]
+    fn ac4_an_answer_at_the_deadline_is_unknown_ask_at_the_call() {
+        let (hub, session, _rx, clock) = rig();
+        session
+            .open_request(&hub, "r1", false, &bash(), Duration::from_secs(10))
+            .unwrap();
+        clock.advance(Duration::from_secs(10));
+        assert_eq!(
+            session.check_answer(&hub, "1", &Decision::Deny("x".into())),
+            Err(Refused::UnknownAsk)
+        );
+    }
+
+    #[test]
+    fn ac5_answered_is_not_pushed_by_the_apply_but_after_the_writer_wrote_the_line() {
+        let (hub, session, rx, _clock) = rig();
+        session
+            .open_request(&hub, "r1", false, &bash(), Duration::from_secs(10))
+            .unwrap();
+        session.apply_answer(&hub, "1", &Decision::Allow(None));
+        let out = rx.try_recv().unwrap();
+        assert_eq!(out.answered, Some(("1".into(), "allow")));
+        // The writer has not reported: only the ask is on the stream.
+        let pushed = |hub: &Hub| hub.host_push("s", b"{}").is_ok();
+        assert!(pushed(&hub));
+        session.answered(&hub, "1", "allow");
+        assert_eq!(
+            session.check_answer(&hub, "1", &Decision::None),
+            Err(Refused::UnknownAsk)
+        );
+    }
+
+    #[test]
+    fn ac5_a_failed_enqueue_is_reported_and_stops_the_session() {
+        let (_hub, session, rx, _clock) = rig();
+        drop(rx);
+        assert!(!session.write(b"x".to_vec()));
+        assert!(session.stopped());
     }
 }
