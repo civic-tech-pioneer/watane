@@ -671,8 +671,9 @@ false positive only makes a channel fail closed). For a channel with no record
 and no tombstone that may be gone, the first read of a link is listed and the
 new record starts with `"seen_full": true` and empty `given`, so no link gives
 its base: until S107 the participant cannot give a base of a gone channel. A
-channel dist never knew is unchanged: a link gives its base. A malformed or
-wrong-length `gone` reads as all bits set.
+channel dist never knew is unchanged: a link gives its base. A present `gone` that is malformed, of the wrong length, or no
+string at all (`null`, a number) reads as all bits set; only an absent one
+is empty.
 
 Step 8 adds `"kept": bool` (default `false`), so the version stays 1: a
 **kept** record is a channel that an own machine holds (5.12). A record
