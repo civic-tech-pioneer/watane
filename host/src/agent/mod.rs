@@ -818,17 +818,14 @@ impl Host {
         self.hub.end_gone(&lost);
     }
     /// Runs `f` with the bytes that the chains in flight have queued for `origin` and in all,
-    /// holding their gate (19.2, Commit): host admission counts them as a mod's push does. A
-    /// scan runs before the gate is let go, for a close that found it busy.
+    /// holding their gate (19.2, Commit): host admission counts them as a mod's push does.
     pub(crate) fn with_pending<R>(&self, origin: &str, f: impl FnOnce((usize, usize)) -> R) -> R {
         let chains = self
             .chains
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         let pending = pending_in_flight(&chains);
-        let result = f((pending.0.get(origin).copied().unwrap_or(0), pending.1));
-        self.hub.scan_ready_with(pending);
-        result
+        f((pending.0.get(origin).copied().unwrap_or(0), pending.1))
     }
     /// The pending bytes of the chains in flight, by origin and in all, without waiting for their
     /// gate: `None` when the gate or a chain's log is busy. The hub lock is held by the caller,

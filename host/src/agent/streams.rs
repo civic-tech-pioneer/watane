@@ -269,6 +269,8 @@ struct Inner {
     tasks: BTreeMap<LocalName, VecDeque<Task>>,
     busy: HashSet<LocalName>,
     waiting: BTreeSet<String>,
+    /// A ready scan found the chains gate or a log busy: the worker owes it (19.2, In flight).
+    scan_owed: bool,
     clock: Clock,
     ended_host: HashMap<String, Value>,
     deliveries: HashMap<String, Vec<Delivery>>,
@@ -348,6 +350,14 @@ impl Hub {
                 return;
             }
             inner.check_clocks();
+            if inner.scan_owed {
+                drop(inner);
+                if let Some(host) = weak.upgrade() {
+                    host.chain_ended();
+                }
+                inner = self.lock();
+                continue;
+            }
             let next = inner.next_task();
             let Some((local, task)) = next else {
                 inner = self
@@ -460,7 +470,7 @@ impl Hub {
                     .get(&id)
                     .is_some_and(|s| s.producer == Producer::Mod(by.clone()))
                 {
-                    inner.enqueue(&id, body, hop);
+                    inner.commit_push(&id, body, hop);
                 }
             }
             Effect::Close { id, outcome, by } => {
@@ -996,7 +1006,7 @@ impl Hub {
             (origin_pending, host_pending),
             reserve,
         )?;
-        inner.enqueue(id, body.to_vec(), 0);
+        inner.commit_push(id, body.to_vec(), 0);
         if reserve > 0 {
             if let Some(s) = inner.streams.get_mut(id) {
                 s.reserved += reserve;
@@ -1244,6 +1254,16 @@ impl Inner {
         self.waiting.insert(id.to_owned());
         Err(StreamError::Full)
     }
+    /// A producer's push committed: the refusal before it ends, and its lag timer (19.2, Lag
+    /// clock). A close item and a rollback end nothing.
+    fn commit_push(&mut self, id: &str, body: Vec<u8>, hop: u8) {
+        self.enqueue(id, body, hop);
+        if let Some(s) = self.streams.get_mut(id) {
+            s.needs_ready = None;
+            s.full_since = None;
+        }
+        self.waiting.remove(id);
+    }
     fn enqueue(&mut self, id: &str, body: Vec<u8>, hop: u8) {
         let Some(s) = self.streams.get_mut(id) else {
             return;
@@ -1256,10 +1276,6 @@ impl Inner {
         s.next_seq += 1;
         s.bytes += len;
         s.queue.push_back(Item { seq, body, hop });
-        // A commit ends the refusal before it and its lag timer (19.2, Lag clock).
-        s.needs_ready = None;
-        s.full_since = None;
-        self.waiting.remove(id);
         let origin = s.origin.clone();
         let consumer = s.consumer.clone();
         *self.origin_bytes.entry(origin).or_default() += len;
@@ -1336,12 +1352,15 @@ impl Inner {
             Some(host) => host.try_pending(),
             None => Some(Default::default()),
         };
-        if let Some(pending) = pending {
-            self.scan_ready_in(&pending);
+        match pending {
+            Some(pending) => self.scan_ready_in(&pending),
+            // The worker takes the gate and the logs without the hub lock, and scans.
+            None => self.scan_owed = true,
         }
     }
     /// `scan_ready` with the pending bytes of the chains in flight.
     fn scan_ready_in(&mut self, pending: &crate::agent::Pending) {
+        self.scan_owed = false;
         let waiting: Vec<String> = self.waiting.iter().cloned().collect();
         for id in waiting {
             let Some(s) = self.streams.get(&id) else {
@@ -1758,6 +1777,74 @@ mod tests {
         crate::runtime::call::test_rollback(&host, &idle);
         assert!(hub.lock().streams[&s].needs_ready.is_some());
         assert_eq!(hub.host_push(&s, &[0; 512]), Err(StreamError::Full));
+    }
+
+    /// 19.3 step 5 (review r6 round 1): a close item that an ask turns its reserve into is not a
+    /// producer's push: the refusal and the lag clock stay, and the stream ends `lagging`.
+    #[test]
+    fn s100_fix18_ac6_a_close_item_clears_no_refusal_and_no_lag_clock() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let clock = TestClock::new();
+        host.hub.set_clock(&clock);
+        let hub = &host.hub;
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        hub.host_open_keeping(&s, b"ask", 1000).unwrap();
+        hub.lock()
+            .origin_bytes
+            .insert("o".into(), ORIGIN_BUDGET - 100);
+        assert_eq!(hub.host_push(&s, &[0; 100_000]), Err(StreamError::Full));
+        let refused_at = hub.lock().streams[&s].full_since;
+        hub.host_close_keeping(&s, b"close", 1000).unwrap();
+        assert!(hub.lock().streams[&s].needs_ready.is_some());
+        assert_eq!(hub.lock().streams[&s].full_since, refused_at);
+        clock.advance(LAG + Duration::from_secs(1));
+        hub.lock().check_clocks();
+        assert_eq!(hub.test_ended(&s), Some(json!("lagging")));
+    }
+
+    /// 19.2 (In flight, review r6 round 1): a close that finds the chains gate or a chain's log
+    /// busy owes the wake: the hub's worker runs it once the holder lets go, long before the
+    /// chain ends.
+    #[test]
+    fn s100_fix18_ac7_an_owed_wake_runs_when_the_gate_or_a_log_is_let_go() {
+        for log_only in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+            let hub = &host.hub;
+            let open = || {
+                hub.test_open(Consumer::Held { origin: "o".into() }, "o".into())
+                    .unwrap()
+            };
+            let (ask, other) = (open(), open());
+            hub.host_open_keeping(&ask, b"ask", 1000).unwrap();
+            hub.lock()
+                .origin_bytes
+                .insert("o".into(), ORIGIN_BUDGET - 100);
+            assert_eq!(hub.host_push(&other, &[0; 512]), Err(StreamError::Full));
+            let chain = crate::runtime::call::test_chain(&host, vec![]);
+            let gate = host.chains.lock().unwrap();
+            let log = if log_only {
+                drop(gate);
+                (None, Some(chain.log.lock().unwrap()))
+            } else {
+                (Some(gate), None)
+            };
+            hub.host_close_keeping(&ask, b"close", 1000).unwrap();
+            assert!(hub.lock().streams[&other].needs_ready.is_some());
+            drop(log);
+            let released = Instant::now();
+            while hub.lock().streams[&other].needs_ready.is_some() {
+                assert!(
+                    released.elapsed() < Duration::from_millis(200),
+                    "no wake after the release (log only: {log_only})"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            drop(chain);
+        }
     }
 
     /// 19.3 step 5 (review r6, F6.2): a refusal and its lag timer survive a smaller tentative push
