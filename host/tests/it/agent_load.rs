@@ -241,27 +241,18 @@ mod stage_b {
     use watane_host::Caller;
 
     const STREAMS: usize = 8;
-    const SMALL: u64 = 10;
-    const BIG: u64 = 10_000;
+    /// The fake's rate (`fake-claude/claude`, "Rate mode"): deltas and entries per second, bytes
+    /// of an entry, seconds of the turn.
+    const RATE: &str = "50 5 4096 14";
+    /// The interrupt comes this long after the turn started: the fake has written the rate for
+    /// more than 10 s.
+    const INTERRUPT_AFTER: Duration = Duration::from_millis(10_600);
 
     fn micros() -> u128 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_micros()
-    }
-    fn can_use(rid: &str, tuid: &str) -> String {
-        json!({"type":"control_request","request_id":rid,"request":{
-            "subtype":"can_use_tool","tool_name":"Read","input":{"file_path":"a.txt"},
-            "tool_use_id":tuid}})
-        .to_string()
-    }
-    /// `assistant` lines `n` in `from..=to`, about 1 KiB each.
-    fn entries(from: u64, to: u64) -> String {
-        let pad = "x".repeat(1000);
-        (from..=to)
-            .map(|n| format!(r#"{{"type":"assistant","n":{n},"pad":"{pad}"}}"#) + "\n")
-            .collect()
     }
     /// One consumer mod (`claude` or `claude-b`) and the rig that holds the fake.
     struct Side<'a> {
@@ -274,39 +265,44 @@ mod stage_b {
                 .call_as(Caller::Page, self.target, function, args)
                 .unwrap()
         }
-        fn decide(&self, s: &str, ask: &str, decision: &str) -> String {
-            self.call(
-                "api.decide",
-                json!({"s": s, "ask": ask, "decision": decision}),
-            )
-            .as_str()
-            .unwrap()
-            .to_owned()
+        fn tally(&self, s: &str) -> BTreeMap<String, String> {
+            let text = self.call("api.tally", json!({"s": s}));
+            text.as_str()
+                .unwrap()
+                .lines()
+                .filter_map(|l| l.split_once('=').map(|(k, v)| (k.to_owned(), v.to_owned())))
+                .collect()
         }
-        fn ended(&self) -> Vec<String> {
-            serde_json::from_value(self.call("api.ended", Value::Null)).unwrap()
+        /// A time the consumer stamped in its tally (microseconds), once it is there.
+        fn at(&self, s: &str, key: &str) -> Option<u128> {
+            self.tally(s).get(key).map(|v| v.parse().unwrap())
         }
-        fn log(&self) -> Vec<String> {
-            self.rig.log()
-        }
-    }
-    fn tally(rig: &Side, s: &str) -> BTreeMap<String, String> {
-        let text = rig.call("api.tally", json!({"s": s}));
-        text.as_str()
-            .unwrap()
-            .lines()
-            .filter_map(|l| l.split_once('=').map(|(k, v)| (k.to_owned(), v.to_owned())))
-            .collect()
     }
     /// Polls `done` every `ms` milliseconds. The times that the budgets use are stamped by the
-    /// consumer's sink or are read from the fake's log, so a slow poll costs no precision, and a
-    /// fast one would only compete with the sink for the consumer's call lock.
-    fn wait_for(what: &str, secs: u64, ms: u64, mut done: impl FnMut() -> bool) {
+    /// consumer's sink or by the fake, so a slow poll costs no precision, and a fast one would
+    /// only compete with the sink for the consumer's call lock.
+    fn wait_for<T>(what: &str, secs: u64, ms: u64, mut done: impl FnMut() -> Option<T>) -> T {
         let end = Instant::now() + Duration::from_secs(secs);
-        while !done() {
+        loop {
+            if let Some(v) = done() {
+                return v;
+            }
             assert!(Instant::now() < end, "timed out waiting for {what}");
             std::thread::sleep(Duration::from_millis(ms));
         }
+    }
+    /// The fields of the entry `kind` of the fake's `stamps.<pid>` whose first field is `key`.
+    fn stamps(rig: &Rig, pid: &str, kind: &str, key: &str) -> Option<Vec<u128>> {
+        let text = std::fs::read_to_string(rig.fake.path().join(format!("stamps.{pid}"))).ok()?;
+        text.lines().find_map(|l| {
+            let f: Vec<&str> = l.split(' ').collect();
+            (f[0] == kind && f.get(1) == Some(&key))
+                .then(|| f[2..].iter().map(|v| v.parse().unwrap()).collect())
+        })
+    }
+    /// The time the fake stamped for `kind` and `key`, in microseconds.
+    fn stamped(rig: &Rig, pid: &str, kind: &str, key: &str) -> Option<u128> {
+        stamps(rig, pid, kind, key).map(|v| v[0])
     }
     fn p95(mut v: Vec<f64>) -> f64 {
         v.sort_by(f64::total_cmp);
@@ -315,108 +311,98 @@ mod stage_b {
 
     #[derive(Debug, Default)]
     struct Marks {
-        small_entries: f64,
-        small_ask: f64,
+        ask_taken: f64,
         answer: f64,
-        interrupt: f64,
-        big_turn: f64,
+        interrupt_resolved: f64,
+        interrupt_result: f64,
         cancel: f64,
         bad: u64,
+        written: u64,
         taken: u64,
+        batches: u64,
     }
 
-    fn one(rig: &Side, s: &str) -> Marks {
+    fn one(rig: &Rig, side: &Side, s: &str) -> Marks {
         let mut m = Marks::default();
         let ms = |from: u128, to: u128| to.saturating_sub(from) as f64 / 1000.0;
-        // Turn 1: 10 entries and an ask.
-        // The clock starts when the `say` call has returned: the turn is the fake's, and the
-        // call's own chain (one at a time per mod) is not the stream's path.
         assert_eq!(
-            rig.call("api.say", json!({"s": s, "text": "one"})),
+            side.call("api.say", json!({"s": s, "text": "go"})),
             json!("ok")
         );
-        let t = micros();
-        wait_for("turn 1", 30, 25, || {
-            let t = tally(rig, s);
-            t.get("next").is_some_and(|n| n == &(SMALL + 1).to_string()) && t.contains_key("ask1")
+        let said = Instant::now();
+        // The first ask: the fake's write to the consumer's sink.
+        let first = wait_for("the first ask", 30, 50, || {
+            side.tally(s).get("tu1").cloned()
         });
-        let tl = tally(rig, s);
-        m.small_entries = ms(t, tl["last"].parse().unwrap());
-        m.small_ask = ms(t, tl["ask1"].parse().unwrap());
-        // Its answer reaches the fake's stdin.
-        let rid = format!(
-            "r{}a",
-            tl["tu1"].trim_start_matches('t').trim_end_matches('a')
-        );
+        let pid = first
+            .trim_start_matches('t')
+            .trim_end_matches('a')
+            .to_owned();
+        let written = stamped(rig, &pid, "ask", &first).unwrap();
+        m.ask_taken = ms(written, side.at(s, "ask1").unwrap());
+        // Its answer to the fake's stdin.
+        let rid = format!("r{pid}a");
         let t = micros();
-        assert_eq!(rig.decide(s, "1", "allow"), "ok");
-        let seen = |rid: &str| {
-            rig.log()
-                .iter()
-                .any(|l| l.starts_with("IN ") && l.contains(&format!(r#""request_id":"{rid}""#)))
-        };
-        let mut at = 0;
-        wait_for("the answer on stdin", 30, 1, || {
-            let now = micros();
-            if seen(&rid) {
-                at = now;
-                true
-            } else {
-                false
-            }
+        assert_eq!(
+            side.call(
+                "api.decide",
+                json!({"s": s, "ask": "1", "decision": "allow"})
+            ),
+            json!("ok")
+        );
+        let at = wait_for("the answer on stdin", 30, 2, || {
+            stamped(rig, &pid, "answer", &rid)
         });
         m.answer = ms(t, at);
-        // Turn 2: 10 000 entries after two asks; the first is answered, an interrupt closes the
-        // second while the entries flow.
-        assert_eq!(
-            rig.call("api.say", json!({"s": s, "text": "two"})),
-            json!("ok")
-        );
-        let t2 = micros();
-        wait_for("the asks of turn 2", 30, 25, || {
-            tally(rig, s).contains_key("ask3")
-        });
-        assert_eq!(rig.decide(s, "2", "allow"), "ok");
+        // The second ask stays open; the interrupt closes it while the lines flow.
+        wait_for("the second ask", 30, 50, || side.at(s, "ask2"));
+        std::thread::sleep(INTERRUPT_AFTER.saturating_sub(said.elapsed()));
         let t = micros();
-        assert_eq!(rig.call("api.interrupt", json!({"s": s})), json!("ok"));
-        wait_for("the interrupt's close", 30, 25, || {
-            tally(rig, s).contains_key("res3")
-        });
-        m.interrupt = ms(t, tally(rig, s)["res3"].parse().unwrap());
-        let total = SMALL + BIG + 1;
-        wait_for("turn 2", 60, 100, || {
-            tally(rig, s)
-                .get("next")
-                .is_some_and(|n| n == &total.to_string())
-        });
-        let tl = tally(rig, s);
-        m.big_turn = ms(t2, tl["last"].parse().unwrap());
-        m.bad = tl["bad"].parse().unwrap();
+        assert_eq!(side.call("api.interrupt", json!({"s": s})), json!("ok"));
+        let resolved = wait_for("ask-resolved", 30, 20, || side.at(s, "res2"));
+        m.interrupt_resolved = ms(t, resolved);
+        let result = wait_for("the result", 30, 20, || side.at(s, "result"));
+        m.interrupt_result = ms(t, result);
+        // Every line the fake wrote arrived, once and in order.
+        let tl = side.tally(s);
+        m.written = lines_written(rig, &pid);
         m.taken = tl["next"].parse::<u64>().unwrap() - 1;
+        m.bad = tl["bad"].parse().unwrap();
         // `cancel` to `ended`.
-        let t = Instant::now();
-        rig.call("api.cancel", json!({"s": s}));
-        wait_for("ended", 30, 1, || {
-            rig.ended().iter().any(|l| l == &format!("{s} cancelled"))
-        });
-        m.cancel = t.elapsed().as_secs_f64() * 1000.0;
+        let t = micros();
+        side.call("api.cancel", json!({"s": s}));
+        let ended = wait_for("ended", 30, 20, || side.at(s, "ended"));
+        m.cancel = ms(t, ended);
+        assert!(
+            side.call("api.ended", Value::Null)
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|l| l == &json!(format!("{s} cancelled")))
+        );
+        m.batches = side.tally(s)["batches"].parse().unwrap();
         m
     }
 
+    /// `lines <N> <us>`: the last number the fake wrote.
+    fn lines_written(rig: &Rig, pid: &str) -> u64 {
+        let text = std::fs::read_to_string(rig.fake.path().join(format!("stamps.{pid}"))).unwrap();
+        let l = text.lines().find(|l| l.starts_with("lines ")).unwrap();
+        l.split(' ').nth(1).unwrap().parse().unwrap()
+    }
+
+    fn loadavg() -> String {
+        std::fs::read_to_string("/proc/loadavg")
+            .map(|t| t.split_whitespace().take(3).collect::<Vec<_>>().join(" "))
+            .unwrap_or_else(|_| "unknown".into())
+    }
+
     #[test]
-    #[ignore = "slow: the stage B host budgets, 8 streams of 10 010 entries"]
-    fn ac9_stage_b_host_budgets() {
+    #[ignore = "slow: the stage B host budgets, 8 sessions at 50 deltas and 5 entries a second for 10 s"]
+    fn ac1_stage_b_load() {
         let _serial = super::LOAD.lock().unwrap();
         let launch = r#"{"version":1,"workspace":"scratch","ask":true,"tools":["Read"]}"#;
-        let rig = Rig::new(&[]);
-        let turn1 = can_use("r@P@a", "t@P@a") + "\n" + &entries(1, SMALL);
-        let turn2 = can_use("r@P@b", "t@P@b")
-            + "\n"
-            + &can_use("r@P@c", "t@P@c")
-            + "\n"
-            + &entries(SMALL + 1, SMALL + BIG);
-        rig.put("after.2", turn1.as_bytes());
-        rig.put("after.4", turn2.as_bytes());
+        let rig = Rig::new(&[("rate", RATE.as_bytes())]);
         // Two consumer mods, `claude` and `claude-b` (the same fixture), each with its own
         // four streams.
         let sides = ["claude", "claude-b"].map(|target| Side { rig: &rig, target });
@@ -431,45 +417,78 @@ mod stage_b {
             assert_eq!(s.len(), 32, "{s}");
             streams.push((side, s));
         }
+        let load_before = loadavg();
         let before = rig.host().test_stats();
         let started = Instant::now();
         let marks: Vec<Marks> = std::thread::scope(|scope| {
             let jobs: Vec<_> = streams
                 .iter()
-                .map(|(side, s)| scope.spawn(move || one(side, s)))
+                .map(|(side, s)| {
+                    let rig = &rig;
+                    scope.spawn(move || one(rig, side, s))
+                })
                 .collect();
             jobs.into_iter().map(|j| j.join().unwrap()).collect()
         });
         let wall = started.elapsed();
         let after = rig.host().test_stats();
-        let busy = (after.commit_time - before.commit_time).as_secs_f64() / wall.as_secs_f64();
-        let entries_taken: u64 = marks.iter().map(|m| m.taken).sum();
-        let written =
-            (after.state_bytes_written - before.state_bytes_written) as f64 / entries_taken as f64;
+        // Item delay, the stamp of the fake's write to the sink's read, over every stamped line.
+        let mut buckets = [0u64; 102];
+        for (side, s) in &streams {
+            for (k, v) in side.tally(s) {
+                if let Some(ms) = k.strip_prefix('h') {
+                    buckets[ms.parse::<usize>().unwrap()] += v.parse::<u64>().unwrap();
+                }
+            }
+        }
+        let count: u64 = buckets.iter().sum();
+        let mut seen = 0;
+        let mut delay_p95 = 0;
+        for (ms, n) in buckets.iter().enumerate() {
+            seen += n;
+            if seen as f64 >= count as f64 * 0.95 {
+                // The upper edge of the millisecond.
+                delay_p95 = ms + 1;
+                break;
+            }
+        }
+        // The consumers commit once per batch (the fixture's tally); the rest is the host's.
+        let commits = after.commits - before.commits;
+        let consumer_commits: u64 = marks.iter().map(|m| m.batches).sum();
+        let commit_time = (after.commit_time - before.commit_time).as_secs_f64();
+        let mean = commit_time / commits.max(1) as f64;
+        let busy = commit_time / wall.as_secs_f64();
+        let host_commits = commits.saturating_sub(consumer_commits);
+        let host_busy = mean * host_commits as f64 / wall.as_secs_f64();
         let col = |f: fn(&Marks) -> f64| p95(marks.iter().map(f).collect());
+        let written: u64 = marks.iter().map(|m| m.written).sum();
         println!(
-            "stage B host: streams {STREAMS} entries {entries_taken} \
-             small-turn p95 {:.1} ms, small-ask p95 {:.1} ms, answer p95 {:.1} ms, \
-             big-turn p95 {:.0} ms, interrupt p95 {:.1} ms, cancel p95 {:.1} ms, \
-             writer-busy {:.4}, state bytes written per entry {:.2}",
-            col(|m| m.small_entries),
-            col(|m| m.small_ask),
+            "stage B host: sessions {STREAMS} lines {written} item-delay p95 {delay_p95} ms \
+             over {count} lines, ask taken p95 {:.1} ms, answer to stdin p95 {:.1} ms, \
+             interrupt to ask-resolved p95 {:.1} ms, interrupt to result p95 {:.1} ms, \
+             cancel to ended p95 {:.1} ms, writer busy {busy:.4} (host {host_busy:.4}, \
+             consumers {:.4}; {commits} commits, {consumer_commits} of the consumers, mean \
+             {:.3} ms), wall {:.1} s, load average before {load_before} after {}",
+            col(|m| m.ask_taken),
             col(|m| m.answer),
-            col(|m| m.big_turn),
-            col(|m| m.interrupt),
+            col(|m| m.interrupt_resolved),
+            col(|m| m.interrupt_result),
             col(|m| m.cancel),
-            busy,
-            written,
+            busy - host_busy,
+            mean * 1000.0,
+            wall.as_secs_f64(),
+            loadavg(),
         );
         assert!(marks.iter().all(|m| m.bad == 0), "{marks:?}");
-        assert!(marks.iter().all(|m| m.taken == SMALL + BIG), "{marks:?}");
-        assert!(col(|m| m.small_entries) <= 100.0);
-        assert!(col(|m| m.small_ask) <= 100.0);
-        assert!(col(|m| m.answer) <= 50.0);
-        assert!(col(|m| m.big_turn) <= 10_000.0);
-        assert!(col(|m| m.interrupt) <= 250.0);
-        assert!(col(|m| m.cancel) <= 250.0);
-        // The consumer fixture writes one small tally per batch; the host writes nothing.
-        assert!(busy <= 0.10, "writer busy {busy}");
+        assert!(marks.iter().all(|m| m.taken == m.written), "{marks:?}");
+        assert!(marks.iter().all(|m| m.written > 10 * 55), "{marks:?}");
+        assert_eq!(count, written, "every line has a delay");
+        assert!(delay_p95 <= 100, "item delay p95 {delay_p95} ms");
+        assert!(col(|m| m.ask_taken) <= 100.0, "{marks:?}");
+        assert!(col(|m| m.answer) <= 50.0, "{marks:?}");
+        assert!(col(|m| m.interrupt_resolved) <= 1000.0, "{marks:?}");
+        assert!(col(|m| m.interrupt_result) <= 1000.0, "{marks:?}");
+        assert!(col(|m| m.cancel) <= 250.0, "{marks:?}");
+        assert!(busy <= 0.50, "writer busy {busy}");
     }
 }

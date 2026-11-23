@@ -83,16 +83,24 @@ fn micros() -> u128 {
         .as_micros()
 }
 /// The load test's quiet sink: one small state write per batch. The tally of a stream is
-/// `key=value` lines: `next` (the next `n` of an `assistant` line), `bad` (lines out of order),
-/// `last` (when the latest `assistant` line came, in microseconds), `ask<id>` and `res<id>`
-/// (when that `ask` or `ask-resolved` came).
-fn tally_items(s: &str, items: &[Item]) {
-    let key = format!("tally/{s}");
-    let old = get(&key).unwrap_or_default();
-    let mut map: std::collections::BTreeMap<String, String> = old
+/// `key=value` lines: `next` (the next `n` of a stamped line), `bad` (lines out of order),
+/// `last` (when the latest one came, in microseconds), `h<ms>` (how many stamped lines took that
+/// many milliseconds from the stamp `"t"` to the sink, 101 for 101 or more), `batches` (the
+/// writes), `ask<id>` and `res<id>` (when that `ask` or `ask-resolved` came), `tu<id>` (the
+/// ask's tool use id), `result` (when the turn's `result` came) and `ended`.
+fn tally_read(s: &str) -> std::collections::BTreeMap<String, String> {
+    get(&format!("tally/{s}"))
+        .unwrap_or_default()
         .lines()
         .filter_map(|l| l.split_once('=').map(|(k, v)| (k.to_owned(), v.to_owned())))
-        .collect();
+        .collect()
+}
+fn tally_write(s: &str, map: &std::collections::BTreeMap<String, String>) {
+    let text: Vec<String> = map.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    put(&format!("tally/{s}"), &text.join("\n"));
+}
+fn tally_items(s: &str, items: &[Item]) {
+    let mut map = tally_read(s);
     let num = |map: &std::collections::BTreeMap<String, String>, k: &str, d: u64| {
         map.get(k).and_then(|v| v.parse().ok()).unwrap_or(d)
     };
@@ -105,22 +113,33 @@ fn tally_items(s: &str, items: &[Item]) {
             map.insert(format!("ask{id}"), now.to_string());
             let tuid = body.split(r#""tool_use_id":""#).nth(1).and_then(|r| r.split('"').next());
             map.insert(format!("tu{id}"), tuid.unwrap_or("").to_owned());
-        } else if let Some(rest) = body.strip_prefix(r#"{"type":"ask-resolved","ask":""#) {
+        } else if let Some(rest) = body.strip_prefix(r#"{"type":"ask-resolved","id":""#) {
             let id = rest.split('"').next().unwrap_or("");
             map.insert(format!("res{id}"), now.to_string());
-        } else if let Some(rest) = body.strip_prefix(r#"{"type":"assistant","n":"#) {
+        } else if body.starts_with(r#"{"type":"result""#) {
+            map.insert("result".into(), now.to_string());
+        } else if let Some(rest) = body
+            .strip_prefix(r#"{"type":"assistant","n":"#)
+            .or_else(|| body.strip_prefix(r#"{"type":"stream_event","n":"#))
+        {
             let n: u64 = rest.split(',').next().and_then(|v| v.parse().ok()).unwrap_or(0);
             if n != next {
                 bad += 1;
             }
             next = n + 1;
             map.insert("last".into(), now.to_string());
+            if let Some(t) = rest.split(r#""t":"#).nth(1).and_then(|r| r.split(',').next()) {
+                let t: u128 = t.parse().unwrap_or(0);
+                let ms = (now.saturating_sub(t) / 1000).min(101);
+                let key = format!("h{ms}");
+                map.insert(key.clone(), (num(&map, &key, 0) + 1).to_string());
+            }
         }
     }
     map.insert("next".into(), next.to_string());
     map.insert("bad".into(), bad.to_string());
-    let text: Vec<String> = map.iter().map(|(k, v)| format!("{k}={v}")).collect();
-    put(&key, &text.join("\n"));
+    map.insert("batches".into(), (num(&map, "batches", 0) + 1).to_string());
+    tally_write(s, &map);
 }
 
 impl exports::mods::claude::api::Guest for Guest {
@@ -225,6 +244,11 @@ impl exports::watane::host::stream_sink::Guest for Guest {
         SinkOutcome::Taken
     }
     fn ended(s: String, o: Outcome) {
+        if get("quiet").is_some() {
+            let mut map = tally_read(&s);
+            map.insert("ended".into(), micros().to_string());
+            tally_write(&s, &map);
+        }
         add_line("ended", format!("{s} {}", outcome(&o)));
     }
 }

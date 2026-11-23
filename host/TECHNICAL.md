@@ -2073,13 +2073,24 @@ most 250 ms; writer busy share at most 50% (the host's own share recorded apart 
 the consumers'). Every line arrives once and in order. dev's `fake-claude` `load` step
 produces the same load for S36 (dev 18.2).
 
-**Stage B host record, superseded** (the burst load before review r1; S100, 2026-11-22; `Linux vm 6.18.44-fc-v726 #1 SMP
-PREEMPT_DYNAMIC x86_64`, `nproc` 4; three runs, every budget met): 80 080 entries each,
-none out of order or missing; entries taken in the 10-entry turn p95 31 / 36 / 35 ms;
-`ask` taken 31 / 36 / 35 ms; `answer` to stdin 10.5 / 3.6 / 7.0 ms; the 10 000-entry
-turn taken 2.8 / 2.9 / 3.1 s; `interrupt` to `ask-resolved` 129 / 154 / 132 ms;
-`cancel` to `ended` 50 / 64 / 88 ms; writer busy 5.1 / 5.8 / 6.7%; state bytes written
-per entry 1.0 (the fixture's tally).
+**Stage B host record** (S100, 2026-11-23; `Linux vm 6.18.44-fc-v726 #1 SMP PREEMPT_DYNAMIC
+x86_64`, `nproc` 4, a virtual machine with a real fsync; nothing else running, load average
+0.0 to 2.1; `cd host && cargo test --test it agent_load:: -- --include-ignored` three passes in
+a row, every budget met in each). The load of `tests/it/agent_load.rs::stage_b::ac1_stage_b_load`:
+8 sessions, 4 on each of the consumer mods `claude` and `claude-b`, on the fixture fake
+`claude` in its rate mode (50 deltas and 5 entries of 4 KiB a second, each line stamped with
+its write time; 10.6 s before the interrupt, 4 650 lines each time, none out of order or
+missing, every one once); one `ask` answered and one left open for the `interrupt`; the
+turn's `result`, then `cancel`. All p95 over the 8 sessions (the 95th percentile of 8 is the
+worst), pass 1 / 2 / 3: item delay host to consumer 3 / 4 / 2 ms (budget 100); `ask` taken
+2.7 / 2.9 / 1.7 ms (100); `answer` to the fake's stdin 0.9 / 2.0 / 0.9 ms (50); `interrupt` to
+`ask-resolved` 22.6 / 34.5 / 21.1 ms and to the turn's `result` the same ms (1 000);
+`cancel` to `ended` 23.4 / 61.9 / 26.9 ms (250); writer busy 16.4 / 17.8 / 18.3% (50), of
+which the host's own 0.03 / 0.03 / 0.03% and the consumers' (one small tally write per batch,
+mean commit 0.41 / 0.45 / 0.46 ms) the rest: the commits that the consumers made are their
+batches, the host's are the others. With another build running (load average 5 to 9 on the
+4 cores) the same load took the writer to 53 to 59% (a commit took 1.4 ms, not 0.4), all
+else within budget: the writer budget needs a quiet machine.
 
 Step 2 is done when J2 passes with `app`. Steps 4 and 5 need only
 HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.
