@@ -507,10 +507,12 @@ impl Dist {
         (next, gone) = next
             .into_iter()
             .partition(|(k, r)| r.followed || r.index || r.kept || walk.bases.contains_key(k));
+        // Staged on a copy: published with the records once the save succeeds (4.4).
         let mut tombs = self
             .tombs
             .lock()
-            .expect("lock poisoned: another thread panicked while holding it");
+            .expect("lock poisoned: another thread panicked while holding it")
+            .clone();
         for (
             key,
             Follow {
@@ -530,14 +532,13 @@ impl Dist {
             };
             follow::add_tombstone(&mut tombs, key.to_string(), tomb);
         }
-        drop(tombs);
         for (key, record) in &mut next {
             if record.kept && !record.followed && !record.index && !walk.bases.contains_key(key) {
                 record.base.clear();
                 record.bases.clear();
             }
         }
-        self.save_follows(&next)
+        self.save_staged(&next, Some(tombs))
             .map_err(|cause| Box::new((channel, cause)))?;
         *records = next;
         Ok(())

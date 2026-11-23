@@ -180,6 +180,16 @@ impl Dist {
         &self,
         records: &BTreeMap<PublicKey, Follow>,
     ) -> Result<(), DistError> {
+        self.save_staged(records, None)
+    }
+    /// The one write path of `follows.json`. `staged` is the next tombstone map a caller
+    /// built on a copy; the tombstones change in memory only once the file is written, so
+    /// a failed save leaves records and tombstones as they were (4.4).
+    pub(crate) fn save_staged(
+        &self,
+        records: &BTreeMap<PublicKey, Follow>,
+        staged: Option<BTreeMap<String, Tombstone>>,
+    ) -> Result<(), DistError> {
         #[cfg(test)]
         {
             let mut left = self.test_fail_saves.lock().expect("test switch");
@@ -198,7 +208,7 @@ impl Dist {
             .tombs
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        let mut seen = tombs.clone();
+        let mut seen = staged.unwrap_or_else(|| tombs.clone());
         for key in records.keys() {
             seen.remove(&key.to_string());
         }
