@@ -147,8 +147,12 @@ impl Dist {
                 None
             } else {
                 listed = follow::listed_read(&record, &record.base);
-                if listed {
-                    self.check_listed_base(&record.base)?;
+                if listed && let Err(refused) = self.check_listed_base(&record.base) {
+                    // As a listed record: a cached package is still given (DD-47).
+                    return match self.fetched(reference, None, false) {
+                        Err(DistError::NotFollowed { .. }) => Err(refused),
+                        other => other,
+                    };
                 }
                 Some(record.base)
             }

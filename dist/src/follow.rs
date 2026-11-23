@@ -61,10 +61,10 @@ pub(crate) fn adopt_given_base(record: &mut Follow, base: &str) {
         record.given.clear();
     }
 }
-/// A link's base the record does not have, or has but was never given by a link.
+/// A link's base never given by a link; `given` is a subset of the record's bases, so
+/// this covers a base the record does not have.
 fn follow_unseen(record: &Follow, base: &str) -> bool {
-    (record.base != base && !record.bases.iter().any(|b| b == base))
-        || !record.given.iter().any(|b| b == base)
+    !record.given.iter().any(|b| b == base)
 }
 impl Dist {
     pub(crate) fn save_follows(
