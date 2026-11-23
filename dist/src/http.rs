@@ -1392,7 +1392,7 @@ mod tests {
         for n in 0..1024 {
             eve.test_add_tombstone(&format!("k{n}"), tomb(&[], n + 2));
         }
-        eve.save_follows(&std::collections::BTreeMap::new())
+        eve.save_follows(&mut std::collections::BTreeMap::new(), Default::default())
             .unwrap();
         drop(eve);
         let path = dir.path().join("dist/follows.json");

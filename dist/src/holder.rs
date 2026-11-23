@@ -136,8 +136,7 @@ impl Dist {
             .entry(*channel)
             .or_insert_with(|| self.new_record(*channel, false, false, true));
         record.kept = true;
-        self.save_follows(&next)?;
-        *records = next;
+        self.save_follows(records, next)?;
         Ok(())
     }
     pub fn keep(&self, channel: &PublicKey) -> Result<(), DistError> {
@@ -242,9 +241,7 @@ impl Dist {
             }
             _ => return,
         }
-        if self.save_staged(&next, staged).is_ok() {
-            *records = next;
-        }
+        let _ = self.save_staged(&mut records, next, staged);
     }
 }
 

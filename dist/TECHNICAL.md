@@ -651,7 +651,10 @@ record, its `seen` and `given` stay as a tombstone in the top-level
 the oldest `at` goes first; a new record of that channel starts from its
 tombstone, which is then removed. Tombstone bases are normalised on read
 as record bases are. A tombstone is staged with the records and published
-only after the save succeeds, so a failed save changes neither.
+once the rename has installed the file, so a save that fails before the
+rename changes neither. When only the directory sync after the rename fails,
+the records and tombstones in memory become the ones in the installed file
+and the call still returns that `Io` error (Codex S105 r3 F3.2).
 
 Each 5.11 provider base dist reads, and the base of a `read_link` link (S105 r8), is also noted in `seen` before its first
 request (S105 r7): in the channel's record, or, for a channel with no record, in
