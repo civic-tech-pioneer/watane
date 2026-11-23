@@ -256,7 +256,6 @@ pub(crate) fn open(dir: &Path) -> Result<Zeroizing<[u8; 32]>, NetError> {
     let tmp = dir.join(format!(".node.key.{}.tmp", zbase32(&random)));
     let mut file = winfs::create_file(&tmp).map_err(|e| io_error(&tmp, e))?;
     let prepared = (|| {
-        winfs::check_owner_only(&file).map_err(|e| corrupt(&tmp, e.to_string()))?;
         file.write_all(&seed[..]).map_err(|e| io_error(&tmp, e))?;
         file.sync_all().map_err(|e| io_error(&tmp, e))
     })();

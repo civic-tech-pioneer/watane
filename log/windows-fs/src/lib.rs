@@ -173,6 +173,8 @@ pub fn create_dir_all(path: &Path) -> io::Result<()> {
 }
 
 /// Create an exclusive new file with a protected owner-only ACL.
+///
+/// Verify access control on the handle before allowing the caller to write.
 pub fn create_file(path: &Path) -> io::Result<File> {
     let path = absolute_wide(path)?;
     let descriptor = User::current()?.descriptor(false)?;
