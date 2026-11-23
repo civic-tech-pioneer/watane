@@ -61,10 +61,18 @@ pub(crate) struct Asks {
     run: PathBuf,
 }
 
-fn now_ms() -> u64 {
+/// The wall clock in whole ms, and the part of a ms it drops: an `expires-at` built from it
+/// is not after the deadline on the host's clock (19.3, step 5).
+fn now_ms() -> (u64, Duration) {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+        .map_or((0, Duration::ZERO), |d| {
+            let ms = u64::try_from(d.as_millis()).unwrap_or(u64::MAX);
+            (
+                ms,
+                Duration::from_nanos(u64::from(d.subsec_nanos() % 1_000_000)),
+            )
+        })
 }
 
 impl Session {
@@ -131,7 +139,11 @@ impl Session {
             &asks.roots,
             &asks.run,
         );
-        let expires_at = now_ms().saturating_add(u64::try_from(ttl.as_millis()).unwrap_or(0));
+        // The deadline is taken first and less the ms part `expires-at` drops, so an answer at
+        // `expires-at` never finds the ask open (19.3, step 5).
+        let start = hub.now();
+        let (ms, dropped) = now_ms();
+        let expires_at = ms.saturating_add(u64::try_from(ttl.as_millis()).unwrap_or(0));
         hub.host_push(
             &self.id,
             &control::request_item(hook, &id, fields, path.as_deref(), expires_at),
@@ -143,7 +155,7 @@ impl Session {
             hook,
             tool: fields.tool.clone(),
             input: fields.input.clone(),
-            deadline: hub.now() + ttl,
+            deadline: start + ttl - dropped,
         });
         Ok(())
     }
@@ -331,6 +343,19 @@ mod tests {
     }
 
     #[test]
+    fn ac4_a_check_answer_whose_apply_comes_after_the_deadline_writes_nothing() {
+        let (hub, session, rx, clock) = rig();
+        session
+            .open_request(&hub, "r1", true, &bash(), Duration::from_secs(10))
+            .unwrap();
+        assert_eq!(session.check_answer(&hub, "1", &Decision::None), Ok(()));
+        clock.advance(Duration::from_secs(10));
+        session.apply_answer(&hub, "1", &Decision::None);
+        session.tick(&hub);
+        assert!(rx.try_recv().is_err(), "no stdin line for a late check");
+    }
+
+    #[test]
     fn ac4_an_answer_at_the_deadline_is_unknown_ask_at_the_call() {
         let (hub, session, _rx, clock) = rig();
         session
@@ -352,9 +377,7 @@ mod tests {
         session.apply_answer(&hub, "1", &Decision::Allow(None));
         let out = rx.try_recv().unwrap();
         assert_eq!(out.answered, Some(("1".into(), "allow")));
-        // The writer has not reported: only the ask is on the stream.
-        let pushed = |hub: &Hub| hub.host_push("s", b"{}").is_ok();
-        assert!(pushed(&hub));
+        // The apply leaves `answered` to the writer: the line carries it.
         session.answered(&hub, "1", "allow");
         assert_eq!(
             session.check_answer(&hub, "1", &Decision::None),
