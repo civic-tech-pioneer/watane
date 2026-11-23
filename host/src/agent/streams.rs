@@ -1544,8 +1544,8 @@ mod tests {
         // The chain commits, as `take_and_apply` does: its push lands within the budget.
         {
             let _gate = host.chains.lock().unwrap();
-            host.apply_effects(std::mem::take(&mut *chain.log.lock().unwrap()));
-        }
+            host.apply_effects(std::mem::take(&mut *chain.log.lock().unwrap()))
+        };
         assert_eq!(budgets(&host.hub).1, Some(ORIGIN_BUDGET - 10));
         drop(chain);
         assert_eq!(
