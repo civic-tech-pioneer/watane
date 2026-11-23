@@ -91,7 +91,7 @@ impl Accounts {
                 json!({"signedIn":account.is_some(),"plan":account.map(|a| a.plan),"error":null})
             }
             Err(error) => {
-                let message = format!("Could not read the ChatGPT account: {error}");
+                let message = crate::words::chatgpt_account_read_error(&error);
                 let show = reported.as_ref() != Some(&message);
                 *reported = Some(message.clone());
                 json!({"signedIn":false,"plan":null,"error":show.then_some(message)})
@@ -374,6 +374,68 @@ mod tests {
             "Could not read the ChatGPT account: unsupported ChatGPT account version"
         );
         assert!(accounts.chatgpt()["error"].is_null());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ac5_absent_or_wide_folder_and_unknown_claude_version() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = tempfile::tempdir().unwrap();
+        let accounts = Accounts::new(home.path());
+        fs::create_dir(&accounts.app).unwrap();
+        let dir = accounts.app.join("accounts");
+        let signed_out = json!({"signedIn":false,"plan":null,"error":null});
+
+        assert_eq!(accounts.chatgpt(), signed_out);
+        accounts.sign_out().unwrap();
+        private_dir(&dir).unwrap();
+        assert_eq!(accounts.chatgpt(), signed_out);
+        accounts.sign_out().unwrap();
+
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(accounts.chatgpt()["error"].is_string());
+        assert_eq!(accounts.sign_out().unwrap_err().code, "io");
+
+        write(
+            &accounts.claude_path(),
+            &Claude {
+                version: 2,
+                path: home.path().join("claude"),
+            },
+        )
+        .unwrap();
+        assert!(accounts.claude().is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ac5_replaces_account_without_following_a_temporary_symlink() {
+        use std::os::unix::fs::symlink;
+        let home = tempfile::tempdir().unwrap();
+        let accounts = Accounts::new(home.path());
+        fs::create_dir(&accounts.app).unwrap();
+        let mut account = OpenAi {
+            version: 1,
+            access_token: "first-access".into(),
+            refresh_token: "first-refresh".into(),
+            expires_at: 1,
+            sub: "alice".into(),
+            plan: "plus".into(),
+        };
+        accounts.keep_openai(&account).unwrap();
+        assert_eq!(accounts.chatgpt()["plan"], "plus");
+
+        let outside = home.path().join("outside");
+        fs::write(&outside, "leave this alone").unwrap();
+        let tmp = accounts.openai_path().with_extension("json.tmp");
+        symlink(&outside, &tmp).unwrap();
+
+        account.plan = "pro".into();
+        accounts.keep_openai(&account).unwrap();
+        assert_eq!(accounts.chatgpt()["plan"], "pro");
+        assert_eq!(fs::read_to_string(outside).unwrap(), "leave this alone");
+        assert!(!tmp.is_symlink());
+        assert!(!tmp.exists());
     }
 
     #[test]

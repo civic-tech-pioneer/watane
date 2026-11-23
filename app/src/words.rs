@@ -1,5 +1,5 @@
-//! Grant words (TECHNICAL 4) and the parties cache (TECHNICAL 9.2): how grants
-//! and parties read in the consent view and the manager.
+//! Grant words (TECHNICAL 4), the parties cache (TECHNICAL 9.2), and account settings words
+//! (TECHNICAL 19).
 
 use crate::consent::{GrantKind, GrantLine, Party};
 use std::collections::BTreeMap;
@@ -285,6 +285,22 @@ pub(crate) fn bad_reason(cause: &str) -> String {
 }
 pub(crate) fn update_declined(version: &str) -> String {
     format!("You declined the update to {version}.")
+}
+
+pub(crate) const CHATGPT_REGISTRATION_REQUIRED: &str =
+    "Sign in with ChatGPT needs Watane’s OpenAI client registration.";
+pub(crate) const CHATGPT_CALLBACK_PAGE: &str = "You can return to watane.";
+
+pub(crate) fn chatgpt_sign_in_refused(error: &str) -> String {
+    format!("sign-in refused: {error}")
+}
+
+pub(crate) fn chatgpt_id_token_check_error(cause: &str) -> String {
+    format!("the ID token did not check: {cause}")
+}
+
+pub(crate) fn chatgpt_account_read_error(error: &std::io::Error) -> String {
+    format!("Could not read the ChatGPT account: {error}")
 }
 
 pub(crate) enum ClaudeBinary<'a> {
