@@ -1,5 +1,6 @@
 //! Checks the participant's Claude Code program before it is stored (TECHNICAL 19.3).
 
+use std::io;
 use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::{
@@ -33,7 +34,9 @@ pub(crate) fn validate(path: &Path) -> Result<ClaudeStatus, CmdError> {
     if !is_program(&path) {
         return Err(not_program(&path));
     }
-    let version = version(&path).ok_or_else(|| {
+    let version = version(&path).map_err(|_cause| {
+        #[cfg(test)]
+        eprintln!("Claude Code version check for {path:?}: {_cause:?}");
         CmdError::new(
             "bad_input",
             words::ClaudeBinary::NoAnswer(&path).to_string(),
@@ -72,14 +75,14 @@ fn is_program(_: &Path) -> bool {
 }
 
 #[cfg(not(unix))]
-fn version(_: &Path) -> Option<(u64, u64, u64)> {
-    None
+fn version(_: &Path) -> io::Result<(u64, u64, u64)> {
+    Err(io::ErrorKind::Unsupported.into())
 }
 
 #[cfg(unix)]
-fn version(path: &Path) -> Option<(u64, u64, u64)> {
+fn version(path: &Path) -> io::Result<(u64, u64, u64)> {
     let line = probe(path, Duration::from_secs(5))?;
-    let line = std::str::from_utf8(&line).ok()?;
+    let line = std::str::from_utf8(&line).map_err(io::Error::other)?;
     line.split(|c: char| !c.is_ascii_digit() && c != '.')
         .find_map(|word| {
             let mut parts = word.trim_matches('.').split('.');
@@ -90,10 +93,16 @@ fn version(path: &Path) -> Option<(u64, u64, u64)> {
             );
             parts.next().is_none().then_some(found)
         })
+        .ok_or_else(|| {
+            io::Error::new(
+                ErrorKind::InvalidData,
+                "No dotted version on the first stdout line",
+            )
+        })
 }
 
 #[cfg(unix)]
-fn probe(path: &Path, timeout: Duration) -> Option<Vec<u8>> {
+fn probe(path: &Path, timeout: Duration) -> io::Result<Vec<u8>> {
     let env = std::env::vars_os().filter(|(name, _)| {
         name.to_str().is_some_and(|name| {
             matches!(
@@ -103,7 +112,7 @@ fn probe(path: &Path, timeout: Duration) -> Option<Vec<u8>> {
         })
     });
     // A local socket lets the reader time out without a thread that could stay blocked.
-    let (stdout, output) = UnixStream::pair().ok()?;
+    let (stdout, output) = UnixStream::pair()?;
     let deadline = Instant::now() + timeout;
     let mut child = Command::new(path)
         .arg("--version")
@@ -115,16 +124,23 @@ fn probe(path: &Path, timeout: Duration) -> Option<Vec<u8>> {
         .stderr(Stdio::null())
         .process_group(0)
         .spawn()
-        .ok()?;
-    if let Some(line) = read_first_line(stdout, deadline) {
-        while Instant::now() < deadline {
-            match child.try_wait() {
-                Ok(Some(status)) => return status.success().then_some(line),
-                Ok(None) => std::thread::sleep(Duration::from_millis(5)),
-                Err(_) => break,
+        .map_err(|error| io::Error::other(format!("Could not spawn --version: {error}")))?;
+    let failure = match read_first_line(stdout, deadline) {
+        Ok(line) => loop {
+            if Instant::now() >= deadline {
+                break ErrorKind::TimedOut.into();
             }
-        }
-    }
+            match child.try_wait() {
+                Ok(Some(status)) if status.success() => return Ok(line),
+                Ok(Some(status)) => {
+                    return Err(io::Error::other(format!("--version exited with {status}")));
+                }
+                Ok(None) => std::thread::sleep(Duration::from_millis(5)),
+                Err(error) => break error,
+            }
+        },
+        Err(error) => io::Error::other(format!("Could not read --version stdout: {error}")),
+    };
     // The group leader has not been reaped, so the PID still names this attempt.
     let _ = Command::new("/bin/kill")
         .args(["-s", "KILL", "--", &format!("-{}", child.id())])
@@ -135,30 +151,35 @@ fn probe(path: &Path, timeout: Duration) -> Option<Vec<u8>> {
         .status();
     let _ = child.kill();
     let _ = child.wait();
-    None
+    Err(failure)
 }
 
 #[cfg(unix)]
-fn read_first_line(mut stdout: UnixStream, deadline: Instant) -> Option<Vec<u8>> {
+fn read_first_line(mut stdout: UnixStream, deadline: Instant) -> io::Result<Vec<u8>> {
     const LINE_LIMIT: usize = 4096;
     let mut buf = [0; LINE_LIMIT];
     let mut line = Vec::new();
     let mut complete = false;
     loop {
-        let time_left = deadline.checked_duration_since(Instant::now())?;
-        stdout.set_read_timeout(Some(time_left)).ok()?;
+        let time_left = deadline
+            .checked_duration_since(Instant::now())
+            .ok_or(ErrorKind::TimedOut)?;
+        stdout.set_read_timeout(Some(time_left))?;
         let count = match stdout.read(&mut buf) {
-            Ok(0) => return Some(line),
+            Ok(0) => return Ok(line),
             Ok(count) => count,
             Err(error) if error.kind() == ErrorKind::Interrupted => continue,
-            Err(_) => return None,
+            Err(error) => return Err(error),
         };
         // Drain later output so a verbose program can finish normally.
         if !complete {
             let end = buf[..count].iter().position(|&byte| byte == b'\n');
             let bytes = &buf[..end.unwrap_or(count)];
             if line.len() + bytes.len() > LINE_LIMIT {
-                return None;
+                return Err(io::Error::new(
+                    ErrorKind::InvalidData,
+                    "First stdout line is too long",
+                ));
             }
             line.extend_from_slice(bytes);
             complete = end.is_some();
@@ -264,7 +285,7 @@ printf 'Claude Code 2.1.295-rc.1\n'"#,
             "claude",
             "printf '2.1.295\\n'; (sleep 0.3; touch \"$0.survived\") & wait",
         );
-        assert!(probe(&program, Duration::from_millis(100)).is_none());
+        let _ = probe(&program, Duration::from_millis(100)).unwrap_err();
         // The delayed marker would be created by the child if only the shell were killed.
         std::thread::sleep(Duration::from_millis(400));
         assert!(!dir.path().join("claude.survived").exists());
