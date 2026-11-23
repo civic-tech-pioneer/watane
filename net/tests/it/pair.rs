@@ -208,7 +208,14 @@ fn answer_err(answer: &[u8]) -> (String, String) {
 fn s4_an_unknown_node_gets_hello_and_nothing_else() {
     use cbor::*;
     let fx = fixture();
-    let (a, b) = pair(fx);
+    let a = node(MemHoldings::anchor(fx), None);
+    // The raw requests share a byte bucket. Give them headroom so they reach op handling.
+    let limits = Limits {
+        unknown_bytes_per_sec: 16 << 20,
+        ..Limits::default()
+    };
+    let b = node(MemHoldings::new(fx), Some(limits));
+    pair_into(&a, &b, Role::Full);
     let seed = [31u8; 32];
     let unknown = node_key_of_seed(seed);
     let addr = b.net.addrs()[0];
