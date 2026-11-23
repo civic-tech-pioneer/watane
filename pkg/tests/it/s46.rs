@@ -34,13 +34,16 @@ fn violations(dir: &Path) -> Vec<Violation> {
 #[cfg(unix)]
 #[test]
 fn ac1_s46_hidden_link_named() {
-    for (path, target) in [
-        ("ui/.git/x", "../index.html"),
-        ("ui/.a/.b/y", "/etc/passwd"),
-        ("wit/.hid/k", "../world.wit"),
-        ("wit/.a/.b/k", "/etc/passwd"),
-        ("wit/other/k", "../world.wit"),
-        ("wit/.hid", "."),
+    let hidden_ui = "a hidden directory contains a symbolic link. Remove the link.";
+    let wit_directory = "WIT directories must be wit/deps/<segment>";
+    for (path, target, refused, message) in [
+        ("ui/.git/x", "../index.html", "ui/.git", hidden_ui),
+        ("ui/.a/.b/y", "/etc/passwd", "ui/.a", hidden_ui),
+        ("wit/.hid/k", "../world.wit", "wit/.hid", wit_directory),
+        ("wit/.a/.b/k", "/etc/passwd", "wit/.a", wit_directory),
+        ("wit/other/k", "../world.wit", "wit/other/k", LINK),
+        ("wit/.hid", ".", "wit/.hid", LINK),
+        ("ui/.link", "index.html", "ui/.link", LINK),
     ] {
         let dir = support::built_fixture("hello");
         let link = dir.path().join(path);
@@ -51,8 +54,8 @@ fn ac1_s46_hidden_link_named() {
             v,
             [Violation {
                 rule: Rule::Path,
-                file: path.into(),
-                message: LINK.into()
+                file: refused.into(),
+                message: message.into()
             }],
             "{path}"
         );

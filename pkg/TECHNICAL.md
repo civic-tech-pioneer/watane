@@ -343,15 +343,18 @@ with no `deps.json` member for it is one `provider` violation at file
 package mods:<slug>`; it is reported before WIT resolution, so no
 duplicate-package `wit` error hides it.
 
-A symbolic link anywhere below `ui/` or `wit/`, hidden entries included, is rule `path` at the
-link's own path. Below a WIT directory this section refuses, the reader still descends without
-following links and reports each link instead of the directory rule; with none, the directory
-rule applies. A non-hidden entry below `ui/` that is neither a regular file nor a directory is rule
-`path`, `not a regular file or a directory (a FIFO, socket or device); replace or remove it`; hidden
-special files are ignored, as pack ignores them (S46).
+A symbolic link below `ui/` or `wit/` is rule `path` at the link's own path unless it is
+inside a hidden directory. The reader reports one violation at the outermost hidden directory
+containing the link. Below `ui/` the message is `a hidden directory contains a symbolic link. Remove
+the link.`. Below `wit/` the WIT directory rule applies. Below any other WIT directory this section
+refuses, the reader still descends without following links and reports the applicable link
+refusals. With no links, the WIT directory rule applies. A non-hidden entry below `ui/` that is
+neither a regular file nor a directory is rule `path`,
+`not a regular file or a directory (a FIFO, socket or device); replace or remove it`. Both the
+reader and pack ignore hidden special files (S46).
 
-Pack and `Mod::read` word a link and a special file alike, from one set of constants (S57): a link
-where a file or directory may stand is `a symbolic link; replace it with a regular file or
+Pack and `Mod::read` share refusal text for special files and violations named at the link (S57).
+A link where a file or directory may stand is `a symbolic link; replace it with a regular file or
 directory`; a link where only a file may stand (`mod.toml`, `deps.json`, `logic.wasm`, `read_file`)
 is `a symbolic link; replace it with a regular file`. `PackageError::Symlink` displays
 `` `<path>`: `` followed by the text for that path. An entry that was listed and is gone or no
@@ -545,7 +548,7 @@ pack and decode. The package id is `blake3(all bytes)`.
 ### 6.4 Pack, decode and unpack
 
 `pack(dir, include_source)`:
-1. Walk the paths of 6.1 with `symlink_metadata`. Skip each entry whose
+1. Walk the paths of 6.1 using no-follow metadata. Skip each entry whose
    name starts with `.` only after checking it and every descendant for
    symbolic links. Hidden regular content is omitted; links under hidden
    directories (including nested hidden directories under `ui/` and `wit/`)
@@ -596,9 +599,12 @@ below the root (S46). The write helpers of `open.rs` act relative to an open dir
 (mode 0755), `openat` with `CREAT | EXCL | NOFOLLOW` (mode 0644) and `unlinkat` (with `REMOVEDIR`
 for a directory); `add_provider` is the only writer (S57). An entry listed and then gone or
 replaced when opened is the `changed while the mod was read` violation of 4.7. In `pack` each
-gives a `PackageError::Path` at that path: an entry gone (open, listing or stat) has the reason
-`changed while the mod was read; read it again`; a listed file that is a directory when opened,
-`expected a regular file, found a directory`; a FIFO, socket or device, the special-file reason.
+gives a `PackageError::Path` at that path. An entry gone during listing, stat or open has the reason
+`changed while the mod was read; read it again`. During enumeration, retain the name of the entry
+whose metadata lookup failed. Use the directory entry's file type when available to detect a file
+that was replaced with a directory before the size lookup. A directory found in place of a listed
+file, during enumeration or on open, gives `expected a regular file, found a directory`, as does a
+directory at a file-only path. A FIFO, socket or device gets the special-file reason.
 `open::file` tells these apart (`IsADirectory` against `InvalidInput`); `PackageError::Io` is left
 for errors that name no such cause.
 

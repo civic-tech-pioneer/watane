@@ -54,13 +54,15 @@ fn files(root: &Path, relative: &str) -> Result<Files, ModError> {
     let Some(handle) = directory(root, relative)? else {
         return Ok(result);
     };
-    for (name, kind) in open::entries(&handle).map_err(|e| failed(root, relative, e))? {
+    for open::Entry { name, stat, .. } in
+        open::entries(&handle).map_err(|e| failed(root, relative, e.source))?
+    {
         let name = name.to_string_lossy();
         let rel = format!("{relative}/{name}");
-        if relative == "wit" && name == "deps" && kind.kind == Kind::Dir {
+        if relative == "wit" && name == "deps" && stat.kind == Kind::Dir {
             continue;
         }
-        if matches!(kind.kind, Kind::Link | Kind::Dir) {
+        if matches!(stat.kind, Kind::Link | Kind::Dir) {
             return Err(invalid(Rule::Path, &rel, "expected a regular WIT entry"));
         }
         if name.ends_with(".wit") {
@@ -134,16 +136,16 @@ pub fn add_provider(
     let main = files(source_root, "wit")?;
     let mut copies = BTreeMap::new();
     if let Some(handle) = directory(source_root, "wit/deps")? {
-        for (name, kind) in
-            open::entries(&handle).map_err(|e| failed(source_root, "wit/deps", e))?
+        for open::Entry { name, stat, .. } in
+            open::entries(&handle).map_err(|e| failed(source_root, "wit/deps", e.source))?
         {
             let name = name.to_string_lossy();
             let relative = format!("wit/deps/{name}");
             // Non-WIT files in deps are ignored by the WIT walk.
-            if kind.kind == Kind::Link {
+            if stat.kind == Kind::Link {
                 return Err(invalid(Rule::Path, &relative, "symbolic link"));
             }
-            if kind.kind != Kind::Dir {
+            if stat.kind != Kind::Dir {
                 continue;
             }
             let source = files(source_root, &relative)?;
