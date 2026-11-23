@@ -328,3 +328,23 @@ fn ac3_a_new_record_takes_seen_full_back_from_its_tombstone() {
     assert_eq!(r["seen_full"], true);
     assert_eq!(r["seen"], serde_json::json!(seen));
 }
+
+/// AC3 (DD-48 r5): `prune_listed` writes a removed record's `seen_full` into its tombstone.
+#[test]
+fn ac3_a_pruned_record_leaves_seen_full_in_its_tombstone() {
+    let w = world();
+    let home = w.bob_home.path().to_owned();
+    let (key, a) = (w.key, w.a());
+    drop(w.bob);
+    let old = serde_json::json!({"version": 1, "channels": {key.to_string(): {
+        "base": a, "followed": true, "seen": [a], "seen_full": true,
+        "followed_at": 1, "last_attempt": 1}}});
+    std::fs::create_dir_all(home.join("dist")).unwrap();
+    std::fs::write(home.join("dist/follows.json"), old.to_string()).unwrap();
+    let bob = open(&home);
+    bob.unfollow(&key).unwrap();
+    let file: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(home.join("dist/follows.json")).unwrap()).unwrap();
+    assert!(file["channels"].get(key.to_string()).is_none(), "pruned");
+    assert_eq!(file["seen"][key.to_string()]["seen_full"], true, "{file}");
+}

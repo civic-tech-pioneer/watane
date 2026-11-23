@@ -566,8 +566,8 @@ mod tests {
             r.bases.contains(&"http://new/".to_owned()),
             "it is still held"
         );
-        // Held, not given: its first read is listed (held_ungiven).
-        assert!(!link_gives(&r.seen, r.seen_full, &r.given, "http://new/"));
+        // Held, not given: its first read is listed.
+        assert!(listed_read(&r, "http://new/"));
     }
     #[test]
     fn ac2_a_link_at_a_given_base_of_a_seen_full_record_still_gives_it() {

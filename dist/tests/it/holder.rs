@@ -528,7 +528,7 @@ fn a_failed_kept_ingest_keeps_the_tombstone() {
     alice.set_name("B").unwrap();
     let key = alice.identity().unwrap();
     let gap = entries(&alice, 1)[1].clone();
-    let tomb = serde_json::json!({"seen": ["http://127.0.0.1:9/"], "given": [], "at": 1});
+    let tomb = serde_json::json!({"seen": ["http://127.0.0.1:9/"], "given": [], "seen_full": true, "at": 1});
     // Without a tombstone, none is written.
     let h = tempfile::tempdir().unwrap();
     let d = Dist::open_keyless(h.path(), fast_options()).unwrap();
@@ -557,4 +557,5 @@ fn a_failed_kept_ingest_keeps_the_tombstone() {
         saved["seen"][key.to_string()]["seen"],
         serde_json::json!(["http://127.0.0.1:9/"])
     );
+    assert_eq!(saved["seen"][key.to_string()]["seen_full"], true);
 }
