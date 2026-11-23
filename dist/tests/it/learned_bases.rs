@@ -222,7 +222,7 @@ fn ac1_follow_choose_and_a_learned_link_mark_the_base_given() {
     w.bob.choose_index(&w.link(&w.a())).unwrap();
     assert_eq!(given(w.bob_home.path(), w.key), [w.a()]);
 
-    // open_link of a link at a base the record has but was never given.
+    // open_link of a link at a base the record holds but was never given gives nothing.
     let w = world();
     w.bob.follow(&w.link(&w.a())).unwrap();
     let home = w.bob_home.path().to_owned();
@@ -235,5 +235,5 @@ fn ac1_follow_choose_and_a_learned_link_mark_the_base_given() {
     assert!(given(&home, key).is_empty());
     let link = Link::new(key, &b, Some(&"reading-list".parse().unwrap())).unwrap();
     let _ = bob.open_link(&link);
-    assert_eq!(given(&home, key), [b]);
+    assert!(given(&home, key).is_empty(), "a held base stays unknown");
 }
