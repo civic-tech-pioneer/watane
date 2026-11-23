@@ -11,6 +11,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use ring::{digest, signature};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use std::io::Read;
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, SystemTimeError, UNIX_EPOCH};
@@ -25,6 +26,7 @@ const ISSUER: &str = "https://auth.openai.com";
 const SCOPES: &[&str] = &["openid", "offline_access"];
 const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+const HTTP_BODY_LIMIT: usize = 1024 * 1024;
 const ID_TOKEN_LEEWAY: u64 = 60;
 
 struct Provider {
@@ -211,37 +213,53 @@ fn http_json<T: DeserializeOwned>(
     action: &str,
 ) -> Result<T, CmdError> {
     // Server and transport details can carry credentials. Show only a fixed cause.
-    let unavailable = || CmdError::new("unavailable", format!("Could not {action}."));
     let refused = || {
         CmdError::new(
             "bad_input",
             format!("OpenAI refused the request to {action}."),
         )
     };
+    let mut response = response.map_err(|error| match error {
+        ureq::Error::StatusCode(_)
+        | ureq::Error::RedirectFailed
+        | ureq::Error::TooManyRedirects => refused(),
+        _ => issuer_unavailable(action),
+    })?;
+    if !response.status().is_success() {
+        return Err(refused());
+    }
+    let reader = response
+        .body_mut()
+        .with_config()
+        .limit((HTTP_BODY_LIMIT + 1) as u64)
+        .reader();
+    read_decoded_json(reader, action)
+}
+
+fn issuer_unavailable(action: &str) -> CmdError {
+    CmdError::new("unavailable", format!("Could not {action}."))
+}
+
+fn read_decoded_json<T: DeserializeOwned>(reader: impl Read, action: &str) -> Result<T, CmdError> {
     let unreadable = || {
         CmdError::new(
             "bad_input",
             format!("The response could not be read to {action}."),
         )
     };
-    let mut response = response.map_err(|error| match error {
-        ureq::Error::StatusCode(_)
-        | ureq::Error::RedirectFailed
-        | ureq::Error::TooManyRedirects => refused(),
-        _ => unavailable(),
-    })?;
-    if !response.status().is_success() {
-        return Err(refused());
-    }
-    let body = response
-        .body_mut()
-        .with_config()
-        .limit(1024 * 1024)
-        .read_to_vec()
-        .map_err(|error| match error {
-            ureq::Error::Io(_) | ureq::Error::Timeout(_) => unavailable(),
+    // ureq's limit applies before decoding. Bound the delivered bytes too and read
+    // one extra byte to distinguish exactly at the limit from an oversized response.
+    let mut body = Vec::new();
+    reader
+        .take((HTTP_BODY_LIMIT + 1) as u64)
+        .read_to_end(&mut body)
+        .map_err(|error| match ureq::Error::from(error) {
+            ureq::Error::Io(_) | ureq::Error::Timeout(_) => issuer_unavailable(action),
             _ => unreadable(),
         })?;
+    if body.len() > HTTP_BODY_LIMIT {
+        return Err(unreadable());
+    }
     serde_json::from_slice(&body).map_err(|_| unreadable())
 }
 
@@ -666,10 +684,11 @@ mod tests {
 
     use super::issuer_fixture::{Issuer, TokenFault};
     use super::{
-        ATTEMPT_TIMEOUT, Attempt, Provider, http_json, run, wait_for_callback, with_timeout,
+        ATTEMPT_TIMEOUT, Attempt, Provider, callback_code, http_json, read_decoded_json, run,
+        wait_for_callback, with_timeout,
     };
     use reqwest::{Client, StatusCode};
-    use std::io::Write;
+    use std::io::{self, Cursor, Read, Write};
     use std::net::Ipv4Addr;
     use std::sync::Arc;
     use std::time::Duration;
@@ -704,6 +723,69 @@ mod tests {
             error.message,
             "Could not exchange the OpenID authorization code."
         );
+    }
+
+    #[test]
+    fn ac1_decoded_json_is_read_at_most_one_byte_over_the_limit() {
+        let action = "read the OpenID signing keys";
+        let mut bytes = vec![b' '; 1_048_576];
+        bytes[..2].copy_from_slice(b"{}");
+        let response = ureq::http::Response::builder()
+            .status(200)
+            .body(ureq::Body::builder().data(bytes.clone()))
+            .unwrap();
+        let value = http_json::<serde_json::Value>(Ok(response), action).unwrap();
+        assert_eq!(value, serde_json::json!({}));
+
+        bytes.extend([b' '; 16]);
+        let mut reader = Cursor::new(bytes);
+        let error = read_decoded_json::<serde_json::Value>(&mut reader, action).unwrap_err();
+        assert_eq!(reader.position(), 1_048_577);
+        assert_eq!(error.code, "bad_input");
+        assert_eq!(
+            error.message,
+            "The response could not be read to read the OpenID signing keys."
+        );
+    }
+
+    #[test]
+    fn ac1_http_body_transport_errors_are_unavailable() {
+        struct FailedRead(Option<ureq::Error>);
+        impl Read for FailedRead {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(self.0.take().unwrap().into_io())
+            }
+        }
+
+        for error in [
+            ureq::Error::Io(io::ErrorKind::ConnectionReset.into()),
+            ureq::Error::Timeout(ureq::Timeout::Global),
+        ] {
+            let response = ureq::http::Response::builder()
+                .status(200)
+                .body(ureq::Body::builder().reader(FailedRead(Some(error))))
+                .unwrap();
+            let error =
+                http_json::<serde_json::Value>(Ok(response), "read the OpenID signing keys")
+                    .unwrap_err();
+            assert_eq!(error.code, "unavailable");
+            assert_eq!(error.message, "Could not read the OpenID signing keys.");
+        }
+    }
+
+    #[test]
+    fn ac4_callback_uses_the_standard_refusal_words() {
+        for (reason, message) in [
+            ("access_denied", "sign-in refused: access_denied"),
+            ("custom_refusal", "sign-in refused: unknown error"),
+        ] {
+            let uri = format!("/callback?state=expected&error={reason}")
+                .parse()
+                .unwrap();
+            let error = callback_code(&uri, "expected").unwrap_err();
+            assert_eq!(error.code, "bad_input");
+            assert_eq!(error.message, message);
+        }
     }
 
     #[tokio::test]
