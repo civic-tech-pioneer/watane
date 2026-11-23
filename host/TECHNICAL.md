@@ -3088,7 +3088,14 @@ not keep a credential from a mod on their own. Three rules do:
    writer's queue and waits at most 2 s more for the stdin writer. The host's write
    end of `claude`'s stdin is non-blocking: a write that finds the pipe full waits for
    room in short slices and gives up at that second bound, so a stray process that
-   keeps the pipe open cannot hold the writer. Every line the writer reported written
+   keeps the pipe open cannot hold the writer. The bound is checked before every
+   write call, whatever the last one returned (a partial write, `EINTR`, the next
+   queued line), so no write starts after it (review r3, F3.1). If the host cannot
+   make its write end non-blocking, the start ends `failed("stdin")` before any line
+   is written (fail closed). The `ask-resolved` items that close asks and checks are
+   host items, few and small (one per ask or check), and do not wait for room in the
+   stream: they go on the stream past its in-flight limit, in order, so the end of a
+   run never waits on a consumer that stopped reading (review r3, F3.2). Every line the writer reported written
    has its `ask-resolved {by: answered}` pushed before `ended`; a write that did not
    complete (failed, or given up) pushes none, and none is pushed after the stream
    ended. No thread of the run outlives the bounds, but for the one that reaps
@@ -3130,7 +3137,7 @@ the session flags, `--no-session-persistence`, `--include-partial-messages`, and
 `--plugin-dir=<run folder>/watane-run`. `--tools=` always goes out, empty when the launch
 names no tool, because `claude` has every built-in tool without it; at `subagent-depth`
 0 `Task` is dropped from it. The program is started with `process_group(0)`; the workspace
-forbids `unsafe`, so a group is killed by running `kill -KILL -- -<pgid>`. A line over 4 MiB
+forbids `unsafe`, so a group is killed with `rustix::process::kill_process_group` (SIGKILL), only for a pgid above 1 (review r3, F3.6). A line over 4 MiB
 ends the stream `failed`. `claude-code-shell.start` requires a `sandbox` object and
 takes its content unchecked until Q39 and Q42 are decided.
 
