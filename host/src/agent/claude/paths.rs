@@ -545,3 +545,44 @@ mod resolved_tests {
         assert_eq!(got("Bash", json!({"command":"ls"})), None);
     }
 }
+
+/// Adversary step of S100, third pass (red): the item's `path` must be the path the tool
+/// touches. `resolved` takes the first of `file_path`, `path`, `notebook_path` whatever the
+/// tool, so a Grep or Glob ask that also carries a `file_path`, or a NotebookEdit ask that
+/// carries one beside its `notebook_path`, shows the kernel another path than the one the
+/// tool reaches, and the kernel scopes a session allow on it.
+#[cfg(test)]
+mod adv_s100_path_key {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn adv_s100_resolved_path_is_the_key_the_tool_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = dir.path().canonicalize().unwrap().join("work");
+        std::fs::create_dir_all(work.join("secrets")).unwrap();
+        std::fs::write(work.join("README.md"), "r").unwrap();
+        let roots = [work.clone()];
+        let run = PathBuf::from("/nonexistent-run");
+        let got = |tool: &str, input: Value| resolved(tool, &input, &work, &roots, &run);
+        let secrets = work.join("secrets").to_str().unwrap().to_owned();
+        for tool in ["Grep", "Glob"] {
+            assert_eq!(
+                got(
+                    tool,
+                    json!({"pattern": "*", "file_path": "README.md", "path": "secrets"})
+                ),
+                Some(secrets.clone()),
+                "{tool} searches `path`, the item shows `file_path`"
+            );
+        }
+        assert_eq!(
+            got(
+                "NotebookEdit",
+                json!({"file_path": "README.md", "notebook_path": "secrets/n.ipynb", "new_source": ""})
+            ),
+            Some(format!("{secrets}/n.ipynb")),
+            "NotebookEdit writes `notebook_path`, the item shows `file_path`"
+        );
+    }
+}
