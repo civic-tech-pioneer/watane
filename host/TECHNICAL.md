@@ -1804,7 +1804,12 @@ input (up to 64 asks of up to 4 MiB) can hold its origin client's whole 128 MiB
 budget, so the owner's other streams get `full` and end `lagging` (a per-stream
 cap on kept bytes, or keeping them out of the origin budget, would close it);
 and the kept size is the input's JSON length, while the host holds it parsed,
-which can take several times more memory than the 512 MiB host budget states.
+which can take several times more memory than the 512 MiB host budget states. And
+(S100's eighth pass): each `claude` stdout line takes the host's chains gate
+and sums the pending pushes of every chain in flight, so a mod that keeps many
+chains with many queued pushes makes every line slower, and an apply that holds
+the gate delays them; a running per-origin total of pending push bytes would
+make it constant time. A cost, not a wrong decision; not built.
 
 ## 15. Build plan
 
