@@ -864,3 +864,45 @@ fn ac4_cached_provider_with_four_hints_does_not_read_listed_base() {
     }
     assert_eq!(live.count(), before);
 }
+
+/// S105 AC5: a listed record's base is tried first on a cache miss; when it is dead the
+/// 5.11 bases follow, and the record keeps its bases and times.
+#[test]
+fn ac5_listed_record_dead_base_falls_to_provider_bases() {
+    let carol = SearchHome::new("Carol");
+    let zed = SearchHome::new("Zed");
+    let eve = SearchHome::new("Eve");
+    let bytes = named_fixture("ratings", "Ratings");
+    let id = PackageId::of(&bytes);
+    carol.dist.publish(bytes).unwrap();
+    let mirror_dir = tempfile::tempdir().unwrap();
+    copy_dir(&carol.dist.site_dir(), mirror_dir.path());
+    let mirror = TestHost::serve(mirror_dir.path());
+    let mirror_link = Link::new(
+        carol.dist.identity().unwrap(),
+        &mirror.url,
+        Some(&"ratings".parse().unwrap()),
+    )
+    .unwrap();
+    zed.dist.list(&mirror_link, "mirror").unwrap();
+    eve.dist.choose_index(&zed.link(None)).unwrap();
+    let carol_key = carol.dist.identity().unwrap().to_string();
+    let record = records(&eve)["channels"][&carol_key].clone();
+    assert_eq!(record["followed"], false);
+    // The record's base dies; Eve's own channel lists Carol at the live base.
+    std::fs::remove_file(mirror_dir.path().join("head")).unwrap();
+    eve.dist.list(&carol.link(Some("ratings")), "live").unwrap();
+    let reference = reference(&carol, "ratings");
+    let live = carol.host.as_ref().unwrap();
+    let before = live.count();
+    let mirror_before = mirror.count();
+    let got = eve.dist.fetch(&reference).unwrap();
+    assert_eq!(got.package.id(), id);
+    assert_eq!(got.link, Some(carol.link(Some("ratings"))));
+    assert!(
+        mirror.count() > mirror_before,
+        "the record base is tried first"
+    );
+    assert!(live.count() > before);
+    assert_eq!(records(&eve)["channels"][&carol_key], record);
+}

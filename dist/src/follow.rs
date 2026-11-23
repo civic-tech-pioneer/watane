@@ -288,7 +288,7 @@ impl Dist {
             self.options.max_entries_per_read
         };
         let head_url = http::file_url(base, "head");
-        let head = self.read_entry(key, &head_url, None)?;
+        let head = self.read_entry(key, &head_url, None, listed)?;
         let stored = self.log.head(&key)?.map(|h| h.seq);
         let start = stored.map_or(0, |seq| seq + 1);
         let served = head.seq();
@@ -297,7 +297,7 @@ impl Dist {
         let mut next = start;
         while next < served && (entries.len() as u64) < entry_limit {
             let url = http::file_url(base, &format!("entries/{next}"));
-            match self.read_entry(key, &url, Some(next)) {
+            match self.read_entry(key, &url, Some(next), listed) {
                 Ok(entry) => entries.push(entry),
                 Err(cause) => {
                     failure = Some(cause);
@@ -324,6 +324,7 @@ impl Dist {
                     self.options.max_entry_file,
                     self.options.entry_timeout,
                     false,
+                    listed,
                 ) {
                     // Equality to the decoded head verifies these bytes, author and seq too.
                     Ok(bytes) if bytes == head.bytes() => entries.push(head),

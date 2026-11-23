@@ -334,7 +334,7 @@ impl Dist {
                 .iter()
                 .filter(|r| r.withdrawn.is_none())
             {
-                self.fetch_package(info, Some(link.base()))?;
+                self.fetch_package(info, Some(link.base()), false)?;
             }
             self.log.confirm_own_head()?;
             self.set_site_url(link.base())?;

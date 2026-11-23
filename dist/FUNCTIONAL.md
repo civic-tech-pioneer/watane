@@ -311,6 +311,11 @@ its own local host.
 - **A35 No local reads.** Given Ivy lists a mod at `http://127.0.0.1:<p>/`
   and `listed_local` is false, when Carol chooses Ivy, then that server
   gets no request and `skipped` is 1. (DIST-F-49)
+  The same holds for `http://localhost./`, and when a listed base answers
+  with a redirect to such an address: that target gets no request and the
+  read fails with `BadUrl` ("local address"); a redirect to a non-local
+  host is followed, at most 5 times. A followed or chosen channel's base may
+  redirect anywhere. (DIST-F-49)
 
 ### Step 5
 
@@ -324,7 +329,10 @@ its own local host.
 - **A37 No hint.** Given Eve follows no channel that names Carol, when she
   fetches that release, then the fetch fails with `NotFollowed` and makes
   no request. A listed base on `127.0.0.1` with `listed_local` false gets
-  no request either. (DIST-F-51)
+  no request either. Given Eve has a listed record for Carol whose base is
+  dead and the package is not cached, when Eve's own channel lists Carol at
+  a live base, the fetch tries the record's base, then that base, and gives
+  the package; the record is unchanged. (DIST-F-51)
 - **A38 Derived.** Given Carol's `ratings` names
   `<Alice>/reading-list@0.1.0` as its origin, and Alice's own channel
   holds `reading-list` 0.2.0, when Eve searches with `origin` (Alice,
