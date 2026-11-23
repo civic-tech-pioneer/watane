@@ -2,7 +2,6 @@
 
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 fn read(relative: &str) -> String {
     fs::read_to_string(
@@ -230,6 +229,7 @@ fn ac1_inst_s29_release_workflow_obeys_contract() {
 #[test]
 fn ac1_publisher_uploads_a_draft_then_publishes_stable_and_prerelease() {
     use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
 
     let workflow = read(".github/workflows/release.yml");
     let script = workflow
