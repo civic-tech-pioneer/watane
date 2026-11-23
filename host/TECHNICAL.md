@@ -1799,7 +1799,12 @@ thread, pipes and run folder until it exits; the stream itself still ends at a
 cancel, disable or app quit. And `stop()` kills the recorded process group once
 more when the stream ends, after the child was reaped, so a new session leader
 that took that pid in the meantime (a pid wrap in milliseconds) would be killed;
-clearing the recorded group at the reap closes it, not yet built.
+clearing the recorded group at the reap closes it, not yet built. Two more (S100's seventh pass, for the product owner): one stream's kept ask
+input (up to 64 asks of up to 4 MiB) can hold its origin client's whole 128 MiB
+budget, so the owner's other streams get `full` and end `lagging` (a per-stream
+cap on kept bytes, or keeping them out of the origin budget, would close it);
+and the kept size is the input's JSON length, while the host holds it parsed,
+which can take several times more memory than the 512 MiB host budget states.
 
 ## 15. Build plan
 
