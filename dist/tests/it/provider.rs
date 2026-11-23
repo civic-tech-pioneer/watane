@@ -293,8 +293,12 @@ fn ac6_read_link_no_follow() {
     let got = eve.dist.read_link(&link).unwrap();
     assert_eq!(got.package.id(), id);
     assert_eq!(got.link, Some(link.clone()));
-    // No record; only a tombstone that saw the base (S105 r8, DD-48).
-    assert!(records(&eve)["channels"].as_object().unwrap().is_empty());
+    // No record; only a tombstone that saw the base and gave none (S105 r8, DD-48).
+    let file = records(&eve);
+    assert!(file["channels"].as_object().unwrap().is_empty(), "{file}");
+    let tomb = &file["seen"][link.channel().to_string()];
+    assert_eq!(tomb["seen"], serde_json::json!([link.base()]), "{file}");
+    assert_eq!(tomb["given"], serde_json::json!([]), "{file}");
     assert!(matches!(
         eve.dist.read_link(&carol.link(None)),
         Err(DistError::BadLink { .. })
