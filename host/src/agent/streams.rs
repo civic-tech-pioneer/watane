@@ -1399,6 +1399,49 @@ mod tests {
         }
     }
 
+    fn budgets(hub: &Hub) -> (usize, Option<usize>) {
+        let inner = hub.lock();
+        (inner.host_bytes, inner.origin_bytes.get("o").copied())
+    }
+
+    /// 19.2 (In flight): a close takes its ask's reserve once; the stream's end frees the rest.
+    #[test]
+    fn s100_fix12_a_close_reserve_is_freed_once_by_its_close_or_the_end() {
+        let hub = Hub::new();
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        for _ in 0..3 {
+            hub.host_open_push(&s, b"ask").unwrap();
+        }
+        hub.test_take(&s);
+        assert_eq!(budgets(&hub), (3 * CLOSE_RESERVE, Some(3 * CLOSE_RESERVE)));
+        hub.host_close_push(&s, b"close").unwrap();
+        assert_eq!(
+            budgets(&hub),
+            (2 * CLOSE_RESERVE + 5, Some(2 * CLOSE_RESERVE + 5))
+        );
+        hub.test_take(&s);
+        assert_eq!(budgets(&hub), (2 * CLOSE_RESERVE, Some(2 * CLOSE_RESERVE)));
+        hub.test_close(&s, json!("cancelled"));
+        hub.test_take(&s);
+        assert_eq!(budgets(&hub), (0, None));
+    }
+
+    /// 19.3 step 5: an ask opens only when its item and its close's reserve fit the budget.
+    #[test]
+    fn s100_fix12_the_open_check_counts_the_item_and_the_reserve() {
+        let hub = Hub::new();
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        hub.lock().host_bytes = HOST_BUDGET - 3 - CLOSE_RESERVE + 1;
+        assert_eq!(hub.host_open_push(&s, b"ask"), Err(StreamError::Full));
+        hub.lock().host_bytes -= 1;
+        hub.host_open_push(&s, b"ask").unwrap();
+        assert_eq!(hub.lock().host_bytes, HOST_BUDGET);
+    }
+
     /// 19.6 (At apply): a stream handed from A to X and back to A is A's again, but a `cancel`
     /// (or `resume`) that A's call recorded before the hand-offs is stale and does nothing.
     #[test]
