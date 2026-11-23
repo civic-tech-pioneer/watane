@@ -1237,7 +1237,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   tests replace with a stand-in issuer (app 18, Q12). Consents (19.2) and the judge key (19.4) are left for
   the slices that build host A3 and A5. A security boundary (an OAuth flow, tokens on disk): the adversary
   rule applies. Runs beside S100 (host/, dev/): no shared file.
-- [~] **S104 (upkeep) dist reads past a bad mirror and says what is stale.** (in flight, cloud, builder codex,
+- [x] **S104 (upkeep) dist reads past a bad mirror and says what is stale.** DONE 2026-11-23: PR #17 merged with --admin at 285fad1,
+  ~2 h in flight, 2 rounds (r1 changes 5, r2 approve: validator ACCEPT, adversary HELD, user-sim ACCEPTED). (Was: in flight, cloud, builder codex,
   reviewer claude; sketched 2026-11-23 by the deputy; Codex task
   https://chatgpt.com/local/6b041e6f-437c-83ed-a25f-004fef586048, ~11:10 UTC; PR #17 opened at 7eb74a1
   (+285 -151, dist/ only); r1 to Claude, routine `trig_01GK67rWigPWwZ1J1UbBwX1y`, 11:54 UTC; r1 `changes (5)`, answer round to Codex in its task.) Three Leftovers items, all in `dist/`; each outcome is
@@ -1376,10 +1377,14 @@ These are true but are now what the specs say. Acting on any of them is a spec c
   (dev/TECHNICAL.md:131).
 - [S39] a killed run's `<id>.<pid>.tmp` folder is never swept; `store` removes only its own pid's
   (dev/src/build_on.rs:136, asserted at build_on.rs:440).
-- [S49] dist does not try the next base when a mirror answers 404 for the package: the package is
-  read from the one base that served (dist/TECHNICAL.md:990).
-- [S49] by DD-33 the cache-path link can point at a dead base (dist/TECHNICAL.md:1270;
-  `ac4_cache_hit_no_record_links_first_base` serves a dead host and asserts the link).
+- [S104 review] (guard, a spec call) a listed public base can redirect into the local network: `dist/src/lib.rs:280`
+  follows up to 5 redirects without the A35/A37 rule for listed reads. Either name redirects under "Not protected" or
+  check each redirect target.
+- [S104 review] `localhost.` (trailing dot) gets past `local_base` (`dist/src/index.rs:577`): strip one trailing dot.
+- [S104 review] once a listed record exists, a cache miss reads only the record's base, so Eve's own mirrors are never
+  tried (`dist/src/fetch.rs` ~107-125, older than S104).
+- [S100 CI] flake: `net/tests/it/pair.rs:259` `s4_an_unknown_node_gets_hello_and_nothing_else` got `over_budget`
+  for `unknown_op` on macOS once (cafe7fa); the raw client may idle out.
 - [S37] `{"release"}` in a home with no record answers 200 from dist's cache
   (app/src/api.rs:321, dist/src/fetch.rs:68). Documented as deliberate; no app test covers the
   link-then-release sequence.
@@ -1467,8 +1472,6 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### dist
 
-- [S57] `StaleBases` says "1 base(s)", and a slug that does not exist at all behind a stale mirror
-  also reads as stale.
 - [S26] Q12: log entries of unlisted channels are never removed. `prune_listed_channels` touches
   only follows.json (dist/src/index.rs:463); log has no `forget` API (log/src/lib.rs:81).
   dist/TECHNICAL.md:1231 still carries Q12 open.
