@@ -904,6 +904,24 @@ mod tests {
             );
         }
     }
+    /// F3.1 (Codex r3): a present `gone` that is no string (null, a number, an object)
+    /// loads as all bits set, as a malformed text does; only an absent one is empty.
+    #[test]
+    fn churn_a_present_gone_that_is_no_string_reads_as_full() {
+        let load = |gone: &str| {
+            let text = format!(r#"{{"version":1,"channels":{{}}{gone}}}"#);
+            let file: Follows = serde_json::from_str(&text).expect(&text);
+            Gone::from_text(file.gone.as_deref())
+        };
+        assert_eq!(load(""), Gone::default(), "absent is empty");
+        for bad in ["null", "5", "true", "{}", "[]", r#"["00"]"#] {
+            let gone = load(&format!(r#","gone":{bad}"#));
+            assert!(
+                (0..20).all(|n| gone.may_be_gone(&key_of(n))),
+                "gone: {bad} reads as full"
+            );
+        }
+    }
     #[test]
     fn churn_an_eviction_adds_the_key_and_the_file_keeps_it() {
         let mut tombs = Tombs::default();
