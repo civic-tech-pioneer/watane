@@ -403,6 +403,48 @@ mod tests {
     }
 
     #[test]
+    fn ac5_drain_waits_for_room_so_a_waiting_answered_goes_before_the_end() {
+        use crate::agent::streams::Consumer;
+        let hub = Hub::new();
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let session = Session::new(s.clone(), "o".into(), None);
+        while hub.test_push(&s, b"{}").is_ok() {}
+        // The stream is full: the writer's `answered` waits.
+        session.answered(&hub, "1", "allow");
+        let taker = {
+            let (hub, s) = (std::sync::Arc::clone(&hub), s.clone());
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(50));
+                hub.test_take(&s).len()
+            })
+        };
+        session.drain(&hub);
+        assert!(taker.join().unwrap() > 0);
+        // On the stream when `drain` returns, so before the run's `finish`.
+        let last = hub.test_take(&s).pop().map(|(_, body)| body);
+        assert_eq!(
+            last.as_deref(),
+            Some(&br#"{"type":"ask-resolved","id":"1","by":"answered","outcome":"allow"}"#[..])
+        );
+    }
+
+    #[test]
+    fn ac5_drain_gives_up_on_a_full_stream_when_the_session_is_stopped() {
+        use crate::agent::streams::Consumer;
+        let hub = Hub::new();
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let session = Session::new(s.clone(), "o".into(), None);
+        while hub.test_push(&s, b"{}").is_ok() {}
+        session.answered(&hub, "1", "allow");
+        session.stop();
+        session.drain(&hub);
+    }
+
+    #[test]
     fn ac5_a_failed_enqueue_is_reported_and_stops_the_session() {
         let (_hub, session, rx, _clock) = rig();
         drop(rx);
