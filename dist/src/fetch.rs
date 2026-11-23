@@ -431,16 +431,20 @@ impl Dist {
             .cloned();
         let mut base = (Some(key) != self.identity()).then(|| link.base().to_owned());
         let mut listed = true;
+        let mut refused = None;
         if Some(key) != self.identity() {
             if let Some(record) = record {
                 // Like open_link, a failed refresh can still use a verified stored release.
                 self.read_record(key)?;
                 // As open_link: the package comes from the record's base, never the link's.
                 listed = !record.base.is_empty() && follow::listed_read(&record, &record.base);
-                if listed {
-                    self.check_listed_base(&record.base)?;
+                if listed && let Err(error) = self.check_listed_base(&record.base) {
+                    // As `fetch`: a refused listed base still gives a cached package (DD-47).
+                    refused = Some(error);
+                    base = None;
+                } else {
+                    base = (!record.base.is_empty()).then_some(record.base);
                 }
-                base = (!record.base.is_empty()).then_some(record.base);
             } else {
                 self.check_listed_base(link.base())?;
                 match self.read_channel_entries(key, link.base(), true)?.outcome {
@@ -458,6 +462,12 @@ impl Dist {
                 channel: key,
                 slug: slug.clone(),
             })?;
+        if let Some(refused) = refused {
+            return match self.fetched(&info.reference, None, false) {
+                Err(DistError::NotFollowed { .. }) => Err(refused),
+                other => other,
+            };
+        }
         self.fetched(&info.reference, base.as_deref(), listed)
     }
     pub fn open_link(&self, link: &Link) -> Result<Fetched, DistError> {
