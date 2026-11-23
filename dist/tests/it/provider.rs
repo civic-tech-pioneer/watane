@@ -289,13 +289,12 @@ fn ac6_read_link_no_follow() {
     let bytes = origin_fixture("ratings", "0.2.0", None);
     let id = PackageId::of(&bytes);
     carol.dist.publish(bytes).unwrap();
-    let path = eve.dir.path().join("dist/follows.json");
-    let before = std::fs::read(&path).ok();
     let link = carol.link(Some("ratings"));
     let got = eve.dist.read_link(&link).unwrap();
     assert_eq!(got.package.id(), id);
     assert_eq!(got.link, Some(link.clone()));
-    assert_eq!(std::fs::read(&path).ok(), before);
+    // No record; only a tombstone that saw the base (S105 r8, DD-48).
+    assert!(records(&eve)["channels"].as_object().unwrap().is_empty());
     assert!(matches!(
         eve.dist.read_link(&carol.link(None)),
         Err(DistError::BadLink { .. })

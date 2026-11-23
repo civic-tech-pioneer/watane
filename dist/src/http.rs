@@ -1652,10 +1652,6 @@ mod tests {
             "the base was read before it was noted"
         );
         assert_eq!(eve.test_tomb_keys(), before);
-        assert!(
-            follows_file(dir.path())["seen"]
-                .get(w.key.to_string())
-                .is_none()
-        );
+        assert!(!dir.path().join("dist/follows.json").exists());
     }
 }
