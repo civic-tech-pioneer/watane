@@ -2437,3 +2437,49 @@ mod walk_budget {
         assert_eq!(clean_chain(255), (0, vec![]));
     }
 }
+
+#[cfg(test)]
+mod fix24_tests {
+    use super::*;
+
+    /// A `runs` that is a link is moved aside unread: nothing of its target's `pids` reaches the
+    /// log, the link is gone from the home and the target is kept (review r9, F9.1).
+    #[test]
+    fn s100_fix24_ac1_a_linked_runs_is_not_read_and_its_target_is_kept() {
+        let home = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        std::fs::write(target.path().join("pids"), "marker-f91 x y\n").unwrap();
+        std::os::unix::fs::symlink(target.path(), home.path().join("runs")).unwrap();
+        let mut log = CleanupLog::default();
+        clean_runs_logged(home.path(), &mut log);
+        assert!(
+            !log.lines.iter().any(|l| l.contains("marker-f91")),
+            "{:?}",
+            log.lines
+        );
+        assert!(home.path().join("runs").symlink_metadata().is_err());
+        assert!(target.path().join("pids").exists());
+    }
+
+    /// One open removes the whole tree: five folders and 20 000 entries in one level leave no
+    /// `runs` and no `runs.*.gone` (review r9, F9.2).
+    #[test]
+    fn s100_fix24_ac2_one_open_removes_the_whole_tree() {
+        let home = tempfile::tempdir().unwrap();
+        let runs = home.path().join("runs");
+        for i in 0..5 {
+            std::fs::create_dir_all(runs.join(format!("child{i}"))).unwrap();
+        }
+        for i in 0..20_000 {
+            std::fs::write(runs.join(format!("child0/f{i}")), "").unwrap();
+        }
+        let mut log = CleanupLog::default();
+        clean_runs_logged(home.path(), &mut log);
+        let left: Vec<_> = std::fs::read_dir(home.path())
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
+        assert!(left.is_empty(), "{left:?} {:?}", log.lines);
+    }
+}
