@@ -198,6 +198,7 @@ async fn ac3_install_page_folder_and_reject_invalid_inputs() {
     );
 }
 
+#[cfg(unix)] // Creates a Unix symlink to /etc/passwd.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ac3_install_transport_and_symlink_guards() {
     let home = tempfile::tempdir().unwrap();

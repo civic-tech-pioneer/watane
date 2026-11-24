@@ -580,8 +580,9 @@ fn ac7_index_stale_mirror() {
     let carol = Home::new();
     let release = alice.dist.publish(fixture("1.0.0", false)).unwrap();
     let copy = tempfile::tempdir().unwrap();
-    alice.dist.export(copy.path()).unwrap();
-    let stale = TestHost::serve(copy.path());
+    let copy_dir = crate::support::export_dir(copy.path());
+    alice.dist.export(&copy_dir).unwrap();
+    let stale = TestHost::serve(&copy_dir);
     let stale_link = Link::new(
         alice.dist.identity().unwrap(),
         &stale.url,
@@ -671,8 +672,9 @@ fn ac10_index_base_followed_wins() {
     let carol = Home::new();
     alice.dist.publish(fixture("1.0.0", false)).unwrap();
     let mirror_dir = tempfile::tempdir().unwrap();
-    alice.dist.export(mirror_dir.path()).unwrap();
-    let mirror = TestHost::serve(mirror_dir.path());
+    let mirror_dir_dir = crate::support::export_dir(mirror_dir.path());
+    alice.dist.export(&mirror_dir_dir).unwrap();
+    let mirror = TestHost::serve(&mirror_dir_dir);
     ivy.dist
         .list(
             &Link::new(
@@ -908,8 +910,9 @@ fn ac7_index_behind_falls_back() {
     let carol = Home::new();
     let release = alice.dist.publish(fixture("1.0.0", false)).unwrap();
     let copy = tempfile::tempdir().unwrap();
-    alice.dist.export(copy.path()).unwrap();
-    let stale = TestHost::serve(copy.path());
+    let copy_dir = crate::support::export_dir(copy.path());
+    alice.dist.export(&copy_dir).unwrap();
+    let stale = TestHost::serve(&copy_dir);
     ivy.dist
         .list(
             &Link::new(
@@ -1080,8 +1083,9 @@ fn ac6_explicit_links_use_regular_entry_cap() {
         alice.dist.publish(fixture("1.0.0", false)).unwrap();
         alice.dist.set_name("Alice").unwrap();
         let copy = tempfile::tempdir().unwrap();
-        alice.dist.export(copy.path()).unwrap();
-        let mirror = TestHost::serve(copy.path());
+        let copy_dir = crate::support::export_dir(copy.path());
+        alice.dist.export(&copy_dir).unwrap();
+        let mirror = TestHost::serve(&copy_dir);
         let key = alice.dist.identity().unwrap();
         let listed = if at_listed {
             alice.mod_link()
@@ -1145,8 +1149,9 @@ fn ac7_index_stale_mirror_after_outage() {
     let carol = Home::new();
     let release = alice.dist.publish(fixture("1.0.0", false)).unwrap();
     let copy = tempfile::tempdir().unwrap();
-    alice.dist.export(copy.path()).unwrap();
-    let mirror = TestHost::serve(copy.path());
+    let copy_dir = crate::support::export_dir(copy.path());
+    alice.dist.export(&copy_dir).unwrap();
+    let mirror = TestHost::serve(&copy_dir);
     jay.dist.list(&alice.mod_link(), "real").unwrap();
     ivy.dist
         .list(
@@ -1248,8 +1253,9 @@ fn ac7_index_equal_heads_keep_first_base() {
     let carol = Home::new();
     alice.dist.publish(fixture("1.0.0", false)).unwrap();
     let copy = tempfile::tempdir().unwrap();
-    alice.dist.export(copy.path()).unwrap();
-    let mirror = TestHost::serve(copy.path());
+    let copy_dir = crate::support::export_dir(copy.path());
+    alice.dist.export(&copy_dir).unwrap();
+    let mirror = TestHost::serve(&copy_dir);
     let slug = "reading-list".parse().unwrap();
     let mirror_link = Link::new(alice.dist.identity().unwrap(), &mirror.url, Some(&slug)).unwrap();
     ivy.dist.list(&mirror_link, "").unwrap();

@@ -327,3 +327,12 @@ pub fn origin_fixture(
     std::fs::write(tmp.path().join("mod.toml"), meta).unwrap();
     watane_pkg::pack(tmp.path(), false).unwrap().into_bytes()
 }
+
+pub(crate) fn export_dir(parent: &std::path::Path) -> std::path::PathBuf {
+    let path = parent.join("export");
+    #[cfg(unix)]
+    std::fs::create_dir(&path).unwrap();
+    #[cfg(windows)]
+    watane_log_windows_fs::create_dir(&path).unwrap();
+    path
+}

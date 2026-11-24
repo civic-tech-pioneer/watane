@@ -160,8 +160,7 @@ impl Dist {
         options: Options,
         keyless: bool,
     ) -> Result<Self, DistError> {
-        use std::fs::{self, OpenOptions};
-        use std::os::unix::fs::OpenOptionsExt;
+        use std::fs;
         let dir = home.join("dist");
         private_dir(&dir)?;
         let path = dir.join("lock");
@@ -173,17 +172,23 @@ impl Dist {
                 cause: "lock is not a regular file".into(),
             });
         }
-        let lock = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .mode(0o600)
-            .open(&path)
-            .map_err(|source| DistError::Io {
-                path: path.clone(),
-                source,
-            })?;
+        #[cfg(windows)]
+        let opened = watane_log_windows_fs::open_or_create_private_file(&path);
+        #[cfg(unix)]
+        let opened = {
+            use std::os::unix::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .read(true)
+                .write(true)
+                .mode(0o600)
+                .open(&path)
+        };
+        let lock = opened.map_err(|source| DistError::Io {
+            path: path.clone(),
+            source,
+        })?;
         match lock.try_lock() {
             Ok(()) => {}
             Err(std::fs::TryLockError::WouldBlock) => return Err(DistError::Locked { path }),
@@ -455,6 +460,7 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<Option<T>, D
         }),
     }
 }
+#[cfg(unix)]
 fn private_dir(path: &Path) -> Result<(), DistError> {
     use std::fs;
     use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
@@ -474,6 +480,23 @@ fn private_dir(path: &Path) -> Result<(), DistError> {
         });
     }
     fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(io)
+}
+
+#[cfg(windows)]
+fn private_dir(path: &Path) -> Result<(), DistError> {
+    use watane_log_windows_fs::{self as winfs, FileKind};
+    winfs::create_dir_all(path).map_err(|e| site::io(path, e))?;
+    let dir = winfs::open_path(path, false).map_err(|e| site::io(path, e))?;
+    if !matches!(
+        winfs::kind(&dir).map_err(|e| site::io(path, e))?,
+        FileKind::Directory
+    ) {
+        return Err(DistError::Corrupt {
+            path: path.into(),
+            cause: "not a plain directory".into(),
+        });
+    }
+    winfs::check_owner_only(&dir).map_err(|e| site::io(path, e))
 }
 
 mod fetch;
