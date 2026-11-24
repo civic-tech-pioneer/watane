@@ -568,7 +568,7 @@ form the saved identity. It repacks release folders with source included,
 so a package that shipped source keeps the same hash (Q26). Local folders
 still use `pack(dir, false)`. `consents` (step 11, serde default `[]`, so an older file reads unchanged
 and `watane_installed` stays 1) lists the consents the mod holds as an
-origin client (19.7): `{"kind":"workspace","via":"<identity>","folder":"<canonical path>"}`,
+origin client (19.7; omitted from the file while empty): `{"kind":"workspace","via":"<identity>","folder":"<canonical path>"}`,
 `{"kind":"account","via":"<identity>","account":"openai"}`, `{"kind":"toolset","toolset":"<name>","functions":["<local>_<interface>_<function>", ...]}` (the functions the participant consented to, 19.5).
 They follow the record's life like grants: kept across an update, deleted by
 `remove`. Slug, version, name, summary and origin are

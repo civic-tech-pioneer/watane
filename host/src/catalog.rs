@@ -171,7 +171,7 @@ struct Record {
     links: Vec<LinkView>,
     #[serde(default)]
     binds: Vec<Bind>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     consents: Vec<crate::Consent>,
 }
 

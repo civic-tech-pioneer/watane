@@ -253,7 +253,7 @@ impl Home {
             .iter()
             .find(|m| m["local"] == local)
             .unwrap();
-        m["consents"].clone()
+        m.get("consents").cloned().unwrap_or_else(|| json!([]))
     }
 }
 
