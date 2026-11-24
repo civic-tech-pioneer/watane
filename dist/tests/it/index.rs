@@ -15,6 +15,31 @@ fn listing_body(entry: &Entry, link: &Link, note: &str) {
 }
 
 #[test]
+fn s107_list_and_include_use_the_listed_entry_budget_before_confirmation() {
+    let publisher_home = tempfile::tempdir().unwrap();
+    let publisher = open(publisher_home.path());
+    let published = publisher.publish(fixture("1.0.0", false)).unwrap();
+    let host = TestHost::serve(&publisher.site_dir());
+    for include in [false, true] {
+        let home = tempfile::tempdir().unwrap();
+        let confirm = Arc::new(RecordingConfirm::new([Decision::Approve]));
+        let mut options = fast_options();
+        options.listed_local = true;
+        options.max_listed_entries = 0;
+        let dist = Dist::open(home.path(), confirm.clone(), options).unwrap();
+        let slug = (!include).then_some(&published.info.reference.slug);
+        let link = Link::new(publisher.identity().unwrap(), &host.url, slug).unwrap();
+        let result = if include {
+            dist.include(&link, "")
+        } else {
+            dist.list(&link, "")
+        };
+        assert!(matches!(result, Err(DistError::TooManyEntries { .. })));
+        assert!(confirm.requests.lock().unwrap().is_empty());
+    }
+}
+
+#[test]
 fn ac4_own_listing_refuse_and_requests() {
     let a = tempfile::tempdir().unwrap();
     let i = tempfile::tempdir().unwrap();
