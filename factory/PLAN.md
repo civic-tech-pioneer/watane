@@ -1375,7 +1375,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   (adversary). Protects: *core*.
 - [~] **S115 (guard) the net reach test stops flaking on Windows.** (in flight, cloud, builder claude, reviewer codex;
   a fix that guards `main`: Windows is a required check and `net/tests/it/reach.rs:193` failed on it with `Database
-  already open. Cannot acquire lock.`; routine `trig_01Qb1GYPxMdJLutKESYRz4Vw`, fires 20:16 UTC.) Outcome: the cause is named (net's redb reopen on Windows), fixed in code or test,
+  already open. Cannot acquire lock.`; routine `trig_01Qb1GYPxMdJLutKESYRz4Vw`, fires 20:16 UTC; DELIVERED ~21:05 UTC as PR #31 (+115/-3: the blob store's redb reopened before its shutdown finished; apply now awaits it, bounded by 5 s; 40/40 green on Windows); r1: Codex review https://chatgpt.com/local/6b05fddd-2ba4-83ed-9942-035b82291050, dispatched 21:13 UTC.) Outcome: the cause is named (net's redb reopen on Windows), fixed in code or test,
   and `reach::s11_machines_on_different_networks_connect_through_the_servers_relay` is green in 20 Windows runs in CI.
   Touches: `net/` only. Size: a guard, by reason. Protects: *guard*.
 - [~] **S113 (upkeep) the app says what it is doing and what Alice agrees to.** (in flight, cloud, builder codex,
