@@ -1555,6 +1555,8 @@ mod tests {
         assert!(!by_program);
         assert_eq!(mods.len(), 1);
         assert_eq!(mods[0].uses, ["reading-list (local)"]);
+        // Its granted grants hold no Claude Code grant: no plan line (19.2).
+        assert!(mods[0].agents_via.is_empty());
     }
 }
 
