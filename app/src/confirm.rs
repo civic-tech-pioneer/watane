@@ -3,6 +3,7 @@
 
 use crate::consent;
 use crate::words::{self, Parties};
+use std::collections::BTreeMap;
 use std::pin::Pin;
 use std::sync::{Arc, OnceLock, Weak};
 use watane_host::{Answer, Change, Confirm, InstallRequest, Requester};
@@ -205,99 +206,104 @@ fn request_view(
     parties: &Parties,
     host: Option<&watane_host::Host>,
 ) -> consent::Request {
+    let mut mods: Vec<_> = request
+        .entries
+        .iter()
+        .map(|e| consent::PlanMod {
+            becomes_main: false,
+            origin: e.origin.as_ref().map(|origin| {
+                let name = host
+                    .and_then(|h| {
+                        h.mods()
+                            .into_iter()
+                            .find(|m| m.release.as_ref() == Some(origin))
+                    })
+                    .map_or_else(|| origin.slug.to_string(), |m| m.name);
+                words::origin_line(&name, origin, parties)
+            }),
+            binds: e
+                .binds
+                .iter()
+                .filter(|b| {
+                    !host
+                        .and_then(|h| h.get(&e.local))
+                        .is_some_and(|m| m.binds.contains(b))
+                })
+                .map(|b| words::bind_line(b, parties))
+                .collect(),
+            local: e.local.to_string(),
+            name: e.name.clone(),
+            slug: e.slug.to_string(),
+            version: e.version.to_string(),
+            release: e.release.as_ref().map(ToString::to_string),
+            publisher: e
+                .publisher
+                .as_ref()
+                .map(|p| words::party(&p.to_string(), parties)),
+            replaces: match &e.change {
+                Change::Update { from_version } => Some(from_version.to_string()),
+                _ => None,
+            },
+            grants: e
+                .grants
+                .iter()
+                .map(|g| {
+                    words::consent_grant_line(g, &e.binds, parties, true, e.new_grants.contains(g))
+                })
+                .collect(),
+            uses: e
+                .providers
+                .iter()
+                .map(|local| {
+                    resolve_provider(request, host, local)
+                        .map(|(p, _)| {
+                            // A uses line names the picked target and the pinned provider.
+                            let pinned = e.binds.iter().find(|b| {
+                                b.to == format!(
+                                    "{}/{}",
+                                    p.publisher
+                                        .as_ref()
+                                        .map(ToString::to_string)
+                                        .unwrap_or_else(|| "local".into()),
+                                    p.slug
+                                )
+                            });
+                            match pinned {
+                                Some(b) => words::provider_bound(&b.provider, &e.binds, parties),
+                                None => words::provider(&p, parties),
+                            }
+                        })
+                        .unwrap_or_else(|| local.to_string())
+                })
+                .collect(),
+            agents_via: e
+                .providers
+                .iter()
+                .filter_map(|local| resolve_provider(request, host, local))
+                .filter(|(_, claude)| *claude)
+                .map(|(p, _)| words::provider(&p, parties))
+                .collect(),
+        })
+        .collect();
+
+    let mut call_words = BTreeMap::new();
+    for grant in mods.iter().flat_map(|m| &m.grants) {
+        if !grant.short.is_empty() {
+            *call_words.entry(grant.short.clone()).or_insert(0) += 1;
+        }
+    }
+    for grant in mods.iter_mut().flat_map(|m| &mut m.grants) {
+        if call_words.get(&grant.short).is_some_and(|&count| count > 1) {
+            grant.short.clear();
+        }
+    }
     consent::Request::Install {
         asked_by: match &request.requester {
             Requester::Mod(by) => host.and_then(|h| h.get(by)).map(|m| asker(&m, parties)),
             _ => None,
         },
         by_program: matches!(request.requester, Requester::LocalApi),
-        mods: request
-            .entries
-            .iter()
-            .map(|e| consent::PlanMod {
-                becomes_main: false,
-                origin: e.origin.as_ref().map(|origin| {
-                    let name = host
-                        .and_then(|h| {
-                            h.mods()
-                                .into_iter()
-                                .find(|m| m.release.as_ref() == Some(origin))
-                        })
-                        .map_or_else(|| origin.slug.to_string(), |m| m.name);
-                    words::origin_line(&name, origin, parties)
-                }),
-                binds: e
-                    .binds
-                    .iter()
-                    .filter(|b| {
-                        !host
-                            .and_then(|h| h.get(&e.local))
-                            .is_some_and(|m| m.binds.contains(b))
-                    })
-                    .map(|b| words::bind_line(b, parties))
-                    .collect(),
-                local: e.local.to_string(),
-                name: e.name.clone(),
-                slug: e.slug.to_string(),
-                version: e.version.to_string(),
-                release: e.release.as_ref().map(ToString::to_string),
-                publisher: e
-                    .publisher
-                    .as_ref()
-                    .map(|p| words::party(&p.to_string(), parties)),
-                replaces: match &e.change {
-                    Change::Update { from_version } => Some(from_version.to_string()),
-                    _ => None,
-                },
-                grants: e
-                    .grants
-                    .iter()
-                    .map(|g| {
-                        words::consent_grant_line(
-                            g,
-                            &e.binds,
-                            parties,
-                            true,
-                            e.new_grants.contains(g),
-                        )
-                    })
-                    .collect(),
-                uses: e
-                    .providers
-                    .iter()
-                    .map(|local| {
-                        resolve_provider(request, host, local)
-                            .map(|(p, _)| {
-                                // A uses line names the picked target and the pinned provider.
-                                let pinned = e.binds.iter().find(|b| {
-                                    b.to == format!(
-                                        "{}/{}",
-                                        p.publisher
-                                            .as_ref()
-                                            .map(ToString::to_string)
-                                            .unwrap_or_else(|| "local".into()),
-                                        p.slug
-                                    )
-                                });
-                                match pinned {
-                                    Some(b) => {
-                                        words::provider_bound(&b.provider, &e.binds, parties)
-                                    }
-                                    None => words::provider(&p, parties),
-                                }
-                            })
-                            .unwrap_or_else(|| local.to_string())
-                    })
-                    .collect(),
-                agents_via: e
-                    .providers
-                    .iter()
-                    .filter_map(|local| resolve_provider(request, host, local))
-                    .filter(|(_, claude)| *claude)
-                    .map(|(p, _)| words::provider(&p, parties))
-                    .collect(),
-            })
-            .collect(),
+        mods,
     }
 }
 fn host_answer(answer: consent::Answer, request: &InstallRequest) -> Answer {
@@ -1121,6 +1127,51 @@ mod tests {
         host.install(plan, Requester::App).await.unwrap();
         assert!(open_page_target(&host, &broker, &LocalName::parse("echo").unwrap()).is_none());
     }
+    #[test]
+    fn regress_s113_repeated_call_words_show_exact_grants() {
+        let entry = |local: &str, interface: &str| PlanEntry {
+            local: LocalName::parse(local).unwrap(),
+            identity: format!("local/{local}"),
+            slug: local.parse().unwrap(),
+            name: local.into(),
+            summary: String::new(),
+            version: "1.0.0".parse().unwrap(),
+            publisher: None,
+            package: "00".repeat(32).parse().unwrap(),
+            release: None,
+            origin: None,
+            change: Change::New,
+            grants: vec![Grant::Call {
+                interface: interface.parse().unwrap(),
+                provider: Provider {
+                    slug: "ratings".parse().unwrap(),
+                    publisher: None,
+                },
+            }],
+            new_grants: vec![],
+            providers: vec![],
+            binds: vec![],
+        };
+        let request = InstallRequest {
+            entries: vec![
+                entry("first", "mods:a/books@0.1.0"),
+                entry("second", "mods:b/books@0.1.0"),
+                entry("third", "mods:a/scores@0.1.0"),
+            ],
+            requester: Requester::App,
+        };
+        let consent::Request::Install { mods, .. } = request_view(&request, &Parties::new(), None)
+        else {
+            panic!("expected install consent");
+        };
+        let first = &mods[0].grants[0];
+        let second = &mods[1].grants[0];
+        assert!(first.short.is_empty());
+        assert!(second.short.is_empty());
+        assert_ne!(first.text, second.text);
+        assert_eq!(mods[2].grants[0].short, "Call scores of ratings (local)");
+    }
+
     #[test]
     fn ac4_host_origin_new_binds_and_bound_uses() {
         let carol = "47pjoycnsrfmxikm95jh13y88e8qnhzu5kungjpxyepgt7a8krpy";

@@ -506,3 +506,46 @@ fn ac6_find_hides_only_the_empty_own_index() {
             .success()
     );
 }
+
+#[test]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "GUI lock serializes tests and guards no data"
+)]
+fn regress_s113_deny_from_find_does_not_follow() {
+    let _gui = support::GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let f = Fixture::new();
+    f.ivy.include(&f.alice_link, "Alice's releases").unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    f.add(&app);
+    search_reading(&app);
+    contains(
+        &app,
+        "#results",
+        "Installing may follow this channel for updates.",
+    );
+    let followed = || {
+        let follows: Value =
+            serde_json::from_slice(&std::fs::read(home.path().join("dist/follows.json")).unwrap())
+                .unwrap();
+        follows["channels"][f.alice.identity().unwrap().to_string()]["followed"].clone()
+    };
+    assert_eq!(followed(), false);
+    app.eval(
+        "main",
+        "document.querySelector('#results .install-release').click(); null",
+    );
+    consent(&app);
+    let at_consent = followed();
+    deny(&app);
+    until(
+        &app,
+        "main",
+        "document.querySelector('#error').textContent.includes('install was not approved')",
+    );
+    let after = followed();
+    assert!(app.quit().success());
+    assert_eq!(at_consent, false, "following happened before consent");
+    assert_eq!(after, false, "channel still followed after Deny");
+}

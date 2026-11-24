@@ -426,9 +426,9 @@ fn ac2_s48_enable_and_grant_wait_for_consent() {
         ),
         "Deny: Desk asks to give Notes a grant"
     );
-    assert_eq!(
-        app.eval("consent", "document.querySelector('p[title]').title"),
-        "Call mods:reading-list/books@0.1.0 of reading-list (local)"
+    assert!(
+        text.contains("Call mods:reading-list/books@0.1.0 of reading-list (local)"),
+        "{text}"
     );
     assert_eq!(
         app.eval(

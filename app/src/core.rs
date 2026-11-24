@@ -840,13 +840,7 @@ impl Core {
         let background = pick.is_none();
         let result = async {
             let (plan, fetched) = tauri::async_runtime::spawn_blocking(move || {
-                let fetched = if let Some(link) = &link
-                    && asked_by.is_some()
-                {
-                    read_managed_release(&planner.node, &target, link)?
-                } else {
-                    fetch_for_install(&planner.node, &target, link.as_ref())?
-                };
+                let fetched = fetch_for_install(&planner.node, &target, link.as_ref())?;
                 planner.plan_fetched(fetched, pick.as_deref(), asked_by.as_ref())
             })
             .await
@@ -1124,10 +1118,20 @@ fn fetch_for_install(
     release: &watane_dist::ReleaseRef,
     link: Option<&watane_dist::Link>,
 ) -> Result<watane_dist::Fetched, watane_dist::DistError> {
-    if let Some(link) = link {
-        node.follow_derived(link)?;
+    let Some(link) = link.filter(|link| {
+        link.channel().as_bytes() == release.publisher.as_bytes()
+            && link.slug() == Some(&release.slug)
+    }) else {
+        return node.fetch(release);
+    };
+    let read = node.read_link(link)?;
+    if &read.info.reference == release {
+        Ok(read)
+    } else {
+        let mut fetched = node.fetch(release)?;
+        fetched.link = read.link;
+        Ok(fetched)
     }
-    node.fetch(release)
 }
 
 fn follow_installed_links(
@@ -1149,22 +1153,6 @@ fn follow_installed_links(
         },
         failures,
     );
-}
-
-// Read only after the manager's read consent. Following waits for an install.
-fn read_managed_release(
-    node: &watane_node::Node,
-    release: &watane_dist::ReleaseRef,
-    link: &watane_dist::Link,
-) -> Result<watane_dist::Fetched, CmdError> {
-    let read = node.read_link(link)?;
-    if &read.info.reference == release {
-        Ok(read)
-    } else {
-        let mut fetched = node.fetch(release)?;
-        fetched.link = read.link;
-        Ok(fetched)
-    }
 }
 
 #[cfg(test)]
@@ -2662,12 +2650,8 @@ mod find_integration_tests {
             },
         )
         .unwrap();
-        let fetched = read_managed_release(
-            &reader,
-            &published.info.reference,
-            published.link.as_ref().unwrap(),
-        )
-        .unwrap();
+        let fetched =
+            fetch_for_install(&reader, &published.info.reference, published.link.as_ref()).unwrap();
         assert_eq!(fetched.info.reference, published.info.reference);
         assert_eq!(fetched.link, published.link);
         assert!(reader.dist().followed().unwrap().is_empty());
@@ -2880,7 +2864,7 @@ mod find_integration_tests {
     }
 
     #[test]
-    fn ac5_install_hit_follows_before_fetch_and_keeps_dist_cause() {
+    fn ac5_install_hit_reads_then_follows_derived_after_install() {
         let alice_home = tempfile::tempdir().unwrap();
         let alice = open(&alice_home);
         let site = Site::serve(alice.site_dir());
@@ -2913,42 +2897,26 @@ mod find_integration_tests {
         assert_eq!(error.code, "dist");
         assert!(carol.followed().unwrap().is_empty());
         let fetched = fetch_for_install(&node, reference, published.link.as_ref()).unwrap();
-        assert_no_given(carol_home.path(), fetched.info.channel);
-        let post_install_home = tempfile::tempdir().unwrap();
-        let post_install = watane_node::Node::open_keyless(
-            post_install_home.path(),
-            watane_node::Options {
-                dist: Options {
-                    listed_local: true,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        let mut failures = Default::default();
-        follow_installed_links(
-            &post_install,
-            std::slice::from_ref(&fetched),
-            &[],
-            &mut failures,
-        );
-        assert!(failures.is_empty());
-        assert_no_given(post_install_home.path(), fetched.info.channel);
-        assert_eq!(
-            carol.followed().unwrap()[0].channel,
-            alice.identity().unwrap()
-        );
+        assert_eq!(&fetched.info.reference, reference);
+        assert!(carol.followed().unwrap().is_empty());
         let plan = host
             .plan(vec![watane_host::Source::Release {
-                package: fetched.package,
-                entry: fetched.entry,
+                package: fetched.package.clone(),
+                entry: fetched.entry.clone(),
             }])
             .unwrap();
         let installed = tokio::runtime::Runtime::new()
             .unwrap()
             .block_on(host.install(plan, watane_host::Requester::App))
             .unwrap();
+        let mut failures = Default::default();
+        follow_installed_links(&node, std::slice::from_ref(&fetched), &[], &mut failures);
+        assert!(failures.is_empty());
+        assert_no_given(carol_home.path(), fetched.info.channel);
+        assert_eq!(
+            carol.followed().unwrap()[0].channel,
+            alice.identity().unwrap()
+        );
         let hit = carol.search(&Query::default()).unwrap().remove(0);
         assert_eq!(
             crate::find::hit_view(&hit, &installed, &Parties::new())["installed"],
