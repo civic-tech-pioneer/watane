@@ -773,6 +773,32 @@ fn ac5_a_launch_with_a_handle_gets_the_mcp_config_on_fd_3_and_the_token_works_on
     home.call("toolbox", "api.close", json!({"handle": h}));
     assert_eq!(home.mcp("agent", &token, "tools/list", json!({})).0, 401);
 }
+#[test]
+fn ac5_a_launch_whose_handle_waits_says_consent_pending_once_then_runs_or_ends_refused() {
+    let home = Home::serving();
+    let pending = r#"{"type":"consent-pending","what":"toolset:t"}"#;
+    let h = home.open(&["t"]).unwrap();
+    home.wait_asked(1);
+    let s = home.launch(&h);
+    assert_eq!(home.wait_items(&s, 1), vec![pending]);
+    std::thread::sleep(Duration::from_millis(200));
+    // No `claude` while the consent waits, and the item is said once.
+    assert!(!home.fake.path().join("claude.log").exists());
+    assert_eq!(home.items(&s), vec![pending]);
+    home.answer(0, ConsentAnswer::Granted);
+    assert!(home.mcp_config()["mcpServers"]["watane"]["url"].is_string());
+    home.wait_ended(&format!("{s} closed"));
+    let items = home.items(&s);
+    assert_eq!(items.iter().filter(|i| *i == pending).count(), 1);
+    // A refused handle: the run ends without `claude` (`consent-refused` reads `other` here).
+    std::fs::remove_file(home.fake.path().join("claude.log")).unwrap();
+    let h = home.open(&["m"]).unwrap();
+    home.wait_asked(2);
+    let s = home.launch(&h);
+    home.answer(1, ConsentAnswer::Refused);
+    home.wait_ended(&format!("{s} other"));
+    assert!(!home.fake.path().join("claude.log").exists());
+}
 fn tree_holds(dir: &Path, needle: &str) -> bool {
     std::fs::read_dir(dir).unwrap().flatten().any(|e| {
         let path = e.path();
