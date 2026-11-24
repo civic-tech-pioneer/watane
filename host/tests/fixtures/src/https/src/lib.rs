@@ -76,6 +76,29 @@ impl exports::mods::https::api::Guest for Guest {
         std::thread::sleep(std::time::Duration::from_millis(u64::from(ms)));
         s
     }
+    fn start_many(request: String, n: u32) -> Vec<String> {
+        (0..n)
+            .map(|_| https_stream::start(&request).unwrap_or_else(start_error))
+            .collect()
+    }
+    fn start_cancel(request: String) -> String {
+        match https_stream::start(&request) {
+            Ok(s) => {
+                streams::cancel(&s);
+                s
+            }
+            Err(e) => start_error(e),
+        }
+    }
+    fn start_hand_off(request: String) -> String {
+        match https_stream::start(&request) {
+            Ok(s) => {
+                let r = streams::hand_off(&s).map_or_else(|e| format!("{e:?}"), |()| "ok".into());
+                format!("{s} {r}")
+            }
+            Err(e) => start_error(e),
+        }
+    }
     fn cancel(s: String) {
         streams::cancel(&s);
     }

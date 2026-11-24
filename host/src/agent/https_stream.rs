@@ -876,7 +876,7 @@ impl Host {
         (origin, origin_gen): (String, Option<u64>),
         request: Arc<Request>,
         valid: bool,
-    ) {
+    ) -> Option<Job> {
         let ctl = Arc::new(Control::new());
         let hook = Arc::clone(&ctl);
         self.hub.open_host(
@@ -887,7 +887,7 @@ impl Host {
         );
         if !valid {
             self.hub.end_gone(&[id]);
-            return;
+            return None;
         }
         self.https.lock().insert(
             id.clone(),
@@ -899,8 +899,8 @@ impl Host {
                 ctl: Arc::clone(&ctl),
             },
         );
-        let job = Job {
-            id: id.clone(),
+        Some(Job {
+            id,
             hub: Arc::clone(&self.hub),
             weak: Weak::clone(&self.weak),
             live: Arc::clone(&self.https),
@@ -916,7 +916,13 @@ impl Host {
                 .lock()
                 .expect("lock poisoned: another thread panicked while holding it")
                 .clone(),
-        };
+        })
+    }
+
+    /// Starts the thread of a stream, after every effect of the chain is applied, so that a
+    /// `cancel` of the same chain ends the stream before a byte leaves (19.3, At apply).
+    pub(crate) fn https_run(&self, job: Job) {
+        let id = job.id.clone();
         let spawned = std::thread::Builder::new()
             .name("watane-https".into())
             .spawn(move || job.go());

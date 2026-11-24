@@ -980,6 +980,7 @@ impl Host {
         // A `claude` process starts after the whole chain is applied, so that a `cancel` of the
         // same chain ends the stream before any process starts (19.3, At apply).
         let mut runs = Vec::new();
+        let mut https_jobs = Vec::new();
         for effect in effects {
             match effect {
                 Effect::TimerAfter { owner, id, due, .. } => self
@@ -1098,7 +1099,12 @@ impl Host {
                                             watane_pkg::Grant::Http { host } if host.as_str() == request.grant)
                                 })
                         });
-                    self.https_start((id, consumer), (origin, origin_gen), request, valid);
+                    https_jobs.extend(self.https_start(
+                        (id, consumer),
+                        (origin, origin_gen),
+                        request,
+                        valid,
+                    ));
                     drop(catalog);
                 }
                 Effect::ClaudeWrite { id, what, by } => self.claude_write(&id, what, &by),
@@ -1168,6 +1174,9 @@ impl Host {
         }
         for job in runs {
             self.claude_run(job);
+        }
+        for job in https_jobs {
+            self.https_run(job);
         }
     }
 }

@@ -3,6 +3,12 @@ interface api {
   /// The stream id, or the error of the start.
   start: func(request: string) -> string;
   start-then-sleep: func(request: string, ms: u32) -> string;
+  /// Starts `n` streams in one call: each stream id or error text.
+  start-many: func(request: string, n: u32) -> list<string>;
+  /// Starts, then cancels in the same call: `<id> <cancel result>`.
+  start-cancel: func(request: string) -> string;
+  /// Starts, then hands off to the caller in the same call: `<id> <hand-off result>`.
+  start-hand-off: func(request: string) -> string;
   cancel: func(s: string);
   resume: func(s: string) -> string;
   mode: func(m: string);

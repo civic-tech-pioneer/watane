@@ -715,6 +715,78 @@ fn ac2_the_request_leaves_as_the_mod_wrote_it() {
     assert_eq!(seen.header("authorization"), Vec::<&str>::new());
 }
 
+// ---- the chain's own streams (19.2, Commit; the limit of 32) ---------------------------------
+
+#[test]
+fn a_start_counts_the_starts_already_queued_in_its_chain_toward_the_limit_of_32() {
+    let mut rig = Rig::new(None);
+    let server = rig.serve("api.openai.com", hold);
+    let request = get("https://api.openai.com/v1/x").to_string();
+    let out = rig.call(
+        Caller::Page,
+        "https",
+        "api.start-many",
+        json!({"request": request, "n": 33}),
+    );
+    let out: Vec<String> = serde_json::from_value(out).unwrap();
+    assert!(out[..32].iter().all(|s| hex32(s)), "{out:?}");
+    assert_eq!(out[32], "full");
+    wait("32 connections", Duration::from_secs(60), || {
+        server.connections.load(Ordering::SeqCst) == 32
+    });
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(server.connections.load(Ordering::SeqCst), 32);
+    // With 32 open, the next call is `full` too.
+    let one = rig.start(&get("https://api.openai.com/v1/x"));
+    assert_eq!(one, "full");
+}
+
+#[test]
+fn a_stream_started_and_cancelled_in_one_call_ends_cancelled_and_sends_nothing() {
+    let mut rig = Rig::new(None);
+    let server = rig.serve("api.openai.com", hold);
+    let s = rig
+        .call(
+            Caller::Page,
+            "https",
+            "api.start-cancel",
+            json!({"request": get("https://api.openai.com/v1/x").to_string()}),
+        )
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(hex32(&s), "no unknown-stream, no failure: {s}");
+    rig.wait_ended(&s, "cancelled");
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(server.connections.load(Ordering::SeqCst), 0);
+    assert_eq!(rig.items(&s), Vec::<String>::new());
+}
+
+#[test]
+fn a_stream_started_and_handed_off_in_one_call_is_handed_off() {
+    let mut rig = Rig::new(None);
+    rig.serve("api.openai.com", hold);
+    let out = rig
+        .call(
+            Caller::Mod(local("toolbox")),
+            "https",
+            "api.start-hand-off",
+            json!({"request": get("https://api.openai.com/v1/x").to_string()}),
+        )
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (s, result) = out.split_once(' ').unwrap();
+    assert!(hex32(s), "{out}");
+    assert_eq!(result, "ok", "{out}");
+    // The new consumer, `toolbox`, gets the stream's items.
+    wait("the head", Duration::from_secs(20), || {
+        let items = rig.call(Caller::Page, "toolbox", "api.items", json!({"s": s}));
+        items.as_array().is_some_and(|a| a.len() >= 2)
+    });
+    assert_eq!(rig.items(s), Vec::<String>::new());
+}
+
 // ---- AC3: apply, and a live stream -----------------------------------------------------------
 
 #[test]
