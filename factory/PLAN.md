@@ -1393,7 +1393,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   adversary runs on the `log` change. Size: a whole capability (Windows as a checked platform).
   Progress: draft PR #23; BLOCKED at 80ffd54 (20:56 UTC) as briefed: log (native no-follow handles, owner-only ACLs,
   refusal tests), net, pkg, install ported; Windows build now fails only in host/src/agent/ and dist/. Resume after S100
-  and S105 merge: a build brief "continue from branch slice/s110; rebase onto main" into the same Codex task. Resumed ~07:28 UTC 2026-11-24 in the same task (edits in dist/ and host/src/agent/ kept to cfg gates and refusals, since S107 and S103 run there). Windows failures per run: 358, 85, 30, 16, 15, 2, 0; DELIVERED ~11:45 UTC at 68d1dd4 (Windows green on attempts 1-3 of run 45370144960; Linux and macOS suite times within 10% of a parallel main run); r1: Claude review routine `trig_01CRaJJrcV955wX2NNsZP4NR`, fires 11:52 UTC.
+  and S105 merge: a build brief "continue from branch slice/s110; rebase onto main" into the same Codex task. Resumed ~07:28 UTC 2026-11-24 in the same task (edits in dist/ and host/src/agent/ kept to cfg gates and refusals, since S107 and S103 run there). Windows failures per run: 358, 85, 30, 16, 15, 2, 0; DELIVERED ~11:45 UTC at 68d1dd4 (Windows green on attempts 1-3 of run 45370144960; Linux and macOS suite times within 10% of a parallel main run); r1: Claude review routine `trig_01CRaJJrcV955wX2NNsZP4NR`, fires 11:52 UTC; r1 (12:38): 2/10, changes (2) (validators PASS 1, RETURN 3; adversary HELD; user-sim ACCEPTED; no gate skips a named attacker's check): F1.1 the windows-fs crate's place in the spec, F1.2 two refusal tests; answer r1 dispatched 12:41 UTC into the Codex task; r1 answered at 3bd1122 (F1.1, F1.2, P1.1, P1.3, P1.5, P1.8, P1.9; the rest to Leftovers); r2: small Claude review routine `trig_01NGu5yhZEMyyvF8HwWxeKwD`, fires 12:49 UTC.
 
 ## Suite time
 
@@ -1551,11 +1551,15 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### pkg
 
+- [S110 R2] `pkg/src/package.rs:58` `grammar`: refuse Windows reserved device names (`con`, `nul`, `aux`, `com1`-`9`, `lpt1`-`9`, with or without an extension) on every platform.
+
 - From S91: `watane-dev add` on a provider with invalid WIT says only "is not a mod folder"; a pack entry gone during listing is sometimes named at its parent; pkg/tests/it/s91.rs is a race test of up to 5 s in the default run.
 - [S57] under a live swap race `add_provider` refuses safely, but with plain I/O text ("wit/deps: File
   exists", "No such file or directory").
 
 ### log
+
+- [S110 r1] P1.2 an independent `icacls`/`whoami` oracle in `log/tests/it/identity_windows.rs`; P1.4 move net's Windows storage paragraph into net TECHNICAL 4.5 and name log's `publish(…, replace)` in 4.7; P1.6 one `private_dir` helper in windows-fs for `net/src/blobs.rs` and `key.rs`; P1.7 gate dev's builder tests per test, not the whole module; P1.10 a literal shell-quoting oracle in `dev/tests/it/install.rs`; R3 off-profile home ACL hardening.
 
 
 ### host
@@ -1786,7 +1790,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   accept the write run's share as N4's price (rec: a kernel batch rarely writes); (b) group commits
   across batches (a host change, weaker per-batch durability). Undo: (a) none; (b) a host write path.
 - (2026-11-21, from S95; none blocks stage A's A1) Six security questions in host/TECHNICAL 18, each
-  with its options there: Q38 the consent key names no provider (`via`), blocks A3; Q39 the Claude
+  with its options there: Q38 the consent key names no provider (`via`), blocks A3 (answered (b) by the human, 2026-11-24: Human answers); Q39 the Claude
   login token and loopback under the shell grant (probe V28; agentic-harness S1's V27 found a
   loopback proxy breach), blocks the shell grant in A2; Q40 sessions read each other's scratch and
   run folders, blocks A2's scratch work; Q41 symlinks past the deny rules (V29), blocks A2; Q42 login
@@ -1838,7 +1842,14 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   claim, so a mod could mark a write read-only to skip approval, and (b) adds a format. Cost to
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
+## Human answers
+
+- 2026-11-24 host 18 **Q38: (b)**, the human ("b is fine for q38"). A workspace or account consent is kept per (origin client, `via` = the provider's identity, folder or account); a new provider asks again. S103 built (b); its next answer round writes host 18 Q38 as decided by the human, 2026-11-24, and the 19.7 rows to match. agentic-harness TECHNICAL 8 already cites 19.7.
+
 ## Deputy decisions
+
+- 2026-11-24 (S110 r1) F1.1: `watane-log-windows-fs` is the shared Windows platform crate under `log`, used by net, dist, host and app, and the one place `unsafe` is allowed (FFI to the Windows security APIs); spec/TECHNICAL 2, log AGENTS and TECHNICAL 6, 10 say so. Clause: spec/TECHNICAL 6 asks the key file's guarantees on Windows (the human's S110 request); no VISION clause against. Undo: move the code into log behind cfg, or a vetted crate.
+- 2026-11-24 (S110 r1) accepted: R1 pkg's Windows walk follows a link swapped in during a walk (a running program of the same user: spec 6 Not protected; one known-limits line in pkg TECHNICAL); R2 DOS device names in a package path on Windows give a broken mod, no data read or replaced (the grammar fix under Leftovers).
 
 - 2026-11-24 (S103) host 18 Q49 (a) and Q50 (a) accepted: each was open with (a) recommended, the stricter option, cheap to undo (deny lines; one table and one check); S103's foreman built them. Q38 stays the human's (Waiting on the human); S103 built (b), which keeps (a) open. Undo: as host 18 states for each.
 
