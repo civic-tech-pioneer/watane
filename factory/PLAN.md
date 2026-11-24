@@ -1380,7 +1380,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Touches: `net/` only. Size: a guard, by reason. Protects: *guard*.
 - [~] **S113 (upkeep) the app says what it is doing and what Alice agrees to.** (in flight, cloud, builder codex,
   reviewer claude; rule 3: last two S112 codex, S111 claude; the upkeep lane, sketched 2026-11-24 by deputy-3 from
-  Leftovers `### app`; runs beside S111, which touches only `app/TECHNICAL.md` in app; Codex task https://chatgpt.com/local/6b05df95-c29c-83eb-bac0-cb04ace5305d, dispatched 19:05 UTC.) Outcomes, each item's check, on the
+  Leftovers `### app`; runs beside S111, which touches only `app/TECHNICAL.md` in app; Codex task https://chatgpt.com/local/6b05df95-c29c-83eb-bac0-cb04ace5305d, dispatched 19:05 UTC; DELIVERED ~19:55 UTC as PR #29 (+307/-203, all four CI jobs green); the 'Keep data' storage label needs the host (Leftovers); r1: Claude review, fires 20:14 UTC.) Outcomes, each item's check, on the
   real app (user-sim under xvfb; macOS CI for window tests):
   1. Consent words: "Deny" says what was denied; the Call line names the interface in words, not `mods:x/y@0.1.0`
      (from agentic-harness S39's review); installing from an index says it follows the channel; Remove asks first.
@@ -1611,6 +1611,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 
 ### host
+
+- [S113] reinstall after 'Keep data' keeps the books but the consent still labels Storage `new`: the host's install plan does not report retained storage.
 
 - [S111 r1] P1.1 connect and TLS handshake each get their own `idle-s` (`host/src/agent/https_stream.rs:580-595`); P1.2 to P1.5, P1.11, P1.14: stronger and more host tests, a reset-before-head message; one sentence each in 19.4 for the accepted R2 and R5.
 
