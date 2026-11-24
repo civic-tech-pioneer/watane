@@ -2113,3 +2113,77 @@ mod adv_s100_p14 {
         assert!(target.path().join("keep").exists());
     }
 }
+
+#[cfg(test)]
+mod adv_s100_p15 {
+    use super::*;
+
+    /// A co-tenant plants a folder tree under `runs/` deeper than the open-file limit:
+    /// `remove_dir_all` holds one descriptor and one stack frame per level, fails with EMFILE and
+    /// leaves `runs/` (and, with a higher limit or a smaller stack, overflows the stack and aborts
+    /// the open). The cleanup runs in a child process, so an abort does not end this one, with the
+    /// common soft limit of 1024 files and the main thread's 8 MiB stack.
+    #[test]
+    fn adv_s100_p15_a_deep_tree_under_runs_is_left() {
+        const CHILD: &str = "WATANE_ADV_S100_P15_DEEP";
+        if let Some(home) = std::env::var_os(CHILD) {
+            let home = std::path::PathBuf::from(home);
+            let limit = rustix::process::getrlimit(rustix::process::Resource::Nofile);
+            rustix::process::setrlimit(
+                rustix::process::Resource::Nofile,
+                rustix::process::Rlimit {
+                    current: Some(1024),
+                    maximum: limit.maximum,
+                },
+            )
+            .unwrap();
+            std::thread::Builder::new()
+                .stack_size(8 << 20)
+                .spawn(move || clean_runs(&home))
+                .unwrap()
+                .join()
+                .unwrap();
+            return;
+        }
+        let home = tempfile::tempdir().unwrap();
+        std::fs::create_dir(home.path().join("runs")).unwrap();
+        let mut fd = rustix::fs::open(
+            home.path().join("runs"),
+            rustix::fs::OFlags::DIRECTORY,
+            rustix::fs::Mode::empty(),
+        )
+        .unwrap();
+        for _ in 0..3_000 {
+            rustix::fs::mkdirat(&fd, "d", rustix::fs::Mode::from_raw_mode(0o700)).unwrap();
+            fd = rustix::fs::openat(
+                &fd,
+                "d",
+                rustix::fs::OFlags::DIRECTORY,
+                rustix::fs::Mode::empty(),
+            )
+            .unwrap();
+        }
+        drop(fd);
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "agent::claude::run::adv_s100_p15::adv_s100_p15_a_deep_tree_under_runs_is_left",
+                "--test-threads=1",
+            ])
+            .env(CHILD, home.path())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        let left = home.path().join("runs").exists();
+        // `rm` walks a deep tree without recursion; the temporary folder's drop would not.
+        let _ = std::process::Command::new("rm")
+            .arg("-rf")
+            .arg(home.path().join("runs"))
+            .status();
+        assert!(
+            status.success() && !left,
+            "open: {status}, runs/ left: {left}"
+        );
+    }
+}
