@@ -256,7 +256,7 @@ impl Dist {
     fn choose_index_link(
         &self,
         link: &Link,
-        listed: bool,
+        derived: bool,
     ) -> Result<Vec<RefreshReport>, DistError> {
         if link.slug().is_some() {
             return Err(DistError::BadLink {
@@ -271,6 +271,7 @@ impl Dist {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         self.settle(true)?;
+        let listed = derived && self.derived_base_is_listed(link);
         let report = self.read_channel_mode(link.channel(), link.base(), listed)?;
         match report.outcome {
             Outcome::Failed { cause } => return Err(cause),
@@ -292,7 +293,7 @@ impl Dist {
             .entry(link.channel())
             .or_insert_with(|| Self::new_record(false, true, false));
         follow::adopt_base(r, link.base());
-        if !listed {
+        if !derived {
             follow::note_given(&mut r.given, link.base());
         }
         r.index = true;

@@ -1042,8 +1042,8 @@ channel budgets also span passes: if pass (b) discovers lists that would exceed 
 those channels wait for the next refresh; no unread record is created. Then
 remove the listed records that no read set holds.
 
-**`choose_index_derived(link)`** uses the listed policy for its first read and grants
-no base permission. The app uses it for channel-row links. The remaining
+**`choose_index_derived(link)`** uses the same per-base policy as
+`follow_derived` for its first read. It grants no base permission. The app uses it for channel-row links. The remaining
 index-choice behavior is shared with `choose_index`.
 
 **`choose_index(link)`**: a link with a slug is `BadLink`; own key is

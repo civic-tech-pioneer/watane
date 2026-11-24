@@ -972,6 +972,19 @@ mod tests {
     }
 
     #[test]
+    fn s107_a_derived_index_can_read_an_explicitly_given_base() {
+        let w = world();
+        let (dir, eve) = w.eve(&[]);
+        let link = crate::Link::new(w.key, &w.a.url, None).unwrap();
+        eve.follow(&link).unwrap();
+        eve.choose_index_derived(&link).unwrap();
+        let file = follows_file(dir.path());
+        let record = &file["channels"][w.key.to_string()];
+        assert_eq!(record["index"], true);
+        assert_eq!(record["explicit_given"], serde_json::json!([link.base()]));
+    }
+
+    #[test]
     fn s107_derived_follow_checks_the_initial_base() {
         let w = world();
         let (_dir, eve) = w.eve(&[]);

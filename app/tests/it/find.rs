@@ -283,6 +283,7 @@ fn ac2_find_skipped_channel_and_cause() {
 fn ac1_find_list_in_my_index() {
     let f = Fixture::new();
     let home = tempfile::tempdir().unwrap();
+    assert!(App::start(home.path(), &[]).quit().success());
     listing_dist(home.path())
         .follow_derived(&f.alice_link)
         .unwrap();
