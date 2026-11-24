@@ -1373,7 +1373,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   TECHNICAL first; resolve question 15 as (a)). Touches: `dev/src/preview*`, `dev/src/cli.rs`, `host/` preview setting,
   dev and host TECHNICAL. Not S111's files beyond a wiring line. Boundary: the account binding must not reach a real home
   (adversary). Protects: *core*.
-- [~] **S115 (guard) the net reach test stops flaking on Windows.** (in flight, cloud, builder claude, reviewer codex;
+- [x] **S115 (guard) the net reach test stops flaking on Windows.** DONE 2026-11-24: PR #31 merged by the deputy (no bypass); builder claude, reviewer codex, 1 round (0/2); ~1.2 h in flight. net's rebuild now awaits the blob store's shutdown (bounded by 5 s) before reopening, so a relay or DHT switch on Windows no longer fails with 'Database already open'; 40/40 green on Windows. Polish P1.1 (a forced-timeout test), P1.2 (net TECHNICAL wording) in Leftovers. (Was: (in flight, cloud, builder claude, reviewer codex;
   a fix that guards `main`: Windows is a required check and `net/tests/it/reach.rs:193` failed on it with `Database
   already open. Cannot acquire lock.`; routine `trig_01Qb1GYPxMdJLutKESYRz4Vw`, fires 20:16 UTC; DELIVERED ~21:05 UTC as PR #31 (+115/-3: the blob store's redb reopened before its shutdown finished; apply now awaits it, bounded by 5 s; 40/40 green on Windows); r1: Codex review https://chatgpt.com/local/6b05fddd-2ba4-83ed-9942-035b82291050, dispatched 21:13 UTC.) Outcome: the cause is named (net's redb reopen on Windows), fixed in code or test,
   and `reach::s11_machines_on_different_networks_connect_through_the_servers_relay` is green in 20 Windows runs in CI.
@@ -1729,6 +1729,8 @@ Re-checked and swept by S86 (2026-11-18); these remain.
   `target/release`, so check.sh reports CHECK FAIL for install tasks there.
 
 ### net / node
+
+- [S115 r1] P1.1 a test that forces the store shutdown past STORE_WAIT and checks the reopen error reaches the caller (`net/src/lib.rs:458`); P1.2 net TECHNICAL ~940 names the timeout in the close-before-reopen rule.
 
 - [S111 CI] (guard) possible Windows flake: `net/tests/it/reach.rs:193` `reach::s11_machines_on_different_networks_connect_through_the_servers_relay` failed once on windows-latest with `database error: Database already open. Cannot acquire lock.` (net's redb reopen on Windows) at watane 3e8d788 (slice/s111, no net change); green on the head before. Second time on the same head 3e8d788 (attempt 1): a real flake; give it to the next upkeep slice as a guard (Windows is required, so it blocks merges).
 
