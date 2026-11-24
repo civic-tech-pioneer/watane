@@ -466,7 +466,7 @@ fn remove_tree(home: &std::fs::File, name: &std::ffi::OsStr, budget: &mut usize)
             let Ok(mut dir) = Dir::read_from(&cur) else {
                 return false;
             };
-            while let Some(entry) = dir.next() {
+            for entry in dir {
                 let Ok(entry) = entry else {
                     clean = false;
                     break;
