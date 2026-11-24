@@ -1,5 +1,5 @@
 use watane::host::streams::{Item, Outcome, SinkOutcome};
-use watane::host::{claude_code, state};
+use watane::host::{agent_tools, claude_code, state, timers};
 
 wit_bindgen::generate!({ path: "../../mods/toolc/wit", world: "toolc", generate_all });
 struct Guest;
@@ -29,6 +29,14 @@ impl exports::mods::toolc::api::Guest for Guest {
         state::get("seen")
             .map(|v| String::from_utf8(v).unwrap().lines().map(str::to_owned).collect())
             .unwrap_or_default()
+    }
+    fn open(toolsets: Vec<String>) -> String {
+        note("open");
+        agent_tools::open(&toolsets).unwrap_or_else(|e| format!("{e:?}"))
+    }
+    fn arm(id: String) -> String {
+        note("arm");
+        timers::after(&id, 60_000).map_or_else(|e| format!("{e:?}"), |()| "ok".into())
     }
 }
 impl exports::watane::host::stream_sink::Guest for Guest {

@@ -240,6 +240,10 @@ pub(crate) fn call(inv: &Invocation, function: &str, args: &[Val]) -> Result<Val
             let Some(Val::List(items)) = args.first() else {
                 return Err(CallError::internal("agent-tools.open: bad argument"));
             };
+            // No handle opens on borrowed authority (19.5, Borrowed authority).
+            if inv.chain.agent.is_some() {
+                return Ok(err("not-granted"));
+            }
             let mut toolsets: Vec<String> = items
                 .iter()
                 .map(|v| match v {

@@ -1269,8 +1269,10 @@ impl Home {
     }
 }
 
-/// F1.1 (19, Terms): through a job, a request of the tool carries the handle's origin client; a
-/// consent that only the tool's mod holds is not used.
+/// F1.1, narrowed by review r2 (F2.2; 19.5, Borrowed authority): through a job, the tool runs on
+/// the handle's origin client's borrowed authority, so a `claude-code.start` (a stream that
+/// outlives the call) is refused `not_granted`. Neither the consent that only the tool's mod holds
+/// nor the origin client's is used: no question is asked.
 #[test]
 fn s103_r1_ac1_a_job_runs_the_tool_as_the_handles_origin_client() {
     let home = Home::new();
@@ -1296,21 +1298,11 @@ fn s103_r1_ac1_a_job_runs_the_tool_as_the_handles_origin_client() {
             &json!({"launch": workspace_launch(&f)}).to_string(),
         )
         .unwrap();
-    // The folder is new for `toolbox`: the question names it as the origin client, `toolc` as via.
-    home.wait_asked(3);
-    let asked = home.asked()[2].clone();
-    assert_eq!(asked.origin, local("toolbox"));
-    assert_eq!(asked.via, local("toolc"));
-    assert_eq!(
-        asked.consent.to_string(),
-        format!("workspace:local/toolc:{f}")
-    );
-    // The job's result goes to the opening mod: the stream id that the tool's request made.
-    let item: Value = serde_json::from_str(&home.wait_items(&job, 1)[0]).unwrap();
-    assert_eq!(item["ok"].as_str().unwrap().len(), 32, "{item}");
+    assert_eq!(home.err_code(&job), "not_granted");
+    assert_eq!(home.asked().len(), 2);
 }
 
-/// F1.1 through `/mcp/agent` `tools/call`.
+/// F1.1 through `/mcp/agent` `tools/call`, narrowed as above: the start is refused, no question.
 #[test]
 fn s103_r1_ac1_a_tools_call_runs_the_tool_as_the_handles_origin_client() {
     let home = Home::serving();
@@ -1334,15 +1326,76 @@ fn s103_r1_ac1_a_tools_call_runs_the_tool_as_the_handles_origin_client() {
         json!({"name": "toolc_api_start", "arguments": {"launch": workspace_launch(&f)}}),
     );
     assert_eq!(status, 200, "{body}");
-    assert_eq!(body["result"]["isError"], false, "{body}");
-    home.wait_asked(3);
-    let asked = home.asked()[2].clone();
-    assert_eq!(asked.origin, local("toolbox"));
-    assert_eq!(asked.via, local("toolc"));
-    assert_eq!(
-        asked.consent.to_string(),
-        format!("workspace:local/toolc:{f}")
+    assert_eq!(body["result"]["isError"], true, "{body}");
+    assert_eq!(home.asked().len(), 2);
+}
+
+/// F2.1 (review r2; 19.5, Borrowed authority): a tool that runs on the handle's origin client's
+/// borrowed authority cannot open a handle, though that client holds the toolset's consent; the
+/// same `open` as an ordinary call of the mod returns a handle.
+#[test]
+fn s103_r2_f2_1_an_open_under_borrowed_authority_is_not_granted() {
+    let home = Home::new();
+    let h = home.granted(&["c"], 0);
+    let job = home
+        .call_tool(&h, "k", "toolc_api_open", r#"{"toolsets":["c"]}"#)
+        .unwrap();
+    let item: Value = serde_json::from_str(&home.wait_items(&job, 1)[0]).unwrap();
+    assert_eq!(item, json!({"ok": "ToolsError::NotGranted"}));
+    assert_eq!(home.asked().len(), 1);
+    // The ordinary open: `toolc` as its own origin client gets a handle (its question waits).
+    let opened = home.call("toolc", "api.open", json!({"toolsets": ["c"]}));
+    let opened = opened.as_str().unwrap();
+    assert_eq!(opened.len(), 32, "{opened}");
+    assert!(opened.chars().all(|c| c.is_ascii_hexdigit()), "{opened}");
+}
+
+/// F2.1 through `/mcp/agent`: the same refusal.
+#[test]
+fn s103_r2_f2_1_an_open_from_a_tools_call_is_not_granted() {
+    let home = Home::serving();
+    let h = home.granted(&["c"], 0);
+    let token = home.token_of(&h);
+    let (status, body) = home.mcp(
+        "agent",
+        &token,
+        "tools/call",
+        json!({"name": "toolc_api_open", "arguments": {"toolsets": ["c"]}}),
     );
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        body["result"]["content"][0]["text"], "ToolsError::NotGranted",
+        "{body}"
+    );
+}
+
+/// F2.2 (review r2; 19.5, Borrowed authority): arming a timer under borrowed authority is refused
+/// `not_granted`, through a job and through `tools/call`, so no firing can carry the client's
+/// authority after the call; the same `after` as an ordinary call of the mod is armed.
+#[test]
+fn s103_r2_f2_2_a_timer_under_borrowed_authority_is_not_granted() {
+    let home = Home::serving();
+    let h = home.granted(&["c"], 0);
+    let job = home
+        .call_tool(&h, "k", "toolc_api_arm", r#"{"id":"t"}"#)
+        .unwrap();
+    assert_eq!(home.err_code(&job), "not_granted");
+    let token = home.token_of(&h);
+    let (status, body) = home.mcp(
+        "agent",
+        &token,
+        "tools/call",
+        json!({"name": "toolc_api_arm", "arguments": {"id": "t"}}),
+    );
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["result"]["isError"], true, "{body}");
+    // Both refused calls were rolled back whole: `toolc` noted neither.
+    assert_eq!(home.seen(), Vec::<String>::new());
+    assert_eq!(
+        home.call("toolc", "api.arm", json!({"id": "t"})),
+        json!("ok")
+    );
+    assert_eq!(home.seen(), ["arm"]);
 }
 
 /// F1.1: the install generation of the origin client is the handle's. The origin client that was
@@ -1416,6 +1469,8 @@ fn s103_r1_ac2_a_job_resolved_to_an_install_that_was_replaced_and_consented_agai
     assert_eq!(
         names,
         [
+            "toolc_api_arm",
+            "toolc_api_open",
             "toolc_api_seen",
             "toolc_api_slow",
             "toolc_api_start",
@@ -1466,14 +1521,18 @@ fn s103_r1_ac2_a_tools_call_that_straddles_a_narrowing_answers_invalid_params() 
     assert_eq!(
         home.mcp_names(&token),
         [
+            "toolc_api_arm",
+            "toolc_api_open",
             "toolc_api_seen",
             "toolc_api_slow",
             "toolc_api_start",
             "toolc_api_touch"
         ]
     );
-    let hold = home.host.hold_agent_runs();
     let (status, body) = std::thread::scope(|scope| {
+        // The hold is the scope's: a failed assertion drops it, which frees the paused run, so the
+        // scope's join does not wait for it (review r2, P2.1).
+        let hold = home.host.hold_agent_runs();
         let call = scope.spawn(|| {
             home.mcp(
                 "agent",

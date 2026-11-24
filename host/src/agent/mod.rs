@@ -484,6 +484,26 @@ pub(crate) fn call(
     if let Some(fakes) = &inv.chain.fakes {
         return fake(inv, fakes, interface, function, args);
     }
+    // A tool on an origin client's borrowed authority (a job or `/mcp/agent` `tools/call`, and its
+    // synchronous callees) does only work that ends with its call: no stream, job or timer that
+    // would outlive it (19.5, Borrowed authority). `agent-tools.open` refuses in its own WIT case.
+    if inv.chain.agent.is_some()
+        && matches!(
+            (interface, function),
+            ("streams", "open")
+                | ("timers", "after")
+                | ("agent-tools", "call")
+                | (
+                    "claude-code" | "claude-code-shell" | "https-stream",
+                    "start"
+                )
+        )
+    {
+        return Err(CallError::new(
+            CallCode::NotGranted,
+            format!("{interface}.{function} outlives a call on borrowed authority"),
+        ));
+    }
     let me = inv.me();
     match (interface, function) {
         ("claude-code", "start") => claude::start(inv, claude::launch::Kind::Code, args),

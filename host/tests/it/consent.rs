@@ -781,7 +781,8 @@ fn ac7_the_protected_paths_are_written_once_per_workspace_root() {
     home.answer(1, ConsentAnswer::Granted);
     home.wait_items(&s, 4);
     let deny = deny_of(&home);
-    // The rules as literal text, `ROOT` standing for each root (no rule is built by the loop).
+    // The rules as literal text, `ROOT` standing for each root (no rule is built by the loop): all
+    // 19 per tool and root, the 14 protected paths and the 5 nested folders (review r2, P2.2).
     let rules = [
         "Edit(/ROOT/**/.git/**)",
         "Edit(/ROOT/.git/**)",
@@ -794,6 +795,14 @@ fn ac7_the_protected_paths_are_written_once_per_workspace_root() {
         "Edit(/ROOT/Makefile)",
         "Edit(/ROOT/package.json)",
         "Edit(/ROOT/.mcp.json)",
+        "Edit(/ROOT/.agents/**)",
+        "Edit(/ROOT/.codex/**)",
+        "Edit(/ROOT/**/.aws/**)",
+        "Edit(/ROOT/**/AGENTS.md)",
+        "Edit(/ROOT/.envrc)",
+        "Edit(/ROOT/**/.github/workflows/**)",
+        "Edit(/ROOT/build.rs)",
+        "Edit(/ROOT/.husky/**)",
         "Write(/ROOT/**/.git/**)",
         "Write(/ROOT/.git/**)",
         "Write(/ROOT/**/.claude/**)",
@@ -805,6 +814,14 @@ fn ac7_the_protected_paths_are_written_once_per_workspace_root() {
         "Write(/ROOT/Makefile)",
         "Write(/ROOT/package.json)",
         "Write(/ROOT/.mcp.json)",
+        "Write(/ROOT/.agents/**)",
+        "Write(/ROOT/.codex/**)",
+        "Write(/ROOT/**/.aws/**)",
+        "Write(/ROOT/**/AGENTS.md)",
+        "Write(/ROOT/.envrc)",
+        "Write(/ROOT/**/.github/workflows/**)",
+        "Write(/ROOT/build.rs)",
+        "Write(/ROOT/.husky/**)",
         "NotebookEdit(/ROOT/**/.git/**)",
         "NotebookEdit(/ROOT/.git/**)",
         "NotebookEdit(/ROOT/**/.claude/**)",
@@ -816,6 +833,14 @@ fn ac7_the_protected_paths_are_written_once_per_workspace_root() {
         "NotebookEdit(/ROOT/Makefile)",
         "NotebookEdit(/ROOT/package.json)",
         "NotebookEdit(/ROOT/.mcp.json)",
+        "NotebookEdit(/ROOT/.agents/**)",
+        "NotebookEdit(/ROOT/.codex/**)",
+        "NotebookEdit(/ROOT/**/.aws/**)",
+        "NotebookEdit(/ROOT/**/AGENTS.md)",
+        "NotebookEdit(/ROOT/.envrc)",
+        "NotebookEdit(/ROOT/**/.github/workflows/**)",
+        "NotebookEdit(/ROOT/build.rs)",
+        "NotebookEdit(/ROOT/.husky/**)",
     ];
     for root in [&w, &x] {
         for rule in rules {

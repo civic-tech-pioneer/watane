@@ -41,8 +41,9 @@ pub(crate) struct Chain {
     timer: Option<(String, u64)>,
     /// The top-level call failed because its own mod is disabled, removed or updated.
     unavailable: AtomicBool,
-    /// The top-level call is an agent's tool: its authority is decided at the run (19.5).
-    agent: Option<AgentRun>,
+    /// The top-level call is an agent's tool: its authority is decided at the run (19.5), and the
+    /// chain runs on borrowed authority (19.5, Borrowed authority).
+    pub(crate) agent: Option<AgentRun>,
     /// Why the host did not start that tool.
     denied: Mutex<Option<Denied>>,
 }

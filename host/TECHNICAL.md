@@ -1833,7 +1833,7 @@ run on the preview install path.
 | No mod sees a credential | tokens, keys and the `claude` path only through `AccountSource`; MCP tokens on fd 3; handle names, not handles (19.4, 19.5); the protected reads of 19.3 (deny rules, relative file-tool allows and no bare one, no `allow` answer outside the workspaces by path or pattern). Files: `src/agent/https_stream.rs`, `src/agent/tools.rs`, `src/agent/claude/launch.rs`, `run.rs`, `control.rs`, app account files | A2: S63, S67; A3: S68; A4 |
 | A plan token goes only to OpenAI's agent endpoints | the account binding of `openai`, the forbidden headers, no redirects (19.4). File: `https_stream.rs` | A4: case 19 |
 | A judge key goes only to its judge | the binding of `judge`: identity, value, one origin parse, `POST`, `[http]`, no redirects, `no-account` (19.4). File: `https_stream.rs` | A5: cases 19, 33 |
-| A mod in the middle gains no authority | consent per origin client, carried with the chain by identity (19.7); a subscriber is its own origin client (19, Terms); the grants and the origin client checked again at apply (19.6); a toolset consent covers only the functions it named, and `remove` or a `grant` of `Manage` drops that mod's names from it (19.5, 4.4); `remove` leaves no timer carrying the removed mod (4.4). Files: `src/agent/consent.rs`, `src/runtime/call.rs`, `src/runtime/events.rs` | A3: S61, S62, S65, S66, S68 |
+| A mod in the middle gains no authority | consent per origin client, carried with the chain by identity (19.7); a subscriber is its own origin client (19, Terms); the grants and the origin client checked again at apply (19.6); a toolset consent covers only the functions it named, and `remove` or a `grant` of `Manage` drops that mod's names from it (19.5, 4.4); `remove` leaves no timer carrying the removed mod (4.4); a tool on borrowed authority opens no handle, stream or timer (19.5, Borrowed authority). Files: `src/agent/consent.rs`, `src/agent/mod.rs`, `src/runtime/call.rs`, `src/runtime/events.rs` | A3: S61, S62, S65, S66, S68 |
 | A stream has one consumer and cannot starve the host | consumer rules, byte budgets, the lag clock and the deferral backstop (19.2). File: `src/agent/streams.rs` | A1: cases 36, 51, 58 |
 | A repeated call changes nothing | job keys and numbered items (19.5, 19.2). Files: `tools.rs`, `streams.rs` | A1, A3 |
 | An ask shows the tool call that will run | the host serializes each `ask` and `check` from its own parsed value, with the call's `tool_use_id` and `expires-at`; no `claude` line passes as a host item (19.3). File: `control.rs` | A2 |
@@ -2704,8 +2704,8 @@ source's, because the host commits each invoke on its own (Q3).
 the host as producer (`claude-code.start`, `https-stream.start`,
 `agent-tools.call`); a *mod stream* is opened by a mod with `streams.open`.
 The *origin client* is the mod whose authority a chain carries: for a page
-call, the mod of the page; for an agent call (a job of 19.5 or a `tools/call` on `/mcp/agent`), the handle's origin client with the install generation it had when the handle opened, never the tool's mod (review r1 of S103, F1.1)
-(19.5); for an item call, a job call or a timer call, the origin client of the
+call, the mod of the page; for an agent call (a job of 19.5 or a `tools/call` on `/mcp/agent`), the handle's origin client with the install generation it had when the handle opened, never the tool's mod (review r1 of S103, F1.1),
+and only for work that ends with the call (19.5, Borrowed authority); for an item call, a job call or a timer call, the origin client of the
 call that opened the stream, job or timer; for an event delivery (9.2), and
 for a collect answer (9.4) and every call nested in it, the subscriber
 itself, never the emitter or the collector: the participant, not the
@@ -3520,20 +3520,18 @@ The toolsets are those of 10.1; `open` with no toolset, or one that
   Otherwise the tool does not run: a job's item is `{"err":{"code":"unknown-tool",..}}`
   (when the handle, its opener or the origin client is gone, no item: the job's stream ends `gone`, as a live job's does at a withdrawal, 19.7) and `tools/call` answers
   `-32602`.
-  The decision comes before the tool's export is resolved and its arguments are decoded,
-  so a tool whose mod changed its export or signature since the lookup is `unknown-tool`
-  (`-32602`), never another call error, and its mod sees no call (review r2 of S103, F2.3).
-- **Borrowed authority** (review r2 of S103, F2.1, F2.2; fail-closed). The chain of an
-  agent's tool call, the tool's call and every call nested in it, runs on authority
-  borrowed from the handle's origin client. In it: `agent-tools.open` fails
-  `not-granted`, so a tool never opens a handle of its own on the client's other toolset
-  consents; a timer armed in it (`timers.after`) is armed for the arming mod with that
-  mod's own identity as origin client, never the borrowed one; and every stream opened
-  in it (`streams.open`, a `claude-code` or `claude-code-shell` start, an
-  `https-stream.start`) depends on the handle: it ends `gone` when the handle closes (a
-  `close`, a withdrawn toolset consent, the end of either mod), like the handle's jobs. A
-  call already running when the handle closes finishes; nothing it deferred outlives the
-  handle with the client's authority.
+- **Borrowed authority** (review r2 of S103, F2.1, F2.2). A tool that runs on the handle's
+  origin client's authority (a job or a `tools/call` on `/mcp/agent`, and every call nested in
+  it) may only do work that ends with that call. So in such a chain the host refuses, at the
+  call, each request that would outlive it: `agent-tools.open` fails `not-granted`; and
+  `agent-tools.call`, `streams.open`, `claude-code.start`, `claude-code-shell.start`,
+  `https-stream.start` and `timers.after` fail the call `not_granted` (their WIT has no such
+  case), so the tool's call ends as any failed call does (a job's item `{"err":{"code":
+  "not_granted",..}}`, `tools/call` an error result). A handle, a stream or a timer therefore
+  never carries borrowed authority past the call, and a withdrawn toolset consent leaves none
+  behind (19.7). Work on streams and timers that the tool's mod already holds (`push`, `close`,
+  `cancel`, `claude-session`, `timers.cancel`) and synchronous calls are unchanged. Outside
+  such a chain, `open`, streams and timers are as above and in 19.2 and 19.6.
 - **Job.** `call(handle, key, tool, args)` returns a stream at once (its consumer is the
   opening mod, its origin client the handle's); the tool runs later as its own top-level
   call with its own budget and the caller of the previous bullet; its result is the stream's
@@ -3541,6 +3539,12 @@ The toolsets are those of 10.1; `open` with no toolset, or one that
   `err` item with code `bad_request`, no call), and then the stream ends `closed`. `close`,
   a withdrawn consent, and the end of either mod end the job's stream `gone`; the
   running call is not interrupted, its result goes nowhere.
+- **Known limit** (accepted by the product owner, review r2 of S103, F2.3). A normal update of
+  the tool's mod that lands after the dispatch looked the tool up and before the call resolves
+  the export can make that call fail with a generic call error (no export, or arguments that no
+  longer decode) before Authority at the run decides: the tool still does not run, but a job's
+  item carries that error's code instead of `unknown-tool`, and `tools/call` answers it instead
+  of `-32602`.
 - **Limits** (decided by S103's foreman; host-internal, cheap to undo). At most 32 live
   handles per (origin client, opening mod); an `open` past it fails `not-granted` (no new WIT
   case). At most one consent question waits per (origin client, toolset): a later `open` that
