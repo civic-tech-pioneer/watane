@@ -1954,3 +1954,35 @@ mod fix21_tests {
         );
     }
 }
+
+/// S100 adversary pass 14: what a co-tenant plants at `runs/` itself (3.1 step 3: `runs/` is
+/// deleted at open).
+#[cfg(all(test, target_os = "linux"))]
+mod adv_s100_p14 {
+    use super::*;
+
+    /// A regular file or a FIFO planted at `runs/` is left by `clean_runs`; every later run then
+    /// fails to make `runs/<random>` (ENOTDIR).
+    #[test]
+    fn adv_s100_p14_runs_as_a_file_or_fifo_is_left() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::write(home.path().join("runs"), "x").unwrap();
+        clean_runs(home.path());
+        let file_left = home.path().join("runs").symlink_metadata().is_ok();
+        let _ = std::fs::remove_file(home.path().join("runs"));
+        rustix::fs::mknodat(
+            rustix::fs::CWD,
+            home.path().join("runs"),
+            rustix::fs::FileType::Fifo,
+            rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+            0,
+        )
+        .unwrap();
+        clean_runs(home.path());
+        let fifo_left = home.path().join("runs").symlink_metadata().is_ok();
+        assert!(
+            !file_left && !fifo_left,
+            "runs/ left: file {file_left}, fifo {fifo_left}"
+        );
+    }
+}
