@@ -232,7 +232,7 @@ pub(crate) fn pid_record(pgid: i32) -> Option<String> {
 }
 
 /// One parsed line of `runs/pids`: `pgid boot-id start-time`.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 struct Record {
     pgid: i32,
     boot: String,
@@ -351,7 +351,7 @@ fn read_pids(path: &Path, log: &mut CleanupLog) -> Option<(Vec<u8>, bool)> {
     Some((bytes, over))
 }
 
-/// Handles every line of the contents of `runs/pids`, a repeated line once; the bad ones are
+/// Handles every line of the contents of `runs/pids`, a repeated record once (by its parsed value); the bad ones are
 /// logged through `log`.
 fn clean_lines<H>(
     bytes: &[u8],
@@ -361,14 +361,19 @@ fn clean_lines<H>(
     signal: impl Fn(&H),
     log: &mut CleanupLog,
 ) {
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = std::collections::HashSet::<Record>::new();
     // An empty piece (after the last newline, or a blank line) is no record and not logged.
     for line in bytes.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
-        if seen.insert(line) && !clean_line(line, boot, &hold, &start_of, &signal, log) {
-            log.say(format!(
+        match parse_record(line) {
+            None => log.say(format!(
                 "watane: a bad record in runs/pids is dropped: {}",
                 bad_line(line)
-            ));
+            )),
+            Some(record) => {
+                if seen.insert(record) {
+                    clean_line(line, boot, &hold, &start_of, &signal, log);
+                }
+            }
         }
     }
 }
@@ -428,20 +433,115 @@ fn hold_leader(_pgid: i32) -> Option<()> {
 #[cfg(not(target_os = "linux"))]
 fn kill_held(_held: &()) {}
 
+/// The most entries that one open removes from the `runs.*.gone` folders (3.1 step 3).
+const WALK_BUDGET: usize = 10_000;
+
+/// One folder of the walk: its name in its parent, and the subfolders still to do.
+struct Level {
+    name: std::ffi::OsString,
+    pending: Vec<std::ffi::OsString>,
+    listed: bool,
+}
+
+/// Removes the folder `name` of `home` with what it holds, without recursion and without
+/// following a link, spending at most `budget` entries. One folder descriptor is open at a time
+/// (the way up is `..`), so neither depth nor path length limits it. False when something is left.
+fn remove_tree(home: &std::fs::File, name: &std::ffi::OsStr, budget: &mut usize) -> bool {
+    use rustix::fs::{AtFlags, Dir, FileType, Mode, OFlags, openat, statat, unlinkat};
+    let flags = OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK;
+    let Ok(mut cur) = openat(home, name, flags, Mode::empty()) else {
+        // Not a folder (or gone): a link or file is removed itself.
+        return unlinkat(home, name, AtFlags::empty()).is_ok();
+    };
+    let mut clean = true;
+    let mut levels = vec![Level {
+        name: name.to_owned(),
+        pending: vec![],
+        listed: false,
+    }];
+    loop {
+        let level = levels.last_mut().expect("one level at least");
+        if !level.listed {
+            level.listed = true;
+            let Ok(mut dir) = Dir::read_from(&cur) else {
+                return false;
+            };
+            while let Some(entry) = dir.next() {
+                let Ok(entry) = entry else {
+                    clean = false;
+                    break;
+                };
+                let entry_name = entry.file_name();
+                if entry_name == c"." || entry_name == c".." {
+                    continue;
+                }
+                if *budget == 0 {
+                    return false;
+                }
+                *budget -= 1;
+                let kind = match entry.file_type() {
+                    FileType::Unknown => statat(&cur, entry_name, AtFlags::SYMLINK_NOFOLLOW)
+                        .map_or(FileType::Unknown, |st| FileType::from_raw_mode(st.st_mode)),
+                    kind => kind,
+                };
+                if kind == FileType::Directory {
+                    level.pending.push(
+                        <std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(
+                            entry_name.to_bytes(),
+                        )
+                        .to_owned(),
+                    );
+                } else if unlinkat(&cur, entry_name, AtFlags::empty()).is_err() {
+                    clean = false;
+                }
+            }
+        }
+        if let Some(child) = levels.last_mut().and_then(|l| l.pending.pop()) {
+            match openat(&cur, &child, flags, Mode::empty()) {
+                Ok(fd) => {
+                    cur = fd;
+                    levels.push(Level {
+                        name: child,
+                        pending: vec![],
+                        listed: false,
+                    });
+                }
+                Err(_) => clean = false,
+            }
+            continue;
+        }
+        let done = levels.pop().expect("one level at least");
+        let removed =
+            |parent: &std::fs::File| unlinkat(parent, &done.name, AtFlags::REMOVEDIR).is_ok();
+        if levels.is_empty() {
+            return clean && removed(home);
+        }
+        let Ok(parent) = openat(&cur, "..", flags, Mode::empty()) else {
+            return false;
+        };
+        let parent = std::fs::File::from(parent);
+        clean &= removed(&parent);
+        cur = parent.into();
+    }
+}
+
 /// Kills the leaders of the groups that a crashed host left in `runs/pids` and are still its runs,
 /// and empties `runs/` (3.1 step 3).
 pub(crate) fn clean_runs(home: &Path) {
+    clean_runs_logged(home, &mut CleanupLog::default());
+}
+
+/// `clean_runs` with the log of the cleanup passed down.
+fn clean_runs_logged(home: &Path, log: &mut CleanupLog) {
     let runs = home.join("runs");
-    let mut log = CleanupLog::default();
-    if let (Some((bytes, over)), Some(boot)) = (read_pids(&runs.join("pids"), &mut log), boot_id())
-    {
+    if let (Some((bytes, over)), Some(boot)) = (read_pids(&runs.join("pids"), log), boot_id()) {
         clean_lines(
             &bytes,
             &boot,
             hold_leader,
             leader_start_time,
             kill_held,
-            &mut log,
+            log,
         );
         if over {
             log.say(format!(
@@ -449,17 +549,44 @@ pub(crate) fn clean_runs(home: &Path) {
             ));
         }
     }
-    log.end();
-    // `runs` that is a directory is emptied with its content; anything else (a file, a FIFO, a
-    // link) is removed itself, and a link's target is kept.
+    // `runs` that is a directory is moved aside, so `runs/` is free at once; anything else (a
+    // file, a FIFO, a link) is removed itself, and a link's target is kept.
     match runs.symlink_metadata() {
         Ok(m) if m.is_dir() => {
-            let _ = std::fs::remove_dir_all(&runs);
+            let aside = home.join(format!("runs.{}.gone", random_hex()));
+            if let Err(e) = std::fs::rename(&runs, &aside) {
+                log.say(format!("watane: runs/ cannot be moved aside: {e}"));
+            }
         }
         Ok(_) => {
             let _ = std::fs::remove_file(&runs);
         }
         Err(_) => {}
+    }
+    remove_gone(home, log);
+    log.end();
+}
+
+/// Removes every `runs.*.gone` of `home` within one budget; what is left is logged once.
+fn remove_gone(home: &Path, log: &mut CleanupLog) {
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(dir) = std::fs::File::open(home) else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(home) else {
+        return;
+    };
+    let mut budget = WALK_BUDGET;
+    let mut left = false;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let bytes = name.as_bytes();
+        if bytes.starts_with(b"runs.") && bytes.ends_with(b".gone") && bytes.len() > 9 {
+            left |= !remove_tree(&dir, &name, &mut budget);
+        }
+    }
+    if left {
+        log.say("watane: a runs.*.gone folder is left (too deep, too many or not removable): the next open tries again".to_owned());
     }
 }
 
@@ -2225,5 +2352,42 @@ mod adv_s100_p15 {
         leader.kill().unwrap();
         leader.wait().unwrap();
         assert_eq!(kills.get(), 1, "{:?}", log.lines);
+    }
+}
+
+#[cfg(test)]
+mod walk_budget {
+    use super::*;
+
+    /// A tree of 20 000 entries is cut at the budget, logged once, and finished at the next
+    /// call; a link inside is removed and its target kept (3.1 step 3).
+    #[test]
+    fn ac2_a_big_tree_is_cut_at_the_budget_and_finished_at_the_next_call() {
+        let home = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        std::fs::write(target.path().join("keep"), "k").unwrap();
+        let runs = home.path().join("runs");
+        std::fs::create_dir_all(runs.join("a/b")).unwrap();
+        for i in 0..19_990 {
+            std::fs::write(runs.join(format!("a/b/f{i}")), "").unwrap();
+        }
+        std::os::unix::fs::symlink(target.path(), runs.join("a/link")).unwrap();
+        let gone = |home: &Path| {
+            std::fs::read_dir(home)
+                .unwrap()
+                .flatten()
+                .filter(|e| e.file_name().to_string_lossy().starts_with("runs."))
+                .count()
+        };
+        let mut log = CleanupLog::default();
+        clean_runs_logged(home.path(), &mut log);
+        assert!(!runs.exists());
+        assert_eq!(gone(home.path()), 1);
+        assert_eq!(log.lines.len(), 1, "{:?}", log.lines);
+        let mut log = CleanupLog::default();
+        clean_runs_logged(home.path(), &mut log);
+        assert_eq!(gone(home.path()), 0, "{:?}", log.lines);
+        assert!(log.lines.is_empty(), "{:?}", log.lines);
+        assert!(target.path().join("keep").exists());
     }
 }
