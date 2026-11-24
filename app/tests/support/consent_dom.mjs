@@ -6,7 +6,10 @@ const words = await import(`data:text/javascript,${encodeURIComponent(await read
 const source = (await readFile(new URL('consent.js', root), 'utf8')).replace(/^import .*;$/gm, '');
 class Node {
   children = []; dataset = {}; disabled = false; checked = false; value = ''; content = '';
+  attributes = new Map();
   constructor(tag) { this.tagName = tag; }
+  setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  getAttribute(name) { return this.attributes.get(name) ?? null; }
   append(...nodes) { this.children.push(...nodes); }
   set textContent(value) { this.content = String(value); this.children = []; }
   get textContent() { return this.content + this.children.map(n => n.textContent).join(' '); }
@@ -35,6 +38,8 @@ async function load(request) {
   globalThis.__words = words;
   await import(`data:text/javascript,${encodeURIComponent('const call = globalThis.__call; const {signTitle, checkedLabel, partyLabel, askerLabel, manageTitle} = globalThis.__words;\n' + source)}#${Math.random()}`);
   assert.equal(document.body.dataset.ready, 'true');
+  assert.equal(nodes['#deny'].getAttribute('aria-label'), `Deny: ${nodes.h1.textContent}`);
+  assert.equal(nodes['#deny'].title, nodes['#deny'].getAttribute('aria-label'));
 }
 function expire() { for (const [id, fn] of [...timers]) { timers.delete(id); fn(); } }
 const candidate = (choice, name) => ({choice, name, summary:'Book scores', version:'1.0.0',
