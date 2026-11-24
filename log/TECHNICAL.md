@@ -695,6 +695,7 @@ The oracle never calls `watane_log` to compute an expected value.
 |---|---|---|---|
 | `key_text.rs` | S5, S6 | text form, parse refusals, small-order and non-canonical keys (`0100…00`; `eeff…ff7f`, which is y = p + 1) | RFC 8032 key; `zbase32()`; hand-made bytes |
 | `identity_file.rs` | S1–S4 | modes 0700/0600, length 32, reopen, refusals leave the file unchanged | `std::fs::metadata`; RFC 8032 seed written by the test |
+| `identity_windows.rs` | 4.7, 6 | private identity and reopen, exposed files and directories, hard links and reparse points | DACL from `icacls /save`; current SID from `whoami /user`; owner from .NET |
 | `entry_codec.rs` | S16, S17 | golden vectors decode with the right fields and id; each refusal of section 4.6 gives its error: 65 729 bytes; 6 and 8 items; a map; trailing byte; seq as `18 05`; indefinite body; uppercase kind; kind of 33 bytes; body of 65 537 bytes (built under the size limit with a short kind); seq 2^53; seq 0 with prev; seq 1 without prev; a flipped signature bit | golden vectors; `cbor::`; `sign()` |
 | `strict_verify.rs` | S18 | S + L refused; A = `0100…00`, R = `0100…00`, S = 0 refused (a cofactorless check alone accepts it); non-canonical A refused; a valid `sign()` entry accepted | hand-made bytes; little-endian addition of L in the test |
 | `append.rs` | S15, S19 | seq 0..2, prev = BLAKE3 of the previous bytes, signature valid under `ed25519_compact::PublicKey::verify` over `cbor::signed`; refusals leave the head unchanged | `cbor::`, `ed25519-compact`, `blake3` |
