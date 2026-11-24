@@ -1380,7 +1380,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Touches: `net/` only. Size: a guard, by reason. Protects: *guard*.
 - [~] **S113 (upkeep) the app says what it is doing and what Alice agrees to.** (in flight, cloud, builder codex,
   reviewer claude; rule 3: last two S112 codex, S111 claude; the upkeep lane, sketched 2026-11-24 by deputy-3 from
-  Leftovers `### app`; runs beside S111, which touches only `app/TECHNICAL.md` in app; Codex task https://chatgpt.com/local/6b05df95-c29c-83eb-bac0-cb04ace5305d, dispatched 19:05 UTC; DELIVERED ~19:55 UTC as PR #29 (+307/-203, all four CI jobs green); the 'Keep data' storage label needs the host (Leftovers); r1: Claude review, fires 20:14 UTC; r1 (20:45): 2/3, changes (2) (user-sim REJECTED on F1.1): F1.1 installing from Find follows before consent and after Deny (pre-existing, the new hint made it visible): ruled option (a), follow only after the install succeeds, adversary in r2; F1.2 the short Call line against APP-F-77: narrowed to the spec's words, exact text stays visible; answer r1 dispatched 20:48 UTC into the Codex task; r1 answered at c36d534 (F1.1 option (a), F1.2, P1.1 to P1.3; main with S111 merged in); r2: Claude review with the adversary on the new install order, fires 21:08 UTC.) Outcomes, each item's check, on the
+  Leftovers `### app`; runs beside S111, which touches only `app/TECHNICAL.md` in app; Codex task https://chatgpt.com/local/6b05df95-c29c-83eb-bac0-cb04ace5305d, dispatched 19:05 UTC; DELIVERED ~19:55 UTC as PR #29 (+307/-203, all four CI jobs green); the 'Keep data' storage label needs the host (Leftovers); r1: Claude review, fires 20:14 UTC; r1 (20:45): 2/3, changes (2) (user-sim REJECTED on F1.1): F1.1 installing from Find follows before consent and after Deny (pre-existing, the new hint made it visible): ruled option (a), follow only after the install succeeds, adversary in r2; F1.2 the short Call line against APP-F-77: narrowed to the spec's words, exact text stays visible; answer r1 dispatched 20:48 UTC into the Codex task; r1 answered at c36d534 (F1.1 option (a), F1.2, P1.1 to P1.3; main with S111 merged in); r2: Claude review with the adversary on the new install order, fires 21:08 UTC; r2 (21:54): 1/4, changes (1) (user-sim ACCEPTED, adversary: R2.1, pre-existing): F2.1 dist's 'Install a hit' contract still says follow then fetch (docs); R2.1 accepted; P2.3, P2.4 taken; answer r2 dispatched 21:58 UTC.) Outcomes, each item's check, on the
   real app (user-sim under xvfb; macOS CI for window tests):
   1. Consent words: "Deny" says what was denied; the Call line names the interface in words, not `mods:x/y@0.1.0`
      (from agentic-harness S39's review); installing from an index says it follows the channel; Remove asks first.
@@ -1612,6 +1612,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### host
 
+- [S113 CI] (guard) flakes seen once each on PR #29 attempt 1: `https_stream::ac5_a_refused_consent_ends_the_stream_consent_refused` (windows-latest) and `consent::ac5_a_consent_given_through_one_provider_is_not_used_through_another` (macos-26); green on rerun.
+
 - [S113] reinstall after 'Keep data' keeps the books but the consent still labels Storage `new`: the host's install plan does not report retained storage.
 
 - [S111 r1] P1.1 connect and TLS handshake each get their own `idle-s` (`host/src/agent/https_stream.rs:580-595`); P1.2 to P1.5, P1.11, P1.14: stronger and more host tests, a reset-before-head message; one sentence each in 19.4 for the accepted R2 and R5.
@@ -1652,6 +1654,8 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 - [S86] a filter value starting with `-` (`--publisher=-x`) makes an unusable rerun.
 
 ### app
+
+- [S113 R2.1] follow only fetched items whose plan entry is not `Change::Unchanged`, so a no-op managed install re-follows nothing (red test `manage::adv_s113_unchanged_managed_install_refollows_without_install_consent`, held by the S113 r2 review team).
 
 - From S90: "Keep data, then reinstall marks storage `new`" needs a host task (`Host::has_state`,
   or excluding Storage from `new_grants` when the identity has state); the busy-port window keeps
@@ -1912,6 +1916,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - 2026-11-24 host 18 **Q38: (b)**, the human ("b is fine for q38"). A workspace or account consent is kept per (origin client, `via` = the provider's identity, folder or account); a new provider asks again. S103 built (b); its next answer round writes host 18 Q38 as decided by the human, 2026-11-24, and the 19.7 rows to match. agentic-harness TECHNICAL 8 already cites 19.7.
 
 ## Deputy decisions
+
+- 2026-11-24 (S113 r2) accepted: R2.1 a no-op managed install (a hostile mod holding Manage, a deliberate unfollow, an approved read prompt) re-follows the channel Alice unfollowed; already on main; nothing installed, no grant or given base. 'After host.install succeeds' does not yet require a plan entry to change. Undo: follow only fetched items whose entry is not `Change::Unchanged` (Leftovers).
 
 - 2026-11-24 (S111 r1) accepted: R2 api.openai.com response headers (openai-organization, openai-project, set-cookie) reach the mod: account identifiers, not credentials, and a mod cannot send Authorization or Cookie (one sentence in 19.4; the fix, if ever: drop them in `head_item`); R3 extra request headers on POST /v1/responses (the host sends only the checked route; the fix, if ever: an allow list); R5 the request body can start OpenAI work that outlives the stream (plan usage, section 6 Not protected); R6 underscore header names (no proxy in the host's client).
 
