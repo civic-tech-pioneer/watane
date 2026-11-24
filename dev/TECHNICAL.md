@@ -2353,14 +2353,14 @@ rules belong to 15.1.
 | DEV-S-55 | `fake_claude::ac3_missing_and_forbidden_arguments_exit_64` | child process |
 | DEV-S-56 | `fake_claude::ac5_lines_no_step_awaits_exit_70`, `fake_claude::ac5_expect_user_contains_mismatch_exits_70` | child process |
 | DEV-S-57 | `fake_claude::ac6_ask_check_cancel_and_answers`, `fake_claude::ac6_sleep_exit_and_crash`, `fake_claude::ac6_hang_ignores_stdin_until_killed` | child process |
-| DEV-S-58 | `scripted::ac1_sse_and_usage`, `scripted::ac4_records_requests`; `scripted_host::ac1_case_3_a_scripted_turn_streams_into_the_mod_with_the_accounts_token` | https client |
-| DEV-S-59 | `scripted::ac1_sse_and_usage`, `scripted::ac2_errors_redirect_reset_stall`; `scripted_host::ac2_case_19_a_redirect_is_an_item_and_is_not_followed`, `ac2_case_19_a_usage_limit_and_a_server_error_arrive_as_items_and_the_stream_closes`, `ac2_case_19_stall_ends_idle_timeout_cut_ends_closed_and_reset_ends_failed`, `ac2_case_19_every_refused_form_reaches_no_server` | https client |
-| DEV-S-60 | `scripted::ac3_models_and_token`; `scripted_host::ac2_case_19_models_with_the_account_streams_the_models_answer` | https client |
-| DEV-S-61 | `scripted::ac5_trust_only_ca` | https client |
+| DEV-S-58 | `scripted::ac3_sse_events_each_one_write`, `scripted::ac4_token_and_whole_requests`; `scripted_host::ac1_case_3_a_scripted_turn_streams_into_the_mod_with_the_accounts_token` | https client |
+| DEV-S-59 | `scripted::ac2_script_in_order_last_repeats`, `scripted::ac3_status_usage_limit_redirect_raw`, `scripted::ac3_cut_has_no_completed`, `scripted::ac3_reset_and_stall`; `scripted_host::ac2_case_19_a_redirect_is_an_item_and_is_not_followed`, `ac2_case_19_a_usage_limit_and_a_server_error_arrive_as_items_and_the_stream_closes`, `ac2_case_19_stall_ends_idle_timeout_cut_ends_closed_and_reset_ends_failed`, `ac2_case_19_every_refused_form_reaches_no_server` | https client |
+| DEV-S-60 | `scripted::ac2_default_script_models_and_404`; `scripted_host::ac2_case_19_models_with_the_account_streams_the_models_answer` | https client |
+| DEV-S-61 | `scripted::ac1_two_origins_and_one_authority` | https client |
 | DEV-S-62 | `scripted::ac6_judge_plays`, `scripted::ac7_judge_counts_every_request` | https client; planned: dev stage 16 |
 | DEV-S-63 | `scripted::ac7_judge_counts_every_request`, `scripted::ac8_judge_key` | https client; planned: dev stage 16 |
 | DEV-S-64 | `preview::unix::tests::ac7_link_writes_default_script_once_and_keeps_the_makers`, `preview::unix::tests::ac7_link_is_replaced_and_copied_where_linking_fails`, `preview::unix::tests::ac7_find_fake_claude_reads_the_variable`, `preview::unix::tests::ac7_spawn_arguments_with_and_without_the_fake`, `doctor::tests::ac7_fake_claude_field_and_warning`; `fake_claude::ac7_serve_passes_the_flag_to_the_host` (slow) | unit: temp folder, literal script and argument vector; slow: the full `serve` against `fake-watane` |
-| DEV-S-65 | `scripted::ac9_program_line_and_log` | child process |
+| DEV-S-65 | `scripted::ac6_program_default_and_log` | child process |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
 
