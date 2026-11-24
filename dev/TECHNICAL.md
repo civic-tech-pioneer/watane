@@ -2896,10 +2896,10 @@ no watane subsystem links the crate, spec §2). Arguments: `[--script
 output, `{"scripted":1,"responses_addr":"127.0.0.1:<port>","judge_addr":"127.0.0.1:<port>","judge_origin":"https://judge.test","ca_pem":"<PEM>"}`,
 and serves until it is killed (SIGTERM). `--script` is a JSON file
 `{"token": string?, "models": [string]?, "replies": [Reply]?, "judge_key": string?, "plays": [Play]?}`
-The program and preview validation use the same `scripted_format::Script` type.
 whose `Reply`, `SseEvent` and `Play` values are the serde forms of the types
 above (externally tagged, kebab-case names; the default script is one `Sse`
-with `Delta("ok")` and `Completed`, and one `Safe([])`). With `--log`, it
+with `Delta("ok")` and `Completed`, and one `Safe([])`). The program and
+preview validation use the same `scripted_format::Script` type. With `--log`, it
 writes each request it receives as `<dir>/responses/<n>.json` or
 `<dir>/judge/<n>.json` (`n` from 1: `{"method","path","headers","body_b64"}`),
 so a test reads `requests()` and `count()` as the files of the folder.
@@ -2989,7 +2989,9 @@ once. The maker tools offer the fake `claude` instead:
   (host 19.9). Dev validates a supplied script against the 18.3 format
   before testing the mod. A missing program or a host that rejects the
   setting gives `preview.scripted_openai_missing` and starts or reuses
-  an ordinary preview when no script was supplied. With a supplied script,
+  an ordinary preview when no script was supplied. A host refusal is remembered
+  for the selected program fingerprint and the live preview port, preserving
+  the API and MCP connection on the next serve without a script. With a supplied script,
   invalid input or unavailable scripted preview support fails with
   `env.preview_start` and names the maker's file.
   An unchanged script reuses a live preview. Changing the script or enabling

@@ -68,3 +68,21 @@ impl Host {
             .map_err(|_| HostError::BadRequest("scripted OpenAI is already configured".into()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_private_address_outside_loopback_is_refused() {
+        let dir = tempfile::tempdir().expect("temporary preview");
+        let host = crate::Host::open(dir.path(), crate::Mode::Preview, crate::Limits::default())
+            .expect("open preview");
+        let address = "10.0.0.1:1234".parse().expect("private socket address");
+        let error = host
+            .set_scripted_openai(address, "", "fixture".into())
+            .expect_err("non-loopback endpoint");
+        assert_eq!(
+            error.to_string(),
+            "scripted OpenAI requires a nonzero port on 127.0.0.1"
+        );
+    }
+}

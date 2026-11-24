@@ -18,7 +18,7 @@ use watane_host::{Ready, RunInfo};
 
 #[path = "openai.rs"]
 mod openai;
-use openai::{OpenAi, unavailable_warning};
+use openai::{OpenAi, Refusal, unavailable_warning};
 pub(crate) use openai::{ScriptInput, read_script};
 const DEFAULT_SCRIPT: &str = r#"{"steps":[{"do":"expect-user"},{"do":"delta","text":"This is the fake claude."},{"do":"message","text":"This is the fake claude."},{"do":"result"},{"do":"idle"}]}"#;
 /// Links the fake into `<P>/claude/` (a copy where links fail), keeps the maker's script (TECHNICAL 18.4).
@@ -61,14 +61,14 @@ fn spawn_args(home: &Path, fake_claude: Option<&Path>) -> Vec<std::ffi::OsString
 }
 struct StartFailure {
     problem: Problem,
-    scripted_unavailable: bool,
+    refusal: Option<Refusal>,
 }
 
 impl From<Problem> for StartFailure {
     fn from(problem: Problem) -> Self {
         Self {
             problem,
-            scripted_unavailable: false,
+            refusal: None,
         }
     }
 }
@@ -90,7 +90,7 @@ fn start(
     folder: &Path,
     log: &Path,
     fake_claude: Option<&Path>,
-    openai: Option<&OpenAi>,
+    setting: Option<(&OpenAi, Option<Refusal>)>,
 ) -> Result<Ready, StartFailure> {
     let binary = find_watane()?;
     fs::create_dir_all(folder).map_err(Problem::internal)?;
@@ -118,6 +118,7 @@ fn start(
     };
     let mut command = Command::new(binary);
     command.args(spawn_args(home, fake_claude));
+    let openai = setting.and_then(|(openai, refusal)| refusal.is_none().then_some(openai));
     let _snapshot = match openai {
         Some(openai) => openai.configure(&mut command, folder)?,
         None => None,
@@ -156,7 +157,11 @@ fn start(
                 {
                     return Err(StartFailure {
                         problem: openai.start_failure(problem),
-                        scripted_unavailable: true,
+                        refusal: Some(if reported.error.code == "usage" {
+                            Refusal::Usage
+                        } else {
+                            Refusal::Scripted
+                        }),
                     });
                 }
                 return Err(problem.into());
@@ -175,7 +180,7 @@ fn start(
         }
     };
     if let Err(error) =
-        OpenAi::remember(openai, folder, ready.port).and_then(|()| save_ready(folder, &ready))
+        OpenAi::remember(setting, folder, ready.port).and_then(|()| save_ready(folder, &ready))
     {
         let _ = stop_home(home);
         let _ = child.kill();
@@ -257,7 +262,17 @@ pub(crate) fn serve_with_script(
         let log = folder.join("watane.log");
         let openai = OpenAi::select(dir, &m, &folders, script, warnings)?;
         let (running, cached) = running_preview(&folder)?;
-        let cached = cached.filter(|ready| OpenAi::matches(openai.as_ref(), &folder, ready.port));
+        let cached = cached.filter(|ready| {
+            if let Some(reason) = openai
+                .as_ref()
+                .and_then(|setting| setting.fallback(&folder, ready.port))
+            {
+                warnings.push(reason.warning());
+                true
+            } else {
+                OpenAi::matches(openai.as_ref(), &folder, ready.port)
+            }
+        });
         let fake_claude = match find_fake_claude() {
             Ok(program) => Some(link_fake_claude(&folder, &program)?),
             Err(_) => None,
@@ -274,18 +289,29 @@ pub(crate) fn serve_with_script(
                 &folder,
                 &log,
                 fake_claude.as_deref(),
-                openai.as_ref(),
+                openai.as_ref().map(|setting| (setting, None)),
             ) {
                 Ok(ready) => ready,
-                Err(error)
-                    if error.scripted_unavailable
-                        && openai.as_ref().is_some_and(OpenAi::automatic) =>
-                {
-                    warnings.push(unavailable_warning(error.problem));
-                    start(&home, &folder, &log, fake_claude.as_deref(), None)
-                        .map_err(|error| error.problem)?
+                Err(error) => {
+                    let Some((reason, setting)) = error
+                        .refusal
+                        .zip(openai.as_ref().filter(|setting| setting.automatic()))
+                    else {
+                        return Err(error.problem);
+                    };
+                    warnings.push(match reason {
+                        Refusal::Usage => reason.warning(),
+                        Refusal::Scripted => unavailable_warning(error.problem),
+                    });
+                    start(
+                        &home,
+                        &folder,
+                        &log,
+                        fake_claude.as_deref(),
+                        Some((setting, Some(reason))),
+                    )
+                    .map_err(|error| error.problem)?
                 }
-                Err(error) => return Err(error.problem),
             }
         };
         let client = Client::for_home(&home)?

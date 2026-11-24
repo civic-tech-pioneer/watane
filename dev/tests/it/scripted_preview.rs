@@ -185,6 +185,8 @@ fn regress_s114_bad_script_shape_error_is_clear() {
     );
     let message = error["message"].as_str().unwrap();
     let fix = error["fix"].as_str().unwrap();
+    assert_eq!(error["line"], 1);
+    assert_eq!(error["column"], 19);
     assert!(message.contains("nope"), "cause not named: {message}");
     assert!(!message.contains("missing field `mode`"));
     assert!(!message.contains(".scripted-responses-"));
@@ -250,17 +252,36 @@ fn regress_s114_refused_setting_reuses_ordinary_preview() {
     let preview = Preview::new();
     let stub = refusing_host(&preview);
     let serve = || {
-        let out = preview.command(&[])
+        let out = preview
+            .command(&[])
             .env("WATANE_BIN", &stub)
             .env("TEST_PREVIEW_HOST", &host)
-            .output().unwrap();
+            .output()
+            .unwrap();
         assert_eq!(out.status.code(), Some(0));
         serde_json::from_slice::<Value>(&out.stdout).unwrap()
     };
     let first = serve();
     let second = serve();
+    for result in [&first, &second] {
+        assert!(
+            result["warnings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|warning| {
+                    warning["code"] == "preview.scripted_openai_missing"
+                        && warning["message"].as_str().is_some_and(|message| {
+                            message.contains("this watane is not a development build")
+                        })
+                })
+        );
+    }
     assert_eq!(first["result"]["reused"], false);
-    assert_eq!(second["result"]["reused"], true, "second serve restarted the preview");
+    assert_eq!(
+        second["result"]["reused"], true,
+        "second serve restarted the preview"
+    );
     assert_eq!(second["result"]["api"], first["result"]["api"]);
     assert!(first["result"]["mcp"]["url"].is_string());
     assert!(first["result"]["mcp"]["token"].is_string());

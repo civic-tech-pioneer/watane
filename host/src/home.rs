@@ -86,7 +86,6 @@ pub(crate) struct Home {
     pub mode: Mode,
     #[cfg(all(unix, watane_dev_profile, debug_assertions))]
     pub(crate) scripted_openai: std::sync::OnceLock<ScriptedOpenAi>,
-    // Keep the lock through the drop of the preview settings as well.
     _lock: fs::File,
 }
 

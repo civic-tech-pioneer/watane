@@ -472,7 +472,8 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
                     preview::stop(&dir, &env)
                 } else {
                     let script = script.map(|path| cwd.join(path));
-                    let script = preview::read_script(&dir, script.as_deref()).map_err(|error| vec![error])?;
+                    let script = preview::read_script(&dir, script.as_deref())
+                        .map_err(|error| vec![error])?;
                     let mut tested = test_local(&dir);
                     if !tested.ok {
                         outcome.next = if tested.dir.as_deref() == Some(dir.as_path()) {

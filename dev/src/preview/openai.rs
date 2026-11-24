@@ -26,12 +26,28 @@ pub(crate) fn read_script(
     let path = explicit.map_or_else(|| dir.join(SCRIPT), Path::to_path_buf);
     match fs::read(&path) {
         Ok(bytes) => {
-            serde_json::from_slice::<crate::scripted_format::Script>(&bytes)
-                .map_err(|e| script_problem(&path, e))?;
+            serde_json::from_slice::<crate::scripted_format::Script>(&bytes).map_err(|error| {
+                script_problem(&path, &error)
+                    .at(
+                        path.to_string_lossy(),
+                        u32::try_from(error.line()).ok(),
+                        u32::try_from(error.column()).ok(),
+                    )
+                    .fix("Use the scripted-responses JSON format from dev TECHNICAL 18.3")
+            })?;
             Ok(Some(ScriptInput { path, bytes }))
         }
         Err(e) if explicit.is_none() && e.kind() == ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(script_problem(&path, e)),
+        Err(error) => {
+            let fix = if error.kind() == ErrorKind::NotFound {
+                "Check the script path or create the file"
+            } else {
+                "Check that the script file is readable"
+            };
+            Err(script_problem(&path, error)
+                .at(path.to_string_lossy(), None, None)
+                .fix(fix))
+        }
     }
 }
 
@@ -39,6 +55,32 @@ pub(super) fn unavailable_warning(mut problem: Problem) -> Problem {
     problem.code = Code::PreviewScriptedOpenaiMissing;
     problem.message = format!("serving without scripted OpenAI: {}", problem.message);
     problem
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Refusal {
+    Usage,
+    Scripted,
+}
+
+impl Refusal {
+    fn tag(self) -> &'static str {
+        match self {
+            Self::Usage => "unsupported",
+            Self::Scripted => "rejected",
+        }
+    }
+
+    pub(super) fn warning(self) -> Problem {
+        let message = match self {
+            Self::Usage => "this watane is not a development build with scripted OpenAI support",
+            Self::Scripted => "the host previously refused scripted OpenAI for this preview",
+        };
+        unavailable_warning(
+            Problem::new(Code::EnvPreviewStart, message)
+                .fix("Use a development build of watane and restart the preview"),
+        )
+    }
 }
 
 pub(super) struct OpenAi {
@@ -144,15 +186,33 @@ impl OpenAi {
         }
     }
 
+    pub(super) fn fallback(&self, folder: &Path, port: u16) -> Option<Refusal> {
+        if !self.automatic() {
+            return None;
+        }
+        let marker = fs::read_to_string(folder.join(MARKER)).ok()?;
+        [Refusal::Usage, Refusal::Scripted]
+            .into_iter()
+            .find(|reason| marker == self.refused_marker(port, *reason))
+    }
+
+    fn refused_marker(&self, port: u16, reason: Refusal) -> String {
+        format!("{}:{}", reason.tag(), self.marker(port))
+    }
+
     pub(super) fn remember(
-        setting: Option<&Self>,
+        setting: Option<(&Self, Option<Refusal>)>,
         folder: &Path,
         port: u16,
     ) -> Result<(), Problem> {
         let marker = folder.join(MARKER);
         match setting {
-            Some(setting) => {
-                let temp = PrivateFile::create(folder, setting.marker(port).as_bytes())?;
+            Some((setting, refusal)) => {
+                let record = refusal.map_or_else(
+                    || setting.marker(port),
+                    |reason| setting.refused_marker(port, reason),
+                );
+                let temp = PrivateFile::create(folder, record.as_bytes())?;
                 fs::rename(&temp.0, marker).map_err(Problem::internal)
             }
             None => match fs::remove_file(marker) {
@@ -213,8 +273,6 @@ fn script_problem(path: &Path, error: impl std::fmt::Display) -> Problem {
             path.display()
         ),
     )
-    .at(path.to_string_lossy(), None, None)
-    .fix("Use the scripted-responses JSON format from dev TECHNICAL 18.3")
 }
 
 fn program() -> Result<PathBuf, Problem> {
@@ -252,7 +310,7 @@ fn program() -> Result<PathBuf, Problem> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MARKER, OpenAi, ScriptInput, read_script};
+    use super::{MARKER, OpenAi, Refusal, ScriptInput, read_script};
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
@@ -271,6 +329,10 @@ mod tests {
             .err()
             .expect("missing explicit script");
         assert_eq!(missing.file.as_deref().map(Path::new), Some(path.as_path()));
+        assert_eq!(
+            missing.fix.as_deref(),
+            Some("Check the script path or create the file")
+        );
         fs::write(dir.path().join(super::SCRIPT), b"{").expect("invalid default");
         fs::write(&path, b"{}").expect("explicit script");
         let actual = read_script(dir.path(), Some(&path))
@@ -293,14 +355,41 @@ mod tests {
         let changed = setting(b"changed");
         assert!(OpenAi::matches(None, folder, 100));
         assert!(!OpenAi::matches(Some(&openai), folder, 100));
-        OpenAi::remember(Some(&openai), folder, 100).expect("save scripted marker");
+        OpenAi::remember(Some((&openai, None)), folder, 100).expect("save scripted marker");
         assert!(!OpenAi::matches(None, folder, 100));
         assert!(OpenAi::matches(Some(&openai), folder, 100));
         assert!(!OpenAi::matches(Some(&openai), folder, 101));
         assert!(!OpenAi::matches(Some(&changed), folder, 100));
+        OpenAi::remember(Some((&openai, Some(Refusal::Usage))), folder, 100)
+            .expect("save fallback marker");
+        assert!(matches!(openai.fallback(folder, 100), Some(Refusal::Usage)));
+        assert!(openai.fallback(folder, 101).is_none());
+        assert!(changed.fallback(folder, 100).is_none());
+        assert!(!OpenAi::matches(Some(&openai), folder, 100));
         OpenAi::remember(None, folder, 101).expect("clear scripted marker");
         assert!(!folder.join(MARKER).exists());
         assert!(OpenAi::matches(None, folder, 101));
+    }
+
+    #[test]
+    fn a_supplied_script_requires_the_program() {
+        let temp = tempfile::tempdir().expect("temporary directory");
+        let dir = temp.path().join("fixture");
+        crate::template::new_mod(&dir, "fixture").expect("create mod");
+        let root = watane_pkg::Mod::read(&dir).expect("read mod");
+        let path = dir.join("maker.json");
+        fs::write(&path, b"{}").expect("write script");
+        let script = read_script(&dir, Some(&path)).expect("read script");
+        let mut warnings = Vec::new();
+        let missing = dir.join("missing-program");
+        let error = crate::env::with_vars(
+            &[("WATANE_SCRIPTED_RESPONSES", Some(missing.as_os_str()))],
+            || OpenAi::select(&dir, &root, &[], script, &mut warnings),
+        )
+        .err()
+        .expect("supplied script requires the executable");
+        assert_eq!(error.file.as_deref().map(Path::new), Some(path.as_path()));
+        assert!(warnings.is_empty());
     }
 
     #[test]

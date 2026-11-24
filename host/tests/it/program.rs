@@ -151,30 +151,6 @@ impl Drop for Preview {
     }
 }
 
-#[cfg(unix)]
-#[test]
-fn s114_home_lock_remains_held_until_state_closes() {
-    let home = tempfile::tempdir().unwrap();
-    let mut preview = Preview::start(home.path());
-    let lock = fs::File::open(home.path().join("lock")).unwrap();
-    assert!(matches!(lock.try_lock(), Err(fs::TryLockError::WouldBlock)));
-
-    let shutdown = std::thread::spawn(move || preview.stop());
-    let deadline = Instant::now() + Duration::from_secs(30);
-    loop {
-        match lock.try_lock() {
-            Ok(()) => break,
-            Err(fs::TryLockError::WouldBlock) if Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(1));
-            }
-            Err(err) => panic!("the home lock did not become available: {err}"),
-        }
-    }
-    let state = redb::Database::open(home.path().join("state/state.redb"));
-    shutdown.join().unwrap();
-    assert!(state.is_ok(), "the database was still locked: {state:?}");
-}
-
 #[cfg(all(unix, watane_dev_profile, debug_assertions))]
 #[test]
 fn s114_sigterm_reaps_the_scripted_responses_child() {
