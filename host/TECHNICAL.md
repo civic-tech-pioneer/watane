@@ -1537,8 +1537,12 @@ tool; tools are deduplicated by name and sorted by name.
 Tool name: `<local>_<interface>_<function>`, with the short interface name.
 A name longer than 64 bytes gives no tool. Step 11: a tool mod may mark a
 function `@parallel` or `@idempotent` (19.5); `agent-tools.describe` carries
-both. The name `agent` is reserved as `preview` is (`bad_name`): `/mcp/agent`
-is the route of handle tokens (19.5). Description: the WIT doc comment
+both. The name `agent` is reserved as `preview` is (`bad_name` at
+`set_toolset`): `/mcp/agent` is the route of handle tokens (19.5). A home whose
+`toolsets.json` already holds a toolset `agent` (saved before S103) still opens
+and keeps it: it is listed and can be removed, but no token reaches it, since
+`/mcp/agent` takes handle tokens only, and no handle can open it (review r1 of
+S103, F1.3). Description: the WIT doc comment
 of the function (`Resolve::push_dir` on `mods/<local>/wit/`, then
 `Function::docs.contents`; both exist in wit-parser 0.254), else its
 signature `<function>: func(<p>: <type>, ...) -> <type>`. Input schema:
@@ -2509,9 +2513,9 @@ Raised by S95's adversary step (none blocks A1):
   since it is a subset of (a); (a) to (b) later would void every consent given
   under (a). The source row changes in agentic-harness too. Blocks A3; A2
   starts only in scratch workspaces and needs no answer.
-  **Decided (b) by S103's foreman (2026-11-24), for the human to veto**: the
-  recommended option, the stronger one, and the one that keeps (a) open at no
-  cost (every consent given under (b) stays valid under (a)). 19.7 states it.
+  **Answered (b) by the human (2026-11-24, factory/PLAN.md ae4b9b9)**, as S103's foreman
+  had built it: the recommended option, the stronger one, and the one that keeps (a)
+  open at no cost (every consent given under (b) stays valid under (a)). 19.7 states it.
 - **Q39** The Claude login and loopback under the shell grant (19.3, The
   run; source row: agentic-harness TECHNICAL 4.4, the environment, and 4.2,
   the shell grant). `CLAUDE_CODE_OAUTH_TOKEN` is in `claude`'s environment
@@ -2697,7 +2701,7 @@ source's, because the host commits each invoke on its own (Q3).
 the host as producer (`claude-code.start`, `https-stream.start`,
 `agent-tools.call`); a *mod stream* is opened by a mod with `streams.open`.
 The *origin client* is the mod whose authority a chain carries: for a page
-call, the mod of the page; for an agent call, the mod that owns the handle
+call, the mod of the page; for an agent call (a job of 19.5 or a `tools/call` on `/mcp/agent`), the handle's origin client with the install generation it had when the handle opened, never the tool's mod (review r1 of S103, F1.1)
 (19.5); for an item call, a job call or a timer call, the origin client of the
 call that opened the stream, job or timer; for an event delivery (9.2), and
 for a collect answer (9.4) and every call nested in it, the subscriber
@@ -3106,7 +3110,8 @@ not keep a credential from a mod on their own. Three rules do:
    workspace consent is held, so `initialized` never comes before it; the
    checked provider relies on that. Before the answer only control lines may come, and none
    is pushed: any other line kills the group and ends the stream `mismatch "init"`, so
-   `initialized` is the first item.
+   `initialized` is the first item of the run; only the host's `consent-pending` items
+   (19.7; one per folder or toolset asked, Folders) can come before it.
 3. The `system/init` line must match the launch in tools, MCP servers, agents,
    permission mode (`manual` reads `default`) and plugins (exactly
    `watane-run` and Claude Code's `cc-plugin-*`). Skills are not compared. A
@@ -3497,6 +3502,16 @@ The toolsets are those of 10.1; `open` with no toolset, or one that
   presented on `/mcp/agent` (10.3). A tool's mod sees the caller
   `agent:<handle-name>`: `h` and 30 lowercase hex chars (a `Handle`, 2.3), a
   second random value, never the handle itself.
+- **Authority at the run** (review r1 of S103, F1.1, F1.2). A tool runs, from a job or
+  from `/mcp/agent` `tools/call`, with the handle's origin client as origin client, so
+  every request it makes asks and uses that client's consents, never the tool mod's.
+  Just before the tool's call starts, under one read of the catalog, the host decides
+  again whether it may run: the handle is live, the tool is in the handle's toolsets
+  and in the stored consent list as it stands then, the origin client is the same
+  install (identity and generation), and the tool's mod is the install it resolved to.
+  Otherwise the tool does not run: a job's item is `{"err":{"code":"unknown-tool",..}}`
+  (`gone` when the handle or the origin client is gone) and `tools/call` answers
+  `-32602`.
 - **Job.** `call(handle, key, tool, args)` returns a stream at once (its consumer is the
   opening mod, its origin client the handle's); the tool runs later as its own top-level
   call with its own budget and the caller of the previous bullet; its result is the stream's
@@ -3676,7 +3691,7 @@ app, kept by the host with the grants.
   consent name `via`, the identity (pkg 4.1) of the mod whose request waits (the
   provider), so a consent given through one provider is not reused by another, nor
   by a mod in the middle that holds its own grant (section 18, Q38, option (b),
-  decided by S103's foreman). A toolset consent names no `via`: its handle is the
+  answered by the human, 2026-11-24). A toolset consent names no `via`: its handle is the
   origin client's own (19.5). The words, the consent view and the choice belong to
   the app (app 19.2).
 - **Asking.** When a request needs a consent not held, the host calls

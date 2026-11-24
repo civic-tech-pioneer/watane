@@ -2577,8 +2577,10 @@ when it is absent (`None`) the words are `Let <origin> have agents work in
 <folder> (through <provider>)?`, with no profile and no comma. `<origin>` is `<name> (local)` for a local mod and `<name> by <party>` for a
 published one (section 4). `<folder>` is the folder as the host resolved it.
 `<functions>` is the toolset's calls by their MCP tool names (the names of
-`tools_list`, 7), separated by `, `, in the order of the toolset, at most 12
-and then `and <n> more` as one more item of the list (`f1, ..., f12, and 3 more`); each name is set with `textContent`. The page shows
+`tools_list`, 7), separated by `, `, in the order of the toolset, every one of
+them: the host stores every name the question covers, so the participant sees
+every name before `Approve` (V5, HOST-F-75; review r1 of S103, F1.4). Each name is
+set with `textContent`; a long list wraps or scrolls in the view, it is never cut. The page shows
 the question first, then `Approve` and `Deny` as for any request (6.3): the
 800 ms gate, the focus on `Deny`, no form. The request takes only `Approve`
 with no `withheld` and no choice, or `Deny` (`WrongAnswer` otherwise), as
