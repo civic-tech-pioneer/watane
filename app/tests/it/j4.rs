@@ -123,6 +123,10 @@ fn ac8_journey_j4_updates_withdrawal_and_compromise() {
     consent(&carol);
     let text = carol.eval("consent", "document.body.textContent");
     assert!(text.as_str().unwrap().contains("example.org"), "{text}");
+    assert!(
+        !text.as_str().unwrap().contains("Approving also follows"),
+        "{text}"
+    );
     deny(&carol);
     let deadline = Instant::now() + TIMEOUT;
     loop {
