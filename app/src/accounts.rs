@@ -58,10 +58,11 @@ impl watane_host::AccountSource for Source {
     fn judge(&self, _: &str) -> Result<watane_host::JudgeAccount, watane_host::AccountError> {
         Err(watane_host::AccountError::NoAccount)
     }
+    /// The stored path as it is, also when its check failed (19.3): the host's spawn or its
+    /// `initialize` answer decides (`no-binary`, `version`).
     fn claude_binary(&self) -> Result<PathBuf, watane_host::AccountError> {
         self.0
             .claude()
-            .filter(|c| c.error.is_none())
             .map(|c| c.path)
             .ok_or(watane_host::AccountError::NoAccount)
     }
@@ -310,6 +311,40 @@ fn sync_parent(path: &Path) -> io::Result<()> {
 #[allow(clippy::unwrap_used, reason = "test fixtures")]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn source_gives_the_stored_claude_path_and_no_token_or_key() {
+        use watane_host::{AccountError, AccountSource};
+        let home = tempfile::tempdir().unwrap();
+        fs::create_dir(home.path().join("app")).unwrap();
+        let accounts = Arc::new(Accounts::new(home.path()));
+        let source = Source(Arc::clone(&accounts));
+        assert_eq!(source.claude_binary(), Err(AccountError::NoAccount));
+        accounts
+            .keep_openai(&OpenAi {
+                version: 1,
+                access_token: "private-access".into(),
+                refresh_token: "private-refresh".into(),
+                expires_at: u64::MAX,
+                sub: "alice".into(),
+                plan: "plus".into(),
+            })
+            .unwrap();
+        // A path whose file is gone is returned as it is (19.3); the host's spawn fails.
+        let gone = home.path().join("gone/claude");
+        let stored = Claude {
+            version: 1,
+            path: gone.clone(),
+        };
+        write(&accounts.claude_path(), &stored).unwrap();
+        let source = Source(Arc::new(Accounts::new(home.path())));
+        assert_eq!(source.claude_binary(), Ok(gone));
+        assert_eq!(source.openai_token().await, Err(AccountError::NoAccount));
+        assert!(matches!(
+            source.judge("local/claude"),
+            Err(AccountError::NoAccount)
+        ));
+    }
 
     #[test]
     fn ac5_account_is_private_and_status_redacts_tokens() {

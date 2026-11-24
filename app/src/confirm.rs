@@ -1207,6 +1207,15 @@ mod tests {
         );
         assert!(mods[0].origin.is_none());
         assert!(mods[0].binds.is_empty());
+        // 19.2, Plan line: only a provider holding a Claude Code grant is named.
+        assert!(mods[1].agents_via.is_empty());
+        let mut request = request;
+        request.entries[0].grants = vec![Grant::ClaudeCodeShell];
+        let consent::Request::Install { mods, .. } = request_view(&request, &parties, None) else {
+            panic!()
+        };
+        assert_eq!(mods[1].agents_via, ["ratings by Frank (yyyyyyyyyy)"]);
+        assert!(mods[0].agents_via.is_empty());
     }
 
     #[tokio::test]

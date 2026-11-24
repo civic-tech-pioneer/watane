@@ -2771,7 +2771,7 @@ judge origin for the judge key (dev 18), for S65.
 | `words::tests` (L, step 11) | `words::agent_consent` for each `what`; the two grant rows; `grant_short` of both; the map of `watane_host::judge_origin`'s result to the page line: accepted (a lone trailing `/`, upper case, port 443) and refused (another path, a query, a fragment, userinfo, `http`, trailing dot) origins | literal strings |
 | `consent::tests` (L) | `Agent` takes `Approve` with no withheld and no choice, or `Deny`; `stop` is `WrongAnswer` | the answers submitted |
 | `tests/it/gui_shell.rs` (L, step 11) | through the driver's `ask`: an `agent` request of each `what` shows its title and question, hostile folder, origin and function names as text, and no stop button; an install with `agents_via` shows `Uses Claude Code through <provider>.` | `eval` of the consent DOM text |
-| `tests/it/agent.rs` (L) | S54 to S68 | below; S58 and S60 run on the real host with the fixtures `claude` and `claude-front` (copies of host's) and the shell script `fake-claude` (a copy of host's), chosen through `claude_binary_pick` |
+| `tests/it/agent.rs` (L) | S54 to S68 | below; S58 and S60 run on the real host with host's fixtures `claude` (copied with a page added) and `claude-front` and host's shell script `fake-claude`, chosen through `claude_binary_pick` |
 
 Scenarios of `tests/it/agent.rs`:
 

@@ -17,8 +17,9 @@ mod issuer;
 use crate::support::GUI;
 use crate::support::driver::App;
 use crate::support::journey::{
-    TIMEOUT, approve, begin_install, deny, fixture, installed, invoke, open, until,
+    TIMEOUT, approve, begin_install, copy_dir, deny, installed, invoke, open, until,
 };
+use crate::support::manage::host_fixture;
 use serde_json::{Value, json};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -183,26 +184,33 @@ const INIT: &str = r#"{"type":"system","subtype":"init","tools":[],"mcp_servers"
 const GRANT_CLAUDE: &str = "Can start Claude Code with your Claude account, to read and change files in folders you choose. Not checked by watane.";
 const GRANT_SHELL: &str = "Can start Claude Code with your Claude account and let it run programs and use the web, inside Claude's sandbox. Not checked by watane.";
 
-/// A running app with the fake `claude` chosen and the `claude` and `claude-front` fixtures
-/// installed, the page of `claude` open.
+/// A running app with host's fake `claude` chosen and host's `claude` (with a page added) and
+/// `claude-front` fixtures installed, the page of `claude` open.
 struct Claude {
     app: App,
     home: tempfile::TempDir,
-    _fake: tempfile::TempDir,
+    _work: tempfile::TempDir,
 }
 fn claude_app() -> Claude {
     let home = tempfile::tempdir().unwrap();
-    let fake = tempfile::tempdir().unwrap();
-    let program = fake.path().join("claude");
-    fs::copy(fixture("fake-claude/claude"), &program).unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let (fake, claude) = (work.path().join("bin"), work.path().join("mods/claude"));
+    fs::create_dir(&fake).unwrap();
+    let program = fake.join("claude");
+    let script = host_fixture("../fake-claude/claude");
+    fs::copy(script, &program).unwrap();
     fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
-    fs::write(fake.path().join("init"), format!("{INIT}\n")).unwrap();
+    fs::write(fake.join("init"), format!("{INIT}\n")).unwrap();
+    copy_dir(&host_fixture("claude"), &claude);
+    fs::create_dir(claude.join("ui")).unwrap();
+    let page = r#"<!doctype html><title>Claude</title><script src="/watane.js"></script>"#;
+    fs::write(claude.join("ui/index.html"), page).unwrap();
     let app = App::start(home.path(), &[]);
     assert!(app.wait("main", TIMEOUT));
     until(&app, "main", "document.body.dataset.ready === 'true'");
     app.pick(&[program.canonicalize().unwrap()]);
     invoke(&app, "claude_binary_pick", json!({}));
-    begin_install(&app, &[fixture("claude"), fixture("claude-front")]);
+    begin_install(&app, &[claude, host_fixture("claude-front")]);
     // The plan of the consumer of a Claude Code provider says so (S60).
     assert_eq!(
         app.eval(
@@ -218,7 +226,7 @@ fn claude_app() -> Claude {
     Claude {
         app,
         home,
-        _fake: fake,
+        _work: work,
     }
 }
 impl Claude {
@@ -391,6 +399,14 @@ fn s60_consent_in_the_details_and_its_withdrawal() {
             words
         );
     }
+    // A key that does not parse is `bad_input` and takes nothing back.
+    c.app.eval("main", "window.__result = null; window.__TAURI_INTERNALS__.invoke('consent_withdraw', {local: 'claude', key: 'nonsense'}).then(v => window.__result = {ok: v}, error => window.__result = {error}); null");
+    until(&c.app, "main", "window.__result !== null");
+    assert_eq!(
+        c.app.eval("main", "window.__result.error.code"),
+        "bad_input"
+    );
+    assert_eq!(c.consents().as_array().unwrap().len(), 1);
     // The switch withdraws: the line goes, the file agrees, the stream ends `gone`.
     c.app.eval(
         "main",
