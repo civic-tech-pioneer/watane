@@ -145,7 +145,8 @@ mod tests {
     #[test]
     fn the_ready_line_requires_version_one_a_newline_and_a_bounded_line() {
         let ready = r#"{"scripted":1,"responses_addr":"127.0.0.1:1","ca_pem":"fixture"}"#;
-        assert!(read_ready(format!("{ready}\n").as_bytes()).is_ok());
+        let parsed = read_ready(format!("{ready}\n").as_bytes()).expect("valid ready line");
+        assert_eq!(parsed.responses_addr.to_string(), "127.0.0.1:1");
         assert!(read_ready(ready.as_bytes()).is_err());
         assert!(read_ready(format!("{}\n", ready.replace(":1,", ":2,")).as_bytes()).is_err());
         assert!(read_ready(format!("{}{ready}\n", " ".repeat(64 * 1024)).as_bytes()).is_err());
