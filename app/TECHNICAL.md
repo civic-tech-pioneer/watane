@@ -2289,8 +2289,9 @@ second app runtime is created.
 | `Remove { local, delete_data }` | `Request::Manage` with `Remove` or `RemoveData` and the users of APP-F-67; on approve, what `mod_remove` does: `views::close_mod`, `host.remove(local, delete_data)`, and the main mod file of 5.4. |
 
 `HostConfirm::install` with `Requester::Mod(by)` builds `Request::Install`
-with `asked_by` set (17.4); the host asks it for every such plan (host
-12.1), so an update with no new grant shows too (APP-F-72).
+with `asked_by` set (17.4). The host asks it for any plan with a new or
+updated entry (host 12.1), so an update with no new grant shows too
+(APP-F-72).
 
 `reduced(by, reduction)` must not block: it posts to the main thread and
 returns. `OpenPage(local)` (host Q31) opens or focuses `mod-<local>` as the
