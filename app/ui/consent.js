@@ -67,6 +67,9 @@ try {
     document.querySelector('.mark').textContent = view.mark;
     const request = view.request;
     document.querySelector('h1').textContent = request.kind === 'agent' ? view.title : request.kind === 'read' ? `${request.asked_by.name} asks to read ${request.link}` : request.kind === 'manage' ? manageTitle(request) : request.kind === 'install' ? (request.mods.length === 1 ? (request.mods[0].replaces ? `Update ${request.mods[0].name} to ${request.mods[0].version}` : `Install ${request.mods[0].name}`) : `Install ${request.mods.length} mods`) : request.kind === 'pick' ? `Choose a mod for ${request.consumer}` : request.kind === 'join' ? 'Pair a machine' : request.kind === 'reach' ? (request.what === 'relay' ? 'Use a relay' : 'Turn on the DHT') : signTitle(request.statement);
+    const heading = document.querySelector('h1').textContent;
+    deny.title = `Deny: ${heading}`;
+    deny.setAttribute('aria-label', deny.title);
     stop.hidden = !request.asked_by;
     if (request.asked_by) {
       stop.textContent = `Deny and stop asks from ${request.asked_by.name}`;
@@ -79,7 +82,9 @@ try {
       text(main, 'h2', target.name);
       text(main, 'p', target.version);
       text(main, 'p', target.publisher ? `by ${party(target.publisher)}` : 'local');
-      if (request.action === 'grant' && request.grant) text(main, 'p', request.grant.text);
+      if (request.action === 'grant' && request.grant) {
+        text(main, 'p', request.grant.short || request.grant.text).title = request.grant.text;
+      }
       if (request.action === 'remove' || request.action === 'remove_data') {
         text(main, 'p', request.action === 'remove' ? 'Its data is kept. Installing it again brings it back.' : 'Its data is deleted. This cannot be undone.');
         if (request.users.length) text(main, 'p', `Used by: ${request.users.join(', ')}`);
@@ -102,7 +107,7 @@ try {
           input.type = 'checkbox';
           input.checked = true;
           label.append(input);
-          text(label, 'span', `Allow: ${grant.text}${grant.new ? ' · new' : ''}`);
+          text(label, 'span', `Allow: ${grant.short || grant.text}${grant.new ? ' · new' : ''}`).title = grant.text;
           section.append(label);
           grants.push({input, local: mod.local, key: grant.key});
         }

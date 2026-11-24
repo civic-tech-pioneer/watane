@@ -80,7 +80,7 @@ function button(parent, text, className, callback) {
   const b = element('button', text, parent, `btn ${className || ''}`);
   b.onclick = () => Promise.resolve().then(callback).catch(showError); return b;
 }
-let lastMods = '', currentMods = [];
+let lastMods = '', currentMods = [], startupFailed = false;
 let managerTab = 'library', selected = null, sourceFilter = '', noteSelection = null;
 function dismissInstalled() { $('#installed-note').hidden = true; noteSelection = null; }
 function installedNote(mods, followed = []) {
@@ -320,7 +320,16 @@ function refresh() {
   refreshing = (async () => {
     const status = await call('status');
     checkedAt = status.checkedAt ?? checkedAt; renderCheck();
-    if (status.error) { document.querySelector('main').textContent = status.error; $('#agents').hidden = true; $('#chatgpt').hidden = true; $('#claude').hidden = true; $('#distribution').hidden = true; $('#find').hidden = true; $('#install').disabled = true; document.body.dataset.ready = 'true'; return; }
+    if (status.error) {
+      startupFailed = true;
+      launcher.textContent = status.error;
+      $('#manager-header nav').hidden = true;
+      route();
+      for (const id of ['agents', 'chatgpt', 'claude', 'distribution', 'find']) $(`#${id}`).hidden = true;
+      $('#install').disabled = true;
+      document.body.dataset.ready = 'true';
+      return;
+    }
     for (const mark of document.querySelectorAll('.mark')) mark.textContent = status.mark;
     agentSettingsView(status);
     const machines = await machinesView(status);
@@ -472,7 +481,10 @@ export function renderResults(hits) {
     else if (installed) {
       const link = element('a', 'Installed', row, 'btn installed-link'); link.href = '#mods';
       link.onclick = () => { $('#library-filter').value = ''; sourceFilter = ''; location.hash = '#mods'; route(); filterLibrary(); selectMod(installed.local, true); };
-    } else if (hit.verified) button(row, 'Install…', 'primary install-release', () => action('install_release', {release:hit.release,link:hit.link}));
+    } else if (hit.verified) {
+      if (hit.link) element('p', 'Installing may follow this channel for updates.', body, 'hint');
+      button(row, 'Install…', 'primary install-release', () => action('install_release', {release:hit.release,link:hit.link}));
+    }
   }
 }
 async function findView() {
@@ -531,21 +543,21 @@ function filterLibrary() {
 $('#library-filter').oninput = filterLibrary;
 for (const pill of document.querySelectorAll('[data-source]')) pill.onclick = () => { sourceFilter = pill.dataset.source; filterLibrary(); };
 function headerView() {
-  const settings = location.hash === '#settings';
+  const settings = !startupFailed && location.hash === '#settings';
   document.body.classList.toggle('settings', settings);
   $('#manager-header').hidden = settings; $('#settings-header').hidden = !settings;
   $('#refresh-channels').hidden = managerTab !== 'updates';
   $('#checked-at').hidden = managerTab !== 'updates';
   $('#filter-control').hidden = managerTab !== 'library' || !currentMods.length;
-  $('#add-mod').hidden = managerTab === 'updates' || managerTab === 'library' && !currentMods.length;
+  $('#add-mod').hidden = startupFailed || managerTab === 'updates' || managerTab === 'library' && !currentMods.length;
   const add = $('#add-mod'); add.replaceChildren(); add.append(icon(managerTab === 'find' ? 'link' : 'plus', 16));
   element('span', managerTab === 'find' ? 'Install from a link' : 'Install a mod', add);
   $('#add-mod').classList.toggle('primary', managerTab === 'library');
   $('[data-tab=updates]').hidden = !currentMods.length && !$('#updates-count').textContent && !$('#update-channels .card') && !$('#update-done .done-row');
 }
 function route() {
-  const settings = location.hash === '#settings';
-  managerTab = location.hash === '#find' ? 'find' : location.hash === '#updates' ? 'updates' : 'library';
+  const settings = !startupFailed && location.hash === '#settings';
+  managerTab = startupFailed ? 'library' : location.hash === '#find' ? 'find' : location.hash === '#updates' ? 'updates' : 'library';
   $('#settings').hidden = !settings; $('#mods').hidden = settings;
   for (const tab of ['library', 'find', 'updates']) {
     $(`#${tab}`).hidden = tab !== managerTab;

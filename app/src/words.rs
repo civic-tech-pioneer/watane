@@ -277,8 +277,37 @@ fn agent_words(what: &AgentWhat, origin: &str) -> (String, String) {
     }
 }
 
-// Names are keyed by provider identity, not slug: different publishers can
-// install the same slug, and a bind must name both sides accurately.
+pub(crate) fn consent_grant_line(
+    grant: &Grant,
+    binds: &[watane_host::Bind],
+    parties: &Parties,
+    granted: bool,
+    new: bool,
+) -> GrantLine {
+    let mut line = grant_line_bound(grant, binds, parties, granted, new);
+    if let Grant::Call {
+        interface,
+        provider,
+    } = grant
+    {
+        let interface = interface.to_string();
+        let target = provider_bound(provider, binds, parties);
+        line.short = format!("Call {} of {target}", interface_word(&interface));
+    }
+    line
+}
+
+fn interface_word(interface: &str) -> &str {
+    interface
+        .split_once('/')
+        .expect("an interface id contains '/'")
+        .1
+        .split('@')
+        .next()
+        .expect("split always yields a first part")
+}
+
+// Names are keyed by provider identity so publishers sharing a slug stay distinct.
 pub fn grant_short(grant: &Grant, parties: &Parties, names: &BTreeMap<String, String>) -> String {
     grant_short_bound(grant, &[], parties, names)
 }
@@ -319,13 +348,7 @@ pub fn grant_short_bound(
         None => pinned,
     };
     let text = interface.to_string();
-    let interface = text
-        .split_once('/')
-        .expect("an interface id contains '/'")
-        .1
-        .split('@')
-        .next()
-        .expect("split always yields a first part");
+    let interface = interface_word(&text);
     match grant {
         Grant::Call { .. } => format!("Call {interface} of {target}"),
         _ if interface == "events" => format!("Receive the events of {target}"),
@@ -343,7 +366,7 @@ pub(crate) fn update_failed(version: &str, cause: &str) -> String {
 
 pub(crate) fn port_in_use(port: u16) -> String {
     format!(
-        "Port {port} is in use, maybe by another watane app. Start this one with --port <n> or WATANE_PORT=<n> to use another port, or --port 0 for any free port."
+        "The local API is not running. Port {port} is in use, maybe by another watane app. Start this one with --port <n> or WATANE_PORT=<n> to use another port, or --port 0 for any free port."
     )
 }
 pub(crate) fn bad_reason(cause: &str) -> String {

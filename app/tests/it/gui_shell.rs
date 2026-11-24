@@ -571,7 +571,7 @@ fn ac1_busy_port_shows_recovery_in_main_status_and_stderr() {
     assert!(app.wait("main", TIMEOUT));
     until(&app, "main", "document.body.dataset.ready === 'true'");
     let expected = format!(
-        "Port {port} is in use, maybe by another watane app. Start this one with --port <n> or WATANE_PORT=<n> to use another port, or --port 0 for any free port."
+        "The local API is not running. Port {port} is in use, maybe by another watane app. Start this one with --port <n> or WATANE_PORT=<n> to use another port, or --port 0 for any free port."
     );
     assert_eq!(
         app.eval("main", "document.querySelector('main').textContent"),
@@ -580,6 +580,10 @@ fn ac1_busy_port_shows_recovery_in_main_status_and_stderr() {
     app.eval("main", "window.__status = null; window.__TAURI_INTERNALS__.invoke('status').then(s => window.__status = s); null");
     until(&app, "main", "window.__status !== null");
     assert_eq!(app.eval("main", "window.__status.error"), expected);
+    assert_eq!(
+        app.eval("main", "document.querySelector('#add-mod').hidden && document.querySelector('#add-menu').hidden"),
+        true
+    );
     assert!(!home.path().join("run.json").exists());
     assert_eq!(
         app.stderr()

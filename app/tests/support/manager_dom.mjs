@@ -351,11 +351,12 @@ if (which === 's90-page') {
   const books=new Node('pre'), errorBody=new Node('body');
   let read, failure={code:'not_granted',message:'provider disabled or unavailable'};
   const page=vm.createContext({document:{getElementById:()=>books,createElement:tag=>new Node(tag),body:errorBody},
+    window:{addEventListener:(name,fn)=>{assert.equal(name,'watane:grant-changed'); assert.equal(fn,read);}},
     watane:{on:fn=>read=fn,call:async()=>{if(failure) throw failure; return [];}}});
   vm.runInContext(readFileSync(new URL('../fixtures/recommendations/ui/app.js',import.meta.url),'utf8'),page);
-  await read(); assert.equal(errorBody.textContent,'not granted: provider disabled or unavailable');
+  await read(); assert.equal(errorBody.textContent,'provider disabled or unavailable');
   failure={code:'not_granted',message:'no provider is linked'};
-  await read(); assert.equal(errorBody.textContent,'not granted: no provider is linked');
+  await read(); assert.equal(errorBody.textContent,'no provider is linked');
   failure={code:'other',message:'exact cause'}; await read(); assert.equal(errorBody.textContent,'exact cause');
   failure=null; await read(); assert.equal(errorBody.textContent,'');
 }
