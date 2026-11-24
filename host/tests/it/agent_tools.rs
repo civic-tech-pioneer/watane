@@ -1001,7 +1001,36 @@ fn limits_one_refusal_refuses_every_handle_that_waited_on_the_question() {
         "consent-refused:toolset:t"
     );
     assert_eq!(home.asked().len(), 1);
+    // Neither waiter keeps a live token.
+    wait("no token", Duration::from_secs(20), || {
+        home.host.tokens().is_empty()
+    });
     // A later open asks again: the question is over.
     let _ = home.open(&["t"]).unwrap();
     home.wait_asked(2);
+}
+
+#[test]
+fn limits_a_question_lives_while_one_waiter_does_and_is_dropped_with_the_last() {
+    let home = Home::new();
+    let (a, b) = (home.open(&["t"]).unwrap(), home.open(&["t"]).unwrap());
+    home.wait_asked(1);
+    let dropped = |i: usize| {
+        home.app.held.lock().unwrap()[i]
+            .as_ref()
+            .unwrap()
+            .is_closed()
+    };
+    home.call("toolbox", "api.close", json!({"handle": a}));
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(!dropped(0));
+    home.call("toolbox", "api.close", json!({"handle": b}));
+    wait("the dropped question", Duration::from_secs(20), || {
+        dropped(0)
+    });
+    // The next open is not lost behind the dropped question: it asks, and its answer serves it.
+    let c = home.open(&["t"]).unwrap();
+    home.wait_asked(2);
+    home.answer(1, ConsentAnswer::Granted);
+    home.wait_ready(&c);
 }

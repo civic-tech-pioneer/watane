@@ -443,16 +443,21 @@ impl Host {
             match asking.get_mut(&key) {
                 Some(waiters) => {
                     waiters.push(id.to_owned());
-                    false
+                    Some(false)
                 }
+                // A question that ended stored its answer before it left `asking`: read the
+                // catalog again under this lock, so a handle that missed it asks nothing more.
+                None if !self.toolset_needs_consent(&key.0, &key.1) => None,
                 None => {
                     asking.insert(key.clone(), vec![id.to_owned()]);
-                    true
+                    Some(true)
                 }
             }
         };
-        if !first {
-            return;
+        match first {
+            None => return self.advance_handle(id),
+            Some(false) => return,
+            Some(true) => {}
         }
         let question = Question {
             weak: Weak::<Host>::clone(&self.weak),
@@ -618,9 +623,13 @@ impl Question {
             let live = self.handles.lock();
             live.get(&id).map(|e| (e.owner.clone(), e.origin_gen))
         });
-        let origin_local = host.local_of(origin);
-        let (Some((owner, origin_gen)), Some(origin_local)) = (first, origin_local) else {
+        let Some(origin_local) = host.local_of(origin) else {
             self.end(&host, |host, id| host.close_handle(id));
+            return;
+        };
+        // No live waiter: a handle that joined since goes on with a question of its own.
+        let Some((owner, origin_gen)) = first else {
+            self.end(&host, |host, id| host.advance_handle(id));
             return;
         };
         let functions = host.toolset_functions(toolset);
@@ -642,9 +651,8 @@ impl Question {
             return;
         };
         match asked {
-            Asked::Stopped => {
-                self.handles.asking().remove(&self.key);
-            }
+            // Every waiter had gone; one that joined since must not be lost.
+            Asked::Stopped => self.end(&host, |host, id| host.advance_handle(id)),
             Asked::Refused => self.end(&host, |host, id| host.refuse_handle(id, &what)),
             Asked::Granted => {
                 let stored = Consent::Toolset {
