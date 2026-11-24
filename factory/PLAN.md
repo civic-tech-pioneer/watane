@@ -1374,7 +1374,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   no real OpenAI call in CI (the scripted server); `judge` (A5) is left out. Touches: `host/src/agent/` (new
   `https_stream.rs`), `host/` grants and accounts, `dev/` scripted Responses, `pkg/` if a row needs it. Boundary: W39
   and the token never reaching a mod (adversary). Protects: *core*.
-- [~] **S110 (guard) CI is green on Windows, so its check can be required.** (asked by the human, 2026-11-23;
+- [x] **S110 (guard) CI is green on Windows, so its check can be required.** DONE 2026-11-24: PR #23 merged with --admin at d797750d on the human's word; builder codex, reviewer claude, 3 rounds (2/10, 1/1, 0/0); ~17.5 h in flight, most of it waiting for S100 and S105 (active ~6 h). Windows is a checked platform: `test (windows-latest)` green and no longer continue-on-error; log's identity key keeps no-follow and owner-only guarantees on Windows; features without a Windows equivalent refuse there with a test. Decisions: `watane-log-windows-fs` the one unsafe crate, workspace `deny` (Deputy decisions); R1, R2 accepted. For the human: make the Windows check required in the ruleset. (Was: asked by the human, 2026-11-23;
   in flight, cloud, builder codex, reviewer claude; rule 3: last three S36 claude, S109 codex, S108 codex - Codex builds
   2 in 3; dispatched ~20:27 UTC, https://chatgpt.com/local/6b04a1f4-b2cc-83ed-9939-168f9ec34073.) Today Windows CI reports but does not block (`continue-on-error`, factory/README "Windows"): it stops in
   `log`'s key-file open, then whatever comes next. Outcomes: (1) `test (windows-latest)` is green on the PR's head, twice
