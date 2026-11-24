@@ -74,6 +74,14 @@ jobs:
           # copy made 129 install tests fail. It is never worth caching.
           rm -rf target/tmp
           cargo test --workspace --locked --features "${{ matrix.features }}" --no-fail-fast -- ${{ matrix.skip }}
+      # S103: the agent consent view and its withdrawal on the real app (app S58, S60) need a GUI
+      # session; the cloud build team has no Mac, so this job is where they are checked.
+      - name: App window tests of the agent consent (S58, S60)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          export WATANE_HOME="$RUNNER_TEMP/watane-home-s103"; mkdir -p "$WATANE_HOME"
+          cargo test -p watane-app --locked --features watane-app/driver --test it -- --ignored s58_ s60_
       - name: Clippy
         shell: bash
         run: cargo clippy --workspace --all-targets --locked --features "${{ matrix.features }}" -- -D warnings
