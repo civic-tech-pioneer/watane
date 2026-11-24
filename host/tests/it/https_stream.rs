@@ -305,6 +305,8 @@ struct Rig {
     host: Option<Arc<Host>>,
     app: Arc<App>,
     tokens: Arc<Tokens>,
+    /// Kept alive for the host's async work; read only by the Unix-only `tools/call` test.
+    #[cfg_attr(not(unix), expect(dead_code, reason = "read only by a Unix-only test"))]
     rt: tokio::runtime::Runtime,
     servers: Vec<(String, Server)>,
 }
