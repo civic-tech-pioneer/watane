@@ -7,6 +7,7 @@ use std::io::{ErrorKind, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use watane_pkg::{Grant, Mod};
 
 const SCRIPT: &str = "scripted-responses.json";
@@ -67,25 +68,18 @@ impl OpenAi {
         }))
     }
 
-    pub(super) fn configure(&self, command: &mut Command, folder: &Path) -> Result<(), Problem> {
+    pub(super) fn configure(
+        &self,
+        command: &mut Command,
+        folder: &Path,
+    ) -> Result<Option<PrivateFile>, Problem> {
         command.arg("--scripted-openai").arg(&self.program);
-        if let Some(script) = &self.script {
-            let snapshot = folder.join(SCRIPT);
-            match fs::remove_file(&snapshot) {
-                Ok(()) => (),
-                Err(e) if e.kind() == ErrorKind::NotFound => (),
-                Err(e) => return Err(Problem::internal(e)),
-            }
-            fs::OpenOptions::new()
-                .create_new(true)
-                .write(true)
-                .mode(0o600)
-                .open(&snapshot)
-                .and_then(|mut file| file.write_all(&script.bytes))
-                .map_err(Problem::internal)?;
-            command.arg("--openai-script").arg(snapshot);
-        }
-        Ok(())
+        let Some(script) = &self.script else {
+            return Ok(None);
+        };
+        let snapshot = PrivateFile::create(folder, &script.bytes)?;
+        command.arg("--openai-script").arg(&snapshot.0);
+        Ok(Some(snapshot))
     }
 
     pub(super) fn start_failure(&self, mut problem: Problem) -> Problem {
@@ -122,13 +116,51 @@ impl OpenAi {
     ) -> Result<(), Problem> {
         let marker = folder.join(MARKER);
         match setting {
-            Some(setting) => fs::write(marker, setting.marker(port)).map_err(Problem::internal),
+            Some(setting) => {
+                let temp = PrivateFile::create(folder, setting.marker(port).as_bytes())?;
+                fs::rename(&temp.0, marker).map_err(Problem::internal)
+            }
             None => match fs::remove_file(marker) {
                 Ok(()) => Ok(()),
                 Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
                 Err(e) => Err(Problem::internal(e)),
             },
         }
+    }
+}
+
+/// A private file unique to this serve invocation, removed when the host finishes starting.
+pub(super) struct PrivateFile(PathBuf);
+
+impl PrivateFile {
+    fn create(folder: &Path, bytes: &[u8]) -> Result<Self, Problem> {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        loop {
+            let sequence = NEXT.fetch_add(1, Ordering::Relaxed);
+            let path = folder.join(format!(
+                ".scripted-responses-{}-{sequence}",
+                std::process::id()
+            ));
+            let mut file = match fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .mode(0o600)
+                .open(&path)
+            {
+                Ok(file) => file,
+                Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(Problem::internal(e)),
+            };
+            let temp = Self(path);
+            file.write_all(bytes).map_err(Problem::internal)?;
+            return Ok(temp);
+        }
+    }
+}
+
+impl Drop for PrivateFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
     }
 }
 

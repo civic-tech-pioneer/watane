@@ -91,9 +91,10 @@ fn start(
     };
     let mut command = Command::new(binary);
     command.args(spawn_args(home, fake_claude));
-    if let Some(openai) = openai {
-        openai.configure(&mut command, folder)?;
-    }
+    let _snapshot = match openai {
+        Some(openai) => openai.configure(&mut command, folder)?,
+        None => None,
+    };
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
