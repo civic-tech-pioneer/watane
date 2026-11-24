@@ -101,7 +101,7 @@ fn problem(path: &Path, detail: impl std::fmt::Display) -> Problem {
 }
 fn vendor_fix(path: &Path) -> String {
     let dev = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let script = dev.join("scripts/vendor.sh");
+    let script = dev.join("scripts").join("vendor.sh");
     format!(
         "'{}' '{}'",
         script.display().to_string().replace('\'', "'\"'\"'"),
@@ -197,7 +197,9 @@ mod tests {
             select_vendor(Some("/override".into()), &installed, &source, &cache),
             Path::new("/override")
         );
-        let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/vendor.sh");
+        let script = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("scripts")
+            .join("vendor.sh");
         let script = script.display();
         assert_eq!(
             vendor_fix(Path::new("/agent/cache/vendor")),
@@ -218,7 +220,7 @@ mod tests {
             Some(
                 format!(
                     "'{}' '{}'",
-                    dev.join("scripts/vendor.sh").display(),
+                    dev.join("scripts").join("vendor.sh").display(),
                     dev.join("allowlist/vendor").display()
                 )
                 .as_str()
@@ -292,7 +294,7 @@ mod tests {
             error.fix,
             Some(format!(
                 "'{}' '{}'",
-                dev.join("scripts/vendor.sh").display(),
+                dev.join("scripts").join("vendor.sh").display(),
                 "/missing/vendor"
             ))
         );

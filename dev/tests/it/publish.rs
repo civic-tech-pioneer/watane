@@ -366,7 +366,7 @@ fn ac2_missing_link_then_retry_recovers_link() {
         value["next"],
         format!(
             "Ask the person to set your site's URL in the watane app, then run: watane-dev publish --json --dir {} --home {}",
-            value["dir"].as_str().unwrap(),
+            crate::support::shell_path(value["dir"].as_str().unwrap()),
             crate::support::shell_path(home.path().canonicalize().unwrap())
         )
     );

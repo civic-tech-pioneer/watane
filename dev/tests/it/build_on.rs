@@ -229,7 +229,7 @@ fn ac2_no_source_writes_nothing() {
         format!(
             "Build on a release that includes its source, or make a new mod that depends on this one: watane-dev new ratings --dir {dest} && watane-dev add --release '{}' --dir {dest} --home {}",
             link("reading-list"),
-            f.home.canonicalize().unwrap().display(),
+            crate::support::shell_path(f.home.canonicalize().unwrap()),
             dest =
                 crate::support::shell_path(f.root.path().canonicalize().unwrap().join("ratings")),
         )
