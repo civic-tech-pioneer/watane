@@ -1,0 +1,28 @@
+package mods:https@0.1.0;
+interface api {
+  /// The stream id, or the error of the start.
+  start: func(request: string) -> string;
+  start-then-sleep: func(request: string, ms: u32) -> string;
+  /// Starts `n` streams in one call: each stream id or error text.
+  start-many: func(request: string, n: u32) -> list<string>;
+  /// Starts, then cancels in the same call: the stream id, or the error of the start.
+  start-cancel: func(request: string) -> string;
+  /// Starts, then hands off to the caller in the same call: `<id> <hand-off result>`.
+  start-hand-off: func(request: string) -> string;
+  cancel: func(s: string);
+  resume: func(s: string) -> string;
+  mode: func(m: string);
+  items: func(s: string) -> list<string>;
+  ended: func() -> list<string>;
+  tally: func(s: string) -> string;
+  who: func() -> string;
+}
+world https {
+  import watane:host/state@0.1.0;
+  import watane:host/caller@0.1.0;
+  import watane:host/streams@0.1.0;
+  import watane:host/claude-types@0.1.0;
+  import watane:host/https-stream@0.1.0;
+  export api;
+  export watane:host/stream-sink@0.1.0;
+}

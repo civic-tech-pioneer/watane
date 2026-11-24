@@ -13,6 +13,8 @@ pub mod env;
 pub mod json_eq;
 pub mod outcome;
 pub mod preview;
+#[cfg(feature = "fake-claude")]
+pub mod scripted;
 pub mod share;
 pub mod template;
 pub mod toolchain;

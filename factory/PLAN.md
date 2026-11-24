@@ -1358,9 +1358,29 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   session's stream. Touches: `host/src/agent/`, `host/src/` consent, `app/` consent view and details. Also adds
   S100's accepted deep-tree line to host TECHNICAL 14 'Not protected' (deputy, 2026-11-24). The
   agentic-harness half (console consent activity and plan line) follows S35/S36. Builder by rule 3.
+- [~] **S114 A maker previews an OpenAI-backed mod on scripted responses (stage D, dev 18; F-MAKE-4).** (in flight,
+  cloud, builder codex, reviewer claude; rule 3: last two S40 claude, S113 codex; main line, sketched 2026-11-24 by
+  deputy-3: F-MAKE-4 promises a scripted OpenAI stream in a preview from stage D, and dev TECHNICAL question 15 recommends
+  option (a); it unblocks agentic-harness S40's run on `serve`. It builds against `scripted-responses` as on `slice/s111`
+  (PR #28, approved) and merges main once that merges; Codex task https://chatgpt.com/local/6b05ef35-5ee4-83ed-b7bb-2b58230a9070, dispatched 20:12 UTC.) Outcomes (user-sim with a maker's mod under `watane-dev serve`):
+  1. `watane-dev serve` of a mod that uses `https-stream` with `account: "openai"` starts `scripted-responses` and the
+     preview routes `api.openai.com` to it: the mod's stream gets the scripted reply, with no real account and no network.
+  2. The preview setting is not `test-net`, is never in a release build of the host or app, and a real home refuses it.
+  3. A maker can give the script (`--script` or a file in the mod's folder, as dev 18 says) and sees a clear error for
+     a bad one.
+  4. agentic-harness S40's `test:host:d` checks can run on this preview (its SKIP lines become runnable).
+  Interface: a host preview setting (host 19.9) and `serve`'s options (dev's CLI, a public interface: say it in dev
+  TECHNICAL first; resolve question 15 as (a)). Touches: `dev/src/preview*`, `dev/src/cli.rs`, `host/` preview setting,
+  dev and host TECHNICAL. Not S111's files beyond a wiring line. Boundary: the account binding must not reach a real home
+  (adversary). Protects: *core*.
+- [~] **S115 (guard) the net reach test stops flaking on Windows.** (in flight, cloud, builder claude, reviewer codex;
+  a fix that guards `main`: Windows is a required check and `net/tests/it/reach.rs:193` failed on it with `Database
+  already open. Cannot acquire lock.`; routine `trig_01Qb1GYPxMdJLutKESYRz4Vw`, fires 20:16 UTC.) Outcome: the cause is named (net's redb reopen on Windows), fixed in code or test,
+  and `reach::s11_machines_on_different_networks_connect_through_the_servers_relay` is green in 20 Windows runs in CI.
+  Touches: `net/` only. Size: a guard, by reason. Protects: *guard*.
 - [~] **S113 (upkeep) the app says what it is doing and what Alice agrees to.** (in flight, cloud, builder codex,
   reviewer claude; rule 3: last two S112 codex, S111 claude; the upkeep lane, sketched 2026-11-24 by deputy-3 from
-  Leftovers `### app`; runs beside S111, which touches only `app/TECHNICAL.md` in app; Codex task https://chatgpt.com/local/6b05df95-c29c-83eb-bac0-cb04ace5305d, dispatched 19:05 UTC.) Outcomes, each item's check, on the
+  Leftovers `### app`; runs beside S111, which touches only `app/TECHNICAL.md` in app; Codex task https://chatgpt.com/local/6b05df95-c29c-83eb-bac0-cb04ace5305d, dispatched 19:05 UTC; DELIVERED ~19:55 UTC as PR #29 (+307/-203, all four CI jobs green); the 'Keep data' storage label needs the host (Leftovers); r1: Claude review, fires 20:14 UTC.) Outcomes, each item's check, on the
   real app (user-sim under xvfb; macOS CI for window tests):
   1. Consent words: "Deny" says what was denied; the Call line names the interface in words, not `mods:x/y@0.1.0`
      (from agentic-harness S39's review); installing from an index says it follows the channel; Remove asks first.
@@ -1372,7 +1392,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Words in app TECHNICAL first. Touches: `app/` (ui, src, scripts, tests), `app/TECHNICAL.md`. No boundary moves (the
   consent texts are words of existing grants): no adversary unless the build changes what a consent covers. Size: an upkeep
   slice. Protects: *polish*.
-- [~] **S111 A mod streams from OpenAI on Alice's ChatGPT plan (stage D, the watane half: host A4, dev 18).** (in flight, cloud, builder claude, reviewer codex; rule 3: last two S39 codex, S38 codex; handed out 2026-11-24 ~15:20 UTC beside S103 (the human asked for more concurrency): S111's work is mostly new files (`host/src/agent/https_stream.rs`, dev's `ScriptedResponses`); it builds against S103's branch for `consent` and borrowed authority, and merges main once S103 merges; it must not edit S103's files beyond the wiring line; routine `trig_01F4feSQK4npLjE7VcKYS2pd`, fires 15:16 UTC; DELIVERED ~17:30 UTC as PR #28 (S111's own diff over slice/s103: +5755/-48; user-sim ACCEPTED, adversary HELD with open questions R2 account-identifying response headers to the mod, R3 extra request headers); r1: Codex review https://chatgpt.com/local/6b05cb69-1fc4-83eb-8ef6-624f3ebf9050, dispatched 17:40 UTC, weighs R2 and R3; withheld by Codex's cyber filter; r1 runs on Claude (routine, fires 18:43 UTC): a Claude review of a Claude build, because the other side is down for this content.) agentic-harness stage D needs
+- [x] **S111 A mod streams from OpenAI on Alice's ChatGPT plan (stage D, host A4, dev 18).** DONE 2026-11-24: PR #28 squash-merged at 71b3ae6a by the deputy (no bypass); builder claude, reviewer claude (Codex filter before Daybreak), 1 round (0/14); ~5 h in flight, built beside S103. A mod with an Http grant streams HTTPS with `https-stream.start`; with `account: "openai"` the host adds a fresh ChatGPT-plan token, only on the two OpenAI routes, and the mod never sees it; dev's `scripted-responses` serves tests. Risks R2, R3, R5, R6 accepted; polish in Leftovers. (Was: S111 A mod streams from OpenAI on Alice's ChatGPT plan (stage D, the watane half: host A4, dev 18).** (in flight, cloud, builder claude, reviewer codex; rule 3: last two S39 codex, S38 codex; handed out 2026-11-24 ~15:20 UTC beside S103 (the human asked for more concurrency): S111's work is mostly new files (`host/src/agent/https_stream.rs`, dev's `ScriptedResponses`); it builds against S103's branch for `consent` and borrowed authority, and merges main once S103 merges; it must not edit S103's files beyond the wiring line; routine `trig_01F4feSQK4npLjE7VcKYS2pd`, fires 15:16 UTC; DELIVERED ~17:30 UTC as PR #28 (S111's own diff over slice/s103: +5755/-48; user-sim ACCEPTED, adversary HELD with open questions R2 account-identifying response headers to the mod, R3 extra request headers); r1: Codex review https://chatgpt.com/local/6b05cb69-1fc4-83eb-8ef6-624f3ebf9050, dispatched 17:40 UTC, weighs R2 and R3; withheld by Codex's cyber filter; r1 runs on Claude (routine, fires 18:43 UTC): a Claude review of a Claude build, because the other side is down for this content; r1 (19:15): 0/14, VERDICT approve (validators PASS x2, RETURN x1 regraded polish, adversary HELD, user-sim ACCEPTED, stage D p95 7.4 ms), reviewed at c7a4e885; head 3e8d788 merges main with S111's own files unchanged; merge once the Windows job (a net flake) re-runs green.) agentic-harness stage D needs
   H3 (host 19.4) with the account `openai`, and dev's scripted Responses server, before its OpenAI loop can run.
   Outcomes (user-sim on `watane-dev serve` with a test mod and dev's `ScriptedResponses`, `test-net`):
   1. A mod with an `Http` grant for a host streams an SSE response: `{status, headers}`, then one item per event; a
@@ -1592,6 +1612,10 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### host
 
+- [S113] reinstall after 'Keep data' keeps the books but the consent still labels Storage `new`: the host's install plan does not report retained storage.
+
+- [S111 r1] P1.1 connect and TLS handshake each get their own `idle-s` (`host/src/agent/https_stream.rs:580-595`); P1.2 to P1.5, P1.11, P1.14: stronger and more host tests, a reset-before-head message; one sentence each in 19.4 for the accepted R2 and R5.
+
 - From S91: an over-declared Content-Length whose body never arrives waits instead of a 413 at once.
 - [S12a] `ac4_program_defaults_to_environment_home_and_port` probes port 47341 and then binds it
   (host/tests/it/program.rs:567); the probe-to-bind window stands.
@@ -1603,6 +1627,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 - [S44] an unknown `/api` route answers 404 `bad_request` (host/src/server.rs:107, 245).
 
 ### dev
+
+- [S111 r1] P1.6 to P1.10, P1.12, P1.13: `scripted-responses` refuses unknown script fields, JSON error bodies, chunked-body and drop tests, key order, and dev TECHNICAL's stale test names and dependency block.
 
 - From S93: search's no-result template next; local_dependency's fix has no command; text-mode
   fixes say --json; a publish --push success rerun gives version_exists; the preview host's error
@@ -1703,6 +1729,8 @@ Re-checked and swept by S86 (2026-11-18); these remain.
   `target/release`, so check.sh reports CHECK FAIL for install tasks there.
 
 ### net / node
+
+- [S111 CI] (guard) possible Windows flake: `net/tests/it/reach.rs:193` `reach::s11_machines_on_different_networks_connect_through_the_servers_relay` failed once on windows-latest with `database error: Database already open. Cannot acquire lock.` (net's redb reopen on Windows) at watane 3e8d788 (slice/s111, no net change); green on the head before. Second time on the same head 3e8d788 (attempt 1): a real flake; give it to the next upkeep slice as a guard (Windows is required, so it blocks merges).
 
 - From S92: with every full machine off, a light fetch still says "channel ... is not followed"
   after ~22 s (NoFullMachine dropped by design; the most common case); a holder refusing a
@@ -1882,6 +1910,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - 2026-11-24 host 18 **Q38: (b)**, the human ("b is fine for q38"). A workspace or account consent is kept per (origin client, `via` = the provider's identity, folder or account); a new provider asks again. S103 built (b); its next answer round writes host 18 Q38 as decided by the human, 2026-11-24, and the 19.7 rows to match. agentic-harness TECHNICAL 8 already cites 19.7.
 
 ## Deputy decisions
+
+- 2026-11-24 (S111 r1) accepted: R2 api.openai.com response headers (openai-organization, openai-project, set-cookie) reach the mod: account identifiers, not credentials, and a mod cannot send Authorization or Cookie (one sentence in 19.4; the fix, if ever: drop them in `head_item`); R3 extra request headers on POST /v1/responses (the host sends only the checked route; the fix, if ever: an allow list); R5 the request body can start OpenAI work that outlives the stream (plan usage, section 6 Not protected); R6 underscore header names (no proxy in the host's client).
 
 - 2026-11-24 (S112 r1) accepted: R1.1 a log folder swapped after its owner check (root over a home under another user's folder plus an active race; openat later, Leftovers); R1.2 embedded IPv4 forms needing a translator or tunnel on the participant's network; R1.3 the participant's own proxy variables (spec 6). P1.6: no compatibility owed before 1.0, a package with a device-name path no longer decodes.
 

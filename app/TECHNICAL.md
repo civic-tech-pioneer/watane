@@ -2542,6 +2542,9 @@ deletes the file, and the account reads `Signed out: OpenAI no longer accepts
 this sign-in. Sign in again.`; the call returns `AccountError::NoAccount`. A network error
 keeps the file and fails that call only, with the error `unavailable` (never
 `no-account`, which means no sign-in): the call returns host's `AccountError::Unavailable(<cause>)`, and the host ends that stream `failed("account unavailable: <m>")` (host 19.4).
+A mod reads `<cause>` (it is in the stream's outcome), so it names only the kind of failure (a
+fixed text such as `network error`, `timeout` or `issuer status 503`): never a token, a response
+body or a header of the token endpoint (S111 adversary, RISK).
 
 **Sign out** (`chatgpt_sign_out`): the app deletes the file, then tells the host
 that the account changed with `Host::account_changed(&Account::OpenAi)` (host

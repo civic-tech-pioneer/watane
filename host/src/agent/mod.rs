@@ -5,6 +5,7 @@
 pub(crate) mod accounts;
 pub(crate) mod claude;
 pub(crate) mod consent;
+pub(crate) mod https_stream;
 pub(crate) mod streams;
 pub(crate) mod timers;
 pub(crate) mod tools;
@@ -98,6 +99,15 @@ pub(crate) enum Effect {
         launch: Arc<claude::launch::Launch>,
         shell: bool,
     },
+    /// `https-stream.start` (19.4).
+    HttpsStart {
+        id: String,
+        consumer: ModRef,
+        consumer_gen: Option<u64>,
+        origin: String,
+        origin_gen: Option<u64>,
+        request: Arc<https_stream::Request>,
+    },
     /// `claude-session.say`, `interrupt` or `compact` (19.3).
     ClaudeWrite {
         id: String,
@@ -144,7 +154,9 @@ impl Effect {
     fn consumer_key(&self) -> Option<String> {
         match self {
             Self::Open { consumer, .. } => consumer.key(),
-            Self::ClaudeStart { consumer, .. } => Consumer::Mod(consumer.clone()).key(),
+            Self::ClaudeStart { consumer, .. } | Self::HttpsStart { consumer, .. } => {
+                Consumer::Mod(consumer.clone()).key()
+            }
             _ => None,
         }
     }
@@ -299,7 +311,21 @@ impl Invocation {
                 handoffs: 0,
                 in_chain: true,
             }),
-            // A stream that `claude-code.start` opened in this chain (19.2, Commit).
+            // A stream that `claude-code.start` or `https-stream.start` opened in this chain
+            // (19.2, Commit).
+            Effect::HttpsStart {
+                id: i,
+                consumer,
+                origin,
+                ..
+            } => (i == id).then(|| View {
+                consumer: Consumer::Mod(consumer.clone()),
+                producer: Producer::Host,
+                origin: origin.clone(),
+                handed_off: false,
+                handoffs: 0,
+                in_chain: true,
+            }),
             Effect::ClaudeStart {
                 id: i,
                 consumer,
@@ -508,6 +534,7 @@ pub(crate) fn call(
     match (interface, function) {
         ("claude-code", "start") => claude::start(inv, claude::launch::Kind::Code, args),
         ("claude-code-shell", "start") => claude::start(inv, claude::launch::Kind::Shell, args),
+        ("https-stream", "start") => https_stream::start(inv, args),
         ("claude-session", _) => claude::session_call(inv, function, args),
         ("agent-tools", _) => tools::call(inv, function, args),
         ("streams", "open") => {
@@ -810,6 +837,19 @@ fn fake(
                 args: json!({"launch": args.first().map(json::encode).transpose()?}),
             });
         }
+        ("https-stream", "start") => {
+            let n = inv
+                .chain
+                .host
+                .fake_serial
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+                + 1;
+            result = json!({"ok": format!("s{n}")});
+            log.push(Effect::Fake {
+                function: "https-stream.start",
+                args: json!({"request": args.first().map(json::encode).transpose()?}),
+            });
+        }
         ("claude-session", "say" | "answer" | "interrupt" | "compact") => {
             let function_name = match function {
                 "say" => "claude-session.say",
@@ -884,6 +924,8 @@ impl Host {
     /// Ends the mod streams whose consumer lost the `Call` grant, the link or the provider that
     /// `open` ran through (19.2, Ends). Called after every catalog write.
     pub(crate) fn end_lost_streams(&self) {
+        // A stream of `https-stream` depends on the `Http` grant of its host (19.4).
+        self.end_lost_https();
         let vias = self.hub.vias();
         if vias.is_empty() {
             return;
@@ -938,6 +980,7 @@ impl Host {
         // A `claude` process starts after the whole chain is applied, so that a `cancel` of the
         // same chain ends the stream before any process starts (19.3, At apply).
         let mut runs = Vec::new();
+        let mut https_jobs = Vec::new();
         for effect in effects {
             match effect {
                 Effect::TimerAfter { owner, id, due, .. } => self
@@ -1028,6 +1071,42 @@ impl Host {
                     );
                     drop(catalog);
                 }
+                Effect::HttpsStart {
+                    id,
+                    consumer,
+                    consumer_gen,
+                    origin,
+                    origin_gen,
+                    request,
+                } => {
+                    // Under the catalog lock, as a `claude` start: a `remove` of the origin
+                    // either comes first (not valid) or ends the stream (19.6, At apply).
+                    let catalog = self
+                        .catalog
+                        .lock()
+                        .expect("lock poisoned: another thread panicked while holding it");
+                    let valid = live_mod(
+                        &catalog,
+                        Some(&consumer.local),
+                        &consumer.identity,
+                        consumer_gen,
+                    ) && live_mod(&catalog, None, &origin, origin_gen)
+                        && catalog.mods.iter().any(|m| {
+                            m.local == consumer.local
+                                && m.grants.iter().any(|g| {
+                                    g.granted
+                                        && matches!(&g.grant,
+                                            watane_pkg::Grant::Http { host } if host.as_str() == request.grant)
+                                })
+                        });
+                    https_jobs.extend(self.https_start(
+                        (id, consumer),
+                        (origin, origin_gen),
+                        request,
+                        valid,
+                    ));
+                    drop(catalog);
+                }
                 Effect::ClaudeWrite { id, what, by } => self.claude_write(&id, what, &by),
                 Effect::AgentOpen {
                     id,
@@ -1095,6 +1174,9 @@ impl Host {
         }
         for job in runs {
             self.claude_run(job);
+        }
+        for job in https_jobs {
+            self.https_run(job);
         }
     }
 }
