@@ -438,7 +438,7 @@ in `Outcome.value`.
   state/state.redb the private state of every mod (section 7)
   staging/         plan scratch; emptied at open
   runs/            step 11 (A2): one folder per `claude` run and `runs/pids`; emptied at open (19.3)
-  runs.*.gone/     a former `runs/` moved aside at open, removed by a bounded walk (3.1 step 3)
+  runs.*.gone/     a former `runs/` moved aside at open, then removed (3.1 step 3)
   scratch/         step 11 (A2): scratch workspaces of sessions (19.3)
   log/ dist/ app/  reserved for `log` (opened only by `dist`), `dist` and `app`
   net/             reserved for `net` (step 8, ../net/TECHNICAL.md 4.5)
@@ -478,24 +478,25 @@ which `Host::open` creates (3.1 step 6).
    into lines; each line is parsed into a full record on its own, so a line that
    is not UTF-8 or fails to parse is logged and skipped and the next line is
    still handled; `runs/` is removed only after every line was handled (review
-   r8, F8.1 and F8.2; the deputy's ruling). `runs/pids` is opened without
-   following a link and without blocking (`O_NOFOLLOW|O_NONBLOCK`) and read only
+   r8, F8.1 and F8.2; the deputy's ruling). `runs` is opened as a directory
+   without following a link (`O_DIRECTORY|O_NOFOLLOW`), and `pids` is opened
+   through `openat` on that descriptor, without following a link and without
+   blocking (`O_NOFOLLOW|O_NONBLOCK`); a `runs` that is a link, or not a
+   directory, is moved aside unread (review r9, F9.1). `pids` is read only
    when it is a regular file, at most 64 KiB; anything else, or the part past
    64 KiB, is dropped with one log line. A bad line is logged as at most its
    first 64 bytes, and at most 16 bad lines are logged at one open; one more
    line gives the count of the rest (adversary S100 pass 13). The 16 lines are
    shared by every log line of the cleanup (bad lines, leftovers, a read error),
    and a repeated record (the same parsed pgid, boot id and start time) is
-   handled once. A `runs` that is not a directory (a
-   file, a FIFO, a link) is removed as a file, so a later run can make its
-   folder (adversary S100 pass 14). A `runs` directory is first renamed to
+   handled once. After the records, `runs` (whatever it is) is renamed to
    `runs.<random>.gone`, so `runs/` is free at once whatever it holds, and each
-   `runs.*.gone` is then removed by a walk without recursion, which never follows a
-   link, never climbs by `..` (it keeps the open folders from the root down),
-   opens at most 256 levels and stops at 10 000 entries inside the gone folders (each
-   top-level name costs one removal, in step with what was planted); what is left (too deep, too many, not
-   removable) is logged once and tried again at the next open (adversary S100
-   pass 15). A leader is
+   `runs.*.gone` in the home is removed: a directory with
+   `std::fs::remove_dir_all`, which does not follow a link inside the tree,
+   anything else with `remove_file`. The time this takes is in step with what the
+   same user put in the private home (accepted by the deputy, review r9, F9.2); a
+   removal that fails is logged once and tried again at the next open
+   (adversary S100 passes 14 and 15). A leader is
    verified as a leader: on Linux, with the pidfd open, field 5 (`pgrp`) of
    `/proc/<pid>/stat` must equal the pid, read with the start time. The check and the signal are one step
    (review r6, F6.3; the deputy's ruling): on Linux the host opens a pidfd of
