@@ -110,6 +110,9 @@ pub struct Host {
     fake_claude: Mutex<Option<PathBuf>>,
     /// The handles of `agent-tools` (19.5).
     handles: Arc<agent::tools::Handles>,
+    /// Tests only: holds the runs of agent tools just before their authority is read (19.9).
+    #[cfg(feature = "test-streams")]
+    agent_gate: agent::tools::AgentGate,
 }
 
 impl Host {
@@ -134,6 +137,8 @@ impl Host {
             generation,
             sessions: Arc::default(),
             handles: Arc::default(),
+            #[cfg(feature = "test-streams")]
+            agent_gate: agent::tools::AgentGate::default(),
             fake_claude: Mutex::new(None),
             tools: Mutex::new(tools),
             bus: bus::PageBus::new(1024),
@@ -197,6 +202,30 @@ impl Host {
     ) -> Result<serde_json::Value, CallError> {
         self.call_connection(caller, local, function, args, None)
             .await
+    }
+    /// An agent's tool of a handle token (19.5): `call_async` as the handle's origin client, after
+    /// the decision of Authority at the run.
+    pub(crate) async fn call_agent_async(
+        self: &Arc<Self>,
+        run: agent::tools::AgentRun,
+        handle: Handle,
+        local: LocalName,
+        function: String,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, agent::tools::AgentFailure> {
+        let host = Arc::clone(self);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        std::thread::Builder::new()
+            .name("watane-call".into())
+            .stack_size(16 << 20)
+            .spawn(move || {
+                let result = runtime::call::run_agent(&host, &run, handle, &local, &function, args);
+                drop(host);
+                let _ = tx.send(result);
+            })
+            .map_err(|e| agent::tools::AgentFailure::Call(CallError::internal(e)))?;
+        rx.await
+            .map_err(|e| agent::tools::AgentFailure::Call(CallError::internal(e)))?
     }
     /// `call_async` of a page call that names its `/events` connection (8.2).
     pub(crate) async fn call_connection(
@@ -661,6 +690,35 @@ pub struct TestStats {
     pub state_bytes_read: u64,
     pub state_bytes_written: u64,
 }
+/// The hold that `Host::hold_agent_runs` made; dropping it lets the held runs go on.
+#[cfg(feature = "test-streams")]
+#[derive(Debug)]
+pub struct AgentHold {
+    host: std::sync::Weak<Host>,
+}
+#[cfg(feature = "test-streams")]
+impl AgentHold {
+    /// The runs that wait at the hold now.
+    pub fn waiting(&self) -> usize {
+        self.host.upgrade().map_or(0, |h| h.agent_gate.waiting())
+    }
+    /// The runs of agent tools that ended since the host opened, whether they ran the tool or not.
+    pub fn finished(&self) -> usize {
+        self.host.upgrade().map_or(0, |h| h.agent_gate.finished())
+    }
+    /// Lets the held runs go on; the hold stays for `waiting` and `finished`.
+    pub fn release(&self) {
+        if let Some(h) = self.host.upgrade() {
+            h.agent_gate.release();
+        }
+    }
+}
+#[cfg(feature = "test-streams")]
+impl Drop for AgentHold {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
 /// A host stream opened by `Host::test_stream` (TECHNICAL 19.9).
 #[cfg(feature = "test-streams")]
 #[derive(Debug)]
@@ -708,6 +766,14 @@ impl Host {
             id,
             host: std::sync::Weak::<Host>::clone(&self.weak),
         })
+    }
+    /// Holds every run of an agent tool (a job or a `tools/call`) just before the host reads
+    /// the authority to run it (19.5, Authority at the run), until the returned hold is dropped.
+    pub fn hold_agent_runs(&self) -> AgentHold {
+        self.agent_gate.hold();
+        AgentHold {
+            host: std::sync::Weak::<Host>::clone(&self.weak),
+        }
     }
     pub fn set_test_clock(&self, clock: TestClock) {
         self.hub.set_clock(&clock);

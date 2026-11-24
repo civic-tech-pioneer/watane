@@ -586,6 +586,19 @@ fn ac5_a_timer_fires_with_its_own_mod_once_its_origin_client_is_removed() {
 
 // ---- AC6 -----------------------------------------------------------------------------------
 
+/// The `n` of each `stream_event` line that the fake wrote on stream `s` in its turn (rate mode).
+fn turn_numbers(home: &Home, s: &str) -> Vec<u64> {
+    home.items("claude", s)
+        .iter()
+        .filter(|i| i.contains(r#""type":"stream_event""#))
+        .map(|i| {
+            serde_json::from_str::<Value>(i).unwrap()["n"]
+                .as_u64()
+                .unwrap()
+        })
+        .collect()
+}
+
 #[test]
 fn ac6_withdrawal_ends_the_dependent_streams_at_once_and_only_those() {
     // A long turn: the fake runs a turn of 60 s after the first `say`.
@@ -615,6 +628,16 @@ fn ac6_withdrawal_ends_the_dependent_streams_at_once_and_only_those() {
         home.entries("PID").len() == 3
     });
     let pids = home.entries("PID");
+    // Turn output on every stream before the withdrawal: the turns are running, not idle.
+    wait(
+        "turn output on each stream",
+        Duration::from_secs(20),
+        || {
+            [&s1, &s2, &s3]
+                .iter()
+                .all(|s| !turn_numbers(&home, s).is_empty())
+        },
+    );
     let held = home.consents_of("claude");
     assert_eq!(held.as_array().unwrap().len(), 2);
     // Not held: `bad_request`.
@@ -647,7 +670,13 @@ fn ac6_withdrawal_ends_the_dependent_streams_at_once_and_only_those() {
     wait("two groups gone", Duration::from_secs(5), || {
         pids.iter().filter(|p| alive(p)).count() == 1
     });
-    std::thread::sleep(Duration::from_millis(300));
+    let last_before = *turn_numbers(&home, &s3).last().unwrap();
+    // Fresh output on the stream that stayed: a line the turn wrote after the withdrawal.
+    wait("fresh turn output on S3", Duration::from_secs(10), || {
+        turn_numbers(&home, &s3)
+            .last()
+            .is_some_and(|n| *n > last_before)
+    });
     assert_eq!(home.ended("claude").len(), 2, "the stream in B went on");
     // After the withdrawal a start in A asks again.
     home.start(&launch(&fa));
@@ -752,23 +781,46 @@ fn ac7_the_protected_paths_are_written_once_per_workspace_root() {
     home.answer(1, ConsentAnswer::Granted);
     home.wait_items(&s, 4);
     let deny = deny_of(&home);
-    for tool in ["Edit", "Write", "NotebookEdit"] {
-        for root in [&w, &x] {
-            for rule in [
-                format!("{tool}(/{root}/**/.git/**)"),
-                format!("{tool}(/{root}/.git/**)"),
-                format!("{tool}(/{root}/**/.claude/**)"),
-                format!("{tool}(/{root}/.claude/**)"),
-                format!("{tool}(/{root}/**/.agents/**)"),
-                format!("{tool}(/{root}/**/.codex/**)"),
-                format!("{tool}(/{root}/**/.husky/**)"),
-                format!("{tool}(/{root}/**/CLAUDE.md)"),
-                format!("{tool}(/{root}/Makefile)"),
-                format!("{tool}(/{root}/package.json)"),
-                format!("{tool}(/{root}/.mcp.json)"),
-            ] {
-                assert!(deny.contains(&rule), "{rule}");
-            }
+    // The rules as literal text, `ROOT` standing for each root (no rule is built by the loop).
+    let rules = [
+        "Edit(/ROOT/**/.git/**)",
+        "Edit(/ROOT/.git/**)",
+        "Edit(/ROOT/**/.claude/**)",
+        "Edit(/ROOT/.claude/**)",
+        "Edit(/ROOT/**/.agents/**)",
+        "Edit(/ROOT/**/.codex/**)",
+        "Edit(/ROOT/**/.husky/**)",
+        "Edit(/ROOT/**/CLAUDE.md)",
+        "Edit(/ROOT/Makefile)",
+        "Edit(/ROOT/package.json)",
+        "Edit(/ROOT/.mcp.json)",
+        "Write(/ROOT/**/.git/**)",
+        "Write(/ROOT/.git/**)",
+        "Write(/ROOT/**/.claude/**)",
+        "Write(/ROOT/.claude/**)",
+        "Write(/ROOT/**/.agents/**)",
+        "Write(/ROOT/**/.codex/**)",
+        "Write(/ROOT/**/.husky/**)",
+        "Write(/ROOT/**/CLAUDE.md)",
+        "Write(/ROOT/Makefile)",
+        "Write(/ROOT/package.json)",
+        "Write(/ROOT/.mcp.json)",
+        "NotebookEdit(/ROOT/**/.git/**)",
+        "NotebookEdit(/ROOT/.git/**)",
+        "NotebookEdit(/ROOT/**/.claude/**)",
+        "NotebookEdit(/ROOT/.claude/**)",
+        "NotebookEdit(/ROOT/**/.agents/**)",
+        "NotebookEdit(/ROOT/**/.codex/**)",
+        "NotebookEdit(/ROOT/**/.husky/**)",
+        "NotebookEdit(/ROOT/**/CLAUDE.md)",
+        "NotebookEdit(/ROOT/Makefile)",
+        "NotebookEdit(/ROOT/package.json)",
+        "NotebookEdit(/ROOT/.mcp.json)",
+    ];
+    for root in [&w, &x] {
+        for rule in rules {
+            let rule = rule.replace("ROOT", root);
+            assert!(deny.contains(&rule), "{rule}");
         }
     }
     assert_eq!(

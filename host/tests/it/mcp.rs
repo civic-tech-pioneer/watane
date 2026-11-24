@@ -444,3 +444,54 @@ async fn s103_a_toolset_token_is_refused_on_mcp_agent_and_an_unknown_one_is_401(
     assert_eq!(post("wt_nothing".into()).await, 401);
     served.shutdown().await;
 }
+/// F1.3 (10.1): a `toolsets.json` of the old format, with a toolset `agent`, opens; the toolset is
+/// listed and can be removed, is `bad_name` to set, and no token for it reaches `/mcp/agent`.
+#[tokio::test]
+async fn s103_r1_ac3_a_legacy_agent_toolset_opens_is_listed_and_removed_and_has_no_token() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::write(
+        home.path().join("home.json"),
+        r#"{"watane_home":1,"mode":"preview"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        home.path().join("toolsets.json"),
+        r#"{"agent":["counter:api"]}"#,
+    )
+    .unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
+    assert_eq!(
+        serde_json::to_value(host.toolsets()).unwrap(),
+        json!({"agent":["counter:api"]})
+    );
+    assert_eq!(
+        host.set_toolset(&name("agent"), vec![]).unwrap_err().code(),
+        "bad_name"
+    );
+    // A token that names it, if one can be issued, gets 403 on `/mcp/agent`.
+    if let Ok(token) = host.issue_token(
+        &name("agent"),
+        &watane_host::Handle::parse("alice").unwrap(),
+    ) {
+        let (served, client, _) = server(&host).await;
+        let status = client
+            .post(format!("http://localhost:{}/mcp/agent", served.port))
+            .bearer_auth(token.as_str())
+            .json(&json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .as_u16();
+        assert_eq!(status, 403);
+        served.shutdown().await;
+    }
+    host.remove_toolset(&name("agent")).unwrap();
+    assert_eq!(serde_json::to_value(host.toolsets()).unwrap(), json!({}));
+    assert_eq!(
+        std::fs::read_to_string(home.path().join("toolsets.json"))
+            .unwrap()
+            .trim(),
+        "{}"
+    );
+}

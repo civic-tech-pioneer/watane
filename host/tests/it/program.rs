@@ -729,3 +729,23 @@ fn ac4_held_v6_port_is_port_in_use_and_binds_nothing() {
     assert_eq!(error["code"], "port_in_use");
     std::net::TcpListener::bind(("127.0.0.1", port)).unwrap();
 }
+
+/// F1.3 (10.1): the real program opens a home whose `toolsets.json` is of the old format and
+/// holds a toolset `agent`; the file is kept as it was.
+#[test]
+fn s103_r1_ac3_the_program_opens_a_home_with_a_legacy_agent_toolset() {
+    let dir = tempfile::tempdir().unwrap();
+    let text = r#"{"agent":["counter:api"]}"#;
+    fs::write(
+        dir.path().join("home.json"),
+        r#"{"watane_home":1,"mode":"preview"}"#,
+    )
+    .unwrap();
+    fs::write(dir.path().join("toolsets.json"), text).unwrap();
+    let mut preview = Preview::start(dir.path());
+    assert_eq!(
+        fs::read_to_string(dir.path().join("toolsets.json")).unwrap(),
+        text
+    );
+    preview.stop();
+}

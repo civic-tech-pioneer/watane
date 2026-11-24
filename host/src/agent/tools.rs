@@ -6,7 +6,7 @@ use super::streams::{Hub, MAX_ITEM, MAX_OPEN, StreamError};
 use super::{Effect, ModRef, live_mod};
 use crate::runtime::call::Invocation;
 use crate::tools::Tool;
-use crate::{CallError, Caller, Consent, ConsentRequest, Handle, Host, LocalName, Mode};
+use crate::{CallError, Consent, ConsentRequest, Handle, Host, LocalName, Mode};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, Weak};
@@ -15,6 +15,77 @@ use wasmtime::component::Val;
 
 /// Live handles per (origin client, opening mod) (19.5, Limits).
 const MAX_HANDLES: usize = 32;
+
+/// Tests only (19.9): holds the runs of agent tools just before their authority is read.
+#[cfg(feature = "test-streams")]
+#[derive(Debug, Default)]
+pub(crate) struct AgentGate {
+    /// `(held, waiting)`.
+    state: Mutex<(bool, usize)>,
+    cv: std::sync::Condvar,
+    /// The runs of agent tools that ended, denied or not.
+    finished: std::sync::atomic::AtomicUsize,
+}
+#[cfg(feature = "test-streams")]
+impl AgentGate {
+    pub(crate) fn hold(&self) {
+        self.state.lock().expect("gate lock").0 = true;
+    }
+    pub(crate) fn release(&self) {
+        self.state.lock().expect("gate lock").0 = false;
+        self.cv.notify_all();
+    }
+    pub(crate) fn waiting(&self) -> usize {
+        self.state.lock().expect("gate lock").1
+    }
+    pub(crate) fn finished(&self) -> usize {
+        self.finished.load(std::sync::atomic::Ordering::SeqCst)
+    }
+    pub(crate) fn finish(&self) {
+        self.finished
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+    /// Blocks while the gate is held.
+    pub(crate) fn pass(&self) {
+        let mut s = self.state.lock().expect("gate lock");
+        s.1 += 1;
+        while s.0 {
+            s = self.cv.wait(s).expect("gate lock");
+        }
+        s.1 -= 1;
+    }
+}
+
+/// Why the host did not start an agent's tool (19.5, Authority at the run).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Denied {
+    /// The handle, its opening mod or its origin client is gone.
+    Gone,
+    /// The tool is not in the handle's tools now, or its mod is not the install it resolved to.
+    UnknownTool,
+}
+impl Denied {
+    /// The `code` of a job's `err` item.
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            Self::Gone => "gone",
+            Self::UnknownTool => "unknown-tool",
+        }
+    }
+}
+/// What an agent's call of a tool decided at the lookup (19.5): the handle by its caller name,
+/// the tool by its name, and the install of the tool's mod that the lookup resolved to.
+#[derive(Clone, Debug)]
+pub(crate) struct AgentRun {
+    pub(crate) handle: String,
+    pub(crate) tool: String,
+    pub(crate) install: Option<u64>,
+}
+/// The end of an agent's call of a tool: the host did not start it, or it ran and failed.
+pub(crate) enum AgentFailure {
+    Denied(Denied),
+    Call(CallError),
+}
 
 /// Where a handle stands with the consents of its toolsets (19.5).
 #[derive(Clone, Debug, PartialEq)]
@@ -181,7 +252,10 @@ pub(crate) fn call(inv: &Invocation, function: &str, args: &[Val]) -> Result<Val
             let known = host.toolsets();
             if toolsets.is_empty()
                 || toolsets.iter().any(|t| {
-                    !crate::ToolsetName::parse(t).is_ok_and(|name| known.contains_key(&name))
+                    // `agent` is the route of handle tokens: a legacy toolset of that name is
+                    // listed but no handle opens it (10.1).
+                    t == "agent"
+                        || !crate::ToolsetName::parse(t).is_ok_and(|name| known.contains_key(&name))
                 })
             {
                 return Ok(err("not-granted"));
@@ -278,6 +352,8 @@ pub(crate) fn call(inv: &Invocation, function: &str, args: &[Val]) -> Result<Val
                 id: id.clone(),
                 local: found.local,
                 function: found.function,
+                tool,
+                tool_install: found.install,
                 args: input,
                 owner: me,
                 owner_gen: inv.package_of(&inv.local),
@@ -315,6 +391,51 @@ fn usable(host: &Host, id: &str, owner: &ModRef, origin: &str) -> Result<Vec<Str
 }
 
 impl Host {
+    /// The decision to run an agent's tool, made again just before its call starts, under the one
+    /// read of the catalog that the caller holds (19.5, Authority at the run): the handle is
+    /// live, its opening mod and origin client are the installs it had, the tool is in the
+    /// handle's tools as the stored consents stand now, and its mod is the install the lookup
+    /// resolved to. The origin client of the call, with its install generation.
+    pub(crate) fn agent_authority(
+        &self,
+        catalog: &crate::catalog::Catalog,
+        run: &AgentRun,
+        local: &LocalName,
+        function: &str,
+    ) -> Result<(String, Option<u64>), Denied> {
+        let (owner, owner_gen, origin, origin_gen, toolsets) = {
+            let live = self.handles.lock();
+            let e = live
+                .values()
+                .find(|e| e.name == run.handle && e.wait == Wait::Ready)
+                .ok_or(Denied::Gone)?;
+            (
+                e.owner.clone(),
+                e.owner_gen,
+                e.origin.clone(),
+                e.origin_gen,
+                e.toolsets.clone(),
+            )
+        };
+        if !(live_mod(catalog, Some(&owner.local), &owner.identity, owner_gen)
+            && live_mod(catalog, None, &origin, origin_gen))
+        {
+            return Err(Denied::Gone);
+        }
+        let tools = self.handle_tools_in(catalog, &toolsets, &origin);
+        match tools.get(&run.tool) {
+            Some(t)
+                if t.local == *local
+                    && t.function == function
+                    && t.install == run.install
+                    && catalog.install_of(local) == run.install =>
+            {
+                Ok((origin, origin_gen))
+            }
+            _ => Err(Denied::UnknownTool),
+        }
+    }
+
     /// The tools of a ready handle by its caller name (10.3); `None` for a handle that closed or
     /// has no consent yet.
     pub(crate) fn agent_tools_of(&self, name: &str) -> Option<BTreeMap<String, Tool>> {
@@ -546,7 +667,7 @@ impl Host {
         handle: String,
         key: String,
         id: String,
-        tool: (LocalName, String),
+        tool: ToolRun,
         input: String,
         owner: ModRef,
         origin: (String, Option<u64>),
@@ -715,8 +836,16 @@ struct Job {
     id: String,
     /// The caller name of the handle.
     name: String,
-    tool: (LocalName, String),
+    tool: ToolRun,
     input: String,
+}
+/// The tool of a job as the call resolved it: its mod, its function `<interface>.<function>`, its
+/// name and the install of its mod.
+pub(crate) struct ToolRun {
+    pub(crate) local: LocalName,
+    pub(crate) function: String,
+    pub(crate) name: String,
+    pub(crate) install: Option<u64>,
 }
 impl Job {
     fn run(&self) {
@@ -729,11 +858,28 @@ impl Job {
                 else {
                     return;
                 };
-                // The tool runs as a top-level call with its own budget and the agent as caller.
-                let result = host.call(&Caller::Agent(handle), &self.tool.0, &self.tool.1, args);
+                // The tool runs as a top-level call with its own budget, the agent as caller and
+                // the handle's origin client as origin client; the host decides again whether it
+                // may run just before it starts (19.5, Authority at the run).
+                let run = AgentRun {
+                    handle: self.name.clone(),
+                    tool: self.tool.name.clone(),
+                    install: self.tool.install,
+                };
+                let result = crate::runtime::call::run_agent(
+                    &host,
+                    &run,
+                    handle,
+                    &self.tool.local,
+                    &self.tool.function,
+                    args,
+                );
                 match result {
                     Ok(value) => json!({"ok": value}),
-                    Err(e) => {
+                    Err(AgentFailure::Denied(d)) => {
+                        json!({"err": {"code": d.code(), "message": "the tool may not run now"}})
+                    }
+                    Err(AgentFailure::Call(e)) => {
                         let code = serde_json::to_value(&e)
                             .ok()
                             .and_then(|v| v["code"].as_str().map(str::to_owned))

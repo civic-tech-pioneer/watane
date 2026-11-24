@@ -73,6 +73,26 @@ const TOOL_NAMES: [&str; 6] = [
     "tool_api_who",
 ];
 
+/// The tools of `manager:api`, sorted by name (10.1).
+const MANAGER_NAMES: [&str; 16] = [
+    "manager_api_close-open-close",
+    "manager_api_close-page",
+    "manager_api_disable",
+    "manager_api_disable-then-fail",
+    "manager_api_disable-then-read",
+    "manager_api_mods",
+    "manager_api_open-page",
+    "manager_api_open-page-then-fail",
+    "manager_api_request",
+    "manager_api_request-enable",
+    "manager_api_request-grant",
+    "manager_api_request-install",
+    "manager_api_request-remove",
+    "manager_api_request-update",
+    "manager_api_who",
+    "manager_api_withdraw",
+];
+
 struct Home {
     dir: TempDir,
     fake: TempDir,
@@ -84,6 +104,10 @@ struct Home {
 }
 impl Home {
     fn new() -> Self {
+        Self::build(None)
+    }
+    /// A home whose `toolsets.json` is `legacy`, written before the host opens (10.1).
+    fn build(legacy: Option<&str>) -> Self {
         let fake = tempfile::tempdir().unwrap();
         let program = fake.path().join("claude");
         std::fs::copy(
@@ -98,6 +122,14 @@ impl Home {
         let app = Arc::new(App::default());
         *app.program.lock().unwrap() = Some(program);
         let dir = tempfile::tempdir().unwrap();
+        if let Some(text) = legacy {
+            std::fs::write(
+                dir.path().join("home.json"),
+                r#"{"watane_home":1,"mode":"home"}"#,
+            )
+            .unwrap();
+            std::fs::write(dir.path().join("toolsets.json"), text).unwrap();
+        }
         let confirm: Arc<dyn Confirm> = Arc::new(Asking(Arc::clone(&app)));
         let host = Host::open(
             dir.path(),
@@ -108,7 +140,7 @@ impl Home {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let plan = host
             .plan(
-                ["toolbox", "toolbox-front", "tool", "manager"]
+                ["toolbox", "toolbox-front", "tool", "toolc", "manager"]
                     .iter()
                     .map(|n| watane_host::Source::Folder(fixture(n)))
                     .collect(),
@@ -126,6 +158,14 @@ impl Home {
             vec!["manager:api".to_owned()],
         )
         .unwrap();
+        host.set_toolset(
+            &ToolsetName::parse("c").unwrap(),
+            vec!["toolc:api".to_owned()],
+        )
+        .unwrap();
+        // `toolc` declares `Manage` so that a test can grant it later (19.5); it starts without.
+        host.revoke(&local("toolc"), &watane_host::watane_pkg::Grant::Manage)
+            .unwrap();
         Self {
             dir,
             fake,
@@ -1127,13 +1167,14 @@ fn s103_fix2_a_reinstall_while_the_question_waits_keeps_only_the_other_mods_name
         .unwrap();
     let h = home.open(&["tm"]).unwrap();
     home.wait_asked(1);
-    let all = home.asked()[0].functions.clone();
-    let others: Vec<String> = all
+    // The names as literals: the manager's 16 functions, then the tool's 6, sorted (10.1).
+    let others: Vec<String> = MANAGER_NAMES.iter().map(|n| (*n).to_owned()).collect();
+    let all: Vec<String> = MANAGER_NAMES
         .iter()
-        .filter(|f| !f.starts_with("tool_"))
-        .cloned()
+        .chain(TOOL_NAMES.iter())
+        .map(|n| (*n).to_owned())
         .collect();
-    assert!(!others.is_empty() && others.len() < all.len(), "{all:?}");
+    assert_eq!(home.asked()[0].functions, all);
     home.host.remove(&local("tool"), false).unwrap();
     let plan = home
         .host
@@ -1179,5 +1220,258 @@ fn s103_fix2_an_update_that_grants_manage_while_the_question_waits_is_not_undone
     assert_eq!(
         home.consents_of("toolbox"),
         json!([{"kind":"toolset","toolset":"t","functions":[]}])
+    );
+}
+
+// ---- S103 review r1: the authority at the run (19, Terms; 19.5; 10.1) -----------------------------
+
+fn workspace_launch(folder: &str) -> String {
+    json!({"version": 1, "workspace": folder, "profile": "coder"}).to_string()
+}
+/// A canonical empty folder.
+fn new_folder() -> (TempDir, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().canonicalize().unwrap().display().to_string();
+    (dir, path)
+}
+impl Home {
+    /// The calls that `toolc` saw, in order.
+    fn seen(&self) -> Vec<String> {
+        serde_json::from_value(self.call("toolc", "api.seen", Value::Null)).unwrap()
+    }
+    /// The item of a job that the opening mod has: the `err` code.
+    fn err_code(&self, job: &str) -> String {
+        let item: Value = serde_json::from_str(&self.wait_items(job, 1)[0]).unwrap();
+        item["err"]["code"].as_str().unwrap_or_default().to_owned()
+    }
+    /// Removes `local` and installs the same fixture again: the same identity, another install.
+    fn reinstall(&self, local_name: &str, fixture_name: &str) {
+        self.host.remove(&local(local_name), false).unwrap();
+        let plan = self
+            .host
+            .plan(vec![watane_host::Source::Folder(fixture(fixture_name))])
+            .unwrap();
+        self.rt
+            .block_on(self.host.install(plan, watane_host::Requester::App))
+            .unwrap();
+    }
+    /// Waits until `n` runs of agent tools stand at the hold.
+    fn wait_held(&self, hold: &watane_host::AgentHold, n: usize) {
+        wait("a run at the hold", Duration::from_secs(20), || {
+            hold.waiting() >= n
+        });
+    }
+    /// Waits until `n` runs of agent tools ended.
+    fn wait_finished(&self, hold: &watane_host::AgentHold, n: usize) {
+        wait("the run to end", Duration::from_secs(20), || {
+            hold.finished() >= n
+        });
+    }
+}
+
+/// F1.1 (19, Terms): through a job, a request of the tool carries the handle's origin client; a
+/// consent that only the tool's mod holds is not used.
+#[test]
+fn s103_r1_ac1_a_job_runs_the_tool_as_the_handles_origin_client() {
+    let home = Home::new();
+    let (_dir, f) = new_folder();
+    // `toolc` holds the folder for its own requests (origin `toolc`).
+    home.call(
+        "toolc",
+        "api.start",
+        json!({"launch": workspace_launch(&f)}),
+    );
+    home.wait_asked(1);
+    assert_eq!(home.asked()[0].origin, local("toolc"));
+    home.answer(0, ConsentAnswer::Granted);
+    wait("the consent", Duration::from_secs(20), || {
+        home.consents_of("toolc") != json!([])
+    });
+    let h = home.granted(&["c"], 1);
+    let job = home
+        .call_tool(
+            &h,
+            "k",
+            "toolc_api_start",
+            &json!({"launch": workspace_launch(&f)}).to_string(),
+        )
+        .unwrap();
+    // The folder is new for `toolbox`: the question names it as the origin client, `toolc` as via.
+    home.wait_asked(3);
+    let asked = home.asked()[2].clone();
+    assert_eq!(asked.origin, local("toolbox"));
+    assert_eq!(asked.via, local("toolc"));
+    assert_eq!(
+        asked.consent.to_string(),
+        format!("workspace:local/toolc:{f}")
+    );
+    // The job's result goes to the opening mod: the stream id that the tool's request made.
+    let item: Value = serde_json::from_str(&home.wait_items(&job, 1)[0]).unwrap();
+    assert_eq!(item["ok"].as_str().unwrap().len(), 32, "{item}");
+}
+
+/// F1.1 through `/mcp/agent` `tools/call`.
+#[test]
+fn s103_r1_ac1_a_tools_call_runs_the_tool_as_the_handles_origin_client() {
+    let home = Home::serving();
+    let (_dir, f) = new_folder();
+    home.call(
+        "toolc",
+        "api.start",
+        json!({"launch": workspace_launch(&f)}),
+    );
+    home.wait_asked(1);
+    home.answer(0, ConsentAnswer::Granted);
+    wait("the consent", Duration::from_secs(20), || {
+        home.consents_of("toolc") != json!([])
+    });
+    let h = home.granted(&["c"], 1);
+    let token = home.token_of(&h);
+    let (status, body) = home.mcp(
+        "agent",
+        &token,
+        "tools/call",
+        json!({"name": "toolc_api_start", "arguments": {"launch": workspace_launch(&f)}}),
+    );
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["result"]["isError"], false, "{body}");
+    home.wait_asked(3);
+    let asked = home.asked()[2].clone();
+    assert_eq!(asked.origin, local("toolbox"));
+    assert_eq!(asked.via, local("toolc"));
+    assert_eq!(
+        asked.consent.to_string(),
+        format!("workspace:local/toolc:{f}")
+    );
+}
+
+/// F1.1: the install generation of the origin client is the handle's. The origin client that was
+/// removed and installed again under the same identity is another install: the tool does not run.
+#[test]
+fn s103_r1_ac1_a_reinstalled_origin_client_is_gone_and_the_tool_does_not_run() {
+    let home = Home::new();
+    let h = home.granted(&["c"], 0);
+    let hold = home.host.hold_agent_runs();
+    home.call_tool(&h, "k", "toolc_api_touch", "{}").unwrap();
+    home.wait_held(&hold, 1);
+    home.reinstall("toolbox", "toolbox");
+    hold.release();
+    home.wait_finished(&hold, 1);
+    assert_eq!(home.seen(), Vec::<String>::new());
+}
+
+/// F1.2 (19.5, Authority at the run): a `grant` of `Manage` to the tool's mod between the `call`
+/// and the run drops its names: the item is `unknown-tool` and the tool saw no call.
+#[test]
+fn s103_r1_ac2_a_job_whose_tool_mod_became_a_manager_before_it_ran_does_not_run() {
+    let home = Home::new();
+    let h = home.granted(&["c"], 0);
+    let hold = home.host.hold_agent_runs();
+    let job = home.call_tool(&h, "k", "toolc_api_touch", "{}").unwrap();
+    home.wait_held(&hold, 1);
+    home.host
+        .grant(&local("toolc"), &watane_host::watane_pkg::Grant::Manage)
+        .unwrap();
+    hold.release();
+    assert_eq!(home.err_code(&job), "unknown-tool");
+    assert_eq!(home.seen(), Vec::<String>::new());
+}
+
+/// F1.2: the tool's mod removed and installed again under the same local name between the `call`
+/// and the run.
+#[test]
+fn s103_r1_ac2_a_job_whose_tool_mod_was_reinstalled_before_it_ran_does_not_run() {
+    let home = Home::new();
+    let h = home.granted(&["c"], 0);
+    let hold = home.host.hold_agent_runs();
+    let job = home.call_tool(&h, "k", "toolc_api_touch", "{}").unwrap();
+    home.wait_held(&hold, 1);
+    home.reinstall("toolc", "toolc");
+    hold.release();
+    assert_eq!(home.err_code(&job), "unknown-tool");
+    assert_eq!(home.seen(), Vec::<String>::new());
+}
+
+/// F1.2: a withdrawn toolset consent ends the job's stream `gone`, and the held run does not run.
+#[test]
+fn s103_r1_ac2_a_job_whose_toolset_consent_was_withdrawn_before_it_ran_does_not_run() {
+    let home = Home::new();
+    let h = home.granted(&["c"], 0);
+    let hold = home.host.hold_agent_runs();
+    let job = home.call_tool(&h, "k", "toolc_api_touch", "{}").unwrap();
+    home.wait_held(&hold, 1);
+    home.host
+        .withdraw_consent(&local("toolbox"), &Consent::parse("toolset:c").unwrap())
+        .unwrap();
+    hold.release();
+    home.wait_finished(&hold, 1);
+    home.wait_ended(&format!("{job} gone"));
+    assert_eq!(home.seen(), Vec::<String>::new());
+}
+
+/// F1.2: a `tools/call` whose lookup and dispatch straddle the change answers `-32602`.
+#[test]
+fn s103_r1_ac2_a_tools_call_that_straddles_a_narrowing_answers_invalid_params() {
+    let home = Home::serving();
+    let h = home.granted(&["c"], 0);
+    let token = home.token_of(&h);
+    assert_eq!(
+        home.mcp_names(&token),
+        [
+            "toolc_api_seen",
+            "toolc_api_slow",
+            "toolc_api_start",
+            "toolc_api_touch"
+        ]
+    );
+    let hold = home.host.hold_agent_runs();
+    let (status, body) = std::thread::scope(|scope| {
+        let call = scope.spawn(|| {
+            home.mcp(
+                "agent",
+                &token,
+                "tools/call",
+                json!({"name": "toolc_api_touch", "arguments": {}}),
+            )
+        });
+        home.wait_held(&hold, 1);
+        home.host
+            .grant(&local("toolc"), &watane_host::watane_pkg::Grant::Manage)
+            .unwrap();
+        hold.release();
+        call.join().unwrap()
+    });
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["error"]["code"], -32602, "{body}");
+    assert_eq!(home.seen(), Vec::<String>::new());
+}
+
+/// F1.3 (10.1): a home saved before S103 with a toolset `agent` opens; it is listed and can be
+/// removed; no handle opens it and no toolset token is issued for it.
+#[test]
+fn s103_r1_ac3_a_legacy_agent_toolset_opens_and_no_handle_can_open_it() {
+    let home = Home::build(Some(r#"{"agent":["counter:api"]}"#));
+    assert_eq!(
+        home.host
+            .toolsets()
+            .get(&ToolsetName::parse("agent").unwrap()),
+        Some(&vec!["counter:api".to_owned()])
+    );
+    assert_eq!(home.open(&["agent"]).unwrap_err(), "not-granted");
+    assert_eq!(
+        home.host
+            .set_toolset(&ToolsetName::parse("agent").unwrap(), vec![])
+            .unwrap_err()
+            .code(),
+        "bad_name"
+    );
+    home.host
+        .remove_toolset(&ToolsetName::parse("agent").unwrap())
+        .unwrap();
+    assert!(
+        !home
+            .host
+            .toolsets()
+            .contains_key(&ToolsetName::parse("agent").unwrap())
     );
 }

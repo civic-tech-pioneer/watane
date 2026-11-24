@@ -124,6 +124,9 @@ pub(crate) enum Effect {
         local: LocalName,
         /// `<interface>.<function>` of the tool.
         function: String,
+        /// The tool's name, and the install of its mod that the call resolved (19.5).
+        tool: String,
+        tool_install: Option<u64>,
         args: String,
         owner: ModRef,
         owner_gen: Option<u64>,
@@ -1034,6 +1037,8 @@ impl Host {
                     id,
                     local,
                     function,
+                    tool,
+                    tool_install,
                     args,
                     owner,
                     owner_gen,
@@ -1052,7 +1057,12 @@ impl Host {
                         handle,
                         key,
                         id,
-                        (local, function),
+                        tools::ToolRun {
+                            local,
+                            function,
+                            name: tool,
+                            install: tool_install,
+                        },
                         args,
                         owner,
                         (origin, origin_gen),

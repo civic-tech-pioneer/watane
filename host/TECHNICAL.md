@@ -146,6 +146,8 @@ impl Host {
     pub fn set_test_clock(&self, clock: TestClock);
     #[cfg(feature = "test-streams")]
     pub fn test_stats(&self) -> TestStats;
+    #[cfg(feature = "test-streams")]   // 19.9: S103 review r1
+    pub fn hold_agent_runs(&self) -> AgentHold;   // `waiting()`, `finished()`, `release()`; Drop releases
 
     // runtime (section 6)
     /// The callable functions: `world().exports` only, never a subscription export (6.6 step 2).
@@ -1541,8 +1543,8 @@ both. The name `agent` is reserved as `preview` is (`bad_name` at
 `set_toolset`): `/mcp/agent` is the route of handle tokens (19.5). A home whose
 `toolsets.json` already holds a toolset `agent` (saved before S103) still opens
 and keeps it: it is listed and can be removed, but no token reaches it, since
-`/mcp/agent` takes handle tokens only, and no handle can open it (review r1 of
-S103, F1.3). Description: the WIT doc comment
+`/mcp/agent` takes handle tokens only (`issue_token` fails `no_such_toolset`, 10.2), and no
+handle can open it (`agent-tools.open` fails `not-granted`; review r1 of S103, F1.3). Description: the WIT doc comment
 of the function (`Resolve::push_dir` on `mods/<local>/wit/`, then
 `Function::docs.contents`; both exist in wit-parser 0.254), else its
 signature `<function>: func(<p>: <type>, ...) -> <type>`. Input schema:
@@ -1559,7 +1561,8 @@ keeps only `blake3(token)` in memory, mapped to (toolset, handle).
 participant home, only the app issues toolset tokens, in its process (W6);
 the host also issues a token for each handle that `agent-tools.open` opens,
 when it opens; `/mcp/agent` answers it 401 until the toolset consents are held (19.5, 19.7;
-W6 as changed in spec §7). In a
+W6 as changed in spec §7). `issue_token` for the name `agent` fails `no_such_toolset`, also when
+a legacy toolset of that name is held (10.1): the only tokens bound to `agent` are handle tokens. In a
 preview, the program `watane` issues one token for `preview` with handle
 `preview` at start.
 
@@ -3776,7 +3779,11 @@ rather than clamp it.
 dev's fakes (dev 18; dev 17, question 16) stand in for `claude`, OpenAI and a
 judge. Two settings of the host let them in; neither exists in a participant
 home's production path. A third, `test-streams`, serves only host's own A1
-tests (last item).
+tests (last item); it also holds `Host::hold_agent_runs`: every run of an agent's tool (a job or
+a `tools/call`) waits, just before the host reads its authority (19.5, Authority at the run) and
+before it takes the tool mod's call lock, until the hold is released; `AgentHold::waiting()` counts
+the runs that wait and `finished()` the runs that ended, denied or not. It gives the tests of the
+review r1 of S103 a gate in place of a sleep.
 
 - **The preview's `claude`.** `Host::set_fake_claude(program)` names the
   program that a preview runs for every `claude-code` and
