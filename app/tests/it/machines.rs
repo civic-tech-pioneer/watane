@@ -753,7 +753,7 @@ const $ = selector => {
   return nodes.get(selector);
 };
 let refreshes = 0;
-const context = { $, location: {hash:'#mods'}, managerTab:'library', closeAdd() {}, headerView() {},
+const context = { $, location: {hash:'#mods'}, managerTab:'library', startupFailed:false, closeAdd() {}, headerView() {},
   document: {hidden:true}, readRefresh: () => {refreshes++; return Promise.resolve();},
   showError: error => {throw error;} };
 vm.createContext(context);
@@ -766,6 +766,11 @@ assert.equal(refreshes, 1, 'showing Settings must refresh even in a hidden windo
 context.location.hash = '#mods'; context.route();
 context.location.hash = '#settings'; context.route();
 assert.equal(refreshes, 2, 'returning to Settings must read the latest identity and hints');
+context.startupFailed = true;
+context.route();
+assert.equal($('#settings').hidden, true);
+assert.equal($('#library').hidden, false);
+assert.equal(refreshes, 2);
 "#])
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .output().unwrap();

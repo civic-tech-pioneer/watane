@@ -513,13 +513,17 @@ fn ac1_fixture_packages_and_page_messages() {
       const fields = Object.fromEntries(ids.map(id => [id, {id, textContent:'',value:'',checked:false}]));
       const functions = [...html.matchAll(/<button id="([^"]+)"/g)].map(m => m[1]);
       const calls = [];
-      let response, error, listener;
+      let response, error, listener, grantListener;
       const document = {getElementById:id => fields[id], querySelectorAll:() => functions.map(id => fields[id])};
       const watane = {
         call: async (fn,args) => { calls.push([fn,args]); if(error) throw error; return fn === 'api.mods' ? [] : fn === 'api.request' ? 'approved' : response; },
         on: handler => {listener = handler;}
       };
-      vm.runInNewContext(readFileSync('tests/fixtures/desk-ui/ui/app.js','utf8'), {document,watane});
+      const window = {addEventListener(name, handler) {
+        assert.equal(name, 'watane:grant-changed');
+        grantListener = handler;
+      }};
+      vm.runInNewContext(readFileSync('tests/fixtures/desk-ui/ui/app.js','utf8'), {document,watane,window});
       await new Promise(resolve => setImmediate(resolve));
       fields.local.value = 'reading-list'; fields.release.value = 'release'; fields.link.value = 'link';
       fields.grant.value = JSON.stringify({call:{interface:'books',provider:'local/reading-list'}});
@@ -546,6 +550,10 @@ fn ac1_fixture_packages_and_page_messages() {
       error = null; response = {ok:'r2'};
       await fields['request-enable'].onclick();
       await listener({type:'catalog'});
+      assert.equal(fields.result.textContent,'"approved"');
+      error = {code:'not_granted',message:'withdrawn'};
+      await grantListener();
+      assert.equal(JSON.parse(fields['mods-result'].textContent).code,'not_granted');
       assert.equal(fields.result.textContent,'"approved"');
     "#;
     let output = std::process::Command::new("node")
