@@ -231,10 +231,8 @@ fn regress_s114_refused_setting_warns_unless_script_supplied() {
     unavailable_scripted_openai_warns_unless_script_supplied(false);
 }
 
-fn unavailable_scripted_openai_warns_unless_script_supplied(missing_program: bool) {
-    let host = std::env::var_os("WATANE_BIN").expect("set WATANE_BIN to a host");
-    let preview = Preview::new();
-    let stub = preview.host_stub(
+fn refusing_host(preview: &Preview) -> std::path::PathBuf {
+    preview.host_stub(
             r#"for arg in "$@"; do
     if [ "$arg" = --scripted-openai ]; then
         printf '%s\n' '{"watane":1,"error":{"code":"usage","message":"fixture host rejects the setting"}}'
@@ -242,7 +240,38 @@ fn unavailable_scripted_openai_warns_unless_script_supplied(missing_program: boo
     fi
 done
 exec "$TEST_PREVIEW_HOST" "$@""#,
-        );
+        )
+}
+
+#[test]
+#[ignore = "slow: needs WATANE_BIN for ordinary preview startup"]
+fn regress_s114_refused_setting_reuses_ordinary_preview() {
+    let host = std::env::var_os("WATANE_BIN").expect("set WATANE_BIN to a host");
+    let preview = Preview::new();
+    let stub = refusing_host(&preview);
+    let serve = || {
+        let out = preview.command(&[])
+            .env("WATANE_BIN", &stub)
+            .env("TEST_PREVIEW_HOST", &host)
+            .output().unwrap();
+        assert_eq!(out.status.code(), Some(0));
+        serde_json::from_slice::<Value>(&out.stdout).unwrap()
+    };
+    let first = serve();
+    let second = serve();
+    assert_eq!(first["result"]["reused"], false);
+    assert_eq!(second["result"]["reused"], true, "second serve restarted the preview");
+    assert_eq!(second["result"]["api"], first["result"]["api"]);
+    assert!(first["result"]["mcp"]["url"].is_string());
+    assert!(first["result"]["mcp"]["token"].is_string());
+    assert!(second["result"]["mcp"]["url"] == first["result"]["mcp"]["url"]);
+    assert!(second["result"]["mcp"]["token"] == first["result"]["mcp"]["token"]);
+}
+
+fn unavailable_scripted_openai_warns_unless_script_supplied(missing_program: bool) {
+    let host = std::env::var_os("WATANE_BIN").expect("set WATANE_BIN to a host");
+    let preview = Preview::new();
+    let stub = refusing_host(&preview);
     let output = |args: &[&str]| {
         let mut command = preview.command(args);
         command
