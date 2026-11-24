@@ -2971,9 +2971,9 @@ once. The maker tools offer the fake `claude` instead:
   standalone program's JSON from 18.3. Its optional `token` is a fixture
   value and defaults on the preview side to `watane-preview`.
 - Dev finds `scripted-responses` beside `watane-dev`, on PATH, or via the
-  override `WATANE_SCRIPTED_RESPONSES` (checked first). Dev snapshots the
-  script in the preview cache and asks the host to launch the program
-  before reporting ready (host 19.9). A missing program, unreadable or bad
+  override `WATANE_SCRIPTED_RESPONSES` (checked first). Dev passes the host
+  a private, temporary snapshot of the script and removes it after startup
+  (host 19.9). A missing program, unreadable or bad
   script, or an unavailable host setting fails with `env.preview_start`.
   An unchanged script reuses a live preview. Changing the script or enabling
   or disabling scripted Responses restarts the preview and keeps its data.
