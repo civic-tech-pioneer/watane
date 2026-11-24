@@ -1827,19 +1827,19 @@ mod fix21_tests {
             .arg("30")
             .process_group(0)
             .spawn()
-            .unwrap();
-        let record = pid_record(i32::try_from(run.id()).unwrap()).expect("alive");
+            .expect("spawn");
+        let record = pid_record(i32::try_from(run.id()).expect("pid")).expect("alive");
         (run, record)
     }
 
     fn killed(run: &mut std::process::Child) -> bool {
         let done = (0..50).find_map(|_| {
             std::thread::sleep(Duration::from_millis(20));
-            run.try_wait().unwrap()
+            run.try_wait().expect("wait")
         });
         if done.is_none() {
-            run.kill().unwrap();
-            run.wait().unwrap();
+            run.kill().expect("kill");
+            run.wait().expect("reap");
         }
         done.is_some()
     }
