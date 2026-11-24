@@ -753,6 +753,7 @@ mod tests {
         let data = reads_outside_problem(Path::new("/x/data.bin"));
         assert!(data.fix.unwrap().starts_with("Remove the include_bytes!,"));
     }
+    #[cfg(unix)] // Uses /usr/bin/false to drive both failed Cargo builds.
     #[test]
     fn ac1_release_and_unit_build_progress_stays_on_stderr() {
         const CHILD: &str = "WATANE_TEST_BUILD_PROGRESS";

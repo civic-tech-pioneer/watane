@@ -230,13 +230,8 @@ fn ac2_no_source_writes_nothing() {
             "Build on a release that includes its source, or make a new mod that depends on this one: watane-dev new ratings --dir {dest} && watane-dev add --release '{}' --dir {dest} --home {}",
             link("reading-list"),
             f.home.canonicalize().unwrap().display(),
-            dest = f
-                .root
-                .path()
-                .canonicalize()
-                .unwrap()
-                .join("ratings")
-                .display(),
+            dest =
+                crate::support::shell_path(f.root.path().canonicalize().unwrap().join("ratings")),
         )
     );
     assert!(!f.root.path().join("ratings").exists());
@@ -335,8 +330,8 @@ fn ac4_add_release_records_publisher_wit_link_and_rejects_bad_target() {
         v["errors"][0]["fix"],
         format!(
             "Pick the link or release of another mod, then run: watane-dev add --release <link> --dir {} --home {}",
-            own.canonicalize().unwrap().display(),
-            f.home.canonicalize().unwrap().display()
+            crate::support::shell_path(own.canonicalize().unwrap()),
+            crate::support::shell_path(f.home.canonicalize().unwrap())
         )
     );
 }
@@ -432,14 +427,14 @@ fn ac5_missing_released_cache_has_actionable_fix() {
         assert_eq!(out.status.code(), Some(1), "{v}");
         assert_eq!(v["errors"][0]["code"], "mod.release_provider_missing");
         let home = if given {
-            format!(" --home {}", home.display())
+            format!(" --home {}", crate::support::shell_path(&home))
         } else {
             String::new()
         };
         let fix = format!(
             "Start the watane app, then run: watane-dev add --release {} --dir {}{home}",
             release("ratings"),
-            dir.canonicalize().unwrap().display()
+            crate::support::shell_path(dir.canonicalize().unwrap())
         );
         assert_eq!(v["errors"][0]["fix"], fix);
         assert_eq!(
@@ -726,7 +721,7 @@ fn ac1_derive_keeps_only_logic_wasm_with_explicit_and_default_slug() {
             v["next"],
             format!(
                 "{step}, then run: watane-dev test --json --dir {}",
-                dir_arg.display()
+                crate::support::shell_path(dir_arg)
             )
         );
         assert!(
@@ -890,14 +885,15 @@ fn regress_s93_no_source_fix_runs_as_written() {
     assert_eq!(code, 2, "{v}");
     assert_eq!(v["errors"][0]["code"], "usage.no_source");
     let dest = f.root.path().canonicalize().unwrap().join("ratings");
+    let shell_dest = crate::support::shell_path(&dest);
     let dest = dest.to_str().unwrap();
     let fix = v["errors"][0]["fix"].as_str().unwrap();
-    assert!(fix.contains(&format!("--dir {dest}")), "{fix}");
+    assert!(fix.contains(&format!("--dir {shell_dest}")), "{fix}");
     // The fix's commands, argument by argument: `new <slug> --dir <dest> && add --release ...`
     // (foreman, S93-fix5: the fix makes the mod first, since new --from writes nothing).
     assert!(
         fix.contains(&format!(
-            "watane-dev new ratings --dir {dest} && watane-dev add --release"
+            "watane-dev new ratings --dir {shell_dest} && watane-dev add --release"
         )),
         "{fix}"
     );

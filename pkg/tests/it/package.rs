@@ -65,7 +65,11 @@ fn tree(dir: &Path) -> BTreeMap<String, Vec<u8>> {
                 walk(root, &path, out);
             } else {
                 out.insert(
-                    path.strip_prefix(root).unwrap().to_str().unwrap().into(),
+                    path.strip_prefix(root)
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .replace(std::path::MAIN_SEPARATOR, "/"),
                     fs::read(path).unwrap(),
                 );
             }

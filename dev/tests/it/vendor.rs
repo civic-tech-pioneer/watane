@@ -58,7 +58,8 @@ fn ac3_vendor_script_with_registry_downloads() {
 
 fn run_script(root: &Path, offline: bool) {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let output = Command::new(manifest.join("scripts/vendor.sh"))
+    let output = Command::new("bash")
+        .arg(manifest.join("scripts/vendor.sh"))
         .current_dir(root)
         .env("CARGO_NET_OFFLINE", if offline { "true" } else { "false" })
         .arg("own vendor")

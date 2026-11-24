@@ -197,7 +197,8 @@ mod tests {
             select_vendor(Some("/override".into()), &installed, &source, &cache),
             Path::new("/override")
         );
-        let script = concat!(env!("CARGO_MANIFEST_DIR"), "/scripts/vendor.sh");
+        let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/vendor.sh");
+        let script = script.display();
         assert_eq!(
             vendor_fix(Path::new("/agent/cache/vendor")),
             format!("'{script}' '/agent/cache/vendor'")

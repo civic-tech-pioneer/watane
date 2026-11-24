@@ -98,7 +98,7 @@ fn ac1_new_counter_template_envelope() {
         value["next"],
         format!(
             "Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json --dir {}",
-            root.canonicalize().unwrap().display()
+            crate::support::shell_path(root.canonicalize().unwrap())
         )
     );
 }
@@ -529,7 +529,7 @@ fn page(root: &Path) -> std::path::PathBuf {
 fn ac2_test_next_carries_dir_and_home_only_when_given() {
     let temp = tempfile::tempdir().unwrap();
     let dir = page(temp.path());
-    let cwd = dir.display().to_string();
+    let cwd = crate::support::shell_path(&dir);
     let (code, value) = run(&dir, &["test", "--json"]);
     assert_eq!(code, 0, "{value}");
     assert_eq!(value["next"], "watane-dev serve --json");
@@ -555,7 +555,7 @@ fn ac2_test_next_carries_dir_and_home_only_when_given() {
         value["next"],
         format!(
             "watane-dev serve --json --dir {cwd} --home {}",
-            temp.path().canonicalize().unwrap().display()
+            crate::support::shell_path(temp.path().canonicalize().unwrap())
         )
     );
 }

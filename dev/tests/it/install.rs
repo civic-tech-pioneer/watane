@@ -21,7 +21,7 @@ fn ac1_no_host_precedes_pipeline() {
         value["errors"][0]["message"]
             .as_str()
             .unwrap()
-            .contains(home.path().to_str().unwrap())
+            .contains(home.path().canonicalize().unwrap().to_str().unwrap())
     );
     let (dir, home) = (
         home.path().canonicalize().unwrap(),
@@ -31,8 +31,8 @@ fn ac1_no_host_precedes_pipeline() {
         value["errors"][0]["fix"],
         format!(
             "Start the watane app, then run: watane-dev install --json --dir {} --home {}",
-            dir.display(),
-            home.display()
+            crate::support::shell_path(dir),
+            crate::support::shell_path(home)
         )
     );
 }
@@ -63,8 +63,8 @@ fn regress_s12b_no_host_next_repeats_install() {
         next,
         format!(
             "watane-dev install --json --dir {} --home {}",
-            home.path().canonicalize().unwrap().display(),
-            home.path().canonicalize().unwrap().display()
+            crate::support::shell_path(home.path().canonicalize().unwrap()),
+            crate::support::shell_path(home.path().canonicalize().unwrap())
         )
     );
 }
@@ -94,14 +94,14 @@ fn regress_s12b_no_host_next_keeps_dir() {
     assert!(
         next.contains("--dir") && next.contains(dir.to_str().unwrap()),
         "next should keep --dir {} so it runs from any folder, got {next:?}",
-        dir.display()
+        crate::support::shell_path(dir)
     );
     assert_eq!(
         next,
         format!(
             "watane-dev install --json --dir {} --home {}",
-            dir.display(),
-            home.path().canonicalize().unwrap().display()
+            crate::support::shell_path(dir),
+            crate::support::shell_path(home.path().canonicalize().unwrap())
         )
     );
 }
@@ -277,8 +277,8 @@ mod fake {
         );
         let fix = format!(
             "Run again with a longer --wait: watane-dev install --json --dir {} --home {} --wait 2",
-            dir.canonicalize().unwrap().display(),
-            home.path().canonicalize().unwrap().display()
+            crate::support::shell_path(dir.canonicalize().unwrap()),
+            crate::support::shell_path(home.path().canonicalize().unwrap())
         );
         assert_eq!(value["errors"][0]["fix"], json!(fix), "{value}");
         assert_eq!(value["next"], fix, "{value}");
@@ -344,8 +344,8 @@ mod fake {
         assert!(
             next.contains(&format!(
                 "then run: watane-dev install --json --dir {} --home {}",
-                dir.display(),
-                home.path().canonicalize().unwrap().display()
+                crate::support::shell_path(dir),
+                crate::support::shell_path(home.path().canonicalize().unwrap())
             )),
             "{next}"
         );
@@ -378,8 +378,8 @@ mod fake {
         assert_eq!(code, 1, "{value}");
         let fix = format!(
             "Correct mod.toml according to the reported rule, then run: watane-dev install --json --dir {} --home {}",
-            dir.canonicalize().unwrap().display(),
-            home.path().canonicalize().unwrap().display()
+            crate::support::shell_path(dir.canonicalize().unwrap()),
+            crate::support::shell_path(home.path().canonicalize().unwrap())
         );
         assert_eq!(value["errors"][0]["fix"], json!(fix), "{value}");
         assert_eq!(value["next"], json!(fix), "{value}");
@@ -456,7 +456,10 @@ mod fake {
         assert_eq!(code, 1, "{value}");
         assert_eq!(
             value["next"],
-            format!("watane-dev test --json --dir {}", a.display())
+            format!(
+                "watane-dev test --json --dir {}",
+                crate::support::shell_path(a)
+            )
         );
         assert_eq!(value["errors"][0]["fix"], value["next"]);
         assert_eq!(
@@ -576,8 +579,11 @@ fn ac2_no_host_next_preserves_explicit_wait_and_given_home() {
         assert_eq!(
             value["next"],
             format!(
-                "watane-dev install --json --dir {0} --home {0}/missing-home --wait {wait}",
-                root.path().canonicalize().unwrap().display()
+                "watane-dev install --json --dir {} --home {} --wait {wait}",
+                crate::support::shell_path(root.path().canonicalize().unwrap()),
+                crate::support::shell_path(
+                    root.path().canonicalize().unwrap().join("missing-home")
+                )
             )
         );
     }
@@ -599,8 +605,9 @@ fn ac2_no_host_next_quotes_home_for_the_shell() {
     assert_eq!(
         value["next"],
         format!(
-            r#"watane-dev install --json --dir {0} --home '{0}/Alice'"'"'s home'"#,
-            root.path().canonicalize().unwrap().display()
+            "watane-dev install --json --dir {} --home {}",
+            crate::support::shell_path(root.path().canonicalize().unwrap()),
+            crate::support::shell_path(root.path().canonicalize().unwrap().join("Alice's home"))
         )
     );
 }
@@ -624,8 +631,9 @@ fn ac1_no_host_next_quotes_dir_for_the_shell() {
     assert_eq!(
         value["next"],
         format!(
-            r#"watane-dev install --json --dir '{0}/Alice'"'"'s mod' --home {0}/missing-home"#,
-            root.path().canonicalize().unwrap().display()
+            "watane-dev install --json --dir {} --home {}",
+            crate::support::shell_path(mod_dir.canonicalize().unwrap()),
+            crate::support::shell_path(root.path().canonicalize().unwrap().join("missing-home"))
         )
     );
 }
@@ -658,9 +666,12 @@ fn ac1_install_next_matches_explicit_and_default_missing_symlink_home() {
                 value["next"],
                 format!(
                     "watane-dev install --json --dir {}{}",
-                    resolved.display(),
+                    crate::support::shell_path(&resolved),
                     if explicit {
-                        format!(" --home {}", resolved.join("home").display())
+                        format!(
+                            " --home {}",
+                            crate::support::shell_path(resolved.join("home"))
+                        )
                     } else {
                         String::new()
                     }
@@ -691,7 +702,7 @@ fn ac2_missing_home_component_before_parent_is_environment_error() {
             "search" => "watane-dev search --json --home <folder>".to_string(),
             _ => format!(
                 "watane-dev {command} --json --dir {} --home <folder>",
-                root.path().canonicalize().unwrap().display()
+                crate::support::shell_path(root.path().canonicalize().unwrap())
             ),
         };
         assert_eq!(

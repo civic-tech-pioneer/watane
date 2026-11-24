@@ -336,11 +336,8 @@ pub(crate) fn dir(root: &Path, relative: &str) -> Result<Dir, (String, io::Error
     #[cfg(not(unix))]
     {
         let path = root.join(relative);
-        if !path.is_dir() {
-            return Err((
-                relative.into(),
-                io::Error::new(io::ErrorKind::NotFound, "not a directory"),
-            ));
+        if !path.metadata().map_err(|e| (relative.into(), e))?.is_dir() {
+            return Err((relative.into(), io::ErrorKind::NotADirectory.into()));
         }
         Ok(Dir { path })
     }
@@ -358,8 +355,31 @@ pub(crate) fn file(root: &Path, relative: &str) -> Result<File, (String, io::Err
             OFlags::RDONLY | OFlags::CLOEXEC | OFlags::NONBLOCK,
         )?
     };
-    #[cfg(not(unix))]
-    let file = File::open(root.join(relative)).map_err(|e| (relative.into(), e))?;
+    #[cfg(windows)]
+    let file = {
+        use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+            .open(root.join(relative))
+            .map_err(|e| (relative.into(), e))?;
+        if file
+            .metadata()
+            .map_err(|e| (relative.into(), e))?
+            .file_attributes()
+            & FILE_ATTRIBUTE_REPARSE_POINT
+            != 0
+        {
+            return Err((
+                relative.into(),
+                io::Error::new(io::ErrorKind::InvalidInput, "Windows reparse point refused"),
+            ));
+        }
+        file
+    };
     let kind = file.metadata().map_err(|e| (relative.into(), e))?;
     if kind.is_dir() {
         return Err((
