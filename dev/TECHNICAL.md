@@ -39,6 +39,7 @@ dev/
   src/bin/fake-gh.rs    step 6: a fake `gh` for tests (feature `fake-host`, 15.4)
   src/bin/fake-claude.rs  step 11: a fake `claude` (feature `fake-claude`, 18.2)
   src/bin/scripted-responses.rs  step 11: `ScriptedResponses` as a program (feature `fake-claude`, 18.3)
+  src/scripted_format.rs  step 11: script file types used by serve and the scripted program (18.3)
   src/scripted.rs       step 11: `ScriptedResponses`, the Responses server and its judge origin (feature `fake-claude`, 18.3)
 template/               the files of a new mod (section 4)
 allowlist/Cargo.toml    the allowlist: direct crates, exact versions
@@ -2895,6 +2896,7 @@ no watane subsystem links the crate, spec §2). Arguments: `[--script
 output, `{"scripted":1,"responses_addr":"127.0.0.1:<port>","judge_addr":"127.0.0.1:<port>","judge_origin":"https://judge.test","ca_pem":"<PEM>"}`,
 and serves until it is killed (SIGTERM). `--script` is a JSON file
 `{"token": string?, "models": [string]?, "replies": [Reply]?, "judge_key": string?, "plays": [Play]?}`
+The program and preview validation use the same `scripted_format::Script` type.
 whose `Reply`, `SseEvent` and `Play` values are the serde forms of the types
 above (externally tagged, kebab-case names; the default script is one `Sse`
 with `Delta("ok")` and `Completed`, and one `Safe([])`). With `--log`, it
