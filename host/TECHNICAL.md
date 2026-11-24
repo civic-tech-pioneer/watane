@@ -1724,6 +1724,8 @@ watane --version
   joins one plan, installed before the ready line. Then the host issues the
   preview token. Step 11: `--fake-claude` calls `Host::set_fake_claude`
   before the ready line (19.9); it is a `usage` error without `--preview`.
+  Development previews also accept `--scripted-openai` and `--openai-script`
+  (19.9).
 - `--version` prints `watane <crate version>` and exits 0. A bad argument
   prints an error line with code `usage` and exits 2.
 
@@ -3497,7 +3499,8 @@ checks of the table above are made at the call.
   token per request and adds `Authorization: Bearer <token>`. Without an app:
   the stream ends `no-app`; without tokens: `no-account`. The consent of
   19.7 is held first. A4 settles the order, all after the apply and before a byte leaves:
-  a preview ends `no-account` (19.7, Previews); a home with no app, or an app whose
+  a preview uses the local fake of 19.9 when configured and otherwise ends
+  `no-account` (19.7, Previews). A home with no app, or an app whose
   `accounts()` is `None`, ends `no-app` and asks nobody; then the consent of 19.7 (the first
   item `consent-pending`, `consent-refused(what)`); then one call of `openai_token`, whose
   `NoAccount` is `no-account` and `Unavailable(m)` is `failed("account unavailable: <m>")`;
@@ -3581,7 +3584,8 @@ Without an app (`accounts()` is `None`) each use fails `no-app`; an entry that
 is absent is `AccountError::NoAccount`, which the host turns into `no-account`;
 `Unavailable(m)` ends the stream `failed("account unavailable: <m>")`, so a mod
 may retry. `claude_binary` failing `NoAccount` ends a start `no-binary`.
-A preview has no accounts (19.7); its `claude` program is 19.9.
+A preview has no participant accounts (19.7). Its fake Claude Code and
+development-only scripted OpenAI are in 19.9.
 
 ### 19.5 Agent tools (H4)
 
@@ -3906,8 +3910,8 @@ rather than clamp it.
 ### 19.9 Fakes and test hooks for tests and previews
 
 dev's fakes (dev 18; dev 17, question 16) stand in for `claude`, OpenAI and a
-judge. Two settings of the host let them in; neither exists in a participant
-home's production path. A third, `test-streams`, serves only host's own A1
+judge. The settings below keep the fakes out of a participant home's
+production path. `test-streams` serves only host's own A1
 tests (last item); it also holds `Host::hold_agent_runs`: every run of an agent's tool (a job or
 a `tools/call`) waits, just before the host reads its authority (19.5, Authority at the run) and
 before it takes the tool mod's call lock, until the hold is released; `AgentHold::waiting()` counts
@@ -3938,7 +3942,8 @@ review r1 of S103 a gate in place of a sleep.
   A fake failure ends the stream without retrying a public address.
   The setting lives in memory and real homes refuse it, including a home
   named with `--preview` (3). Release builds compile out the flags and the
-  setting, including when debug assertions are enabled in the release profile. The app has no entry point to configure it.
+  setting, including when debug assertions are enabled in the release
+  profile. The app has no entry point to configure it.
 - **Test routes** (feature `test-net`, off by default; host 1). With the
   feature, `Host::set_test_net(TestNet)` makes `https-stream` connect a
   request whose host equals a route's name to the route's local address,

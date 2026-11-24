@@ -2,7 +2,6 @@
 
 use super::{Bytes, End, Full, Job, ServerName, TokioIo, failed};
 use crate::Mode;
-use crate::home::ScriptedOpenAi;
 
 /// The ordinary HTTPS job owns request validation, registration, cancellation and response handling.
 pub(super) fn run(job: &Job) -> bool {

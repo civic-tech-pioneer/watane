@@ -144,7 +144,7 @@ watane-dev [--json] [--dir <path>] <command>
   new <slug>                 --dir is the new folder; default ./<slug>
   check
   test [--home <path>]
-  serve [--stop] [--home <path>]
+  serve [--stop | --script <file>] [--home <path>]
   doctor
   add <mod folder>                                          (step 2)
   install [--home <path>] [--wait <seconds>]                (step 2)
@@ -1385,8 +1385,9 @@ and the command's `next` are
    to `serve`, never `serve --stop`.
 2. Preview folder `P = <cache>/previews/<slug>-<h8>/`, home `P/home`.
    If the host of `P/home` runs (9.1) and `P/ready.json` exists: reuse it
-   (`reused` true). If it runs and `P/ready.json` is missing: stop it
-   (9.4 steps 1 to 3), then start it.
+   (`reused` true) when the scripted Responses selection still matches (18.4).
+   If the ready line is missing or the selection changed, stop the running
+   host (9.4 steps 1 to 3), then start it.
    Step 11: find `fake-claude` (9.1). If found, link it as
    `<P>/claude/fake-claude` (a symbolic link, replaced at each `serve`) and, if
    `<P>/claude/fake-claude.json` does not exist, write the default script of
@@ -1395,7 +1396,9 @@ and the command's `next` are
 3. Start: spawn `<watane> --preview <P/home>` (step 11, with `--fake-claude
    <P>/claude/fake-claude` when step 2 linked it; host 12.2, 19.9) with stdin null, stdout
    piped, stderr appended to `P/watane.log`, and on Unix
-   `process_group(0)`, so the preview outlives dev and the agent's shell. A
+   `process_group(0)`, so the preview outlives dev and the agent's shell.
+   For scripted Responses, pass `--scripted-openai <program>` and, when a
+   script was supplied, `--openai-script <snapshot>` (18.4). A
    thread reads one line of stdout and ends. dev waits up to 30 s:
    - a line that parses as `watane_host::Ready`: write it to
      `P/ready.json` with mode 0600;
@@ -2221,7 +2224,9 @@ headers (app 8.3); `/api/publish` adds `providers` (app 8.1).
 **host** (step 11; host 19.9, 12.2):
 - `watane --preview <dir> ... --fake-claude <path>`, which calls `Host::set_fake_claude(&self, program: &Path)` (a preview only): `serve` passes the `fake-claude` it linked (9.3, 18.4). Tests in a participant home give the path through their fake `AccountSource::claude_binary()` (host 19.4).
 - The Cargo feature `test-net` of `watane-host`, with `Host::set_test_net(&self, TestNet)` and `pub struct TestNet { pub routes: Vec<(String, SocketAddr)>, pub root_pem: String }`: a host test spawns `scripted-responses`, reads its addresses and `ca_pem` from its first line (18.3) and passes `routes` for `api.openai.com` and the judge host with that root. It is never in a release.
-- A preview refuses the two Claude Code grants and the accounts (W5; F-MAKE-4); the fake `claude` is what it offers instead.
+- A preview refuses the two Claude Code grants and participant accounts
+  (W5; F-MAKE-4). It offers fake Claude Code and, in development builds,
+  scripted OpenAI (18.4; host 19.9).
 
 **install** (step 11): the distribution of `watane-dev` must pack `fake-claude` and `scripted-responses` beside `watane-dev` (9.1 finds `fake-claude` there), built with `--features fake-claude` (1.1). This is a need of `install/`, which dev does not edit: question 14.
 
