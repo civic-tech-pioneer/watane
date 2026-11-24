@@ -3,6 +3,7 @@
 
 use serde_json::{Value, json};
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Command, Output};
 use std::time::{Duration, Instant};
@@ -38,8 +39,9 @@ impl Preview {
         self.0.path().join("https")
     }
 
-    fn serve(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+    fn command(&self, args: &[&str]) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_watane-dev"));
+        command
             .current_dir(self.0.path())
             .env("WATANE_DEV_CACHE", self.0.path().join("cache"))
             .env(
@@ -47,9 +49,19 @@ impl Preview {
                 env!("CARGO_BIN_EXE_scripted-responses"),
             )
             .args(["serve", "--json", "--dir", "https"])
-            .args(args)
-            .output()
-            .unwrap()
+            .args(args);
+        command
+    }
+
+    fn serve(&self, args: &[&str]) -> Output {
+        self.command(args).output().unwrap()
+    }
+
+    fn host_stub(&self, body: &str) -> std::path::PathBuf {
+        let path = self.0.path().join("watane-stub");
+        fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+        path
     }
 
     fn started(&self, args: &[&str], reused: bool) -> Value {
@@ -144,6 +156,131 @@ fn script_error_names_original_file_and_stop_conflicts() {
 
     let out = preview.serve(&["--stop", "--script", "bad.json"]);
     assert!(!out.status.success());
+}
+
+#[test]
+fn regress_s114_bad_script_shape_error_is_clear() {
+    let preview = Preview::new();
+    let path = preview.0.path().join("shape.json");
+    fs::write(&path, br#"{"replies":[{"nope":1}]}"#).unwrap();
+    // If validation happens after test_local, its contract error masks the script error.
+    fs::write(preview.mod_dir().join("tests/initial-state.json"), b"{").unwrap();
+    let out = preview.serve(&["--script", "shape.json"]);
+    assert_eq!(out.status.code(), Some(3));
+    let envelope: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let error = &envelope["errors"][0];
+    assert_eq!(error["code"], "env.preview_start");
+    let reported = Path::new(error["file"].as_str().unwrap());
+    assert_eq!(
+        reported.canonicalize().unwrap(),
+        path.canonicalize().unwrap()
+    );
+    let message = error["message"].as_str().unwrap();
+    let fix = error["fix"].as_str().unwrap();
+    assert!(message.contains("nope"), "cause not named: {message}");
+    assert!(!message.contains("missing field `mode`"));
+    assert!(!message.contains(".scripted-responses-"));
+    assert!(!fix.contains("development build"));
+    assert_ne!(envelope["next"], "watane-dev doctor --json");
+}
+
+#[test]
+fn regress_s114_reports_unrelated_host_error_without_blame() {
+    let preview = Preview::new();
+    fs::write(preview.0.path().join("script.json"), b"{}").unwrap();
+    let host = preview.host_stub(
+        r#"printf '%s\n' '{"watane":1,"error":{"code":"internal","message":"Database already open."}}'
+exit 1"#,
+    );
+    let out = preview
+        .command(&["--script", "script.json"])
+        .env("WATANE_BIN", host)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3));
+    let envelope: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let error = &envelope["errors"][0];
+    assert_eq!(error["code"], "env.preview_start");
+    assert_eq!(
+        error["message"],
+        "the preview did not start: Database already open."
+    );
+    assert!(error["file"].is_null());
+    let fix = error["fix"].as_str().unwrap();
+    assert!(fix.starts_with("Read "));
+    assert!(!fix.contains("development build"));
+}
+
+#[test]
+#[ignore = "slow: needs WATANE_BIN for ordinary preview startup"]
+fn regress_s114_missing_program_warns_unless_script_supplied() {
+    unavailable_scripted_openai_warns_unless_script_supplied(true);
+}
+
+#[test]
+#[ignore = "slow: needs WATANE_BIN for ordinary preview startup"]
+fn regress_s114_refused_setting_warns_unless_script_supplied() {
+    unavailable_scripted_openai_warns_unless_script_supplied(false);
+}
+
+fn unavailable_scripted_openai_warns_unless_script_supplied(missing_program: bool) {
+    let host = std::env::var_os("WATANE_BIN").expect("set WATANE_BIN to a host");
+    let preview = Preview::new();
+    let stub = preview.host_stub(
+            r#"for arg in "$@"; do
+    if [ "$arg" = --scripted-openai ]; then
+        printf '%s\n' '{"watane":1,"error":{"code":"usage","message":"fixture host rejects the setting"}}'
+        exit 2
+    fi
+done
+exec "$TEST_PREVIEW_HOST" "$@""#,
+        );
+    let output = |args: &[&str]| {
+        let mut command = preview.command(args);
+        command
+            .env("WATANE_BIN", &stub)
+            .env("TEST_PREVIEW_HOST", &host);
+        if missing_program {
+            command.env(
+                "WATANE_SCRIPTED_RESPONSES",
+                preview.0.path().join("missing"),
+            );
+        }
+        command.output().unwrap()
+    };
+    let out = output(&[]);
+    let envelope: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", envelope["errors"]);
+    assert!(
+        envelope["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|w| { w["code"] == "preview.scripted_openai_missing" })
+    );
+    assert_eq!(envelope["result"]["pages"][0]["slug"], "https");
+
+    for supplied in [true, false] {
+        let (path, args): (_, &[_]) = if supplied {
+            (
+                preview.0.path().join("explicit.json"),
+                &["--script", "explicit.json"],
+            )
+        } else {
+            (preview.mod_dir().join("scripted-responses.json"), &[])
+        };
+        fs::write(&path, b"{}").unwrap();
+        let out = output(args);
+        let envelope: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(out.status.code(), Some(3));
+        assert_eq!(envelope["errors"][0]["code"], "env.preview_start");
+        if !missing_program {
+            let message = envelope["errors"][0]["message"].as_str().unwrap();
+            assert!(message.contains("fixture host rejects the setting"));
+            assert!(!message.contains("missing field `mode`"));
+        }
+        fs::remove_file(path).unwrap();
+    }
 }
 
 #[test]
