@@ -1358,6 +1358,19 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   session's stream. Touches: `host/src/agent/`, `host/src/` consent, `app/` consent view and details. Also adds
   S100's accepted deep-tree line to host TECHNICAL 14 'Not protected' (deputy, 2026-11-24). The
   agentic-harness half (console consent activity and plan line) follows S35/S36. Builder by rule 3.
+- [~] **S116 (upkeep) leftovers in app, dist, log and net.** (in flight, cloud, builder codex, reviewer claude; rule 3:
+  last two S115 claude, S114 codex; the upkeep lane, sketched 2026-11-24 by deputy-3 from Leftovers; beside S114, which holds
+  `host/` and `dev/`: the host flakes and host polish wait for it.) Outcomes, each item's check:
+  1. (guard, S113 R2.1) a no-op managed install (every plan entry `Unchanged`) follows nothing; the held red test
+     `manage::adv_s113_unchanged_managed_install_refollows_without_install_consent` passes.
+  2. (app, S113 r3) a declined install is detected by a typed refusal, not the host's text; the wrong-slug test at Alice's
+     real base from a separate reader; tests for the consent's follow line being absent where it should be.
+  3. (dist, S107 r3 and S112 r2) the redirect tests that pin https and the asked URL; the doc comments and wrap.
+  4. (log and net, S110 r1 and S115 r1) the independent ACL oracle; one `private_dir` helper; the forced store-timeout test;
+     net TECHNICAL's close-before-reopen wording.
+  Touches: `app/`, `dist/`, `log/`, `net/` and their TECHNICAL, never `host/` or `dev/`. Boundaries: dist 5.9 and log's
+  key folder are touched by tests only, the managed install by item 1 (adversary on item 1). Size: an upkeep slice.
+  Protects: *guard* (item 1), else *polish*.
 - [~] **S114 A maker previews an OpenAI-backed mod on scripted responses (stage D, dev 18; F-MAKE-4).** (in flight,
   cloud, builder codex, reviewer claude; rule 3: last two S40 claude, S113 codex; main line, sketched 2026-11-24 by
   deputy-3: F-MAKE-4 promises a scripted OpenAI stream in a preview from stage D, and dev TECHNICAL question 15 recommends
