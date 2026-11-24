@@ -1704,7 +1704,7 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### net / node
 
-- [S111 CI] (guard) possible Windows flake: `net/tests/it/reach.rs:193` `reach::s11_machines_on_different_networks_connect_through_the_servers_relay` failed once on windows-latest with `database error: Database already open. Cannot acquire lock.` (net's redb reopen on Windows) at watane 3e8d788 (slice/s111, no net change); green on the head before. Watch for a second time.
+- [S111 CI] (guard) possible Windows flake: `net/tests/it/reach.rs:193` `reach::s11_machines_on_different_networks_connect_through_the_servers_relay` failed once on windows-latest with `database error: Database already open. Cannot acquire lock.` (net's redb reopen on Windows) at watane 3e8d788 (slice/s111, no net change); green on the head before. Second time on the same head 3e8d788 (attempt 1): a real flake; give it to the next upkeep slice as a guard (Windows is required, so it blocks merges).
 
 - From S92: with every full machine off, a light fetch still says "channel ... is not followed"
   after ~22 s (NoFullMachine dropped by design; the most common case); a holder refusing a
