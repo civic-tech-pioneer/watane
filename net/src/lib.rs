@@ -37,6 +37,9 @@ use zeroize::Zeroizing;
 
 /// How long turning net off waits for the router and endpoint to finish closing.
 const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_millis(500);
+/// How long a teardown waits for the blob store to close its database; a
+/// longer wait than `CLOSE_WAIT`, for a reopen of the same folder follows.
+const STORE_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Class {
@@ -258,6 +261,8 @@ impl Core {
 
 struct Running {
     router: Router,
+    /// Kept to close its database before the folder is opened again.
+    store: iroh_blobs::store::fs::FsStore,
     bind: Option<SocketAddr>,
     services: reach::Services,
     /// The relay server and the address it was asked to bind.
@@ -444,6 +449,13 @@ impl Net {
             let _ = self.runtime()?.block_on(async {
                 tokio::time::timeout(CLOSE_WAIT, current.router.shutdown()).await
             });
+            // The database of the blob store is closed before the next open of
+            // its folder; redb holds the file exclusively while it is open.
+            let store = current.store.clone();
+            drop(current);
+            let _ = self
+                .runtime()?
+                .block_on(async { tokio::time::timeout(STORE_WAIT, store.shutdown()).await });
         }
         // a relay server of the same address keeps running across a rebuild
         if let Some((addr, server)) = relay.take() {
@@ -477,7 +489,7 @@ impl Net {
                 })?;
             let core = Arc::clone(&self.core);
             let blobs_dir = self.core.dir.join("blobs");
-            let (router, tasks) = self
+            let (router, store, tasks) = self
                 .runtime()?
                 .block_on(async move {
                     let endpoint = builder.bind().await.map_err(|e| e.to_string())?;
@@ -515,7 +527,7 @@ impl Net {
                     lock(&core.syncs).clear();
                     lock(&core.dials).clear();
                     let keeper = tokio::spawn(sync::keeper(core));
-                    Ok::<_, String>((router, vec![hook, keeper]))
+                    Ok::<_, String>((router, store, vec![hook, keeper]))
                 })
                 .map_err(|cause| NetError::Io {
                     path: self.core.dir.clone(),
@@ -523,6 +535,7 @@ impl Net {
                 })?;
             *running = Some(Running {
                 router,
+                store,
                 bind: options.bind,
                 services,
                 relay,

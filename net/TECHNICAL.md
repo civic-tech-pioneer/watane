@@ -935,7 +935,12 @@ N4 part 1 notes (built, S67):
   connection with an application close code, then waits at most `CLOSE_WAIT`
   (500 ms, `lib.rs`) for the router and endpoint to finish closing; the keeper
   and the blobs hook are aborted first, the router is told to stop at once and
-  ends by itself on the runtime if the wait runs out.
+  ends by itself on the runtime if the wait runs out. Then the blob store is
+  shut down (`Store::shutdown`, which closes its redb database) and awaited at
+  most `STORE_WAIT` (5 s, `lib.rs`): the blob store is closed before a rebuild
+  or `Net::open` reopens its folder, because redb locks the file exclusively
+  (on Windows the late close failed the reopen). A timeout there is ignored;
+  the reopen reports its own error.
 
 N4 part 2 notes (built, S68):
 

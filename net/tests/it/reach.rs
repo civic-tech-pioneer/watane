@@ -278,3 +278,38 @@ fn a_callee_with_an_older_list_passes_on_no_address() {
     }
     anchor.net.hello(&b.key).unwrap();
 }
+
+/// AC1: twenty rebuilds in a row return Ok, and the paired machine is still
+/// answered afterwards (the blob store closes before each reopen).
+#[test]
+fn ac1_twenty_rebuilds_in_a_row_succeed_and_the_node_still_answers() {
+    let a = node(
+        MemHoldings::custom(Default::default(), None, true),
+        Some(quick()),
+    );
+    let b = node(MemHoldings::empty(), Some(quick()));
+    pair_into(&a, &b, Role::Full);
+    let lists = [
+        vec!["http://127.0.0.1:1/".parse().unwrap()],
+        vec!["http://127.0.0.1:2/".parse().unwrap()],
+    ];
+    for i in 0..20 {
+        a.net
+            .set_options(Options {
+                relays: lists[i % 2].clone(),
+                ..options(Some(quick()))
+            })
+            .unwrap_or_else(|e| panic!("rebuild {i}: {e:?}"));
+    }
+    b.net.add_addrs(&a.key, &a.net.addrs());
+    b.net.hello(&a.key).unwrap();
+}
+
+/// AC2: `close()` then `Net::open` on the same folder at once opens, ten times.
+#[test]
+fn ac2_close_then_open_on_the_same_folder_at_once_ten_times() {
+    let mut home = closed(node(MemHoldings::empty(), None));
+    for _ in 0..10 {
+        home = closed(reopened(home, options(None)));
+    }
+}
