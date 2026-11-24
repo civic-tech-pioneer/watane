@@ -809,16 +809,22 @@ mod tests {
     }
     #[test]
     fn s107_explicit_links_can_give_a_base_already_held_by_a_listing() {
-        for choose in [false, true] {
+        for action in ["follow", "choose", "open"] {
             let w = world();
             let (dir, eve) = w.eve(&[&w.a]);
             let _index = listed_record(&w, &eve);
             exempt(&eve, &[]);
             let link = crate::Link::new(w.key, &w.a.url, None).unwrap();
-            if choose {
-                eve.choose_index(&link).unwrap();
-            } else {
-                eve.follow(&link).unwrap();
+            match action {
+                "choose" => {
+                    eve.choose_index(&link).unwrap();
+                }
+                "open" => {
+                    eve.open_link(&w.link(&w.a)).unwrap();
+                }
+                _ => {
+                    eve.follow(&link).unwrap();
+                }
             }
             let file = follows_file(dir.path());
             assert_eq!(

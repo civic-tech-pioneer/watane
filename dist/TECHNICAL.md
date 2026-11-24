@@ -727,10 +727,10 @@ the target is that `Location` resolved against the current URL; unless
 cause: "local address" }`; at most 5 redirects are followed, the 6th gives
 `Network { cause: "too many redirects" }`; the one deadline of the read
 covers every hop. A redirect without a `Location` is `Http`. A followed or
-chosen channel's base the participant gave (`given`, 4.4) uses the first agent,
-which follows redirects anywhere, as before; a base absent from `explicit_given` is a listed
-read (DD-47). The body limit applies to the final response after any redirect. The 5xx retry above repeats the whole
-chain.
+chosen channel's base the participant gave (`explicit_given`, 4.4) uses
+the first agent, which follows redirects anywhere. A base absent from
+`explicit_given` is read as listed (DD-47). The body limit applies to the final
+response. The 5xx retry above repeats the whole chain.
 
 ## 5. Behaviour
 
@@ -908,10 +908,11 @@ the entry and the package id again (its own SPEC); that is a second check,
 not a replacement.
 
 `open_link(link)`: no slug: `BadLink`. Own key: no read (cache only).
-Not followed: `follow(link)`. Followed: `refresh_channel` (a `Failed`
-outcome is not an error here; the stored channel is used and `checked_at`
-shows its age). Then `latest(slug)` (`NoRelease`) and
-`fetch(&info.reference)`.
+With no record, call `follow(link)`. For an existing record, try to give
+a new or unknown base as in 5.9. If the base cannot be learned, refresh
+the existing channel. A `Failed` refresh can still use the stored channel,
+and `checked_at` shows its age. Then call `latest(slug)` (`NoRelease`)
+and `fetch(&info.reference)`.
 
 ### 5.8 Updates and withdrawals as the follower sees them
 
@@ -1168,7 +1169,8 @@ already holds (W25, DD-28):
 
 **`read_link(link)`** (for `/api/fetch`, app 8.3): a link with no slug is
 `BadLink`. The own key: cache only, as `open_link`. A channel with a
-record: as `open_link`, but never `follow`. Else: one `read_channel` from
+record: refresh using its stored bases and existing permissions. Else:
+one listed channel read from
 the link's base with no record (as 5.9 before a `list`), skipped like a
 listed base when its host is a local address (`BadUrl` with cause `local
 address`, unless `listed_local`); then `latest(slug)` (`NoRelease`) and the
@@ -1608,7 +1610,7 @@ are `list` and `include` statements of 4.1.
 | DD-42 | A 5xx on a read is tried twice more, after 250 ms and 500 ms, inside the read's own timeout, with a blocking sleep in the caller's thread; nothing else is retried (4.5). | A fresh GitHub Pages site answers 503 for minutes; one failure should not end Bob's install. The wait is bounded by the existing deadline, so no read gets slower than its timeout. Undo: cheap (http.rs). |
 | DD-43 | A listed read follows redirects itself and checks each target against the local-address rule before requesting it; a refused target is `BadUrl { cause: "local address" }`. Followed and chosen bases keep ureq's redirects. Deputy decision S105. | A listed base must not lead dist into the local network by a 302 (A35, A37); the participant's own links keep DD-6. Undo: cheap (http.rs). |
 | DD-44 | `local_base` ignores trailing dots of a host name; an IPv4 literal with a trailing dot is read as the literal. | `localhost.` is the same host as `localhost`; the rule must not be bypassed by spelling. Undo: cheap (one check). |
-| DD-45 | A listed record on a cache miss tries the record's base first, then the provider bases of 5.11 (at most 4 in all). The record's active bases and timestamps stay unchanged; only its `seen` may grow, as each provider base is noted before its read (4.4, DD-48). | A dead record base must not end a fetch that another listing of the channel can serve, as for a channel with no record (S104). Undo: cheap (fetch.rs). |
+| DD-45 | A listed record on a cache miss tries the record's base first, then the provider bases of 5.11 (at most 4 in all). The record's bases, timestamps and permissions stay unchanged. | A dead record base must not end a fetch that another listing of the channel can serve, as for a channel with no record (S104). Undo: cheap (fetch.rs). |
 | DD-46 | A listed-only record that becomes followed or chosen by `follow` or `choose_index` holds only the base the link gave: `base` is the link's base, `bases` is empty. Foreman decision S105. | The listing's bases were read as the participant's own, which skipped the redirect check of DD-43 (A35). The alternative, a per-base origin in `follows.json`, is a format change. Undo: cheap (follow.rs). |
 | DD-47 | A base of a followed or chosen record without explicit provenance is read as listed. The initial base and every redirect target use the local-address rule, and the listed entry limit applies. A cached package is still usable. | Records written before S107 can hold bases learned from discovery. Treating those permissions as unknown lets participants reauthorize a LAN mirror by opening or pasting its link. |
 | DD-48 | S107 replaces the S105 seen history with an explicit follow interface. A base can be given by a participant's `follow`, `choose_index`, or `open_link`. Discovery and fetched-release links use `follow_derived`. The latter cannot give a base, even after pruning or mirror churn. Listing preflight is always listed. | Permission comes from the entry point that receives the link. Record history no longer has to stand in for its origin. |
