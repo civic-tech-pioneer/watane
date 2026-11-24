@@ -701,8 +701,8 @@ restore hints, including when the native window is hidden. Navigation does
 not depend on the polling timer. The library polls every 2 s while
 visible, every 10 s while hidden; focus and `visibilitychange` refresh
 at once. If startup fails, the manager hides the install menu and presents
-the startup cause in the library. A busy port says the local API is not
-running and keeps the restart options in the error.
+the startup cause in the library, prefixed by `The local API is not
+running.` A busy port keeps the original restart options in the cause.
 The library filter matches every entered word
 against the name and publisher and can select published or local mods
 (5.3.3). A dependency warning is the inline panel of 5.3.4 item 5, before

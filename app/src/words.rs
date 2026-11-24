@@ -366,7 +366,7 @@ pub(crate) fn update_failed(version: &str, cause: &str) -> String {
 
 pub(crate) fn port_in_use(port: u16) -> String {
     format!(
-        "The local API is not running. Port {port} is in use, maybe by another watane app. Start this one with --port <n> or WATANE_PORT=<n> to use another port, or --port 0 for any free port."
+        "Port {port} is in use, maybe by another watane app. Start this one with --port <n> or WATANE_PORT=<n> to use another port, or --port 0 for any free port."
     )
 }
 pub(crate) fn bad_reason(cause: &str) -> String {
