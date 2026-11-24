@@ -643,6 +643,19 @@ fn json_schema(v: &Value) -> Result<(), BadLaunch> {
     Ok(())
 }
 
+/// The folders under the participant's home that hold credentials (19.3, Picked workspace).
+const CREDENTIAL_DIRS: [&str; 9] = [
+    ".claude",
+    ".codex",
+    ".ssh",
+    ".aws",
+    ".gnupg",
+    ".config/gh",
+    ".docker",
+    ".kube",
+    "Library/Keychains",
+];
+
 /// Where a picked folder may not be (19.3, Picked workspace): `/`, the participant's home and
 /// the watane home with their ancestors, and any folder inside the folders that hold secrets or
 /// the watane home.
@@ -660,8 +673,11 @@ impl Forbidden {
         if let Some(home) = user_home {
             let home = canon(home);
             exact.push(home.clone());
-            for dir in [".claude", ".codex", ".ssh", ".aws", "Library/Keychains"] {
-                inside.push(home.join(dir));
+            for dir in CREDENTIAL_DIRS {
+                let named = home.join(dir);
+                // Both spellings: as named under the home, and where a link there leads.
+                inside.push(canon(&named));
+                inside.push(named);
             }
         }
         Self { exact, inside }
@@ -1033,6 +1049,44 @@ mod tests {
         std::fs::create_dir(&control).unwrap();
         let e = resolve_picked(control.to_str().unwrap(), &forbidden).unwrap_err();
         assert_eq!(e, "the folder's name holds a control character");
+    }
+
+    /// S103 fix1 AC2 (19.3, Picked workspace): the added credential folders, and a linked one in
+    /// both spellings.
+    #[test]
+    fn ac2_s103_fix1_more_credential_folders_and_both_spellings_are_refused() {
+        let base = tempfile::tempdir().unwrap();
+        let base = base.path().canonicalize().unwrap();
+        let (user, watane) = (base.join("user"), base.join("user/watane-home"));
+        std::fs::create_dir_all(watane.join("mods")).unwrap();
+        for dir in [
+            ".gnupg/k",
+            ".config/gh/h",
+            ".docker/c",
+            ".kube/c",
+            "dotfiles/claude/sub",
+        ] {
+            std::fs::create_dir_all(user.join(dir)).unwrap();
+        }
+        std::os::unix::fs::symlink(user.join("dotfiles/claude"), user.join(".claude")).unwrap();
+        let forbidden = Forbidden::new(&watane, Some(&user));
+        for dir in [
+            ".gnupg",
+            ".gnupg/k",
+            ".config/gh",
+            ".config/gh/h",
+            ".docker",
+            ".docker/c",
+            ".kube",
+            ".kube/c",
+            ".claude",
+            ".claude/sub",
+            "dotfiles/claude",
+            "dotfiles/claude/sub",
+        ] {
+            let got = resolve_picked(user.join(dir).to_str().unwrap(), &forbidden);
+            assert!(got.is_err(), "{dir} was accepted as {got:?}");
+        }
     }
 
     /// Adversary S103 (19.3, Picked workspace): a credential folder kept elsewhere and linked
