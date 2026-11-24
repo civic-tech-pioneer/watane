@@ -323,7 +323,9 @@ an index that names where it is published`, fix `Ask the person to list
 the host blocks it), `ui.inline_script` (`ui/*.html` holds a `<script>`
 without `src`; the content policy blocks it), `test.uncovered` (an
 exported function is called by no contract step), `preview.fake_claude_missing` (step 11: `serve` or `doctor`
-found no `fake-claude`; message `the program fake-claude was not found (<where>); a preview cannot start Claude Code`, fix `Install watane-dev with its agent layer fakes, or set WATANE_FAKE_CLAUDE to the program`), `preview.previous` (a
+found no `fake-claude`; message `the program fake-claude was not found (<where>); a preview cannot start Claude Code`, fix `Install watane-dev with its agent layer fakes, or set WATANE_FAKE_CLAUDE to the program`),
+`preview.scripted_openai_missing` (`serve` used the ordinary preview because
+automatic scripted Responses setup was unavailable, 18.4), `preview.previous` (a
 `serve` refused by the test pipeline while a preview for that folder still
 answers; message `the preview at <page url> still serves the previous build`
 (the API URL only when the served mod has no page),
@@ -1370,7 +1372,8 @@ and the command's `next` are
 
 ### 9.3 `serve`
 
-1. Resolve `deps::local_order(dir)` (9.2), then run the whole `test` pipeline
+1. Read and validate any scripted Responses file (18.4). Resolve
+   `deps::local_order(dir)` (9.2), then run the whole `test` pipeline
    (check, build, unit, contract) for each folder, providers first.
    On any error return the test errors without starting or updating a
    preview. Look for an answering preview using the canonical-path hash
