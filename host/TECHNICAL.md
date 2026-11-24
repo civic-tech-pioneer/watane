@@ -3501,6 +3501,11 @@ The toolsets are those of 10.1; `open` with no toolset, or one that
   `err` item with code `bad_request`, no call), and then the stream ends `closed`. `close`,
   a withdrawn consent, and the end of either mod end the job's stream `gone`; the
   running call is not interrupted, its result goes nowhere.
+- **Limits** (decided by S103's foreman; host-internal, cheap to undo). At most 32 live
+  handles per (origin client, opening mod); an `open` past it fails `not-granted` (no new WIT
+  case). At most one consent question waits per (origin client, toolset): a later `open` that
+  needs the same toolset waits on that answer instead of asking again, so a looping mod
+  can neither spawn questions nor waiting threads without bound.
 - **Key.** A live job with the same (handle, key) returns the same stream, also a job that
   the same chain, or another chain in flight, queued. The key is free when the result is
   there. Keys are memory only.
