@@ -1632,3 +1632,92 @@ mod adv_s100_clean_runs {
         );
     }
 }
+
+/// Adversary step of S100, pass 13 (red): the startup cleanup of `runs/pids` (3.1 step 3, review
+/// r8) against a co-tenant who plants the file.
+#[cfg(all(test, target_os = "linux"))]
+mod adv_s100_p13 {
+    use super::*;
+
+    /// A FIFO at `runs/pids`: `std::fs::read` opens it and blocks until a writer comes, so
+    /// `Host::open` never returns.
+    #[test]
+    fn adv_s100_p13_a_fifo_at_runs_pids_hangs_startup() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join("runs")).unwrap();
+        let fifo = home.path().join("runs/pids");
+        assert!(
+            Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+        let path = home.path().to_owned();
+        let (done, finished) = std::sync::mpsc::channel();
+        let cleaner = std::thread::spawn(move || {
+            clean_runs(&path);
+            let _ = done.send(());
+        });
+        let hung = finished.recv_timeout(Duration::from_secs(2)).is_err();
+        if hung {
+            // Release the reader so the thread ends: a writer that writes nothing.
+            drop(std::fs::OpenOptions::new().write(true).open(&fifo));
+        }
+        cleaner.join().unwrap();
+        assert!(!hung, "a FIFO at runs/pids blocked the open");
+    }
+
+    /// A pid that leads no group (here a child in the test's own group) with its true start time
+    /// and this boot's id: the host kills it, though the record names no group's leader.
+    #[test]
+    fn adv_s100_p13_a_pid_that_leads_no_group_is_killed() {
+        let home = tempfile::tempdir().unwrap();
+        let mut member = Command::new("sleep").arg("30").spawn().unwrap();
+        let pid = i32::try_from(member.id()).unwrap();
+        assert_ne!(
+            rustix::process::getpgid(rustix::process::Pid::from_raw(pid)).unwrap(),
+            rustix::process::Pid::from_raw(pid).unwrap(),
+            "the sleep must lead no group"
+        );
+        std::fs::create_dir_all(home.path().join("runs")).unwrap();
+        let record = pid_record(pid).expect("alive");
+        std::fs::write(home.path().join("runs/pids"), format!("{record}\n")).unwrap();
+        clean_runs(home.path());
+        std::thread::sleep(Duration::from_millis(200));
+        let alive = member.try_wait().unwrap().is_none();
+        let _ = member.kill();
+        let _ = member.wait();
+        assert!(alive, "the open killed a process that leads no group");
+    }
+
+    /// Each bad line is logged with all its bytes, so the log grows with the planted file: here
+    /// 4 MiB of bad lines; run in a child so its standard error can be measured.
+    #[test]
+    fn adv_s100_p13_bad_lines_flood_the_log_without_bound() {
+        if let Some(home) = std::env::var_os("ADV_S100_P13_HOME") {
+            clean_runs(Path::new(&home));
+            return;
+        }
+        let home = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join("runs")).unwrap();
+        let line = format!("{}\n", "\u{1}".repeat(1023));
+        std::fs::write(home.path().join("runs/pids"), line.repeat(4096)).unwrap();
+        let out = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "agent::claude::run::adv_s100_p13::adv_s100_p13_bad_lines_flood_the_log_without_bound",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("ADV_S100_P13_HOME", home.path())
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+        assert!(
+            out.stderr.len() < 64 * 1024,
+            "{} bytes of log from a 4 MiB runs/pids",
+            out.stderr.len()
+        );
+    }
+}
