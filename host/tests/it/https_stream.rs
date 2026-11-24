@@ -1118,9 +1118,10 @@ fn ac6_a_job_that_starts_an_https_stream_is_not_granted() {
     assert_eq!(rig.ended(), Vec::<String>::new());
 }
 
-/// The token of `/mcp/agent` reaches only a `claude` process on its fd 3 (19.3), which the host
-/// starts on Unix only: this part of AC6 runs there.
-#[cfg(unix)]
+/// The token of `/mcp/agent` reaches only a `claude` process on its fd 3 (19.3). Windows refuses
+/// that launch (`claude::s110_refuses_claude_without_process_group_controls`), so no `tools/call`
+/// exists there; the job half of AC6 above runs on every platform.
+#[cfg(unix)] // Reads the MCP token from a Unix `claude` launch.
 #[test]
 fn ac6_a_tools_call_that_starts_an_https_stream_is_an_error_result() {
     use std::os::unix::fs::PermissionsExt;
@@ -1317,7 +1318,7 @@ fn the_harness_fakes_https_stream_start_and_records_the_request() {
 // ---- AC8: `test-net` -------------------------------------------------------------------------
 
 #[test]
-#[ignore = "slow: cargo tree resolves the whole workspace"]
+#[ignore = "slow: only a cargo tree of the whole workspace shows that no normal build enables test-net"]
 fn ac8_no_release_build_holds_the_feature_test_net() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()

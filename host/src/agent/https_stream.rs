@@ -1071,6 +1071,44 @@ mod tests {
     }
 
     #[test]
+    fn ac2_the_names_the_host_sets_itself_are_forbidden_and_a_bad_value_is_bad_launch() {
+        let with = |headers: &str| {
+            parse(&format!(
+                r#"{{"url":"https://api.openai.com/x","method":"GET","headers":{headers}}}"#
+            ))
+        };
+        for name in [
+            "Content-Length",
+            "transfer-encoding",
+            "Connection",
+            "Keep-Alive",
+            "UPGRADE",
+            "te",
+            "Trailer",
+            "Accept-Encoding",
+            "Proxy-",
+        ] {
+            assert_eq!(
+                with(&format!(r#"{{"{name}":"v"}}"#)).unwrap_err(),
+                Refusal::ForbiddenHeader(name.into()),
+                "{name}"
+            );
+        }
+        with(r#"{"x-te":"v","accept":"v"}"#).unwrap();
+        assert!(matches!(
+            with(r#"{"x-a":"a\u0001b"}"#),
+            Err(Refusal::BadLaunch { ref field, .. }) if field == "headers"
+        ));
+        assert!(matches!(
+            parse(r#"{"url":"https://api.openai.com/x","method":"GET","extra":1}"#),
+            Err(Refusal::BadLaunch { ref field, ref reason }) if field == "extra" && reason == "unknown field"
+        ));
+        let defaulted =
+            parse(r#"{"url":"https://api.openai.com/x","method":"GET","idle-s":null}"#).unwrap();
+        assert_eq!(defaulted.idle, Duration::from_secs(DEFAULT_IDLE));
+    }
+
+    #[test]
     fn ac1_idle_s_is_from_1_to_300() {
         let with = |idle: &str| {
             parse(&format!(
