@@ -438,6 +438,7 @@ in `Outcome.value`.
   state/state.redb the private state of every mod (section 7)
   staging/         plan scratch; emptied at open
   runs/            step 11 (A2): one folder per `claude` run and `runs/pids`; emptied at open (19.3)
+  runs.*.gone/     a former `runs/` moved aside at open, removed by a bounded walk (3.1 step 3)
   scratch/         step 11 (A2): scratch workspaces of sessions (19.3)
   log/ dist/ app/  reserved for `log` (opened only by `dist`), `dist` and `app`
   net/             reserved for `net` (step 8, ../net/TECHNICAL.md 4.5)
@@ -484,9 +485,15 @@ which `Host::open` creates (3.1 step 6).
    first 64 bytes, and at most 16 bad lines are logged at one open; one more
    line gives the count of the rest (adversary S100 pass 13). The 16 lines are
    shared by every log line of the cleanup (bad lines, leftovers, a read error),
-   and a repeated record is handled once. A `runs` that is not a directory (a
+   and a repeated record (the same parsed pgid, boot id and start time) is
+   handled once. A `runs` that is not a directory (a
    file, a FIFO, a link) is removed as a file, so a later run can make its
-   folder (adversary S100 pass 14). A leader is
+   folder (adversary S100 pass 14). A `runs` directory is first renamed to
+   `runs.<random>.gone`, so `runs/` is free at once whatever it holds, and each
+   `runs.*.gone` is then removed by a walk without recursion, which never follows a
+   link and stops at 10 000 entries; what is left (too deep, too many, not
+   removable) is logged once and tried again at the next open (adversary S100
+   pass 15). A leader is
    verified as a leader: on Linux, with the pidfd open, field 5 (`pgrp`) of
    `/proc/<pid>/stat` must equal the pid, read with the start time. The check and the signal are one step
    (review r6, F6.3; the deputy's ruling): on Linux the host opens a pidfd of
