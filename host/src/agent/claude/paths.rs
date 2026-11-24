@@ -218,7 +218,7 @@ fn reaches(input: &Value, cwd: &Path, run: &Path) -> bool {
         })
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))] // Fixtures use Unix symlinks or permission bits.
 mod tests {
     use super::*;
     use serde_json::json;
@@ -451,7 +451,7 @@ mod tests {
 
 /// Adversary step of S100 (red): allows that pass the third rule but that `claude` reads
 /// outside the workspaces.
-#[cfg(test)]
+#[cfg(all(test, unix))] // Fixtures use Unix symlinks or permission bits.
 mod adv_s100 {
     use super::*;
     use serde_json::json;
@@ -537,7 +537,7 @@ mod adv_s100 {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))] // Fixtures use Unix symlinks or permission bits.
 mod resolved_tests {
     use super::*;
     use serde_json::json;
@@ -678,7 +678,7 @@ mod adv_s100_path_key {
 
 /// Review r2 of S100, F2.1: only a missing component lets a path resolve through; any other
 /// error of the filesystem makes it unresolvable (TECHNICAL 19.3, the resolve rule).
-#[cfg(test)]
+#[cfg(all(test, unix))] // Fixtures use Unix symlinks or permission bits.
 mod fix9_resolve_errors {
     use super::*;
     use serde_json::json;

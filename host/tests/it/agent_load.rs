@@ -233,6 +233,7 @@ fn ac12_a_release_build_holds_no_test_streams() {
 
 // ---- Stage B, the host part (TECHNICAL 15, "Budgets of stage B, the host part") ----------
 
+#[cfg(unix)] // Starts Unix Claude process groups.
 mod stage_b {
     use crate::claude::Rig;
     use serde_json::{Value, json};

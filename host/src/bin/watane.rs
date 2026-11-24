@@ -116,9 +116,19 @@ async fn main() {
 }
 
 async fn run(args: Args) -> Result<(), watane_host::HostError> {
-    use tokio::signal::unix::{SignalKind, signal};
-    let mut term = signal(SignalKind::terminate())?;
-    let mut interrupt = signal(SignalKind::interrupt())?;
+    #[cfg(unix)]
+    let (mut term, mut interrupt) = {
+        use tokio::signal::unix::{SignalKind, signal};
+        (
+            signal(SignalKind::terminate())?,
+            signal(SignalKind::interrupt())?,
+        )
+    };
+    #[cfg(windows)]
+    let (mut term, mut interrupt) = (
+        tokio::signal::windows::ctrl_break()?,
+        tokio::signal::windows::ctrl_c()?,
+    );
     let home = match args.home {
         Some(home) => home,
         None => default_home()?,

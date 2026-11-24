@@ -1,4 +1,5 @@
 use crate::support;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 use support::RecordingConfirm;
@@ -25,6 +26,7 @@ fn ac5_open_offline_locked_reopen_modes() {
         ),
         Err(DistError::Locked { .. })
     ));
+    #[cfg(unix)] // Mode bits describe Unix permissions.
     for (path, mode) in [
         ("dist", 0o700),
         ("dist/packages", 0o700),
@@ -40,6 +42,7 @@ fn ac5_open_offline_locked_reopen_modes() {
             mode
         );
     }
+    #[cfg(unix)] // The Unix lock file uses mode 0600.
     assert_eq!(
         std::fs::metadata(home.path().join("dist/lock"))
             .unwrap()

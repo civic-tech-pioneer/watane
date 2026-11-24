@@ -25,6 +25,7 @@ fn ac13_fake_claude_without_preview_is_a_usage_error() {
     }
 }
 
+#[cfg(unix)] // Starts a fake using a Unix process group.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ac13_a_preview_with_fake_claude_runs_it_for_a_claude_code_start() {
     let home = tempfile::tempdir().unwrap();
@@ -148,4 +149,26 @@ const send = (m) => sources[0].onmessage({ data: JSON.stringify(m) });
             {"fn":"f","args":null,"connection":"c2"}
         ])
     );
+}
+
+#[cfg(windows)] // The platform cannot provide the Unix process-group controls.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn s110_refuses_start_and_shell_without_process_group_controls() {
+    let home = tempfile::tempdir().unwrap();
+    let claude = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mods/claude");
+    let preview = Preview::start_with(home.path(), &["--install".as_ref(), claude.as_os_str()]);
+    let client = preview.client("claude.localhost", "127.0.0.1");
+    let origin = format!("http://claude.localhost:{}", preview.ready.port);
+    for function in ["api.start", "api.start-shell"] {
+        let response = client.post(format!("{origin}/call")).header("Origin", &origin)
+            .json(&json!({"fn": function, "args": {"launch": r#"{"version":1,"workspace":"scratch"}"#}}))
+            .send().await.unwrap();
+        assert_eq!(response.status(), 200);
+        let body: Value = response.json().await.unwrap();
+        assert_eq!(
+            body["value"],
+            "bad-launch:runtime:Claude sessions require Unix process-group controls"
+        );
+    }
+    assert!(!home.path().join("runs/pids").exists());
 }

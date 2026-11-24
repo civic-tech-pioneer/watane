@@ -11,9 +11,9 @@ use std::sync::mpsc::{Receiver, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use support::*;
-use watane_net::{
-    BlobId, Entry, Event, Hit, Holdings, Ingested, Net, NodeKey, PublicKey, Role, Why,
-};
+#[cfg(unix)]
+use watane_net::{BlobId, Entry, Hit, Holdings, Ingested, Net, PublicKey, Why};
+use watane_net::{Event, NodeKey, Role};
 use watane_node::{Node, words};
 
 /// The program binds loopback only, which keeps mDNS off (node TECHNICAL 10).
@@ -154,6 +154,7 @@ fn join_with(anchor: &Node, home: &Path, role: Role, yes: bool) -> (Prog, NodeKe
 }
 
 /// A home that `watane-node join` paired as a full machine of `anchor`.
+#[cfg(unix)] // Used by the process signal fixtures.
 fn paired(anchor: &Node) -> (tempfile::TempDir, NodeKey) {
     let dir = tempfile::tempdir().unwrap();
     let (mut prog, key) = join_with(anchor, dir.path(), Role::Full, true);
@@ -211,6 +212,7 @@ fn s10_join_shows_its_key_waits_and_says_who_joined() {
     assert_eq!(book(other.path())["on"], false);
 }
 
+#[cfg(unix)] // Used by the process signal fixtures.
 fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
         .unwrap()
@@ -382,11 +384,13 @@ fn s12_relay_add_asks_first_and_relay_remove_does_not() {
 /// `entries` with entries of another channel. (A holder returns `Entry` values, which
 /// cannot carry a changed byte: `Entry::decode` checks the signature. net's own tests
 /// send changed bytes over the wire; here the bad object is an entry of the wrong author.)
+#[cfg(unix)] // Used by the process signal fixtures.
 struct Liar {
     channel: PublicKey,
     head: watane_net::HeadInfo,
     entries: Vec<Entry>,
 }
+#[cfg(unix)] // Used by the process signal fixtures.
 impl Holdings for Liar {
     fn is_anchor(&self) -> bool {
         false
@@ -621,6 +625,7 @@ fn ac1_help_prints_the_usage_on_stdout_with_no_home() {
     assert!(bad.stderr.contains("usage:"));
 }
 
+#[cfg(unix)] // Used by the process signal fixtures.
 const BUSY: &str = "another watane-node is running on this home";
 
 #[cfg(unix)] // Sends POSIX signals to the node process.

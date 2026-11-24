@@ -4,7 +4,9 @@ use std::fs;
 use support::*;
 use watane_dist::DistError;
 use watane_net::Role;
-use watane_node::{Node, NodeError, OwnHint};
+#[cfg(unix)]
+use watane_node::Node;
+use watane_node::{NodeError, OwnHint};
 
 #[cfg(unix)] // The identity can be removed with a durable directory flush.
 #[test]

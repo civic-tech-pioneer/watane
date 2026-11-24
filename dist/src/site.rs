@@ -4,6 +4,7 @@
 use crate::{Dist, DistError, Entry, Exported, Link, Slug, view};
 use std::fs;
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
@@ -13,6 +14,7 @@ pub(crate) fn io(path: &Path, source: std::io::Error) -> DistError {
         source,
     }
 }
+#[cfg(unix)]
 pub(crate) fn public_dir(path: &Path) -> Result<(), DistError> {
     match fs::symlink_metadata(path) {
         Ok(m) if !m.is_dir() => {
@@ -33,6 +35,13 @@ pub(crate) fn public_dir(path: &Path) -> Result<(), DistError> {
     }
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).map_err(|e| io(path, e))
 }
+#[cfg(windows)]
+pub(crate) fn public_dir(path: &Path) -> Result<(), DistError> {
+    // Windows serves the site as its owner. A writable destination must already
+    // be private, or be created with a private ACL.
+    crate::private_dir(path)
+}
+#[cfg(unix)]
 pub(crate) fn read_plain(path: &Path) -> Result<Option<Vec<u8>>, DistError> {
     match fs::symlink_metadata(path) {
         Ok(m) if !m.is_file() => Err(DistError::ExportConflict {
@@ -41,6 +50,23 @@ pub(crate) fn read_plain(path: &Path) -> Result<Option<Vec<u8>>, DistError> {
         }),
         Ok(_) => fs::read(path).map(Some).map_err(|e| io(path, e)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(io(path, e)),
+    }
+}
+#[cfg(windows)]
+pub(crate) fn read_plain(path: &Path) -> Result<Option<Vec<u8>>, DistError> {
+    use std::io::Read;
+    match watane_log_windows_fs::open_private_file(path, false) {
+        Ok(mut file) => {
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes).map_err(|e| io(path, e))?;
+            Ok(Some(bytes))
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => Err(DistError::ExportConflict {
+            path: path.into(),
+            cause: "not a plain file",
+        }),
         Err(e) => Err(io(path, e)),
     }
 }
@@ -75,14 +101,34 @@ pub(crate) fn replace_equal(
     }
     let parent = path.parent().expect("file parent");
     // Holder writes may run alongside a web fetch. Each writer owns its temporary name.
+    #[cfg(unix)]
     let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|e| io(parent, e))?;
+    #[cfg(windows)]
+    let mut tmp = tempfile::Builder::new()
+        .make_in(parent, watane_log_windows_fs::create_file)
+        .map_err(|e| io(parent, e))?;
     tmp.write_all(bytes).map_err(|e| io(tmp.path(), e))?;
+    #[cfg(unix)]
     tmp.as_file()
         .set_permissions(fs::Permissions::from_mode(mode))
         .map_err(|e| io(tmp.path(), e))?;
     tmp.as_file().sync_all().map_err(|e| io(tmp.path(), e))?;
-    tmp.persist(path).map_err(|e| io(path, e.error))?;
-    Ok((true, sync_dir(parent)))
+    #[cfg(unix)]
+    {
+        tmp.persist(path).map_err(|e| io(path, e.error))?;
+        Ok((true, sync_dir(parent)))
+    }
+    #[cfg(windows)]
+    {
+        let _ = mode; // Both private state and the owner-served site use a private DACL.
+        let tmp = tmp.into_temp_path();
+        watane_log_windows_fs::publish(&tmp, path, true).map_err(|e| io(path, e))?;
+        #[cfg(test)]
+        if test_dir_sync_fails() {
+            return Ok((true, Err(io(parent, std::io::Error::from_raw_os_error(5)))));
+        }
+        Ok((true, Ok(())))
+    }
 }
 /// Syncs directory `dir`, so the renames in it survive a crash.
 pub(crate) fn sync_dir(dir: &Path) -> Result<(), DistError> {
@@ -90,9 +136,24 @@ pub(crate) fn sync_dir(dir: &Path) -> Result<(), DistError> {
     if test_dir_sync_fails() {
         return Err(io(dir, std::io::Error::from_raw_os_error(5)));
     }
-    fs::File::open(dir)
+    #[cfg(unix)]
+    return fs::File::open(dir)
         .and_then(|f| f.sync_all())
-        .map_err(|e| io(dir, e))
+        .map_err(|e| io(dir, e));
+    #[cfg(windows)]
+    {
+        // Only the test seam can leave a pending sync after a write-through rename.
+        #[cfg(test)]
+        return Ok(());
+        #[cfg(not(test))]
+        Err(io(
+            dir,
+            std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "Windows requires a write-through rename to sync dist state",
+            ),
+        ))
+    }
 }
 impl Dist {
     pub fn set_site_url(&self, url: &str) -> Result<(), DistError> {
@@ -125,6 +186,8 @@ impl Dist {
     }
     pub(crate) fn export_unlocked(&self, dir: &Path) -> Result<Exported, DistError> {
         let own = self.require_identity()?;
+        #[cfg(windows)]
+        public_dir(dir)?;
         let entries = self.log.entries(&own, 0, usize::MAX)?;
         let head = entries.last().map(Entry::seq);
         let head_path = dir.join("head");

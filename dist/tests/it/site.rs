@@ -3,6 +3,7 @@
 use crate::support;
 use std::collections::BTreeMap;
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
@@ -63,6 +64,7 @@ fn ac6_site_releases_and_withdrawal() {
 fn ac7_site_foreign_files_unchanged() {
     let home = tempfile::tempdir().unwrap();
     let dest = tempfile::tempdir().unwrap();
+    let dest_dir = crate::support::export_dir(dest.path());
     let d = Dist::open(
         home.path(),
         Arc::new(RecordingConfirm::new([Decision::Approve])),
@@ -70,14 +72,11 @@ fn ac7_site_foreign_files_unchanged() {
     )
     .unwrap();
     d.publish(fixture("1.0.0", false)).unwrap();
-    fs::write(dest.path().join("index.html"), b"hello").unwrap();
-    fs::write(dest.path().join("CNAME"), b"alice.example").unwrap();
-    d.export(dest.path()).unwrap();
-    assert_eq!(fs::read(dest.path().join("index.html")).unwrap(), b"hello");
-    assert_eq!(
-        fs::read(dest.path().join("CNAME")).unwrap(),
-        b"alice.example"
-    );
+    fs::write(dest_dir.join("index.html"), b"hello").unwrap();
+    fs::write(dest_dir.join("CNAME"), b"alice.example").unwrap();
+    d.export(&dest_dir).unwrap();
+    assert_eq!(fs::read(dest_dir.join("index.html")).unwrap(), b"hello");
+    assert_eq!(fs::read(dest_dir.join("CNAME")).unwrap(), b"alice.example");
 }
 #[test]
 fn ac8_site_other_channel_conflict() {
@@ -135,6 +134,7 @@ fn ac9_site_link_round_trip_and_persistence() {
     assert_eq!(d.own_link(Some(&slug)).unwrap(), link);
     assert_eq!(d.publish(fixture("2.0.0", false)).unwrap().link, Some(link));
 }
+#[cfg(unix)] // Public Unix exports use POSIX mode bits.
 #[test]
 fn ac10a_site_public_modes_on_open_and_export() {
     let home = tempfile::tempdir().unwrap();
@@ -150,8 +150,9 @@ fn ac10a_site_public_modes_on_open_and_export() {
     );
     d.publish(fixture("1.0.0", false)).unwrap();
     let dest = tempfile::tempdir().unwrap();
-    d.export(dest.path()).unwrap();
-    for dir in [d.site_dir(), dest.path().into()] {
+    let dest_dir = crate::support::export_dir(dest.path());
+    d.export(&dest_dir).unwrap();
+    for dir in [d.site_dir(), dest_dir] {
         for sub in ["", "entries", "packages"] {
             assert_eq!(
                 fs::metadata(dir.join(sub)).unwrap().permissions().mode() & 0o777,
@@ -207,6 +208,7 @@ fn ac10_site_equal_export_does_not_write() {
 fn site_external_export_keeps_withdrawn_package() {
     let home = tempfile::tempdir().unwrap();
     let dest = tempfile::tempdir().unwrap();
+    let dest_dir = crate::support::export_dir(dest.path());
     let d = Dist::open(
         home.path(),
         Arc::new(RecordingConfirm::new([Decision::Approve; 2])),
@@ -216,9 +218,34 @@ fn site_external_export_keeps_withdrawn_package() {
     let bytes = fixture("1.0.0", false);
     let name = format!("packages/{}", blake3::hash(&bytes).to_hex());
     let a = d.publish(bytes.clone()).unwrap();
-    d.export(dest.path()).unwrap();
+    d.export(&dest_dir).unwrap();
     d.withdraw(&a.info.reference, "bug").unwrap();
-    d.export(dest.path()).unwrap();
-    assert_eq!(files(dest.path()).get(&name), Some(&bytes));
+    d.export(&dest_dir).unwrap();
+    assert_eq!(files(&dest_dir).get(&name), Some(&bytes));
     assert!(!files(&d.site_dir()).contains_key(&name));
+}
+
+#[cfg(windows)] // Uses NTFS ACLs to expose an existing export directory.
+#[test]
+fn s110_refuses_an_export_directory_with_other_writers() {
+    let home = tempfile::tempdir().unwrap();
+    let dist = Dist::open(
+        home.path(),
+        Arc::new(RecordingConfirm::new([])),
+        Options::default(),
+    )
+    .unwrap();
+    let dest = tempfile::tempdir().unwrap();
+    let output = std::process::Command::new("icacls.exe")
+        .arg(dest.path())
+        .args(["/grant", "*S-1-1-0:(W)"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let error = dist.export(dest.path()).unwrap_err();
+    assert!(
+        error.to_string().contains("owner-only Windows ACL"),
+        "{error}"
+    );
+    assert_eq!(std::fs::read_dir(dest.path()).unwrap().count(), 0);
 }

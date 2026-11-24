@@ -8453,6 +8453,7 @@ dependencies = [
  "ureq",
  "url",
  "watane-log",
+ "watane-log-windows-fs",
  "watane-pkg",
  "workspace-hack",
 ]

@@ -1,6 +1,7 @@
 #![allow(clippy::unwrap_used, reason = "tests may panic")]
 
 use super::*;
+#[cfg(unix)]
 use std::io::Write;
 
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; object-src 'none'";
@@ -258,6 +259,7 @@ async fn ac1_watane_js_is_the_host_library_with_page_headers() {
     assert_eq!(response.headers()["content-type"], "text/event-stream");
 }
 
+#[cfg(unix)] // Uses a Unix symlink fixture.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ac4_page_bytes_headers_paths_and_both_loopbacks() {
     let home = tempfile::tempdir().unwrap();
