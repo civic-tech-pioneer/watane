@@ -24,6 +24,13 @@ impl Preview {
             fs::create_dir_all(dest.parent().unwrap()).unwrap();
             fs::copy(fixture.join(file), dest).unwrap();
         }
+        let tests = temp.path().join("https/tests");
+        fs::create_dir(&tests).unwrap();
+        fs::write(
+            tests.join("initial-state.json"),
+            br#"{"steps":[{"call":"api.ended","expect":{"returns":[]}}]}"#,
+        )
+        .unwrap();
         Self(temp)
     }
 
