@@ -609,7 +609,8 @@ mod tests {
         let allowed = Host::serve(dir.path());
         let refused = Host::serve(dir.path());
         allowed.redirect("/asked", "/intermediate");
-        allowed.redirect("/intermediate", &format!("{}secret", refused.url));
+        let non_http_target = refused.url.replacen("http://", "ftp://", 1) + "secret";
+        allowed.redirect("/intermediate", &non_http_target);
         let (_home, dist) = home("Eve", false);
         exempt(&dist, &[&allowed]);
         let asked = format!("{}asked", allowed.url);
@@ -618,7 +619,11 @@ mod tests {
             .get(&asked, 100, Duration::from_secs(5), false, true)
             .unwrap_err();
 
-        assert_redirect_refused(Some(error), &asked);
+        assert_bad_url(
+            Some(error),
+            &asked,
+            "redirects to a scheme other than http or https",
+        );
         assert_eq!(
             *allowed.requests.lock().unwrap(),
             ["/asked", "/intermediate"]
