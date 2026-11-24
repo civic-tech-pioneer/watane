@@ -426,12 +426,17 @@ impl Host {
     /// a (origin client, toolset) is asked once: a handle that needs the same one waits on it
     /// (19.5, Limits).
     pub(crate) fn advance_handle(&self, id: &str) {
+        self.advance(id, None);
+    }
+    /// `advance_handle`, skipping `answered`: the toolset whose question just ended with an
+    /// answer for a list that changed while it waited (19.5). It is asked again on a later `open`.
+    fn advance(&self, id: &str, answered: Option<&str>) {
         let (origin, toolsets) = {
             let live = self.handles.lock();
             let Some(e) = live.get(id) else { return };
             (e.origin.clone(), e.toolsets.clone())
         };
-        let Some(toolset) = self.first_to_ask(&origin, &toolsets) else {
+        let Some(toolset) = self.first_to_ask(&origin, &toolsets, answered) else {
             self.handles.set_wait(id, Wait::Ready);
             return;
         };
@@ -455,7 +460,7 @@ impl Host {
             }
         };
         match first {
-            None => return self.advance_handle(id),
+            None => return self.advance(id, answered),
             Some(false) => return,
             Some(true) => {}
         }
@@ -495,11 +500,28 @@ impl Host {
     }
 
     /// The first toolset of `toolsets` that needs its consent, if any.
-    fn first_to_ask(&self, origin: &str, toolsets: &[String]) -> Option<String> {
+    fn first_to_ask(
+        &self,
+        origin: &str,
+        toolsets: &[String],
+        answered: Option<&str>,
+    ) -> Option<String> {
         toolsets
             .iter()
-            .find(|t| self.toolset_needs_consent(origin, t))
+            .find(|t| Some(t.as_str()) != answered && self.toolset_needs_consent(origin, t))
             .cloned()
+    }
+    fn drop_mark(&self) -> u64 {
+        self.catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .drop_mark()
+    }
+    fn without_dropped(&self, mark: u64, functions: &[String]) -> Vec<String> {
+        self.catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .without_dropped(mark, functions)
     }
     fn toolset_needs_consent(&self, origin: &str, toolset: &str) -> bool {
         let current = self.toolset_functions(toolset);
@@ -632,6 +654,7 @@ impl Question {
             self.end(&host, |host, id| host.advance_handle(id));
             return;
         };
+        let mark = host.drop_mark();
         let functions = host.toolset_functions(toolset);
         let consent = Consent::Toolset {
             toolset: toolset.clone(),
@@ -654,6 +677,21 @@ impl Question {
             // Every waiter had gone; one that joined since must not be lost.
             Asked::Stopped => self.end(&host, |host, id| host.advance_handle(id)),
             Asked::Refused => self.end(&host, |host, id| host.refuse_handle(id, &what)),
+            // A mod of the list was removed or became a manager while the question waited: the
+            // participant did not see its names as they are now. Store the names of the other
+            // mods; those of that mod are asked again on a later `open` like gained ones (19.5).
+            Asked::Granted if host.drop_mark() != mark => {
+                let kept = host.without_dropped(mark, &functions);
+                let stored = Consent::Toolset {
+                    toolset: toolset.clone(),
+                    functions: kept,
+                };
+                if host.store_consent(origin, origin_gen, stored).is_err() {
+                    self.end(&host, |host, id| host.close_handle(id));
+                } else {
+                    self.end(&host, |host, id| host.advance(id, Some(toolset)));
+                }
+            }
             Asked::Granted => {
                 let stored = Consent::Toolset {
                     toolset: toolset.clone(),

@@ -3537,11 +3537,12 @@ The toolsets are those of 10.1; `open` with no toolset, or one that
   `grant` of `Manage` drop that mod's names from every stored list (4.4), and
   its functions are asked again like gained ones.
   A question that waits across such a change does not undo it (S103's adversary):
-  the host notes the catalog generation when it builds the question's list, and at
-  `Granted` it stores the list only if no `remove`, `grant` of `Manage` or update that
-  grants `Manage` touched a mod of that list since; otherwise it stores nothing and
-  asks again with the current list (one more question, never a name the participant
-  did not see for the mod as it is now).
+  the host notes a drop counter when it builds the question's list, and at
+  `Granted` it leaves out of the stored list the names of each mod whose names a
+  `remove`, a `grant` of `Manage` or an update that grants `Manage` dropped since
+  (4.4). The handle is ready with the names the participant saw; the names left out
+  are asked again by a later `open`, like gained ones. A toolset left with no function
+  stores an empty list and asks nothing.
 
 ### 19.6 Requests and timers (H5, H7)
 

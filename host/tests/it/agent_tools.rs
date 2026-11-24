@@ -1091,3 +1091,27 @@ fn adv_s103_a_manage_grant_while_the_question_waits_is_not_undone_by_the_answer(
         home.consents_of("toolbox")
     );
 }
+
+/// S103 fix2 AC2 (19.5): the tool mod is removed while the toolset question waits. `Granted`
+/// stores nothing; the handle is not ready and asks nothing more, since the toolset now has no
+/// function.
+#[test]
+fn ac2_s103_fix2_a_removal_while_the_question_waits_stores_nothing() {
+    let home = Home::new();
+    let h = home.open(&["t"]).unwrap();
+    home.wait_asked(1);
+    assert_eq!(home.asked()[0].functions, TOOL_NAMES);
+    home.host.remove(&local("tool"), false).unwrap();
+    home.answer(0, ConsentAnswer::Granted);
+    wait("the handle leaves pending", Duration::from_secs(20), || {
+        !home
+            .describe(&h)
+            .is_err_and(|e| e.starts_with("consent-pending"))
+    });
+    let stored = home.consents_of("toolbox");
+    assert!(
+        stored == json!([]) || stored == json!([{"kind":"toolset","toolset":"t","functions":[]}]),
+        "stored {stored}"
+    );
+    assert_eq!(home.asked().len(), 1);
+}

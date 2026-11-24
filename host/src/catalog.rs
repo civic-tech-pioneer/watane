@@ -150,6 +150,11 @@ pub(crate) struct Catalog {
     /// call and finds another at apply ran against an install that is gone (19.6, At apply).
     installs: BTreeMap<LocalName, u64>,
     install_counter: u64,
+    /// For each local name, the number of the last drop of its names from the toolset consents
+    /// (a removal, or a mod that gained `Manage`), in memory only. A question that waits compares
+    /// it with the number it noted (19.5, Limits).
+    drops: BTreeMap<LocalName, u64>,
+    drop_counter: u64,
     pub components: BTreeMap<LocalName, std::sync::Arc<crate::runtime::Compiled>>,
     pub mods: Vec<InstalledMod>,
 }
@@ -236,9 +241,32 @@ fn view(m: &Mod, local: LocalName, package: PackageId) -> InstalledMod {
 impl Catalog {
     /// Drops the names `<local>_…` from the function list of every toolset consent (4.4, 19.5).
     pub(crate) fn drop_toolset_names(&mut self, local: &LocalName) {
+        self.note_drop(local);
         for m in &mut self.mods {
             crate::agent::tools::drop_names(&mut m.consents, local.as_ref());
         }
+    }
+    fn note_drop(&mut self, local: &LocalName) {
+        self.drop_counter += 1;
+        self.drops.insert(local.clone(), self.drop_counter);
+    }
+    /// The number of the latest drop of names; a later drop has a greater one.
+    pub(crate) fn drop_mark(&self) -> u64 {
+        self.drop_counter
+    }
+    /// `functions` without the names of the mods whose names were dropped after `mark`.
+    pub(crate) fn without_dropped(&self, mark: u64, functions: &[String]) -> Vec<String> {
+        let prefixes: Vec<String> = self
+            .drops
+            .iter()
+            .filter(|(_, n)| **n > mark)
+            .map(|(local, _)| format!("{}_", local.as_ref() as &str))
+            .collect();
+        functions
+            .iter()
+            .filter(|f| !prefixes.iter().any(|p| f.starts_with(p)))
+            .cloned()
+            .collect()
     }
     /// The install generation of a local name (19.6, At apply).
     pub fn install_of(&self, local: &LocalName) -> Option<u64> {
@@ -377,6 +405,8 @@ impl Catalog {
             generation: disk.generation,
             installs: BTreeMap::new(),
             install_counter: 0,
+            drops: BTreeMap::new(),
+            drop_counter: 0,
             components,
             mods,
         };
@@ -734,6 +764,7 @@ impl Catalog {
             }
         }
         for local in &gained_manage {
+            self.note_drop(local);
             for m in &mut plan.next {
                 crate::agent::tools::drop_names(&mut m.consents, local.as_ref());
             }
