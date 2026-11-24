@@ -568,8 +568,8 @@ form the saved identity. It repacks release folders with source included,
 so a package that shipped source keeps the same hash (Q26). Local folders
 still use `pack(dir, false)`. `consents` (step 11, serde default `[]`, so an older file reads unchanged
 and `watane_installed` stays 1) lists the consents the mod holds as an
-origin client (19.7): `{"kind":"workspace","folder":"<canonical path>"}`,
-`{"kind":"account","account":"openai"}`, `{"kind":"toolset","toolset":"<name>","functions":["<local>_<interface>_<function>", ...]}` (the functions the participant consented to, 19.5).
+origin client (19.7): `{"kind":"workspace","via":"<identity>","folder":"<canonical path>"}`,
+`{"kind":"account","via":"<identity>","account":"openai"}`, `{"kind":"toolset","toolset":"<name>","functions":["<local>_<interface>_<function>", ...]}` (the functions the participant consented to, 19.5).
 They follow the record's life like grants: kept across an update, deleted by
 `remove`. Slug, version, name, summary and origin are
 read from `mods/<local>/` at open; they are not repeated here. Each write: serialize, write
@@ -1180,6 +1180,7 @@ One redb database at `state/state.redb`.
 | `timers` (step 11) | `&str` `<id>/<timer id>` (`timers/<mod>/<id>` in 19.6) | `&str`: JSON text `{"due":<unix ms>,"origin":"<identity of the origin client>"}`; not counted in `sizes` |
 | `host` (step 11, stage A2) | `&str` name; the one key `generation` | `u64`: the start number that `host-info.generation()` returns (19.1); not counted in `sizes`; stage A2 (S99) creates the table |
 | `scratch` (step 11, stage A2) | `&str` the 32 hex chars of a scratch workspace id (19.3, Folders) | `&str`: the identity of its owner, the origin client of the launch that made it; not counted in `sizes` |
+| `sessions` (step 11, stage A3) | `&str` a Claude Code session id, as `system/init` reports it (19.3, Folders, "Sessions are the origin client's") | `&str`: the identity of the origin client whose run reported it; not counted in `sizes` |
 
 `<id>` is the first 32 hex chars of `blake3(identity)`. State follows the
 identity, not the local name (section 18, Q2).
@@ -1832,7 +1833,9 @@ the home and call `/call` or `/events` with a forged `Origin`, and can write
 and boot id, which the host then kills at open, or plant `runs/` as a link to a
 folder it controls after the cleanup, or mount a file system under `runs/`
 that the cleanup walks or that stalls it (3.1 step 3; adversary S100 passes 13,
-14 and 16); a
+14 and 16), or build a tree under `runs/` deeper than about 10,000 levels,
+which can overflow `remove_dir_all` in the cleanup at open (same user, outside the
+mod sandbox; S100's adversary pass 17, accepted by the deputy); a
 compromised OS; a fault in Wasmtime; a privileged network change that adds
 `::1` after a host started without it (8.1): `[::1]:<port>` is then free for
 another program until the host restarts. Step 11 (agentic-harness TECHNICAL
@@ -2484,6 +2487,9 @@ Raised by S95's adversary step (none blocks A1):
   since it is a subset of (a); (a) to (b) later would void every consent given
   under (a). The source row changes in agentic-harness too. Blocks A3; A2
   starts only in scratch workspaces and needs no answer.
+  **Decided (b) by S103's foreman (2026-11-24), for the human to veto**: the
+  recommended option, the stronger one, and the one that keeps (a) open at no
+  cost (every consent given under (b) stays valid under (a)). 19.7 states it.
 - **Q39** The Claude login and loopback under the shell grant (19.3, The
   run; source row: agentic-harness TECHNICAL 4.4, the environment, and 4.2,
   the shell grant). `CLAUDE_CODE_OAUTH_TOKEN` is in `claude`'s environment
@@ -2631,7 +2637,7 @@ blocks A1):
 Raised by S99's adversary (open; none blocks S99, which runs only in scratch
 workspaces; each blocks A3's picked folders):
 
-- **Q49** (open) The protected paths of 19.3 are relative rules, so Claude
+- **Q49** (decided (a) by S103's foreman, 19.3 Protected paths) The protected paths of 19.3 are relative rules, so Claude
   Code anchors them at the working folder only: an `--add-dir` workspace gets
   none, and `.git/**`, `.claude/**`, `.agents/**`, `.codex/**`, `.husky/**`
   match only at the top (`sub/.git/hooks/x` can be written). Harmless in a
@@ -2639,7 +2645,7 @@ workspaces; each blocks A3's picked folders):
   rule set per workspace root, as absolute `//<root>/...` rules, and `**/`
   forms for the folder patterns; (b) keep, and add nested folders to Not
   protected. Recommended: (a). Cost to undo: deny lines only.
-- **Q50** (open) `session {resume | fork}` accepts any uuid; privacy rests on
+- **Q50** (decided (a) by S103's foreman, 19.3 Folders) `session {resume | fork}` accepts any uuid; privacy rests on
   Claude Code keeping transcripts per working folder. Two origin clients that
   hold the same picked folder could resume each other's sessions. Options:
   (a) the host keeps the session ids each origin client started (a table like
@@ -2984,6 +2990,12 @@ names its reason.
 `.claude/**`, `.agents/**`, `.codex/**`, `**/.aws/**`, `**/CLAUDE.md`,
 `**/AGENTS.md`, `.mcp.json`, `.envrc`, `**/.github/workflows/**`, `build.rs`,
 `package.json`, `Makefile` and `.husky/**`. No launch can remove them.
+Each rule is written once per workspace root (the working folder and each
+`--add-dir`) as an absolute `//<root>/...` rule after canonicalization, and the
+folder patterns also in their nested form (`//<root>/**/.git/**`,
+`//<root>/**/.claude/**`, `//<root>/**/.agents/**`, `//<root>/**/.codex/**`,
+`//<root>/**/.husky/**`), so a workspace added with `--add-dir` and a nested
+`sub/.git` are covered (section 18, Q49, option (a), decided by S103's foreman).
 
 **Protected reads** (S63; open: Q42 login files outside the list; Q41: the third rule resolves symlinks). A file in the participant's home folder is as
 readable to `claude` as to the participant, and the mod that consumes the
@@ -3282,15 +3294,41 @@ checks of the table above are made at the call.
     new scratch folder and its row; if stopped, it deletes that one folder and that one row
     (never the owner's other rows) and the stream ends `gone`. A preview's home goes with
     the preview.
-  - **Picked folders** come with the workspace consent (stage A3): until then a
-    `workspace` or `extra-workspaces` value that is not a scratch value is
-    `bad-launch {field, reason: "picked folders need the workspace consent (stage A3)"}`.
+  - **Picked folders** come with the workspace consent (stage A3, S103). A
+    `workspace` or `extra-workspaces` value that is not a scratch value is an
+    absolute path. At the call the host resolves it (canonical, symlinks resolved,
+    it must exist and be a folder) and checks it against the refusals of "Picked
+    workspace" below and against Unicode NFC (a canonical name not in NFC is
+    refused, fail-closed: S100's adversary); any failure is `bad-launch {field,
+    reason}`. The workspace id is that canonical path, and `initialized` names it.
+    At apply (19.6), after the version probe and before the run folder, the
+    process or any scratch row, the host checks each picked folder of the launch
+    against the origin client's consents `Workspace {via, folder}` (`via` the
+    identity of the starting mod), resolving it again; a folder whose canonical
+    path changed since the call ends the stream `gone`. For each one not held it
+    pushes `{"type":"consent-pending","what":"workspace:<via>:<folder>"}` once
+    and asks `Confirm::consent` (19.7), one folder at a time in launch order;
+    `Granted` is stored and the next is checked; `Refused`, a dropped answer or
+    600 s ends the stream `consent-refused("workspace:<via>:<folder>")` and no
+    process starts. So `consent-pending` items, when any, come before
+    `initialized`, which stays the first item of a run.
+  - **Sessions are the origin client's** (section 18, Q50, option (a), decided by
+    S103's foreman). The host keeps the session ids each origin client's runs
+    reported (the `sessions` table of 7: the `session_id` of each `system/init`
+    line, to the origin client's identity, written when step 3 of the control
+    protocol passes). `session {resume | fork}` with an id that the table does not
+    hold for the origin client is `bad-launch {field: "session", reason}` at the
+    call and ends the stream `gone` at apply; `session {new: uuid}` with an id
+    the table holds for another identity is refused the same way. `remove` of an
+    identity deletes its rows.
   - Whether one session can read another's scratch or run folder is section
     18, Q40, still open. Mods see only ids, so moving the folders (Q40 b)
     changes no interface.
 - Picked workspace: canonical, symlinks resolved. Refused: `/`, the home
   folder, the watane home and its ancestors, `~/.claude`, `~/.codex`, `~/.ssh`,
-  `~/.aws`, `~/Library/Keychains`, the run and scratch trees; compared without
+  `~/.aws`, `~/Library/Keychains`, the run and scratch trees, and any folder
+  inside one of these (the watane home, `~/.claude`, `~/.codex`, `~/.ssh`,
+  `~/.aws`, `~/Library/Keychains`, `runs/`, `scratch/`); compared without
   case on a case-insensitive file system.
 
 ### 19.4 HTTPS streams and accounts (H3)
@@ -3572,14 +3610,18 @@ app, kept by the host with the grants.
 
 | Consent | Asked when | Kept for |
 |---|---|---|
-| Workspace | a launch names a folder new for the origin client | (origin client, folder) |
-| Account | an `https-stream` with `account: "openai"` new for the origin client (`judge` asks none: entering its key is the consent) | (origin client, account) |
+| Workspace | a launch names a folder new for the origin client and the mod whose request waits | (origin client, via, folder) |
+| Account | an `https-stream` with `account: "openai"` new for the origin client and the mod whose request waits (`judge` asks none: entering its key is the consent) | (origin client, via, account) |
 | Toolset | `agent-tools.open` with a toolset new for the origin client, or whose current functions are not all in the stored list (19.5) | (origin client, toolset), with the functions named |
 
 - **Storage.** In `installed.json` on the record of the origin client (3.3,
-  `consents`), shown and withdrawn like grants (4.4). Whether the key also names
-  the provider (`via`) or the grant kind is section 18, Q38. The words, the consent
-  view and the choice belong to the app (app 19.2).
+  `consents`), shown and withdrawn like grants (4.4). A workspace and an account
+  consent name `via`, the identity (pkg 4.1) of the mod whose request waits (the
+  provider), so a consent given through one provider is not reused by another, nor
+  by a mod in the middle that holds its own grant (section 18, Q38, option (b),
+  decided by S103's foreman). A toolset consent names no `via`: its handle is the
+  origin client's own (19.5). The words, the consent view and the choice belong to
+  the app (app 19.2).
 - **Asking.** When a request needs a consent not held, the host calls
   `Confirm::consent` (12.1), the one method for the three consents, when it
   applies the request. `Granted` is stored and the request goes on; `Refused`,
@@ -3596,8 +3638,9 @@ app, kept by the host with the grants.
   chain, never read from a request field.
 - **While a consent waits,** a request's requester gets the item
   `{"type":"consent-pending","what":"<what>"}` once on the request's stream
-  (`agent-tools` as 19.5 says); `what` is `workspace:<folder>`,
-  `account:openai` or `toolset:<name>`, the same in `consent-refused(what)`.
+  (`agent-tools` as 19.5 says); `what` is `workspace:<via>:<folder>`,
+  `account:<via>:openai` or `toolset:<name>`, the same in `consent-refused(what)`
+  (`<via>` the identity, which holds no `:`; the folder is the rest of the text).
 - **Withdrawal** ends the dependent streams (outcome `gone`) and closes the
   dependent handles (19.5), at once, also inside a running chain (Q24).
 - **Previews** refuse both grants and both accounts, and dev's fakes stand in
@@ -3609,13 +3652,13 @@ app, kept by the host with the grants.
   a preview's `fake-claude` runs only in a scratch workspace (19.3).
 
 ```rust
-// Debug, Clone, PartialEq, Eq, Serialize, Deserialize; JSON {"kind":"workspace","folder":"…"} etc.
-// Display and parse(&str) -> Result<Consent, HostError> use the `what` text: "workspace:<folder>",
-// "account:openai", "toolset:<name>" (the key by which the app lists and withdraws a consent;
+// Debug, Clone, PartialEq, Eq, Serialize, Deserialize; JSON {"kind":"workspace","via":"…","folder":"…"} etc.
+// Display and parse(&str) -> Result<Consent, HostError> use the `what` text: "workspace:<via>:<folder>",
+// "account:<via>:openai", "toolset:<name>" (the key by which the app lists and withdraws a consent;
 // `functions` is not part of the key). Toolset.functions: the `<local>_<interface>_<function>` names
 // of the ConsentRequest that was Granted, sorted, less those that `remove` or a `grant` of `Manage`
 // dropped since (4.4); a handle reaches no other (19.5).
-pub enum Consent { Workspace { folder: String }, Account { account: String }, Toolset { toolset: String, functions: Vec<String> } }
+pub enum Consent { Workspace { via: String, folder: String }, Account { via: String, account: String }, Toolset { toolset: String, functions: Vec<String> } }
 pub struct ConsentRequest {            // Debug, Clone, PartialEq
     pub origin: LocalName,             // the origin client: {origin client}
     pub via: LocalName,                // the mod whose request waits (a provider, the kernel): {provider}

@@ -413,9 +413,9 @@ otherwise `relay` holds no grant beyond storage and its call of `latch`.
   workspace new for the origin client, and a fake app that holds the answer,
   the fake app's `ConsentRequest` names the origin client, `via` the provider,
   the folder and `profile` `"coder"`; the stream's first item is
-  `{"type":"consent-pending","what":"workspace:<folder>"}`, once, and
+  `{"type":"consent-pending","what":"workspace:<via>:<folder>"}`, once, and
   `fake-claude` is not started; after `Granted`, `initialized` follows and
-  `installed.json` holds `{"kind":"workspace","folder":"<folder>"}` for the
+  `installed.json` holds `{"kind":"workspace","via":"<provider identity>","folder":"<folder>"}` for the
   origin client; after `withdraw_consent`, the stream ends `gone`.
 - **S59 Accounts** (HOST-F-69, 71, 72). A request with `account: "judge"` from
   another mod, by `GET`, to another origin, to an origin not in `[http]`, or
@@ -440,7 +440,7 @@ otherwise `relay` holds no grant beyond storage and its call of `latch`.
   `account: "openai"`. When `notes` emits the event, then the fake app's
   `ConsentRequest`s name `origin` `z` (not `notes`), `fake-claude` is not
   started before `Granted`, and with `Refused` both streams end
-  `consent-refused("workspace:F")` and `consent-refused("account:openai")`.
+  `consent-refused("workspace:<z identity>:F")` and `consent-refused("account:<z identity>:openai")`.
   The same holds when `notes` collects from `z` (9.4).
 - **S62 Origin gone** (HOST-F-73). Given `z`, called by `notes`, that sets
   `timers.after("t", 50)` and opens a `claude-code` start in `notes`'s
@@ -496,7 +496,7 @@ otherwise `relay` holds no grant beyond storage and its call of `latch`.
   (not `"local/notes"`). When another folder with slug `notes` is installed
   as a local mod (identity `local/notes`, local name `notes`) and given a
   consent for `F`, and `t` fires, then the fake app's `ConsentRequest` names
-  `origin` `z`, and with `Refused` the start ends `consent-refused("workspace:F")`.
+  `origin` `z`, and with `Refused` the start ends `consent-refused("workspace:local/z:F")`.
 - **S67 Bare file-tool allow** (HOST-F-74). A launch with `allow` `Read`,
   `Write`, `Edit`, `Glob`, `Grep` or `NotebookEdit` (no parentheses) fails
   `bad-launch {field: "allow"}`; `Read(**)` passes. When `fake-claude` sends a

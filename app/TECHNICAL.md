@@ -2556,9 +2556,9 @@ New `Request::Agent { what: AgentWhat, origin: Asker }` (6.2), where
 `openai`) or `Toolset { name, functions }`; `origin` is the origin client (the
 page's mod, or the mod of the handle), named as an asker is (17.4), never from
 a mod's arguments. The app fills it from host's `ConsentRequest` (host 19.7):
-`origin` is `<origin>`; `via` is `<provider>`; `Consent::Workspace { folder }`
+`origin` is `<origin>`; `via` is `<provider>`; `Consent::Workspace { folder, .. }`
 gives `<folder>`; `profile` gives `<profile>`; `functions` gives `<functions>`;
-`Consent::Account { account }` is `openai`; `Consent::Toolset { toolset, .. }`
+`Consent::Account { account, .. }` is `openai`; `Consent::Toolset { toolset, .. }`
 is the toolset `name`. The words, `words::agent_consent`, exactly:
 
 | `what` | Title | Question |
@@ -2598,7 +2598,8 @@ While a request waits, the host has told its requester `consent-pending
 `ConsentLine { key, kind, text }`; `kind` is `workspace`, `account` or
 `toolset`, `text` is the question above for the mod itself (`Let <mod> ...`
 with the mod's own name as the host lists it), and `key` is the `what` text of host's `Consent`
-(`workspace:<folder>`, `account:openai`, `toolset:<name>`, host 19.7). The details of 5.3.4 show them in a group
+(`workspace:<via>:<folder>`, `account:<via>:openai`, `toolset:<name>`, host 19.7; `<via>` the
+provider's identity, so two providers in one folder are two lines, each naming its provider). The details of 5.3.4 show them in a group
 `Agents` after the grants, each with the same switch as a grant, without the
 give-back: a withdrawn consent is not given back, because a consent exists only
 as an answer; the row disappears and the next ask goes to the consent view.
