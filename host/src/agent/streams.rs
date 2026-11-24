@@ -520,6 +520,7 @@ impl Hub {
             Effect::TimerAfter { .. }
             | Effect::TimerCancel { .. }
             | Effect::ClaudeStart { .. }
+            | Effect::HttpsStart { .. }
             | Effect::ClaudeWrite { .. }
             | Effect::AgentOpen { .. }
             | Effect::AgentCall { .. }

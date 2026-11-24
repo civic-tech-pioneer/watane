@@ -175,7 +175,7 @@ pub(crate) fn ask(
 /// (19.7, Withdrawal). A workspace consent ends the `claude` streams of that origin client through
 /// that `via` whose launch names the folder, and kills their process groups. A toolset consent
 /// closes the handles of that origin client that hold the toolset, and their jobs' streams end
-/// `gone` (19.5). The streams of an account consent (19.4, stage A4) end here when those exist.
+/// `gone` (19.5). An account consent ends the live `openai` streams of that origin client through that `via` (19.4).
 pub(crate) fn withdrawn(host: &Host, consent: &Consent, origin: &str) {
     match consent {
         Consent::Workspace { via, folder } => {
@@ -183,7 +183,9 @@ pub(crate) fn withdrawn(host: &Host, consent: &Consent, origin: &str) {
             host.hub.end_gone(&ids);
         }
         Consent::Toolset { toolset, .. } => host.close_handles_of_toolset(origin, toolset),
-        Consent::Account { .. } => {}
+        Consent::Account { via, .. } => {
+            host.hub.end_gone(&host.https.of_account(origin, via));
+        }
     }
 }
 

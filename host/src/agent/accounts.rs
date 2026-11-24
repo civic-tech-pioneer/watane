@@ -1,6 +1,6 @@
 //! `AccountSource`: the in-process trait through which the host reaches tokens, keys and the
 //! `claude` program path (TECHNICAL 19.4). The app implements it and hands it over through
-//! `Confirm::accounts`. In stage A2 the host calls `claude_binary` only.
+//! `Confirm::accounts`. Stage A4 adds `openai_token`; `Account` names an entry that changed.
 
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -34,4 +34,12 @@ impl std::fmt::Debug for JudgeAccount {
 pub enum AccountError {
     NoAccount,
     Unavailable(String),
+}
+
+/// An account whose entry changed (app 19.1 sign-out, 19.4 key removed or replaced, uninstall).
+/// `Judge.provider` is the identity of the provider (`<publisher>/<slug>`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Account {
+    OpenAi,
+    Judge { provider: String },
 }

@@ -14,6 +14,7 @@ mod consent;
 mod harness;
 #[cfg(unix)] // Uses the Unix Claude process-group fixtures.
 mod host_info;
+mod https_stream;
 mod json;
 mod manage;
 mod mcp;
