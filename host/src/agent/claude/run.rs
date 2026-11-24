@@ -2296,7 +2296,42 @@ mod fix24_tests {
             log.lines
         );
         assert!(!home.path().join("runs").is_symlink());
+        assert_eq!(std::fs::read_dir(home.path()).unwrap().count(), 0);
         assert!(target.path().join("pids").exists());
+    }
+
+    /// Two `runs.*.gone` folders that cannot be removed give one log line, and the next open
+    /// removes them once they can be (3.1 step 3).
+    #[test]
+    fn s100_fix24_ac3_a_failed_removal_is_logged_once_and_tried_again() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = tempfile::tempdir().unwrap();
+        let locked: Vec<_> = ["runs.a1.gone", "runs.b2.gone"]
+            .iter()
+            .map(|name| {
+                let locked = home.path().join(name).join("locked");
+                std::fs::create_dir_all(&locked).unwrap();
+                std::fs::write(locked.join("f"), "").unwrap();
+                std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o500)).unwrap();
+                locked
+            })
+            .collect();
+        let mut log = CleanupLog::default();
+        clean_runs_logged(home.path(), &mut log);
+        let kept = locked.iter().all(|l| l.join("f").exists());
+        for l in locked.iter().filter(|l| l.exists()) {
+            std::fs::set_permissions(l, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        if !kept {
+            eprintln!("skipped: this user (root) can remove from a mode 500 folder");
+            return;
+        }
+        assert_eq!(log.lines.len(), 1, "{:?}", log.lines);
+        assert!(log.lines[0].contains("not removed"), "{:?}", log.lines);
+        let mut log = CleanupLog::default();
+        clean_runs_logged(home.path(), &mut log);
+        assert!(log.lines.is_empty(), "{:?}", log.lines);
+        assert_eq!(std::fs::read_dir(home.path()).unwrap().count(), 0);
     }
 
     /// One open removes the whole tree: five folders and 20 000 entries in one level leave no
