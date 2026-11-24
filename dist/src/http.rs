@@ -72,7 +72,15 @@ impl Dist {
         head: bool,
         listed: bool,
     ) -> Result<Vec<u8>, DistError> {
-        let check = |target: &str| self.check_listed_base(target);
+        let check = |target: &str| {
+            self.check_listed_base(target).map_err(|error| match error {
+                DistError::BadUrl { cause, .. } => DistError::BadUrl {
+                    url: url.into(),
+                    cause,
+                },
+                other => other,
+            })
+        };
         self.get_guarded(url, limit, timeout, head, listed.then_some(&check))
     }
     pub(crate) fn get_guarded(
@@ -275,6 +283,31 @@ mod tests {
         }
         assert_eq!(*seen.borrow(), ["http://example.org/head"]);
     }
+    #[test]
+    fn s112_listed_redirects_to_local_ranges_stop_before_the_next_hop() {
+        let first = "https://publisher.example/head";
+        for target in [
+            "http://0.1.2.3/head",
+            "http://100.64.0.1/head",
+            "http://198.19.255.255/head",
+            "http://[fec0::1]/head",
+            "http://[64:ff9b::a00:1]/head",
+            "http://[2002:c0a8:101::]/head",
+        ] {
+            let result = follow_hops(first, &local, |url| {
+                assert_eq!(url, first, "the refused target must receive no request");
+                Ok(Hop::<()>::Redirect(target.into()))
+            });
+            assert!(matches!(
+                result,
+                Err(DistError::BadUrl {
+                    cause: "local address",
+                    ..
+                })
+            ));
+        }
+    }
+
     #[test]
     fn ac1_trailing_dot_target_refused() {
         let result = follow_hops("http://example.org/head", &local, |_| {
@@ -490,7 +523,7 @@ mod tests {
             true,
         );
         assert!(
-            matches!(&got, Err(DistError::BadUrl { cause: "local address", url }) if url == &format!("{base}/secret")),
+            matches!(&got, Err(DistError::BadUrl { cause: "local address", url }) if url == &format!("{base}/a")),
             "{got:?}"
         );
         assert_eq!(*seen.lock().unwrap(), ["/a"]);
@@ -674,7 +707,7 @@ mod tests {
             w.a.redirect(&format!("/{path}"), &target);
             let before = w.b.count();
             let got = failure(eve.read_channel_entries(w.key, &w.a.url, true));
-            assert_refused(got, &target);
+            assert_refused(got, &format!("{}{path}", w.a.url));
             assert_eq!(w.b.count(), before, "{path}: no request to the target");
             // The same redirect of an unlisted (followed or chosen) base is followed.
             let (_dir, eve) = w.eve(&[&w.a]);
@@ -725,12 +758,12 @@ mod tests {
         let (_dir, eve) = w.eve(&[&w.a]);
         let _z = listed_record(&w, &eve);
         let got = eve.read_link(&w.link(&w.a)).map(|_| ()).err();
-        assert_refused(got, &target);
+        assert_refused(got, &format!("{}{}", w.a.url, w.package));
         assert_eq!(w.b.count(), 0);
         // No record.
         let (_dir, eve) = w.eve(&[&w.a]);
         let got = eve.read_link(&w.link(&w.a)).map(|_| ()).err();
-        assert_refused(got, &target);
+        assert_refused(got, &format!("{}{}", w.a.url, w.package));
         assert_eq!(w.b.count(), 0);
         // Followed record: the participant's own base may redirect anywhere.
         let (_dir, eve) = w.eve(&[&w.a]);
@@ -743,7 +776,7 @@ mod tests {
         w.a.redirect("/head", &head);
         let (_dir, eve) = w.eve(&[&w.a]);
         let got = eve.read_link(&w.link(&w.a)).map(|_| ()).err();
-        assert_refused(got, &head);
+        assert_refused(got, &format!("{}head", w.a.url));
         assert_eq!(w.b.count(), 1);
     }
     /// AC5 / 5.9: a listed record whose base is local, with no provider base, is
@@ -1309,6 +1342,77 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn s112_refresh_channel_reports_a_pending_sync_after_its_base_loop() {
+        let w = world();
+        let (_dir, eve) = w.eve(&[&w.a]);
+        eve.follow(&w.link(&w.a)).unwrap();
+        {
+            let mut records = eve.follows.lock().unwrap();
+            let mut next = records.clone();
+            next.get_mut(&w.key).unwrap()._last_attempt = 0;
+            eve.save_follows(&mut records, next).unwrap();
+        }
+        let before = w.a.count();
+
+        // The head read succeeds, but publishing its updated attempt time
+        // installs the file and leaves a pending directory sync.
+        sync_fails(u32::MAX);
+        let got = eve.refresh_channel(&w.key).map(|_| ());
+        sync_fails(0);
+
+        assert!(w.a.count() > before);
+        assert_eio(got);
+    }
+
+    #[test]
+    fn s112_open_link_prunes_a_stale_record_before_deciding_whether_to_follow() {
+        let w = world();
+        let (_dir, eve) = w.eve(&[&w.a]);
+        let link = w.link(&w.a);
+        eve.follow(&link).unwrap();
+        sync_fails(1);
+        assert_eio(eve.unfollow(&w.key));
+        assert!(eve.follows.lock().unwrap().contains_key(&w.key));
+
+        let fetched = eve.open_link(&link).unwrap();
+        assert_eq!(
+            fetched.package.id().to_string(),
+            w.package["packages/".len()..]
+        );
+        assert!(eve.follows.lock().unwrap().get(&w.key).unwrap().followed);
+    }
+
+    #[test]
+    fn s112_refresh_stops_at_the_first_settlement_failure() {
+        let (w, _dir, eve) = unsynced_world(true);
+        sync_fails(1);
+        let before = requests_before(&w);
+        let reports = eve.refresh();
+        assert_eq!(requests_before(&w), before);
+        assert_eq!(reports.len(), 1);
+        for report in reports {
+            assert_eq!(report.channel, w.key);
+            match report.outcome {
+                crate::Outcome::Failed { cause } => assert_eio(Err(cause)),
+                other => panic!("{other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn s112_own_kept_ingest_needs_no_record_settlement() {
+        let w = world();
+        let key = w.key;
+        let entries = w.publisher.entries(&key, 0, 100, usize::MAX).unwrap();
+        w.publisher.unsynced.lock().unwrap().dirty = true;
+        sync_fails(u32::MAX);
+        let got = w.publisher.ingest(&key, entries, crate::Reason::Kept);
+        sync_fails(0);
+        assert!(matches!(got, crate::Ingested::Stored(_)), "{got:?}");
+        assert!(!w.publisher.follows.lock().unwrap().contains_key(&key));
+    }
+
     #[test]
     fn v_gate_open_link_at_a_new_base() {
         let (w, _dir, eve) = unsynced_world(true);

@@ -198,6 +198,8 @@ impl Dist {
         state.drop_done.append(&mut done.dropped);
         Ok(())
     }
+
+    /// Whether a derived link needs the restrictions of a listed read (TECHNICAL 5.9).
     pub(crate) fn derived_base_is_listed(&self, link: &Link) -> bool {
         self.follows
             .lock()
@@ -370,8 +372,8 @@ impl Dist {
             .read_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        // Finishes left work; while the sync fails, each read below returns its error.
-        let _ = self.settle(true);
+        // Do not read or rewrite listing records if settling pending work fails.
+        let settled = self.settle(true);
         let keys: Vec<_> = self
             .follows
             .lock()
@@ -380,6 +382,17 @@ impl Dist {
             .filter(|(_, r)| r.followed || r.index)
             .map(|(k, _)| *k)
             .collect();
+        if let Err(cause) = settled {
+            return keys
+                .first()
+                .map(|&channel| RefreshReport {
+                    channel,
+                    outcome: Outcome::Failed { cause },
+                    changes: Vec::new(),
+                })
+                .into_iter()
+                .collect();
+        }
         let mut seen = std::collections::BTreeSet::new();
         let mut reports = Vec::new();
         for key in keys {

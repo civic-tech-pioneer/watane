@@ -304,6 +304,10 @@ pub fn open_or_create_private_file(path: &Path) -> io::Result<File> {
 
 pub fn check_owner_only(file: &File) -> io::Result<()> {
     let user = User::current()?;
+    check_owner_only_as(file, user.sid())
+}
+
+fn check_owner_only_as(file: &File, current: *mut c_void) -> io::Result<()> {
     let mut owner = null_mut();
     let mut dacl: *mut ACL = null_mut();
     let mut descriptor = null_mut();
@@ -330,8 +334,14 @@ pub fn check_owner_only(file: &File) -> io::Result<()> {
             "requires an owner-only Windows ACL and ownership by the current user",
         )
     };
-    // SAFETY: Win32 supplied an owner SID if non-null. The user SID is live.
-    if owner.is_null() || dacl.is_null() || unsafe { EqualSid(owner, user.sid()) } == 0 {
+    // SAFETY: Win32 supplied an owner SID if non-null. The current SID is live.
+    if owner.is_null() || unsafe { EqualSid(owner, current) } == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "requires ownership by the current Windows user",
+        ));
+    }
+    if dacl.is_null() {
         return Err(refused());
     }
     // SAFETY: GetSecurityInfo supplies a live ACL.
@@ -349,7 +359,7 @@ pub fn check_owner_only(file: &File) -> io::Result<()> {
         return Err(refused());
     }
     // SAFETY: The inline SID of this access-allowed ACE is live with its descriptor.
-    if unsafe { EqualSid((&raw mut (*ace).SidStart).cast(), user.sid()) } == 0 {
+    if unsafe { EqualSid((&raw mut (*ace).SidStart).cast(), current) } == 0 {
         return Err(refused());
     }
     Ok(())
@@ -370,4 +380,39 @@ pub fn publish(tmp: &Path, key: &Path, replace: bool) -> io::Result<()> {
         return Err(io::Error::last_os_error());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows_sys::Win32::Security::Authorization::ConvertStringSidToSidW;
+
+    #[test]
+    fn s112_private_directory_refuses_a_different_owner_sid() {
+        // Use a different expected SID so this check needs no privilege to
+        // change ownership of an actual directory.
+        let everyone: Vec<_> = "S-1-1-0".encode_utf16().chain([0]).collect();
+        let mut sid = null_mut();
+        // SAFETY: everyone is nul terminated and sid receives the allocation.
+        let converted = unsafe { ConvertStringSidToSidW(everyone.as_ptr(), &mut sid) };
+        assert_ne!(converted, 0);
+        let sid = LocalAllocation(sid);
+
+        let path = std::env::temp_dir().join(format!("watane-log-owner-{}", std::process::id()));
+        create_dir(&path).expect("create private directory");
+        let directory = open_path(&path, false).expect("open private directory");
+        let correct = check_owner_only(&directory);
+        let foreign = check_owner_only_as(&directory, sid.0);
+        drop(directory);
+        std::fs::remove_dir(&path).expect("remove empty test directory");
+
+        correct.expect("allow the actual owner");
+        let error = foreign.expect_err("refuse the different owner SID");
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+        assert!(
+            error
+                .to_string()
+                .contains("ownership by the current Windows user")
+        );
+    }
 }

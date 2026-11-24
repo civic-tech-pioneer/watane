@@ -49,6 +49,12 @@ pub enum Error {
         owner: u32,
         current: u32,
     },
+    #[error("{path} is owned by user {owner}; the log directory must be owned by user {current}")]
+    DirectoryOwner {
+        path: PathBuf,
+        owner: u32,
+        current: u32,
+    },
     #[error("{}", not_plain_text(path, expected, *link))]
     NotPlain {
         path: PathBuf,

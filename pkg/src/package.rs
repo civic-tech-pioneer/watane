@@ -55,6 +55,20 @@ fn check_size(size: u64) -> Result<(), PackageError> {
         Ok(())
     }
 }
+/// Win32 treats these stems as devices even if a filename has an extension.
+fn windows_device(segment: &str) -> bool {
+    let stem = segment.split_once('.').map_or(segment, |(stem, _)| stem);
+    matches!(
+        stem.to_ascii_uppercase().as_bytes(),
+        b"CON"
+            | b"PRN"
+            | b"AUX"
+            | b"NUL"
+            | [b'C', b'O', b'M', b'1'..=b'9']
+            | [b'L', b'P', b'T', b'1'..=b'9']
+    )
+}
+
 fn grammar(path: &str) -> Result<(), PackageError> {
     let first = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-';
     if path.is_empty() || path.len() > 255 || path.split('/').count() > 16 {
@@ -73,6 +87,9 @@ fn grammar(path: &str) -> Result<(), PackageError> {
                 path,
                 "each segment must match [A-Za-z0-9_-][A-Za-z0-9_.-]{0,127}",
             ));
+        }
+        if windows_device(s) {
+            return Err(path_error(path, "a Windows device name is reserved"));
         }
     }
     Ok(())

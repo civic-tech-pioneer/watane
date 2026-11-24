@@ -158,15 +158,15 @@ impl Dist {
             if let watane_log::Status::Compromised(f) = self.log.status(channel)? {
                 return Ok(Ingested::Compromised { seq: f.chain.seq() });
             }
-            if reason == Reason::Kept {
+            let mark_kept = reason == Reason::Kept && Some(*channel) != self.identity();
+            if mark_kept {
                 self.settle(false)?;
             }
-            let mut records =
-                (reason == Reason::Kept && Some(*channel) != self.identity()).then(|| {
-                    self.follows
-                        .lock()
-                        .expect("lock poisoned: another thread panicked while holding it")
-                });
+            let mut records = mark_kept.then(|| {
+                self.follows
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it")
+            });
             if records.as_ref().is_some_and(|records| {
                 !records.get(channel).is_some_and(|r| r.kept)
                     && records.values().filter(|r| r.kept).count() >= self.options.max_kept

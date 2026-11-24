@@ -15,8 +15,34 @@ fn s110_key_is_private_and_reopens() {
         Log::open(&dir).expect("reopen private identity").identity(),
         log.identity()
     );
-    let key = fs::File::open(&path).expect("open key");
-    watane_log_windows_fs::check_owner_only(&key).expect("key must be owner-only");
+    // Use Windows' ACL reporting independently of the production Win32 wrapper.
+    let result = Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            r"
+            $ErrorActionPreference = 'Stop'
+            $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+            $acl = Get-Acl -LiteralPath $env:WATANE_TEST_KEY_PATH
+            $sidType = [System.Security.Principal.SecurityIdentifier]
+            $rules = $acl.GetAccessRules($true, $true, $sidType)
+            if ($acl.GetOwner($sidType).Value -ne $sid -or
+                -not $acl.AreAccessRulesProtected -or $rules.Count -ne 1 -or
+                $rules[0].IdentityReference.Value -ne $sid -or
+                $rules[0].AccessControlType -ne 'Allow' -or $rules[0].IsInherited) {
+                throw 'identity.key must have a protected owner-only ACL'
+            }
+        ",
+        ])
+        .env("WATANE_TEST_KEY_PATH", &path)
+        .output()
+        .expect("inspect the key ACL with PowerShell");
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
 }
 
 #[test]

@@ -157,6 +157,8 @@ pub enum Error {
     KeyLinks { path: PathBuf, links: u64 },
     #[error("{path} is owned by user {owner}; the identity key must be owned by user {current}")]
     KeyOwner { path: PathBuf, owner: u32, current: u32 },
+    #[error("{path} is owned by user {owner}; the log directory must be owned by user {current}")]
+    DirectoryOwner { path: PathBuf, owner: u32, current: u32 },
     #[error("{path} is not a {expected}")]           // link: "{path} is a symbolic link; a {expected} is required (a link is refused)"
     NotPlain { path: PathBuf, expected: &'static str, link: bool }, // expected: "directory" or "regular file"
     #[error("the log directory path is empty")]
@@ -344,8 +346,8 @@ later hardening.
 2. If `dir` is missing, create it and its missing parents with mode 0700
    (`DirBuilder::recursive(true).mode(0o700)`).
 3. `symlink_metadata(dir)`: not a directory is `NotPlain { expected: "directory", link }` (`link` is true for a symbolic link); `mode & 0o077 != 0`
-   is `Exposed`.
-4. Take an exclusive lock on the directory handle across key lookup and
+   is `Exposed`. An owner different from the effective UID is `DirectoryOwner`.
+4. Check the opened directory handle again, then take an exclusive lock across key lookup and
    creation. Open the key path once with `O_NOFOLLOW` and check the handle
    with `fstat`:
    - missing: create the key (below);
@@ -392,7 +394,8 @@ seed bytes, refuse reparse points, nondisk or nonregular files, multiple
 links, a foreign owner or a DACL other than one owner-only allow entry.
 A key creation uses `CREATE_NEW` with a protected owner-only DACL. Check
 the handle before writing the seed, then flush the file and publish it
-using `MoveFileExW` with `MOVEFILE_WRITE_THROUGH`. If the filesystem
+using `windows-fs::publish(tmp, key, true)`, which calls `MoveFileExW`
+with `MOVEFILE_WRITE_THROUGH` and `MOVEFILE_REPLACE_EXISTING`. If the filesystem
 cannot supply the required protections, opening or creating an identity
 fails with an error at the path.
 
@@ -611,7 +614,7 @@ minicbor = { version = "2.3", default-features = false, features = ["alloc"] }
 argon2 = { version = "0.6", default-features = false, features = ["alloc"] }
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 rusqlite = { version = "0.41", features = ["bundled"] }
-rustix = { version = "1", features = ["process"] } # effective UID
+rustix = { version = "1", default-features = false, features = ["process"] } # effective UID
 data-encoding = "2.11"           # z-base-32 (custom Specification) and HEXLOWER
 unicode-normalization = "0.1.26"
 zeroize = "1.9"
