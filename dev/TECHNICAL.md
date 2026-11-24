@@ -236,6 +236,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `env.allowlist` | 3 | the vendor folder is missing or differs from the allowlist | `the crate allowlist at <path> is missing` / `... differs from the allowlist of this watane-dev: <detail>` | `'<abs dev>/scripts/vendor.sh' '<path>'` (6.2; no export needed); a resolved logic crate outside the allowlist: `Reinstall watane-dev, or set WATANE_DEV_VENDOR` |
 | `env.watane_missing` | 3 | the program `watane` is not found | `the program watane was not found (<where>)` | `Install watane, or set WATANE_BIN to the program` |
 | `env.preview_start` | 3 | the preview host printed an error, exited, or gave no ready line in 30 s | `the preview did not start: <host error or last 20 log lines>` | `Read <log path>` |
+| `env.preview_start` | 3 | `serve` or `serve --stop` on Windows | `preview is unavailable on Windows because it requires Unix process-group controls` | `Run watane-dev serve on Linux or macOS; on Windows, watane-dev test still builds and tests the mod` |
 | `env.host_not_running` | 3 | no `run.json`, no answer, a preview in that home, or a home host with no app | `no watane app runs for the home <home>` (or the specific cause) | `Start the watane app, then run: <rerun>`; for a home with a missing ancestor, `Pass --home the folder that the watane app uses (<missing> does not exist), then run: <rerun with its --home value replaced by the literal <folder>>`. `<rerun>` is the command's own rerun (2.4), for publish too; `next` is `<rerun>` for every command that needs the app (install, publish, search, `add --release`, `new --from`), and for `test` and `serve` the command of the fix without its `Start the watane app, then run: ` |
 | `mod.invalid` | 1 | each `pkg` `Violation` | `[<rule>] <message>`, with the violation's `file`; preserve wit-parser `--> <file>:<line>:<col>` locations when present, using the more specific WIT file relative to the mod | — |
 | `mod.cargo_key` | 1 | a key of `logic/Cargo.toml` outside 5.2 | ``logic/Cargo.toml: `<key>` is not allowed`` | `Remove it. Allowed: <list>` |
@@ -1018,9 +1019,10 @@ The shared pipeline order and prebuilt exception are in 7.1.
 ### 6.1 Toolchain
 
 1. If `WATANE_DEV_TOOLCHAIN` is set, `cargo` and `rustc` are
-   `<it>/bin/cargo` and `<it>/bin/rustc`.
+   `<it>/bin/cargo` and `<it>/bin/rustc`. On Windows their names are
+   `cargo.exe` and `rustc.exe`.
 2. Else dev finds `rustup` on `PATH`, then in `$CARGO_HOME/bin`, then in
-   `~/.cargo/bin`, and runs `rustup which cargo` and `rustup which rustc`
+   `~/.cargo/bin` (`rustup.exe` on Windows), and runs `rustup which cargo` and `rustup which rustc`
    with the cache folder as working folder (so no toolchain file of a mod
    applies). This avoids a packaged `rustc` that shadows rustup on `PATH`
    (colos `explore/dev-onboarding`, finding 2).
@@ -1095,6 +1097,12 @@ All cargo runs use one command builder, `builder::cargo(...)`:
   build scripts of allowlisted crates). Thus `RUSTFLAGS`, `RUSTC_WRAPPER`,
   proxies and every secret of the maker stay out (DEV-F-15). If cargo needs
   `HOME`, set `HOME=<cache>/cargo-home`.
+  On Windows, `PATH` contains the Rust toolchain directory and the
+  discovered MSVC linker's directory. The tool discovery supplies `LIB`
+  and `LIBPATH` when available. `SystemRoot` is forwarded for system
+  libraries. `USERPROFILE` points at the disposable Cargo home, and `TEMP`
+  and `TMP` point at the cache temporary directory.
+
 - Arguments common to every run (`<x>` is a canonical absolute path; each
   `--config` value is TOML, quoted with `toml::Value::String(..).to_string()`):
 
@@ -1405,6 +1413,11 @@ and the command's `next` are
    token; without a token, report `mcp: null`. Never follow ready-line URLs.
 
 ### 9.4 `serve --stop`
+
+On Windows, `serve` and `serve --stop` return `env.preview_start` before
+opening the cache, building the mod or starting and stopping any process.
+The preview lifecycle requires Unix process groups.
+
 
 Stopping never runs `check` or reads the mod's manifest or world. Canonicalize
 its folder, compute h8 as in section 3, and find `<cache>/previews/*-<h8>`.
@@ -2320,16 +2333,16 @@ rules belong to 15.1.
 | DEV-S-38 | `build_on::ac4_add_release_records_publisher_wit_link_and_rejects_bad_target`, `build_on::ac4_transitive_releases_are_fetched_by_reference_and_bounded`, `api::tests::ac4_released_provider_walk_stops_at_thirty_two_packages` | integration: prebuilt provider |
 | DEV-S-39 | `build_on::ac5_offline_contract_and_fake_preview_provider_order`, `build_on::ac5_missing_released_cache_has_actionable_fix`, `build_on::ac5_real_preview_installs_released_provider_before_consumer` | integration: warm consumer pipeline; slow real preview |
 | DEV-S-40 | `build_on::ac6_publish_unlisted_warning_provider_links_and_default_list`, `build_on::ac6_publish_passes_recorded_provider_link`, `cli::tests::ac6_publish_timeout_allows_each_foreign_provider_listing` | integration: page; warm consumer pipeline |
-| DEV-S-41 | `share::ac1_e2e_first_push_creates_both_repositories_and_names_the_mod_repository`; `share::ac1_first_push_runs_the_commands_of_10_4_1`, `ac1_nothing_staged_skips_the_commit`, `ac1_pushed_repository_is_fetched_and_reset_before_the_commit`, `ac2_owner_creates_and_pushes_both_repositories`, `ac1_owner_preserved_in_recovery_commands` | end to end: fake-watane, fake-gh, real git, local bare remotes; page-only mod. In-process on the scripted runner (15.4): the exact command list |
-| DEV-S-42 | `share::ac2_e2e_second_version_pushes_without_creating` | end to end, as DEV-S-41; the gitconfig's `insteadOf` is active, so `raw` proves the stored URL is read |
+| DEV-S-41 | `share::real::ac1_e2e_first_push_creates_both_repositories_and_names_the_mod_repository`; `share::ac1_first_push_runs_the_commands_of_10_4_1`, `ac1_nothing_staged_skips_the_commit`, `ac1_pushed_repository_is_fetched_and_reset_before_the_commit`, `ac2_owner_creates_and_pushes_both_repositories`, `ac1_owner_preserved_in_recovery_commands` | end to end: fake-watane, fake-gh, real git, local bare remotes; page-only mod. In-process on the scripted runner (15.4): the exact command list |
+| DEV-S-42 | `share::real::ac2_e2e_second_version_pushes_without_creating` | end to end, as DEV-S-41; the gitconfig's `insteadOf` is active, so `raw` proves the stored URL is read |
 | DEV-S-43 | `share::ac3_missing_git_or_gh_stops_before_anything` | in-process, scripted runner: git, then gh not found |
 | DEV-S-44 | `share::ac3_gh_not_logged_in_or_no_git_identity` | in-process, scripted runner: gh's not-logged-in answer; git's identity error; no network |
 | DEV-S-45 | `share::ac4_refused_push_reports_release_and_finishing_commands`, `ac4_failures_in_both_lists_join_their_finishing_commands` | in-process, scripted runner: a refused push; failures in both lists |
 | DEV-S-46 | `share::ac5_no_source_pushes_only_the_site`; `share::ac5_origin_differs_and_foreign_repository_stop_before_anything`, `ac5_named_repository_is_used_on_any_host`, `ac6_prebuilt_mod_keeps_logic_wasm_in_commit`, `ac3_missing_app_retry_keeps_push_and_package_options` | in-process, scripted runner |
-| DEV-S-47 | `share::ac6_new_from_clones_the_tag_and_keeps_only_package_files`; `share::ac8_e2e_new_from_clones_then_first_push_forks` | in-process: the scripted clone copies the tagged tree; end to end: a real clone of a tag pushed to a local remote |
+| DEV-S-47 | `share::ac6_new_from_clones_the_tag_and_keeps_only_package_files`; `share::real::ac8_e2e_new_from_clones_then_first_push_forks` | in-process: the scripted clone copies the tagged tree; end to end: a real clone of a tag pushed to a local remote |
 | DEV-S-48 | `share::ac7_tampered_tag_falls_back_to_the_package` | in-process: the scripted clone holds a changed file |
 | DEV-S-49 | `share::ac7_unreachable_repository_falls_back_to_the_package`, `share::ac3_package_without_repository_has_no_fork_warning` | in-process: clone fails, git not found; a package with no repository runs no git |
-| DEV-S-50 | `share::ac8_derived_mod_forks_on_first_push`, `share::ac8_rerun_after_decline_reuses_fork_and_sets_default_branch`, `ac8_late_or_unfinished_fork_is_used`, `ac3_owner_matching_login_case_insensitively_omits_organization`; `share::ac8_e2e_new_from_clones_then_first_push_forks` | in-process, scripted gh as `carol`: the exact fork, rename and default-branch commands; end to end: fake-gh forks a real remote, its upstream URL ends in `.git` |
+| DEV-S-50 | `share::ac8_derived_mod_forks_on_first_push`, `share::ac8_rerun_after_decline_reuses_fork_and_sets_default_branch`, `ac8_late_or_unfinished_fork_is_used`, `ac3_owner_matching_login_case_insensitively_omits_organization`; `share::real::ac8_e2e_new_from_clones_then_first_push_forks` | in-process, scripted gh as `carol`: the exact fork, rename and default-branch commands; end to end: fake-gh forks a real remote, its upstream URL ends in `.git` |
 | DEV-S-51 | `share::ac8_existing_fork_falls_back_to_a_new_repository`, `share::ac8_derived_without_upstream_warns`, `ac3_owner_forks_and_existing_fork_fallback` | in-process, scripted runner: gh answers with another fork; a derived mod without upstream |
 | DEV-S-52 | `contract::ac_collect_fake_and_answer` | integration: the `menu` and `item` folders of the scenario, on the real `Harness` |
 | DEV-S-53 | `contract::ac_manage_fake_and_records` (integration, on host's prebuilt `manager` fixture and the real `Harness`); `contract::tests::manages_mismatch_report` (unit, `run_steps` with a closure) | integration and unit: the literal steps of the scenario |
@@ -2343,7 +2356,7 @@ rules belong to 15.1.
 | DEV-S-61 | `scripted::ac5_trust_only_ca` | https client; planned: dev stage 15 |
 | DEV-S-62 | `scripted::ac6_judge_plays`, `scripted::ac7_judge_counts_every_request` | https client; planned: dev stage 16 |
 | DEV-S-63 | `scripted::ac7_judge_counts_every_request`, `scripted::ac8_judge_key` | https client; planned: dev stage 16 |
-| DEV-S-64 | `preview::tests::ac7_link_writes_default_script_once_and_keeps_the_makers`, `preview::tests::ac7_link_is_replaced_and_copied_where_linking_fails`, `preview::tests::ac7_find_fake_claude_reads_the_variable`, `preview::tests::ac7_spawn_arguments_with_and_without_the_fake`, `doctor::tests::ac7_fake_claude_field_and_warning`; `fake_claude::ac7_serve_passes_the_flag_to_the_host` (slow) | unit: temp folder, literal script and argument vector; slow: the full `serve` against `fake-watane` |
+| DEV-S-64 | `preview::unix::tests::ac7_link_writes_default_script_once_and_keeps_the_makers`, `preview::unix::tests::ac7_link_is_replaced_and_copied_where_linking_fails`, `preview::unix::tests::ac7_find_fake_claude_reads_the_variable`, `preview::unix::tests::ac7_spawn_arguments_with_and_without_the_fake`, `doctor::tests::ac7_fake_claude_field_and_warning`; `fake_claude::ac7_serve_passes_the_flag_to_the_host` (slow) | unit: temp folder, literal script and argument vector; slow: the full `serve` against `fake-watane` |
 | DEV-S-65 | `scripted::ac9_program_line_and_log` | child process; planned: dev stage 15 |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
@@ -2555,7 +2568,7 @@ lines and bytes written in the test.
 | `fake_claude::ac5_lines_no_step_awaits_exit_70` | a line `apply_flag_settings`, `mcp_set_servers`, `set_permission_mode`, a `control_response` with `updatedPermissions` or a second `initialize` exits 70 and is logged; a `user` line, an answer and an `interrupt` (awaited or not, S100) do not | child process; literal lines |
 | `fake_claude::ac6_sleep_exit_and_crash`, `ac6_hang_ignores_stdin_until_killed` | `exit {code: 3}` exits 3 after flushing; `crash` ends by `SIGKILL`; `hang` writes nothing more until it is killed | child process |
 | `fake_claude::ac4_log_holds_arguments_environment_and_stdin_in_order` | `fake-claude.log` holds the arguments, the environment variables and each stdin line, in order | file compared with literal lines |
-| `preview::tests::ac7_*` (4 tests), `fake_claude::ac7_serve_passes_the_flag_to_the_host` (slow) | `serve` links `<P>/claude/fake-claude` (a copy where linking fails), writes the default script once and never overwrites one that exists, and starts the host with `--fake-claude <P>/claude/fake-claude` after `--preview`; without the program, the warning `preview.fake_claude_missing` and no flag; `WATANE_FAKE_CLAUDE` set to a missing file gives the same warning | unit: temp folder, literal script and argument vector; slow: `fake-watane`'s `args.json` |
+| `preview::unix::tests::ac7_*` (4 tests), `fake_claude::ac7_serve_passes_the_flag_to_the_host` (slow) | `serve` links `<P>/claude/fake-claude` (a copy where linking fails), writes the default script once and never overwrites one that exists, and starts the host with `--fake-claude <P>/claude/fake-claude` after `--preview`; without the program, the warning `preview.fake_claude_missing` and no flag; `WATANE_FAKE_CLAUDE` set to a missing file gives the same warning | unit: temp folder, literal script and argument vector; slow: `fake-watane`'s `args.json` |
 | `doctor::tests::ac7_fake_claude_field_and_warning` | `doctor --json` has `fake_claude` set when found, and `null` with the warning `preview.fake_claude_missing` and no error when not | in-process; literal JSON |
 | `scripted::ac1_sse_and_usage` | an `Sse` reply with `Delta`, `ToolCalls(33)` and `Completed {input_tokens, output_tokens}` gives the lines of 18.3, one write each; `Failed {code: "usage_limit_reached"}` gives `response.failed`; `UsageLimit` gives status 429 with the body of a usage limit; `Cut` ends with no `response.completed` | https client; literal bytes |
 | `scripted::ac2_errors_redirect_reset_stall` | `Status 500`, `Status 429` with no usage body, `Redirect`, `Reset` and `Stall` act as written; the script is consumed in order and the last reply repeats | https client; literal statuses and timing |

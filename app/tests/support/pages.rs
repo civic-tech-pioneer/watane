@@ -40,6 +40,14 @@ pub struct Pages {
 
 impl Pages {
     pub fn start(dir: &Path) -> Pages {
+        Self::start_inner(dir, false)
+    }
+
+    pub fn start_site(dir: &Path) -> Pages {
+        Self::start_inner(dir, true)
+    }
+
+    fn start_inner(dir: &Path, single_site: bool) -> Pages {
         let ipv4 = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("bind fixture IPv4");
         let port = ipv4.local_addr().unwrap().port();
         let ipv6 = TcpListener::bind((Ipv6Addr::LOCALHOST, port)).expect("bind fixture IPv6");
@@ -53,7 +61,11 @@ impl Pages {
                 .build()
                 .unwrap();
             runtime.block_on(async move {
-                let app = Router::new().fallback(page).with_state((dir, port));
+                let app = if single_site {
+                    Router::new().fallback_service(ServeDir::new(dir))
+                } else {
+                    Router::new().fallback(page).with_state((dir, port))
+                };
                 let ipv4 = tokio::net::TcpListener::from_std(ipv4).unwrap();
                 let ipv6 = tokio::net::TcpListener::from_std(ipv6).unwrap();
                 tokio::select! {

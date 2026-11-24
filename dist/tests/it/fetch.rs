@@ -83,7 +83,6 @@ fn ac10_fetch_cached_offline_without_request() {
 }
 #[test]
 fn ac13_fetch_reference_from_literal_text() {
-    use std::os::unix::fs::PermissionsExt;
     let a = tempfile::tempdir().unwrap();
     let b = tempfile::tempdir().unwrap();
     // RFC 8032 test vector 1: a fixed publisher makes the entire reference literal.
@@ -93,11 +92,24 @@ fn ac13_fetch_reference_from_literal_text() {
         .map(|i| u8::from_str_radix(&seed[i..i + 2], 16).unwrap())
         .collect();
     let dir = a.path().join("log");
-    std::fs::create_dir(&dir).unwrap();
-    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let key = dir.join("identity.key");
-    std::fs::write(&key, seed).unwrap();
-    std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let key = dir.join("identity.key");
+        std::fs::write(&key, seed).unwrap();
+        std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap()
+    };
+    #[cfg(windows)]
+    {
+        use std::io::Write;
+        watane_log_windows_fs::create_dir(&dir).unwrap();
+        watane_log_windows_fs::create_file(&dir.join("identity.key"))
+            .unwrap()
+            .write_all(&seed)
+            .unwrap()
+    };
     let alice = open(a.path());
     let bob = open(b.path());
     let bytes = fixture("1.0.0", false);

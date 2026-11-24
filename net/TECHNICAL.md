@@ -13,7 +13,7 @@ Stage N1 (section 9) created the crate and added it to the workspace.
 |---|---|
 | Package | `watane-net`, lib `watane_net`, no binary |
 | Edition, toolchain | 2024, stable, `rust-version = "1.91"` |
-| Lints | `unsafe_code = "forbid"`; `cargo clippy --all-targets -- -D warnings` is clean |
+| Lints | Workspace `unsafe_code = "deny"`. Only `watane-log-windows-fs` may use `#[allow(unsafe_code)]` (spec/TECHNICAL 2). Review enforces this rule. `cargo clippy --all-targets -- -D warnings` is clean. |
 | Threads | `net` owns one multi-thread tokio runtime. The public API is blocking: each call runs on that runtime and waits. A caller must not call it from inside a tokio runtime. `net` calls the holder only from blocking threads (`spawn_blocking`). |
 | Network | QUIC through iroh (UDP), and nothing while off (NET-F-3). |
 | Opens | `<home>/net/` only. Never `<home>/log/` or `<home>/dist/`. |
@@ -412,6 +412,14 @@ machines of the list have an entry. Measurements and gossip state live in
 memory only.
 
 ## 5. Behaviour
+
+Windows uses the private Windows file operations in log TECHNICAL 4.7
+for the directory, node key and pairing records. It validates the node
+key's owner, DACL, link count and file type on the opened handle before
+reading it. The first creator publishes with a write-through rename that
+cannot overwrite a concurrent winner. The blob store inherits the
+private directory's access control and staging files have an owner-only
+DACL.
 
 ### 5.1 Open
 

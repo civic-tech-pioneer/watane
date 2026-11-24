@@ -181,10 +181,21 @@ pub(crate) fn remove_entry(path: &Path) -> Result<(), HostError> {
 
 pub(crate) fn write_json(path: &Path, value: &impl Serialize) -> Result<(), HostError> {
     let temp = path.with_extension("json.tmp");
+    #[cfg(unix)]
     let mut file = fs::File::create(&temp)?;
+    #[cfg(windows)]
+    let mut file = watane_log_windows_fs::open_or_create_private_file(&temp)?;
+    #[cfg(windows)]
+    file.set_len(0)?;
     file.write_all(&serde_json::to_vec(value)?)?;
     file.sync_all()?;
-    fs::rename(temp, path)?;
-    fs::File::open(path.parent().expect("home file has parent"))?.sync_all()?;
+    drop(file);
+    #[cfg(unix)]
+    {
+        fs::rename(temp, path)?;
+        fs::File::open(path.parent().expect("home file has parent"))?.sync_all()?
+    };
+    #[cfg(windows)]
+    watane_log_windows_fs::publish(&temp, path, true)?;
     Ok(())
 }

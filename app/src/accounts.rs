@@ -5,7 +5,9 @@ use crate::claude_bin::ClaudeStatus;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::fs::{self, File, OpenOptions};
+use std::fs;
+#[cfg(unix)]
+use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -196,20 +198,28 @@ fn invalid(message: &'static str) -> io::Error {
 }
 
 fn read<T: DeserializeOwned>(path: &Path) -> io::Result<Option<T>> {
+    #[cfg(unix)]
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error),
     };
+    #[cfg(unix)]
     if !metadata.is_file() {
         return Err(invalid("expected a regular file"));
     }
-    let file = match File::open(path) {
+    #[cfg(unix)]
+    let opened = File::open(path);
+    #[cfg(windows)]
+    let opened = watane_log_windows_fs::open_private_file(path, false);
+    let file = match opened {
         Ok(file) => file,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error),
     };
+    #[cfg(unix)]
     let metadata = file.metadata()?;
+    #[cfg(unix)]
     if !metadata.is_file() {
         return Err(invalid("expected a regular file"));
     }
@@ -234,8 +244,8 @@ fn private_dir(path: &Path) -> io::Result<()> {
         use std::os::unix::fs::DirBuilderExt;
         fs::DirBuilder::new().mode(0o700).create(path)
     };
-    #[cfg(not(unix))]
-    let created = fs::create_dir(path);
+    #[cfg(windows)]
+    let created = watane_log_windows_fs::create_dir(path);
     match created {
         Ok(()) => sync_parent(path),
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => check_dir(path),
@@ -243,6 +253,7 @@ fn private_dir(path: &Path) -> io::Result<()> {
     }
 }
 
+#[cfg(unix)]
 fn check_dir(path: &Path) -> io::Result<()> {
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.is_dir() {
@@ -260,6 +271,16 @@ fn check_dir(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn check_dir(path: &Path) -> io::Result<()> {
+    use watane_log_windows_fs::{self as winfs, FileKind};
+    let directory = winfs::open_path(path, false)?;
+    if !matches!(winfs::kind(&directory)?, FileKind::Directory) {
+        return Err(invalid("expected a plain Windows accounts directory"));
+    }
+    winfs::check_owner_only(&directory)
+}
+
 fn write(path: &Path, value: &impl Serialize) -> io::Result<()> {
     let temp = path.with_extension("json.tmp");
     // An interrupted write can leave a temporary file. Remove the entry
@@ -269,21 +290,29 @@ fn write(path: &Path, value: &impl Serialize) -> io::Result<()> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),
     }
-    let mut options = OpenOptions::new();
-    options.create_new(true).write(true);
     #[cfg(unix)]
-    {
+    let mut file = {
         use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600)
+        OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&temp)?
     };
-    let mut file = options.open(&temp)?;
+    #[cfg(windows)]
+    let mut file = watane_log_windows_fs::create_file(&temp)?;
     let result = (|| {
         serde_json::to_writer(&mut file, value)?;
         file.flush()?;
         file.sync_all()?;
         drop(file);
-        fs::rename(&temp, path)?;
-        sync_parent(path)
+        #[cfg(unix)]
+        {
+            fs::rename(&temp, path)?;
+            sync_parent(path)
+        }
+        #[cfg(windows)]
+        watane_log_windows_fs::publish(&temp, path, true)
     })();
     if result.is_err() {
         let _ = fs::remove_file(temp);

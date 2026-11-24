@@ -11,9 +11,9 @@ use std::sync::mpsc::{Receiver, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use support::*;
-use watane_net::{
-    BlobId, Entry, Event, Hit, Holdings, Ingested, Net, NodeKey, PublicKey, Role, Why,
-};
+#[cfg(unix)]
+use watane_net::{BlobId, Entry, Hit, Holdings, Ingested, Net, PublicKey, Why};
+use watane_net::{Event, NodeKey, Role};
 use watane_node::{Node, words};
 
 /// The program binds loopback only, which keeps mDNS off (node TECHNICAL 10).
@@ -113,6 +113,7 @@ impl Prog {
     fn stderr(&self) -> String {
         self.stderr.lock().unwrap().clone()
     }
+    #[cfg(unix)] // Invokes the POSIX kill command.
     fn signal(&self, name: &str) {
         let status = Command::new("kill")
             .arg(format!("-{name}"))
@@ -153,6 +154,7 @@ fn join_with(anchor: &Node, home: &Path, role: Role, yes: bool) -> (Prog, NodeKe
 }
 
 /// A home that `watane-node join` paired as a full machine of `anchor`.
+#[cfg(unix)] // Used by the process signal fixtures.
 fn paired(anchor: &Node) -> (tempfile::TempDir, NodeKey) {
     let dir = tempfile::tempdir().unwrap();
     let (mut prog, key) = join_with(anchor, dir.path(), Role::Full, true);
@@ -210,6 +212,7 @@ fn s10_join_shows_its_key_waits_and_says_who_joined() {
     assert_eq!(book(other.path())["on"], false);
 }
 
+#[cfg(unix)] // Used by the process signal fixtures.
 fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
         .unwrap()
@@ -218,6 +221,7 @@ fn free_port() -> u16 {
         .port()
 }
 
+#[cfg(unix)] // Sends POSIX signals to the node process.
 #[test]
 fn s11_run_relay_serves_a_relay_and_two_homes_connect_through_it() {
     let dirs: Vec<_> = (0..3).map(|_| tempfile::tempdir().unwrap()).collect();
@@ -380,11 +384,13 @@ fn s12_relay_add_asks_first_and_relay_remove_does_not() {
 /// `entries` with entries of another channel. (A holder returns `Entry` values, which
 /// cannot carry a changed byte: `Entry::decode` checks the signature. net's own tests
 /// send changed bytes over the wire; here the bad object is an entry of the wrong author.)
+#[cfg(unix)] // Used by the process signal fixtures.
 struct Liar {
     channel: PublicKey,
     head: watane_net::HeadInfo,
     entries: Vec<Entry>,
 }
+#[cfg(unix)] // Used by the process signal fixtures.
 impl Holdings for Liar {
     fn is_anchor(&self) -> bool {
         false
@@ -415,6 +421,7 @@ impl Holdings for Liar {
     }
 }
 
+#[cfg(unix)] // Sends POSIX signals to the node process.
 #[test]
 fn s13_run_prints_one_refused_line_for_a_machine_that_sends_a_bad_entry() {
     let dir = tempfile::tempdir().unwrap();
@@ -528,6 +535,7 @@ fn program_bad_arguments_exit_2_with_the_usage_and_the_environment_stands_in_for
     assert_eq!(out.status.code(), Some(0));
 }
 
+#[cfg(unix)] // Sends POSIX signals to the node process.
 #[test]
 fn program_run_ends_on_sigterm_and_sigint_with_net_off_and_status_says_where_it_stands() {
     let dir = tempfile::tempdir().unwrap();
@@ -562,6 +570,7 @@ fn program_run_ends_on_sigterm_and_sigint_with_net_off_and_status_says_where_it_
     }
 }
 
+#[cfg(unix)] // Sends POSIX signals to the node process.
 #[test]
 fn s10_a_signal_during_join_ends_it_with_net_off() {
     let dirs = [tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap()];
@@ -616,8 +625,10 @@ fn ac1_help_prints_the_usage_on_stdout_with_no_home() {
     assert!(bad.stderr.contains("usage:"));
 }
 
+#[cfg(unix)] // Used by the process signal fixtures.
 const BUSY: &str = "another watane-node is running on this home";
 
+#[cfg(unix)] // Sends POSIX signals to the node process.
 #[test]
 fn ac2_ac3_status_reads_beside_run_and_a_second_command_says_who_is_running() {
     let dir = tempfile::tempdir().unwrap();

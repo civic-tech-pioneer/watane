@@ -3,6 +3,7 @@
 use crate::support;
 use std::collections::BTreeMap;
 use std::path::Path;
+#[cfg(unix)]
 use std::sync::Arc;
 use support::*;
 use watane_dist::*;
@@ -10,6 +11,11 @@ fn snapshot(root: &Path) -> BTreeMap<std::path::PathBuf, Vec<u8>> {
     fn visit(root: &Path, p: &Path, out: &mut BTreeMap<std::path::PathBuf, Vec<u8>>) {
         for item in std::fs::read_dir(p).unwrap() {
             let p = item.unwrap().path();
+            #[cfg(windows)] // Windows holds a mandatory byte-range lock on this empty file.
+            if p == root.join("dist/lock") {
+                assert_eq!(std::fs::metadata(&p).unwrap().len(), 0);
+                continue;
+            }
             if p.is_dir() {
                 out.insert(p.strip_prefix(root).unwrap().to_owned(), Vec::new());
                 visit(root, &p, out);
@@ -68,18 +74,21 @@ fn ac1_keyless_rejects_own_paths_without_changes() {
     let d = Dist::open_keyless(home.path(), fast_options()).unwrap();
     assert_keyless_own_paths(&d, home.path());
 
-    // Retain a recording Confirm while exercising the same guards after dropping the key.
-    let home = tempfile::tempdir().unwrap();
-    let confirm = Arc::new(RecordingConfirm::default());
-    let d = Dist::open(
-        home.path(),
-        Arc::<RecordingConfirm>::clone(&confirm),
-        fast_options(),
-    )
-    .unwrap();
-    d.drop_identity().unwrap();
-    assert_keyless_own_paths(&d, home.path());
-    assert!(confirm.requests.lock().unwrap().is_empty());
+    #[cfg(unix)] // A durable identity deletion requires a Unix directory flush.
+    {
+        // Retain a recording Confirm while exercising the same guards after dropping the key.
+        let home = tempfile::tempdir().unwrap();
+        let confirm = Arc::new(RecordingConfirm::default());
+        let d = Dist::open(
+            home.path(),
+            Arc::<RecordingConfirm>::clone(&confirm),
+            fast_options(),
+        )
+        .unwrap();
+        d.drop_identity().unwrap();
+        assert_keyless_own_paths(&d, home.path());
+        assert!(confirm.requests.lock().unwrap().is_empty());
+    };
 }
 #[test]
 fn ac2_keyless_drop_unused_identity_only() {
@@ -87,11 +96,25 @@ fn ac2_keyless_drop_unused_identity_only() {
     let d = open(home.path());
     d.set_site_url("http://example.org/").unwrap();
     std::fs::write(d.site_dir().join("old"), b"old").unwrap();
-    d.drop_identity().unwrap();
-    assert!(!home.path().join("log/identity.key").exists());
-    assert!(!home.path().join("dist/site.json").exists());
-    assert_eq!(std::fs::read_dir(d.site_dir()).unwrap().count(), 0);
-    assert!(matches!(d.publish(vec![]), Err(DistError::NoIdentity)));
+    #[cfg(windows)] // Refuse before removing the identity or its site.
+    {
+        let error = d.drop_identity().unwrap_err();
+        assert!(
+            error.to_string().contains("durable directory flush"),
+            "{error}"
+        );
+        assert!(home.path().join("log/identity.key").exists());
+        assert!(home.path().join("dist/site.json").exists());
+        assert!(d.site_dir().join("old").exists());
+    };
+    #[cfg(unix)] // Unix can flush identity deletion durably.
+    {
+        d.drop_identity().unwrap();
+        assert!(!home.path().join("log/identity.key").exists());
+        assert!(!home.path().join("dist/site.json").exists());
+        assert_eq!(std::fs::read_dir(d.site_dir()).unwrap().count(), 0);
+        assert!(matches!(d.publish(vec![]), Err(DistError::NoIdentity)))
+    };
     drop(d);
     let d = open(home.path());
     d.set_name("Alice").unwrap();

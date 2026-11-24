@@ -4,8 +4,11 @@ use std::fs;
 use support::*;
 use watane_dist::DistError;
 use watane_net::Role;
-use watane_node::{Node, NodeError, OwnHint};
+#[cfg(unix)]
+use watane_node::Node;
+use watane_node::{NodeError, OwnHint};
 
+#[cfg(unix)] // The identity can be removed with a durable directory flush.
 #[test]
 fn s8_an_unused_identity_joins_and_is_dropped() {
     let (a_dir, h_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
@@ -26,6 +29,28 @@ fn s8_an_unused_identity_joins_and_is_dropped() {
     let again = Node::open(h_dir.path(), Approve::new(), Default::default()).unwrap();
     assert!(again.dist().identity().is_none(), "a replica opens keyless");
     assert!(!key_file.exists());
+}
+
+#[cfg(windows)] // Windows refuses to remove the identity without a directory flush.
+#[test]
+fn s110_a_join_that_requires_dropping_the_identity_is_refused() {
+    let (anchor_home, local_home) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let anchor = app(anchor_home.path());
+    let local = app(local_home.path());
+    let key_file = local_home.path().join("log/identity.key");
+    let before = fs::read(&key_file).unwrap();
+    let identity = local.dist().identity();
+    let code = anchor.net().pair_code(Role::Light).unwrap();
+    let error = local.join(&code, false).unwrap_err();
+    let NodeError::Dist(DistError::Log(error)) = error else {
+        panic!("expected an identity storage refusal, got {error:?}");
+    };
+    assert!(
+        error.to_string().contains("durable directory flush"),
+        "{error}"
+    );
+    assert_eq!(fs::read(key_file).unwrap(), before);
+    assert_eq!(local.dist().identity(), identity);
 }
 
 #[test]

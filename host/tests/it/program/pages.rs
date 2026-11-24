@@ -351,14 +351,18 @@ async fn ac4_page_bytes_headers_paths_and_both_loopbacks() {
         response.headers()["content-type"],
         "text/plain; charset=utf-8"
     );
-    std::os::unix::fs::symlink("/etc/passwd", home.path().join("mods/hello/ui/leak.txt")).unwrap();
-    let response = preview
-        .client("hello.localhost", "127.0.0.1")
-        .get(format!("{url}leak.txt"))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), 404);
+    #[cfg(unix)] // Uses a Unix symlink fixture.
+    {
+        std::os::unix::fs::symlink("/etc/passwd", home.path().join("mods/hello/ui/leak.txt"))
+            .unwrap();
+        let response = preview
+            .client("hello.localhost", "127.0.0.1")
+            .get(format!("{url}leak.txt"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 404)
+    };
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

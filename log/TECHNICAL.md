@@ -339,7 +339,7 @@ an unsigned program. A file works the same on macOS and Linux and in
 headless tests. A backup must give out the seed anyway. A keychain is a
 later hardening.
 
-`Log::open(dir)`:
+`Log::open(dir)` on Unix:
 1. An empty path is `EmptyPath` ("the log directory path is empty").
 2. If `dir` is missing, create it and its missing parents with mode 0700
    (`DirBuilder::recursive(true).mode(0o700)`).
@@ -380,11 +380,29 @@ The key has one name as soon as it is published. Hold the seed in
 Replace the key (restore only): take the same directory lock and publish the
 new key over `identity.key` using the same write, rename and sync sequence.
 
+On Windows, create each missing directory component with a protected
+owner-only DACL. Open the final directory without following a reparse
+point, check the owner and DACL on the handle, and hold that handle during
+key work. Serialize key lookup, creation and replacement with an
+exclusive lock on a private `.identity.lock` file. The lock file remains
+in the directory. It must have exactly one link and an owner-only DACL.
+
+Open the key with `FILE_FLAG_OPEN_REPARSE_POINT`. Before reading any
+seed bytes, refuse reparse points, nondisk or nonregular files, multiple
+links, a foreign owner or a DACL other than one owner-only allow entry.
+A key creation uses `CREATE_NEW` with a protected owner-only DACL. Check
+the handle before writing the seed, then flush the file and publish it
+using `MoveFileExW` with `MOVEFILE_WRITE_THROUGH`. If the filesystem
+cannot supply the required protections, opening or creating an identity
+fails with an error at the path.
+
 ### 4.8 The channel store
 
 `channels.db`: create the empty file with `create_new` and mode 0600 before
 SQLite opens it, so that SQLite copies that mode to the `-wal` and `-shm`
-files. Pragmas at each open: `journal_mode = WAL`, `synchronous = FULL`,
+files. Windows creates the empty database with a protected owner-only
+DACL. SQLite's sidecar files inherit the private directory's DACL.
+Pragmas at each open: `journal_mode = WAL`, `synchronous = FULL`,
 `busy_timeout = 5000`. Retry `journal_mode = WAL` on `SQLITE_BUSY` for up to
 5 s (two first opens race on it). At `user_version` 0 with no table, run
 `schema.sql` in one `BEGIN IMMEDIATE` transaction. Any other version than 1
@@ -556,7 +574,9 @@ is a directory without `identity.key`.
   `identity.key` and `sync_all` the directory; zeroize the seed in memory.
   From then on this `Log` is keyless. A later `Log::open` of the directory
   creates a new identity (4.7); the caller that wants a keyless home opens
-  it with `open_keyless` (`node` 5.6).
+  it with `open_keyless` (`node` 5.6). On Windows an unused identity
+  refuses the drop before any transaction commits or key changes because
+  no directory flush is available to make the removal durable.
 - `channels()`: `SELECT DISTINCT author FROM entries ORDER BY author`,
   each through `PublicKey::from_bytes`. A wrong length or invalid key is
   `Storage` with "corrupt store: invalid channel author" and the cause:
@@ -597,19 +617,27 @@ unicode-normalization = "0.1.26"
 zeroize = "1.9"
 thiserror = "2.0"
 
+[target.'cfg(windows)'.dependencies]
+watane-log-windows-fs = { path = "windows-fs" }
+
 [dev-dependencies]
 tempfile = "3.27"
 ed25519-compact = "2.6"          # oracle signer: KeyPair::from_seed(Seed::new(seed)), kp.sk.sign(msg, None)
 proptest = "1.12"
 
-[lints.rust]
-unsafe_code = "forbid"
+[lints]
+workspace = true
 
 [profile.dev.package.argon2]
 opt-level = 3
 [profile.dev.package.blake2]
 opt-level = 3
 ```
+
+The shared Windows platform crate `watane-log-windows-fs` lives in
+`windows-fs/`. It uses `windows-sys` 0.61 for Win32 security and file APIs.
+It inherits workspace lints and allows `unsafe_code` only for that FFI
+(spec/TECHNICAL 2). `watane-log` uses no unsafe code.
 
 z-base-32 with `data-encoding`: `Specification::new()`, push the alphabet to
 `symbols`, keep the default `check_trailing_bits = true`, no padding. The
@@ -620,7 +648,7 @@ colos file `src/zbase32.rs` does exactly this.
 | Property | Enforced by |
 |---|---|
 | The secret key stays on the device | It is read into `Zeroizing` and a `SigningKey` (zeroized on drop). No API returns it. `Debug` shows only the public key. The only output is the encrypted backup. |
-| Other users cannot read or plant the key | The directory must deny group and other access. The key must be a regular file with mode 0600, one link, and the effective user as its owner. Creation checks for an absent key and publishes by renaming under the directory lock. |
+| Other users cannot read or plant the key | The directory and key must deny other users access. Unix uses mode bits and Windows uses an owner-only DACL. The key must be a regular file with one link and the current user as its owner. Creation checks for an absent key and publishes under the lock (4.7). |
 | No signing oracle | No public `sign`. A signature only exists inside an entry of the own channel, with a domain prefix (section 4.4). |
 | One rule for everyone | `Entry` has no public constructor except `decode` and `append`, and `decode` applies section 4.6 in full. |
 | One byte form, one id | The decoder re-encodes and compares (section 4.6 step 3). |
@@ -702,6 +730,7 @@ channels by kind, a schema version 2 adds an index on a `kind` column; the
 | `Entry::bytes` | `dist` | the exact bytes that `dist` writes to the published folder and reads back. |
 | `Log` (all of section 2) | `dist` only | the identity, the own channel, followed channels, backup and restore; from step 8 the keyless open of a replica (5.5). |
 | `Status`, `Fork`, `Ingest`, `Head` | `dist`, through `dist` to `app` | gap and compromise reports (F-PUB-6, F-PUB-7). |
+| `watane-log-windows-fs` (4.7, 6) | `net`, `dist`, `host`, `app` on Windows | Create owner-only directories and files, open handles without following reparse points, check file kind, links, ownership and ACLs, read handle-based file IDs, and publish with write-through renames. |
 | `MAX_KIND`, `MAX_BODY` | `dist`, `pkg` | `pkg` keeps an encoded `Release` body within `MAX_BODY`. |
 
 ## 11. Needs from other subsystems

@@ -32,4 +32,6 @@ unify-target-host = "replicate-target-on-host"
 # chrono comes only through dev-dependencies (claude-codes, dev's test oracle, S99) and is
 # unmaintained (RUSTSEC-2026-0543); unified, it would become a normal dependency that cargo deny refuses.
 [final-excludes]
+# The Win32 ACL binding is a narrow leaf and has no features to unify on the listed targets.
+workspace-members = ["watane-log-windows-fs"]
 third-party = [{ name = "chrono" }]

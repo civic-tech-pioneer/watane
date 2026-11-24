@@ -2,12 +2,37 @@
 //! functions of `claude-session` at the call, the table of live sessions, and the start that
 //! a committed chain applies.
 
+#![cfg_attr(
+    windows,
+    allow(
+        dead_code,
+        reason = "runner states are only used by Unix process groups"
+    )
+)]
+
 mod asks;
 pub(crate) mod control;
 mod init;
 pub(crate) mod launch;
 mod paths;
+#[cfg(unix)] // The runner relies on Unix process groups and verified PID records.
 pub(crate) mod run;
+
+#[cfg(windows)]
+pub(crate) mod run {
+    // A Windows launch is refused before it can create a process or a PID record.
+    pub(crate) fn clean_runs(_: &std::path::Path) {}
+
+    pub(super) fn kill_group(_: i32) {
+        unreachable!("Windows Claude sessions never start a process group")
+    }
+
+    pub(super) fn pid_record(_: i32) -> Option<String> {
+        unreachable!("Windows Claude sessions never write process records")
+    }
+
+    pub(crate) enum Job {}
+}
 
 use super::streams::{Consumer, MAX_OPEN};
 use super::{Effect, ModRef};
@@ -312,9 +337,30 @@ fn decision_arg(v: Option<&Val>) -> Result<Decision, CallError> {
     }
 }
 
+fn platform_refusal() -> Option<Value> {
+    cfg!(windows).then(|| {
+        bad_launch(
+            "runtime",
+            "Claude sessions require Unix process-group controls",
+        )
+    })
+}
+
+#[cfg(all(test, windows))]
+#[test]
+fn s110_refuses_claude_without_process_group_controls() {
+    assert_eq!(
+        platform_refusal().expect("Windows must refuse a Claude launch"),
+        json!({"err": {"bad-launch": {"field": "runtime", "reason": "Claude sessions require Unix process-group controls"}}})
+    );
+}
+
 /// `claude-code.start` and `claude-code-shell.start` at the call (19.3): the checks that
 /// need nothing outside, then the request.
 pub(crate) fn start(inv: &Invocation, kind: Kind, args: &[Val]) -> Result<Value, CallError> {
+    if let Some(refusal) = platform_refusal() {
+        return Ok(refusal);
+    }
     let text = text_arg(args, 0, "start")?;
     let mut launch = match Launch::parse(&text, kind) {
         Ok(l) => l,
@@ -501,32 +547,50 @@ impl Host {
             self.hub.end_gone(&[id]);
             return None;
         }
-        if shell {
-            self.hub.finish(&id, run::shell_waits());
-            return None;
+        #[cfg(windows)]
+        {
+            let _ = shell;
+            self.hub.finish(
+                &id,
+                json!({"failed": "Claude sessions require Unix process-group controls"}),
+            );
+            None
         }
-        if self.sessions.register(&session).is_err() {
-            self.hub
-                .finish(&id, json!({"failed": "too many claude processes"}));
-            return None;
+        #[cfg(unix)]
+        {
+            if shell {
+                self.hub.finish(&id, run::shell_waits());
+                return None;
+            }
+            if self.sessions.register(&session).is_err() {
+                self.hub
+                    .finish(&id, json!({"failed": "too many claude processes"}));
+                return None;
+            }
+            Some(run::Job {
+                weak: std::sync::Weak::<Host>::clone(&self.weak),
+                hub: Arc::clone(&self.hub),
+                session: Arc::clone(&session),
+                sessions: Arc::clone(&self.sessions),
+                launch,
+                home: self.home().to_path_buf(),
+                mode: self.home.mode.clone(),
+                fake: self
+                    .fake_claude
+                    .lock()
+                    .expect("lock poisoned: another thread panicked while holding it")
+                    .clone(),
+            })
         }
-        Some(run::Job {
-            weak: std::sync::Weak::<Host>::clone(&self.weak),
-            hub: Arc::clone(&self.hub),
-            session: Arc::clone(&session),
-            sessions: Arc::clone(&self.sessions),
-            launch,
-            home: self.home().to_path_buf(),
-            mode: self.home.mode.clone(),
-            fake: self
-                .fake_claude
-                .lock()
-                .expect("lock poisoned: another thread panicked while holding it")
-                .clone(),
-        })
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn claude_run(&self, job: run::Job) {
+        match job {}
     }
 
     /// Starts the thread of a session, unless its stream ended first (19.3, At apply).
+    #[cfg(unix)]
     pub(crate) fn claude_run(&self, job: run::Job) {
         let id = job.session.id.clone();
         if job.session.stopped() {
@@ -570,7 +634,7 @@ impl Host {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))] // Exercises Unix process groups and PID records.
 mod tests {
     /// 3.1 step 3, 19.3 step 5 (review r6, F6.4): a run removes only its own line of `runs/pids`.
     #[test]

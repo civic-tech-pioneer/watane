@@ -162,10 +162,35 @@ pub fn chain(seed: [u8; 32], count: u64) -> Vec<Vec<u8>> {
 }
 pub const BACKUP: &str = "776174616e656b31000001000300000004000000000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f2021222324252627e2d8d174adbc08bfce3774a8a87915ecea1faa48eab9e5bc6b51f1727ca433d267325d6d08ee1b378c413ad95e167c5d";
 
-pub fn directory() -> tempfile::TempDir {
+#[cfg(unix)]
+pub type Directory = tempfile::TempDir;
+
+#[cfg(unix)]
+pub fn directory() -> Directory {
     use std::os::unix::fs::PermissionsExt;
     tempfile::Builder::new()
         .permissions(std::fs::Permissions::from_mode(0o700))
         .tempdir()
         .unwrap()
+}
+
+#[cfg(windows)]
+pub struct Directory {
+    _temp: tempfile::TempDir,
+    path: std::path::PathBuf,
+}
+
+#[cfg(windows)]
+impl Directory {
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+}
+
+#[cfg(windows)]
+pub fn directory() -> Directory {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("private-log");
+    watane_log_windows_fs::create_dir(&path).unwrap();
+    Directory { _temp: temp, path }
 }

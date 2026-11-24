@@ -450,6 +450,7 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
             })
             .and_then(|dir| {
                 outcome.dir = Some(dir.clone());
+                preview::require_available().map_err(|e| vec![e])?;
                 let env = Env::from_process().map_err(|e| vec![e])?;
                 if stop {
                     preview::stop(&dir, &env)
@@ -1004,6 +1005,26 @@ pub(crate) fn quote(path: &Path) -> String {
 
 /// Resolve symlinks in the existing ancestor without creating the missing suffix.
 fn resolved_path(path: &Path) -> std::io::Result<PathBuf> {
+    #[cfg(windows)]
+    {
+        use std::path::Component;
+        let mut prefix = PathBuf::new();
+        for part in path.components() {
+            if part == Component::ParentDir && !prefix.as_os_str().is_empty() {
+                // Win32 normalizes `..` before opening, even if the component is missing.
+                let metadata = prefix.metadata().map_err(|error| {
+                    std::io::Error::new(
+                        error.kind(),
+                        format!("{} does not exist", prefix.display()),
+                    )
+                })?;
+                if !metadata.is_dir() {
+                    return Err(std::io::ErrorKind::NotADirectory.into());
+                }
+            }
+            prefix.push(part);
+        }
+    }
     let absolute = std::path::absolute(path)?;
     let mut ancestor = absolute.as_path();
     let mut suffix = Vec::new();
@@ -1044,9 +1065,14 @@ fn app_home(home: Option<PathBuf>, rerun: Rerun) -> Result<PathBuf, Vec<Problem>
                     && p.parent()
                         .is_some_and(|p| p.as_os_str().is_empty() || p.exists())
             });
-            let detail = missing.map_or_else(
-                || e.to_string(),
-                |p| format!("{} does not exist", p.display()),
+            let detail = e.get_ref().map_or_else(
+                || {
+                    missing.map_or_else(
+                        || e.to_string(),
+                        |p| format!("{} does not exist", p.display()),
+                    )
+                },
+                ToString::to_string,
             );
             vec![
                 Problem::new(
@@ -1399,6 +1425,15 @@ fn install_next(installed: &[serde_json::Value]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    fn shell_path(path: impl AsRef<std::path::Path>) -> String {
+        let path = path.as_ref().to_string_lossy();
+        if cfg!(windows) && path.contains('\\') {
+            format!("'{}'", path.replace('\'', "'\"'\"'"))
+        } else {
+            path.into_owned()
+        }
+    }
+
     use super::*;
     use serde_json::json;
 
@@ -1448,6 +1483,7 @@ mod tests {
         assert_eq!(outcome.next.as_deref(), Some(fixes[0]));
     }
 
+    #[cfg(unix)] // Uses fixed absolute Unix paths as the command oracle.
     #[test]
     fn s93_ac2_every_command_has_the_rerun_it_was_given_as() {
         let cwd = std::path::Path::new("/w");
@@ -1529,8 +1565,8 @@ mod tests {
         template::new_mod(&dir, "m").unwrap();
         let rerun = format!(
             "watane-dev add --release 'k/p@0.1.0' --json --dir {} --home {}",
-            dir.display(),
-            home.display()
+            shell_path(&dir),
+            shell_path(&home)
         );
         let outcome = run(Cli {
             json: true,
@@ -1549,8 +1585,8 @@ mod tests {
         let target = home.join("fresh");
         let rerun = format!(
             "watane-dev new --from 'k/p@0.1.0' --json --dir {} --home {}",
-            target.display(),
-            home.display()
+            shell_path(&target),
+            shell_path(&home)
         );
         let outcome = run(Cli {
             json: true,
@@ -1586,7 +1622,7 @@ mod tests {
             outcome.next,
             Some(format!(
                 "Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json --dir {}",
-                dir.display()
+                shell_path(dir)
             ))
         );
     }
@@ -1834,6 +1870,7 @@ mod tests {
         assert!(matches!(parsed.command, Command::Search { text, .. } if text == ["foo"]));
     }
 
+    #[cfg(unix)] // Uses a POSIX symlink fixture.
     #[test]
     fn ac1_missing_home_resolves_existing_symlink_ancestor() {
         let root = tempfile::tempdir().unwrap();
@@ -1942,7 +1979,7 @@ mod tests {
                 checked.next,
                 Some(format!(
                     "Fix the errors, then run: watane-dev check --json --dir {}",
-                    dir.canonicalize().unwrap().display()
+                    shell_path(dir.canonicalize().unwrap())
                 ))
             );
         }
@@ -2055,7 +2092,7 @@ mod tests {
         let tested = test_local(&consumer.canonicalize().unwrap());
         let expected = format!(
             "watane-dev test --json --dir {}",
-            provider.canonicalize().unwrap().display()
+            shell_path(provider.canonicalize().unwrap())
         );
         assert!(!tested.ok);
         assert_eq!(tested.next.as_deref(), Some(expected.as_str()));
@@ -2112,7 +2149,7 @@ mod tests {
             tested.next,
             Some(format!(
                 "watane-dev test --json --dir {}",
-                root.path().join("alpha").canonicalize().unwrap().display()
+                shell_path(root.path().join("alpha").canonicalize().unwrap())
             ))
         );
         assert!(
@@ -2167,6 +2204,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)] // Uses fixed absolute Unix paths as the command oracle.
     #[test]
     fn s86_ac2_reruns_end_in_dir_and_home_only_as_given() {
         use crate::outcome::Code;

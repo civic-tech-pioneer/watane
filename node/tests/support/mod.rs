@@ -147,6 +147,7 @@ impl Alice {
 
 /// Sockets of this process; `/dev/fd` exists on Linux and macOS, and a stat of
 /// `/dev/fd/<n>` reports the open file itself.
+#[cfg(unix)] // Counts open sockets through /dev/fd.
 pub fn sockets() -> usize {
     use std::os::unix::fs::FileTypeExt;
     fs::read_dir("/dev/fd")
@@ -257,6 +258,7 @@ pub fn head(node: &Node, channel: &PublicKey) -> Option<(u64, watane_dist::Entry
 /// Runs the test `name` (its full path in the `it` binary) alone in a child process and returns
 /// true; in that child it returns false and the test goes on. For a test that counts the
 /// process's sockets, which every test of the binary shares.
+#[cfg(unix)] // Only the /dev/fd test needs an isolated process.
 pub fn rerun_alone(name: &str) -> bool {
     if std::env::var_os("WATANE_RERUN_ALONE").is_some() {
         return false;

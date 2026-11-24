@@ -8411,6 +8411,7 @@ dependencies = [
  "ureq",
  "watane-dist",
  "watane-host",
+ "watane-log-windows-fs",
  "watane-node",
  "webkit2gtk",
  "workspace-hack",
@@ -8423,6 +8424,7 @@ dependencies = [
  "blake3",
  "clap",
  "claude-codes",
+ "find-msvc-tools",
  "semver",
  "serde",
  "serde_json",
@@ -8452,6 +8454,7 @@ dependencies = [
  "ureq",
  "url",
  "watane-log",
+ "watane-log-windows-fs",
  "watane-pkg",
  "workspace-hack",
 ]
@@ -8477,6 +8480,7 @@ dependencies = [
  "wasmtime-wasi",
  "watane-host",
  "watane-log",
+ "watane-log-windows-fs",
  "watane-pkg",
  "wit-parser",
  "workspace-hack",
@@ -8510,8 +8514,16 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "unicode-normalization",
+ "watane-log-windows-fs",
  "workspace-hack",
  "zeroize",
+]
+
+[[package]]
+name = "watane-log-windows-fs"
+version = "0.1.0"
+dependencies = [
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8537,6 +8549,7 @@ dependencies = [
  "tokio",
  "url",
  "watane-log",
+ "watane-log-windows-fs",
  "workspace-hack",
  "zeroize",
 ]

@@ -58,8 +58,8 @@ fn ac2_missing_app_repeats_quoted_search_with_absolute_home() {
     assert_eq!(
         value["next"],
         format!(
-            "watane-dev search --json 'Alice'\"'\"'s' reading --publisher 'bad key' --interface 'mods:books/api' --home '{}/missing home'",
-            root.path().canonicalize().unwrap().display()
+            "watane-dev search --json 'Alice'\"'\"'s' reading --publisher 'bad key' --interface 'mods:books/api' --home {}",
+            crate::support::shell_path(root.path().canonicalize().unwrap().join("missing home"))
         )
     );
 }
@@ -159,7 +159,7 @@ fn s34_no_index_next() {
             if indexes == 0 {
                 format!(
                     "Ask the person to add an index in the watane app, then run: watane-dev search --json reading --home {}",
-                    home.path().canonicalize().unwrap().display()
+                    crate::support::shell_path(home.path().canonicalize().unwrap())
                 )
             } else {
                 "Try other words, or search with --interface <name>: watane-dev search --json <other words>".to_string()
@@ -292,7 +292,7 @@ fn ac5_search_error_next_is_the_fix() {
         value["next"],
         format!(
             "The watane app could not complete this command; ask the person to check the watane app, then run: watane-dev search --json reading --home {}",
-            home.path().canonicalize().unwrap().display()
+            crate::support::shell_path(home.path().canonicalize().unwrap())
         )
     );
     assert_eq!(value["next"], value["errors"][0]["fix"]);
@@ -326,7 +326,7 @@ fn ac2_preview_is_refused_before_search() {
         value["next"],
         format!(
             "watane-dev search --json reading --home {}",
-            home.path().canonicalize().unwrap().display()
+            crate::support::shell_path(home.path().canonicalize().unwrap())
         )
     );
     assert!(!home.path().join("requests").exists());
@@ -362,7 +362,7 @@ fn ac2_search_app_failure_names_app() {
         assert_eq!(code, if status == 503 { 3 } else { 4 }, "{value}");
         let rerun = format!(
             "watane-dev search --json books --home {}",
-            home.path().canonicalize().unwrap().display()
+            crate::support::shell_path(home.path().canonicalize().unwrap())
         );
         assert_eq!(
             value["errors"][0]["code"],
@@ -418,7 +418,10 @@ fn ac6_search_next_names_home_only_when_given() {
             format!(
                 "watane-dev search --json reading{}",
                 if explicit {
-                    format!(" --home {}", home.canonicalize().unwrap().display())
+                    format!(
+                        " --home {}",
+                        crate::support::shell_path(home.canonicalize().unwrap())
+                    )
                 } else {
                     String::new()
                 }
@@ -442,7 +445,7 @@ fn ac4_search_with_two_words_and_no_results_tries_the_first_word() {
         value["next"],
         format!(
             "Try fewer words: watane-dev search --json reading --home {}",
-            home.path().canonicalize().unwrap().display()
+            crate::support::shell_path(home.path().canonicalize().unwrap())
         )
     );
 }
@@ -462,7 +465,7 @@ fn ac4_quoted_two_word_argument_counts_two_words() {
         value["next"],
         format!(
             "Try fewer words: watane-dev search --json reading --home {}",
-            home.path().canonicalize().unwrap().display()
+            crate::support::shell_path(home.path().canonicalize().unwrap())
         )
     );
 }

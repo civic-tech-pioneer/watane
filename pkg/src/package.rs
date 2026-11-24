@@ -338,13 +338,13 @@ fn lstat(root: &Path, relative: &str) -> Result<Option<crate::open::Stat>, Packa
 }
 
 fn create_dir(path: &Path) -> std::io::Result<()> {
-    let mut builder = fs::DirBuilder::new();
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o755)
-    };
-    builder.create(path)
+        fs::DirBuilder::new().mode(0o755).create(path)
+    }
+    #[cfg(windows)]
+    fs::create_dir(path)
 }
 
 // Set the final mode explicitly so a restrictive umask cannot change the result.

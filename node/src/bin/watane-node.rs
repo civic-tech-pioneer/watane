@@ -375,16 +375,27 @@ fn join(home: &Path, code: &str, replace: bool, bind: Option<SocketAddr>) -> Res
 /// Waits for SIGINT or SIGTERM on a runtime that does nothing else. The signals are
 /// registered when this returns, so one that comes later is not lost.
 fn signals() -> Result<impl FnOnce(), Fail> {
+    #[cfg(unix)]
     use tokio::signal::unix::{SignalKind, signal};
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|e| failed(e.to_string()))?;
+    #[cfg(unix)]
     let (mut int, mut term) = rt
         .block_on(async {
             Ok::<_, std::io::Error>((
                 signal(SignalKind::interrupt())?,
                 signal(SignalKind::terminate())?,
+            ))
+        })
+        .map_err(|e| failed(e.to_string()))?;
+    #[cfg(windows)]
+    let (mut int, mut term) = rt
+        .block_on(async {
+            Ok::<_, std::io::Error>((
+                tokio::signal::windows::ctrl_c()?,
+                tokio::signal::windows::ctrl_break()?,
             ))
         })
         .map_err(|e| failed(e.to_string()))?;

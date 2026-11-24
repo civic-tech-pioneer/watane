@@ -1,5 +1,6 @@
 #![allow(clippy::unwrap_used, reason = "tests may panic")]
 
+#[cfg(unix)]
 use std::os::unix::fs::{PermissionsExt, symlink};
 use watane_log::{Error, Log};
 
@@ -24,6 +25,7 @@ fn ac1_regular_file_is_not_a_directory() {
     assert_eq!(e.to_string(), format!("{} is not a directory", f.display()));
 }
 
+#[cfg(unix)] // Uses POSIX symlinks and mode bits.
 #[test]
 fn ac2_symlink_dir_and_directory_key() {
     let t = dir();
@@ -71,6 +73,7 @@ fn ac3_empty_path() {
     assert_eq!(e.to_string(), "the log directory path is empty");
 }
 
+#[cfg(unix)] // Uses a POSIX FIFO.
 #[test]
 fn s91_2_ac2_fifo_key_is_not_plain_and_does_not_hang() {
     let d = dir();
@@ -100,6 +103,7 @@ fn s91_2_ac2_fifo_key_is_not_plain_and_does_not_hang() {
     ));
 }
 
+#[cfg(unix)] // Uses a POSIX dangling symlink.
 #[test]
 fn s91_2_ac1_dangling_key_link_is_not_plain() {
     let d = dir();
@@ -126,6 +130,7 @@ fn s91_2_ac1_dangling_key_link_is_not_plain() {
     );
 }
 
+#[cfg(unix)] // Uses an AF_UNIX socket pathname.
 #[test]
 fn s91_2_ac2_socket_key_is_not_plain() {
     let d = dir();

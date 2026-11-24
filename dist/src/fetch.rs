@@ -39,9 +39,11 @@ impl Dist {
     }
     pub(crate) fn cache_write(&self, package: &Package) -> Result<bool, DistError> {
         let path = self.cache_path(&package.id());
-        let existed = path
-            .try_exists()
-            .map_err(|source| site::io(&path, source))?;
+        #[cfg(unix)]
+        let existed = path.try_exists();
+        #[cfg(windows)]
+        let existed = site::retry_sharing(|| path.try_exists());
+        let existed = existed.map_err(|source| site::io(&path, source))?;
         site::write_equal(&path, package.as_bytes(), 0o600)?;
         Ok(!existed)
     }

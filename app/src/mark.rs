@@ -16,7 +16,16 @@ pub fn read_or_create(home: &Path) -> std::io::Result<String> {
     use std::io::{self, Write};
     let directory = home.join("app");
     let path = directory.join("mark");
-    match fs::read(&path) {
+    #[cfg(unix)]
+    let stored = fs::read(&path);
+    #[cfg(windows)]
+    let stored = (|| {
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        watane_log_windows_fs::open_private_file(&path, false)?.read_to_end(&mut bytes)?;
+        Ok::<_, io::Error>(bytes)
+    })();
+    match stored {
         Ok(bytes) => {
             if let Ok(text) = std::str::from_utf8(&bytes)
                 && let Some(mark) = text.strip_suffix('\n')
@@ -38,18 +47,23 @@ pub fn read_or_create(home: &Path) -> std::io::Result<String> {
         WORDS[usize::from(random[0]) % 64],
         WORDS[usize::from(random[1]) % 64]
     );
-    let mut options = fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600)
+    let mut file = {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        file
     };
-    let mut file = options.open(path)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        file.set_permissions(fs::Permissions::from_mode(0o600))?
+    #[cfg(windows)]
+    let mut file = {
+        let file = watane_log_windows_fs::open_or_create_private_file(&path)?;
+        file.set_len(0)?;
+        file
     };
     writeln!(file, "{mark}")?;
     Ok(mark)

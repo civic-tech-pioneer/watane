@@ -27,8 +27,6 @@ jobs:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 75
-    # Windows does not build yet (factory/README.md, "Windows"): it reports, it does not block.
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -57,6 +55,8 @@ jobs:
         run: rustup show active-toolchain || rustup toolchain install
       # Saved from every ref: a PR's fix push reuses its own cache; main's serves every new PR.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-on-failure: ${{ runner.os == 'Windows' }}
       - name: dev's vendor folder (git-ignored; dev's build tests need it)
         shell: bash
         run: dev/scripts/vendor.sh
@@ -68,7 +68,13 @@ jobs:
         shell: bash
         run: |
           # dev's tests run the real watane; tests never touch the runner's home.
-          export WATANE_BIN="$PWD/target/debug/watane"
+          WATANE_BIN="$PWD/target/debug/watane"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            WATANE_BIN="$WATANE_BIN.exe"
+            export WATANE_TEST_BASH="$(cygpath -m "$(command -v bash)")"
+            export CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER="pwsh -NoProfile -File $(cygpath -m "$PWD/.github/scripts/windows-test.ps1")"
+          fi
+          export WATANE_BIN
           export WATANE_HOME="$RUNNER_TEMP/watane-home"; mkdir -p "$WATANE_HOME"
           # Tests' scratch (install's shared fakes) is reused when present; a cached partial
           # copy made 129 install tests fail. It is never worth caching.

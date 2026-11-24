@@ -117,8 +117,11 @@ mod tests {
         let json = serde_json::to_value(&outcome).unwrap();
         assert!(json["result"]["fake_claude"].is_null());
         assert_eq!(json["warnings"][0]["code"], "preview.fake_claude_missing");
-        let program = temp.path().join("fake-claude");
+        let program = temp
+            .path()
+            .join(crate::toolchain::program_name("fake-claude"));
         std::fs::write(&program, "x").unwrap();
+        #[cfg(unix)] // A Unix executable fixture needs execute bits.
         std::fs::set_permissions(
             &program,
             std::os::unix::fs::PermissionsExt::from_mode(0o755),

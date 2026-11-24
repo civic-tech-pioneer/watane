@@ -263,11 +263,13 @@ fn keep_package(folder: &Path, package: &watane_pkg::Package) -> Result<(), Prob
             if path == Path::new(".git") {
                 continue;
             }
-            let text = path.to_string_lossy();
+            let text = path
+                .to_string_lossy()
+                .replace(std::path::MAIN_SEPARATOR, "/");
             let ty = fs::symlink_metadata(entry.path())?.file_type();
             if ty.is_dir() && paths.iter().any(|p| p.starts_with(&format!("{text}/"))) {
                 prune(dir, &path, paths)?;
-            } else if !paths.contains(&text.as_ref()) || !ty.is_file() {
+            } else if !paths.contains(&text.as_str()) || !ty.is_file() {
                 if ty.is_dir() {
                     fs::remove_dir_all(entry.path())?;
                 } else {

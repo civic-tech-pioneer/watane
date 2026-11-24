@@ -285,16 +285,7 @@ impl Log {
             "DELETE FROM meta WHERE key='unconfirmed' AND value=?1",
             [author.as_bytes()],
         )?;
-        let path = dir.join("identity.key");
-        std::fs::remove_file(&path).map_err(|source| Error::Io { path, source })?;
-        // SigningKey zeroizes on drop. Stop signing even if the following sync fails.
-        *key = None;
-        std::fs::File::open(&*dir)
-            .and_then(|f| f.sync_all())
-            .map_err(|source| Error::Io {
-                path: dir.clone(),
-                source,
-            })?;
+        identity::remove(dir, key)?;
         tx.commit()?;
         Ok(())
     }

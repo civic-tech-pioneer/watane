@@ -109,16 +109,16 @@ fn ac2_no_app_precedes_pipeline() {
         value["errors"][0]["fix"],
         format!(
             "Start the watane app, then run: watane-dev publish --json --dir {} --home {} --wait 17",
-            home.display(),
-            home.display()
+            crate::support::shell_path(&home),
+            crate::support::shell_path(&home)
         )
     );
     assert_eq!(
         value["next"],
         format!(
             "watane-dev publish --json --dir {} --home {} --wait 17",
-            home.display(),
-            home.display()
+            crate::support::shell_path(&home),
+            crate::support::shell_path(&home)
         )
     );
     assert!(!home.join("build-cache").exists());
@@ -191,8 +191,8 @@ fn ac5_failed_pipeline_sends_nothing() {
     assert_eq!(value["errors"][0]["code"], "mod.invalid");
     let fix = format!(
         "Correct mod.toml according to the reported rule, then run: watane-dev publish --json --dir {} --home {}",
-        dir.display(),
-        home.path().canonicalize().unwrap().display()
+        crate::support::shell_path(dir),
+        crate::support::shell_path(home.path().canonicalize().unwrap())
     );
     assert_eq!(value["errors"][0]["fix"], json!(fix), "{value}");
     assert_eq!(value["next"], json!(fix), "{value}");
@@ -250,8 +250,8 @@ fn ac4_declined_names_publishing_and_asks_before_retry() {
         value["errors"][0]["fix"],
         format!(
             "The person declined in the app. Ask them, then run: watane-dev publish --json --dir {} --home {}",
-            dir.display(),
-            home.path().canonicalize().unwrap().display()
+            crate::support::shell_path(dir),
+            crate::support::shell_path(home.path().canonicalize().unwrap())
         )
     );
     assert_eq!(value["next"], value["errors"][0]["fix"]);
@@ -294,16 +294,16 @@ fn ac2_existing_version_reports_release_and_link_without_post() {
             value["errors"][0]["fix"],
             format!(
                 "This version is already published. To publish changes, raise the version in wit/world.wit, then run: watane-dev publish --json --dir {} --home {}",
-                dir.display(),
-                home.path().canonicalize().unwrap().display()
+                crate::support::shell_path(&dir),
+                crate::support::shell_path(home.path().canonicalize().unwrap())
             )
         );
         assert_eq!(
             value["next"],
             format!(
                 "Raise the version in wit/world.wit, then run: watane-dev publish --json --dir {} --home {}",
-                dir.display(),
-                home.path().canonicalize().unwrap().display()
+                crate::support::shell_path(&dir),
+                crate::support::shell_path(home.path().canonicalize().unwrap())
             )
         );
         assert_eq!(
@@ -366,8 +366,8 @@ fn ac2_missing_link_then_retry_recovers_link() {
         value["next"],
         format!(
             "Ask the person to set your site's URL in the watane app, then run: watane-dev publish --json --dir {} --home {}",
-            value["dir"].as_str().unwrap(),
-            home.path().canonicalize().unwrap().display()
+            crate::support::shell_path(value["dir"].as_str().unwrap()),
+            crate::support::shell_path(home.path().canonicalize().unwrap())
         )
     );
     fs::write(
@@ -420,13 +420,13 @@ fn ac3_local_provider_next_preserves_home_and_quotes_paths() {
         assert_eq!(output.status.code(), Some(1));
         let value: Value = serde_json::from_slice(&output.stdout).unwrap();
         let mut expected = format!(
-            r#"watane-dev publish --json --dir '{}/Bob'"'"'s provider'"#,
-            root.path().canonicalize().unwrap().display()
+            "watane-dev publish --json --dir {}",
+            crate::support::shell_path(provider.canonicalize().unwrap())
         );
         if home_arg.is_some() {
             expected.push_str(&format!(
-                r#" --home '{}/Bob'"'"'s home'"#,
-                home.parent().unwrap().canonicalize().unwrap().display()
+                " --home {}",
+                crate::support::shell_path(home.canonicalize().unwrap())
             ));
         }
         assert_eq!(value["next"], expected);
@@ -460,6 +460,7 @@ fn ac6_fake_lists_published_releases_in_this_home_and_after_restart() {
     assert_eq!(releases(home.path()), expected);
 }
 
+#[cfg(unix)] // Uses a POSIX symlink fixture.
 #[test]
 fn ac1_publish_paths_match_explicit_and_default_symlink_home() {
     let root = tempfile::tempdir().unwrap();
@@ -498,9 +499,9 @@ fn ac1_publish_paths_match_explicit_and_default_symlink_home() {
                     value["next"],
                     format!(
                         "watane-dev publish --json --dir {}{}",
-                        dir.display(),
+                        crate::support::shell_path(&dir),
                         if explicit {
-                            format!(" --home {}", resolved.display())
+                            format!(" --home {}", crate::support::shell_path(&resolved))
                         } else {
                             String::new()
                         }
@@ -532,6 +533,7 @@ fn ac4_accepted_fake_publish_completes_under_five_seconds() {
     }
 }
 
+#[cfg(unix)] // Uses a POSIX symlink fixture.
 #[test]
 fn ac1_default_home_and_publish_retry_paths_are_canonical() {
     let root = tempfile::tempdir().unwrap();
@@ -560,13 +562,14 @@ fn ac1_default_home_and_publish_retry_paths_are_canonical() {
                 value["next"],
                 format!(
                     "Raise the version in wit/world.wit, then run: watane-dev publish --json --dir {}",
-                    dir.display()
+                    crate::support::shell_path(&dir)
                 )
             );
         }
     }
 }
 
+#[cfg(unix)] // Uses a POSIX symlink fixture.
 #[test]
 fn ac1_publish_raced_version_and_no_answer_keep_canonical_retry_paths() {
     for scenario in ["race", "publish_timeout", "releases_timeout"] {
@@ -637,8 +640,8 @@ fn ac1_publish_raced_version_and_no_answer_keep_canonical_retry_paths() {
             value["next"],
             format!(
                 "{prefix}watane-dev publish --json --dir {} --home {} --no-source --wait {}",
-                dir.display(),
-                root.path().canonicalize().unwrap().display(),
+                crate::support::shell_path(dir),
+                crate::support::shell_path(root.path().canonicalize().unwrap()),
                 if timeout { 2 } else { 1 }
             )
         );
@@ -654,8 +657,8 @@ fn regress_s93_declined_and_version_exists_fixes_end_in_a_command() {
     let rerun = |dir: &Path, home: &Path| {
         format!(
             "then run: watane-dev publish --json --dir {} --home {}",
-            dir.display(),
-            home.canonicalize().unwrap().display()
+            crate::support::shell_path(dir),
+            crate::support::shell_path(home.canonicalize().unwrap())
         )
     };
     let root = tempfile::tempdir().unwrap();

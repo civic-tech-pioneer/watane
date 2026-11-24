@@ -193,7 +193,7 @@ fn ac1_derive_source_guides_origin_mentions_and_default_slug() {
         v["next"],
         format!(
             "Replace reading-list with ratings (and reading_list with ratings) at each result.mentions entry, then run: watane-dev test --json --dir {}",
-            v["dir"].as_str().unwrap()
+            crate::support::shell_path(v["dir"].as_str().unwrap())
         )
     );
     let (code, v) = f.run_process(&["new", "--from", &link("reading-list")]);
@@ -204,7 +204,7 @@ fn ac1_derive_source_guides_origin_mentions_and_default_slug() {
         v["next"],
         format!(
             "Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev test --json --dir {}",
-            v["dir"].as_str().unwrap()
+            crate::support::shell_path(v["dir"].as_str().unwrap())
         )
     );
 }
@@ -229,14 +229,9 @@ fn ac2_no_source_writes_nothing() {
         format!(
             "Build on a release that includes its source, or make a new mod that depends on this one: watane-dev new ratings --dir {dest} && watane-dev add --release '{}' --dir {dest} --home {}",
             link("reading-list"),
-            f.home.canonicalize().unwrap().display(),
-            dest = f
-                .root
-                .path()
-                .canonicalize()
-                .unwrap()
-                .join("ratings")
-                .display(),
+            crate::support::shell_path(f.home.canonicalize().unwrap()),
+            dest =
+                crate::support::shell_path(f.root.path().canonicalize().unwrap().join("ratings")),
         )
     );
     assert!(!f.root.path().join("ratings").exists());
@@ -303,7 +298,7 @@ fn ac4_add_release_records_publisher_wit_link_and_rejects_bad_target() {
             v["next"],
             format!(
                 "Copy the lines that the mod needs from result.imports and result.subscriptions into the world in wit/world.wit (result.subscriptions holds `export` lines: they are how the mod answers the provider's events and collects; each line is a grant that the participant approves; contract tests use a fake of it, see AGENTS.md), then run: watane-dev test --json --dir {}",
-                v["dir"].as_str().unwrap()
+                crate::support::shell_path(v["dir"].as_str().unwrap())
             )
         );
     }
@@ -335,8 +330,8 @@ fn ac4_add_release_records_publisher_wit_link_and_rejects_bad_target() {
         v["errors"][0]["fix"],
         format!(
             "Pick the link or release of another mod, then run: watane-dev add --release <link> --dir {} --home {}",
-            own.canonicalize().unwrap().display(),
-            f.home.canonicalize().unwrap().display()
+            crate::support::shell_path(own.canonicalize().unwrap()),
+            crate::support::shell_path(f.home.canonicalize().unwrap())
         )
     );
 }
@@ -400,6 +395,7 @@ fn ac10_fake_fetch_bytes_headers_recording_and_unknown_key() {
     }
 }
 
+#[cfg(unix)] // This recovery command is from the Unix preview pipeline.
 #[test]
 fn ac5_missing_released_cache_has_actionable_fix() {
     let f = Fixture::new();
@@ -431,14 +427,14 @@ fn ac5_missing_released_cache_has_actionable_fix() {
         assert_eq!(out.status.code(), Some(1), "{v}");
         assert_eq!(v["errors"][0]["code"], "mod.release_provider_missing");
         let home = if given {
-            format!(" --home {}", home.display())
+            format!(" --home {}", crate::support::shell_path(&home))
         } else {
             String::new()
         };
         let fix = format!(
             "Start the watane app, then run: watane-dev add --release {} --dir {}{home}",
             release("ratings"),
-            dir.canonicalize().unwrap().display()
+            crate::support::shell_path(dir.canonicalize().unwrap())
         );
         assert_eq!(v["errors"][0]["fix"], fix);
         assert_eq!(
@@ -551,19 +547,23 @@ fn ac5_offline_contract_and_fake_preview_provider_order() {
     let (code, v) = run_mod(&f, &dir, "test", &[], fake);
     assert_eq!(code, 0, "{v}");
     assert_eq!(v["result"]["contract"]["passed"], 1);
-    let (code, v) = run_mod(&f, &dir, "serve", &[], fake);
-    assert_eq!(code, 0, "{v}");
-    let home = PathBuf::from(v["result"]["home"].as_str().unwrap());
-    let request: Value =
-        serde_json::from_slice(&fs::read(home.join("requests/1-install")).unwrap()).unwrap();
-    assert_eq!(run_mod(&f, &dir, "serve", &["--stop"], fake).0, 0);
-    let folders = request["folders"].as_array().unwrap();
-    assert_eq!(folders.len(), 2);
-    assert!(folders[0].as_str().unwrap().contains("/providers/"));
-    assert_eq!(folders[1], json!(dir.canonicalize().unwrap()));
-    assert_eq!(v["result"]["pages"][0]["slug"], "ratings");
-    assert_eq!(v["result"]["pages"][1]["slug"], "stats");
+    #[cfg(unix)] // This part starts and stops a preview using Unix process groups.
+    {
+        let (code, v) = run_mod(&f, &dir, "serve", &[], fake);
+        assert_eq!(code, 0, "{v}");
+        let home = PathBuf::from(v["result"]["home"].as_str().unwrap());
+        let request: Value =
+            serde_json::from_slice(&fs::read(home.join("requests/1-install")).unwrap()).unwrap();
+        assert_eq!(run_mod(&f, &dir, "serve", &["--stop"], fake).0, 0);
+        let folders = request["folders"].as_array().unwrap();
+        assert_eq!(folders.len(), 2);
+        assert!(folders[0].as_str().unwrap().contains("/providers/"));
+        assert_eq!(folders[1], json!(dir.canonicalize().unwrap()));
+        assert_eq!(v["result"]["pages"][0]["slug"], "ratings");
+        assert_eq!(v["result"]["pages"][1]["slug"], "stats")
+    };
 }
+#[cfg(unix)] // The real preview lifecycle uses Unix process-group controls.
 #[test]
 #[ignore = "slow: real preview installs the built consumer and a cached released provider"]
 fn ac5_real_preview_installs_released_provider_before_consumer() {
@@ -721,7 +721,7 @@ fn ac1_derive_keeps_only_logic_wasm_with_explicit_and_default_slug() {
             v["next"],
             format!(
                 "{step}, then run: watane-dev test --json --dir {}",
-                dir_arg.display()
+                crate::support::shell_path(dir_arg)
             )
         );
         assert!(
@@ -885,14 +885,15 @@ fn regress_s93_no_source_fix_runs_as_written() {
     assert_eq!(code, 2, "{v}");
     assert_eq!(v["errors"][0]["code"], "usage.no_source");
     let dest = f.root.path().canonicalize().unwrap().join("ratings");
+    let shell_dest = crate::support::shell_path(&dest);
     let dest = dest.to_str().unwrap();
     let fix = v["errors"][0]["fix"].as_str().unwrap();
-    assert!(fix.contains(&format!("--dir {dest}")), "{fix}");
+    assert!(fix.contains(&format!("--dir {shell_dest}")), "{fix}");
     // The fix's commands, argument by argument: `new <slug> --dir <dest> && add --release ...`
     // (foreman, S93-fix5: the fix makes the mod first, since new --from writes nothing).
     assert!(
         fix.contains(&format!(
-            "watane-dev new ratings --dir {dest} && watane-dev add --release"
+            "watane-dev new ratings --dir {shell_dest} && watane-dev add --release"
         )),
         "{fix}"
     );
@@ -912,6 +913,7 @@ fn regress_s93_no_source_fix_runs_as_written() {
     assert_ne!(v["errors"][0]["code"], "usage.not_a_mod", "{v}");
     assert_eq!(code, 0, "{v}");
 }
+#[cfg(unix)] // Executes the recovery command with POSIX shell paths.
 #[test]
 fn regress_s93_no_source_fix_without_slug_runs_as_written() {
     // `new --from <link>` with no slug: the fix names the release's own slug, so the new mod

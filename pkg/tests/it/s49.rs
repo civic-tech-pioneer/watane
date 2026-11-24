@@ -1,7 +1,10 @@
 #![allow(clippy::unwrap_used, reason = "tests may panic")]
 
+#[cfg(unix)]
 use crate::support;
+#[cfg(unix)]
 use std::fs;
+#[cfg(unix)]
 use std::path::Path;
 use watane_pkg::*;
 
@@ -10,6 +13,7 @@ const GOLDEN: &str = concat!(
     "0866e9df433265eaf0d959c589d82f1c2020d5b07faf7a530b012ec9f62ff87b",
     "189ff4808080f6"
 );
+#[cfg(unix)]
 const LINK: &str = "a symbolic link; replace it with a regular file or directory";
 
 fn hex(s: &str) -> Vec<u8> {
@@ -18,6 +22,7 @@ fn hex(s: &str) -> Vec<u8> {
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
         .collect()
 }
+#[cfg(unix)]
 fn only_link(dir: &Path, part: &str) {
     match Mod::read(dir) {
         Err(ModError::Invalid(v)) => assert_eq!(

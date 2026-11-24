@@ -105,18 +105,12 @@ fn ac1_ac2_template_unit_counts_and_warm_pipeline() {
         .unwrap();
     let before = fs::metadata(&artifact).unwrap().modified().unwrap();
     let f = Fixture::new();
-    // Independent regex oracle; grep is supplied by both supported operating systems.
-    let counted = Command::new("grep")
-        .args(["-Ec", r"#\[test\]"])
-        .arg(f.dir.join("logic/src/lib.rs"))
-        .output()
-        .unwrap();
-    assert!(counted.status.success());
-    let count: u64 = String::from_utf8(counted.stdout)
+    // Count test annotations in the template independently of the Wasm test runner.
+    let count = fs::read_to_string(f.dir.join("logic/src/lib.rs"))
         .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
+        .lines()
+        .filter(|line| line.trim() == "#[test]")
+        .count();
     let (status, v) = output(&mut f.command("test"));
     assert_eq!(status, 0, "{v}");
     assert_eq!(fs::metadata(artifact).unwrap().modified().unwrap(), before);
@@ -170,12 +164,15 @@ fn ac2_panic_names_assert_and_counts_remaining_tests() {
         v["next"],
         "Fix the unit test fails_on_purpose, then run: watane-dev test --json"
     );
-    // The served mod's recovery is a serve run, in the fix as in the next.
-    let (status, v) = output(&mut f.command("serve"));
-    assert_eq!(status, 1, "{v}");
-    let fix = "Fix the unit test fails_on_purpose, then run: watane-dev serve --json";
-    assert_eq!(v["errors"][0]["fix"], fix);
-    assert_eq!(v["next"], fix);
+    #[cfg(unix)] // The preview pipeline requires Unix process-group controls.
+    {
+        // The served mod's recovery is a serve run, in the fix as in the next.
+        let (status, v) = output(&mut f.command("serve"));
+        assert_eq!(status, 1, "{v}");
+        let fix = "Fix the unit test fails_on_purpose, then run: watane-dev serve --json";
+        assert_eq!(v["errors"][0]["fix"], fix);
+        assert_eq!(v["next"], fix)
+    };
 }
 
 #[test]

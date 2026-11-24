@@ -25,7 +25,7 @@ pub fn provider_release(
 ) -> Result<ReleaseRef, Problem> {
     let wit = dir.join("wit/deps").join(slug.as_str());
     for file in files(&wit)? {
-        if file.extension().is_some_and(|e| e == "wit") {
+        if file.ends_with(".wit") {
             let text = fs::read_to_string(wit.join(&file)).map_err(Problem::internal)?;
             if let Ok((_, found, version)) = declaration(&text)
                 && found == *slug
@@ -104,8 +104,8 @@ pub(crate) fn declaration(
     ))
 }
 
-fn files(dir: &Path) -> Result<Vec<PathBuf>, Problem> {
-    fn walk(root: &Path, relative: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
+fn files(dir: &Path) -> Result<Vec<String>, Problem> {
+    fn walk(root: &Path, relative: &Path, out: &mut Vec<String>) -> std::io::Result<()> {
         for entry in fs::read_dir(root.join(relative))? {
             let entry = entry?;
             let path = relative.join(entry.file_name());
@@ -116,14 +116,17 @@ fn files(dir: &Path) -> Result<Vec<PathBuf>, Problem> {
             if ty.is_dir() {
                 walk(root, &path, out)?;
             } else if ty.is_file() {
-                out.push(path);
+                out.push(
+                    path.to_string_lossy()
+                        .replace(std::path::MAIN_SEPARATOR, "/"),
+                );
             }
         }
         Ok(())
     }
     let mut out = Vec::new();
     walk(dir, Path::new(""), &mut out).map_err(Problem::internal)?;
-    out.sort_by(|a, b| a.as_os_str().cmp(b.as_os_str()));
+    out.sort_unstable();
     Ok(out)
 }
 
@@ -403,8 +406,7 @@ pub fn new_from(
     let boundary = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-';
     let mut mentions = Vec::new();
     if slug != release.slug {
-        for path in &paths {
-            let name = path.to_string_lossy();
+        for name in &paths {
             if !(name.starts_with("wit/")
                 && !name.starts_with("wit/deps/")
                 && name.ends_with(".wit")
@@ -414,7 +416,7 @@ pub fn new_from(
             {
                 continue;
             }
-            let Ok(text) = fs::read_to_string(dir.join(path)) else {
+            let Ok(text) = fs::read_to_string(dir.join(name)) else {
                 continue;
             };
             for (line, text) in text.lines().enumerate() {
@@ -432,7 +434,7 @@ pub fn new_from(
         }
     }
     Ok((
-        json!({"slug":slug,"dir":dir,"files":files(dir).map_err(|e|vec![e])?,"origin":release,"from_slug":old,"providers":providers,"mentions":mentions,"fork":fork}),
+        json!({"slug":slug,"dir":dir,"files":paths,"origin":release,"from_slug":old,"providers":providers,"mentions":mentions,"fork":fork}),
         warnings,
     ))
 }
@@ -525,11 +527,7 @@ mod tests {
         fs::create_dir_all(root.path().join("logic/src/a")).unwrap();
         fs::write(root.path().join("logic/src/a-b.rs"), "").unwrap();
         fs::write(root.path().join("logic/src/a/inner.rs"), "").unwrap();
-        let names: Vec<_> = files(root.path())
-            .unwrap()
-            .into_iter()
-            .map(|p| p.to_string_lossy().into_owned())
-            .collect();
+        let names = files(root.path()).unwrap();
         assert_eq!(names, ["logic/src/a-b.rs", "logic/src/a/inner.rs"]);
     }
 

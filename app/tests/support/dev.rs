@@ -91,7 +91,10 @@ impl Github {
     pub fn new(root: &Path, fake_gh: &Path) -> Self {
         std::fs::create_dir_all(root.join("remotes")).unwrap();
         std::fs::create_dir(root.join("bin")).unwrap();
+        #[cfg(unix)]
         std::os::unix::fs::symlink(fake_gh, root.join("bin/gh")).unwrap();
+        #[cfg(windows)]
+        std::fs::copy(fake_gh, root.join("bin/gh.exe")).unwrap();
         std::fs::write(root.join("gitconfig"), format!(
             "[user]\n name = Alice\n email = alice@example.test\n[url \"file://{}/remotes/\"]\n insteadOf = https://github.com/\n", root.display()
         )).unwrap();

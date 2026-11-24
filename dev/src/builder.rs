@@ -31,28 +31,76 @@ pub struct Built {
 fn quoted(path: &Path) -> String {
     toml::Value::String(path.to_string_lossy().into_owned()).to_string()
 }
+#[cfg(windows)]
+fn msvc_linker() -> Option<&'static find_msvc_tools::Tool> {
+    use find_msvc_tools::{Env, EnvGetter, Tool};
+    use std::sync::OnceLock;
+
+    struct SystemDirectories;
+    impl EnvGetter for SystemDirectories {
+        fn get_env(&self, name: &'static str) -> Option<Env> {
+            match name {
+                "ProgramFiles(x86)" | "ProgramFiles" => crate::env::var_os(name).map(Env::Owned),
+                _ => None,
+            }
+        }
+    }
+
+    static LINKER: OnceLock<Option<Tool>> = OnceLock::new();
+    LINKER
+        .get_or_init(|| {
+            find_msvc_tools::find_tool_with_env(
+                std::env::consts::ARCH,
+                "link.exe",
+                &SystemDirectories,
+            )
+        })
+        .as_ref()
+}
+
 pub fn cargo(ctx: &BuildCtx<'_>, copy: &Path, args: &[&str]) -> Command {
     let mut command = Command::new(&ctx.toolchain.cargo);
+    let bin = ctx
+        .toolchain
+        .cargo
+        .parent()
+        .expect("the cargo binary sits in a directory");
+    #[cfg(unix)]
+    let path = format!("{}:/usr/bin:/bin", bin.display());
+    #[cfg(windows)]
+    let path = bin;
     command
         .current_dir(copy.join("logic"))
         .env_clear()
-        .env(
-            "PATH",
-            format!(
-                "{}:/usr/bin:/bin",
-                ctx.toolchain
-                    .cargo
-                    .parent()
-                    .expect("the cargo binary sits in a directory")
-                    .display()
-            ),
-        )
+        .env("PATH", path)
         .env("RUSTC", &ctx.toolchain.rustc)
         .env("CARGO_HOME", ctx.env.cache.join("cargo-home"))
         .env("HOME", ctx.env.cache.join("cargo-home"))
         .env("TMPDIR", ctx.env.cache.join("tmp"))
         .env("CARGO_TERM_COLOR", "never")
         .env("CARGO_INCREMENTAL", "0");
+    #[cfg(windows)]
+    {
+        command
+            .env("USERPROFILE", ctx.env.cache.join("cargo-home"))
+            .env("TEMP", ctx.env.cache.join("tmp"))
+            .env("TMP", ctx.env.cache.join("tmp"));
+        if let Some(root) = crate::env::var_os("SystemRoot") {
+            command.env("SystemRoot", root);
+        }
+        // Cargo builds host-side proc macros before it builds the Wasm.
+        // Discover the SDK without inheriting the caller's PATH or LIB.
+        if let Some(linker) = msvc_linker() {
+            let paths = std::iter::once(bin).chain(linker.path().parent());
+            let path = std::env::join_paths(paths).expect("valid Windows linker search path");
+            command.env("PATH", path);
+            for (name, value) in linker.env() {
+                if name == "LIB" || name == "LIBPATH" {
+                    command.env(name, value);
+                }
+            }
+        }
+    }
     for key in ["SDKROOT", "DEVELOPER_DIR"] {
         if let Some(value) = crate::env::var_os(key) {
             command.env(key, value);
@@ -302,7 +350,9 @@ pub(crate) fn compile(
     }
     // Cargo's binary dep-info can still consider a build fresh after the text .d
     // is removed. Refresh only the copied crate root so rustc emits new dep-info.
-    fs::File::open(copy.join("logic/src/lib.rs"))
+    fs::OpenOptions::new()
+        .write(true)
+        .open(copy.join("logic/src/lib.rs"))
         .and_then(|file| file.set_modified(SystemTime::now()))
         .map_err(|e| vec![Problem::internal(e)])?;
     if args[0] == "build" {
@@ -314,6 +364,7 @@ pub(crate) fn compile(
     let mut errors = Vec::new();
     let mut siblings = BTreeSet::new();
     let mut artifacts = Vec::new();
+    let manifest = normalized(&copy.join("logic/Cargo.toml"));
     for line in output.stdout.split(|b| *b == b'\n') {
         let Ok(value) = serde_json::from_slice::<Value>(line) else {
             continue;
@@ -336,7 +387,7 @@ pub(crate) fn compile(
             }
             && value["manifest_path"]
                 .as_str()
-                .is_some_and(|p| Path::new(p) == copy.join("logic/Cargo.toml"))
+                .is_some_and(|p| normalized(Path::new(p)) == manifest)
         {
             let artifact = if args[0] == "test" {
                 value["executable"].as_str()
@@ -660,7 +711,11 @@ fn outside_reads(dep_info: &str, allowed: &[&Path]) -> Vec<PathBuf> {
         let mut word = String::new();
         let mut paths = Vec::new();
         while let Some(ch) = chars.next() {
-            if ch == '\\'
+            if cfg!(windows) && word.is_empty() && ch == '\\' && chars.peek() == Some(&'\\') {
+                // A verbatim or UNC path starts with two separators, even in dep-info.
+                while chars.next_if_eq(&'\\').is_some() {}
+                word.push_str(r"\\");
+            } else if ch == '\\'
                 && chars
                     .peek()
                     .is_some_and(|c| c.is_whitespace() || *c == '\\' || *c == '#')
@@ -744,6 +799,7 @@ mod tests {
         let data = reads_outside_problem(Path::new("/x/data.bin"));
         assert!(data.fix.unwrap().starts_with("Remove the include_bytes!,"));
     }
+    #[cfg(unix)] // Uses /usr/bin/false to drive both failed Cargo builds.
     #[test]
     fn ac1_release_and_unit_build_progress_stays_on_stderr() {
         const CHILD: &str = "WATANE_TEST_BUILD_PROGRESS";
@@ -828,6 +884,24 @@ mod tests {
             ]
         );
     }
+    #[cfg(windows)] // The compiler emits Windows verbatim paths in dep-info.
+    #[test]
+    fn s110_dep_info_preserves_the_verbatim_path_prefix() {
+        let root = tempfile::tempdir().unwrap();
+        let copy = root.path().join("copy");
+        fs::create_dir(&copy).unwrap();
+        let inside = copy.join("inside.wit");
+        let outside = root.path().join("outside.wit");
+        for path in [&inside, &outside] {
+            fs::write(path, "").unwrap();
+        }
+        let inside = inside.canonicalize().unwrap();
+        let outside = outside.canonicalize().unwrap();
+        let dep_path = |path: &Path| path.to_str().unwrap().replace(' ', r"\ ");
+        let dep_info = format!("module.wasm: {} {}", dep_path(&inside), dep_path(&outside));
+        assert_eq!(outside_reads(&dep_info, &[&copy]), vec![outside]);
+    }
+
     #[test]
     fn ac6_cargo_config_quotes_paths_and_restricts_environment() {
         let env = Env {
@@ -873,6 +947,18 @@ mod tests {
                 "CARGO_INCREMENTAL",
                 "SDKROOT",
                 "DEVELOPER_DIR",
+                #[cfg(windows)]
+                "USERPROFILE",
+                #[cfg(windows)]
+                "TEMP",
+                #[cfg(windows)]
+                "TMP",
+                #[cfg(windows)]
+                "SystemRoot",
+                #[cfg(windows)]
+                "LIB",
+                #[cfg(windows)]
+                "LIBPATH",
             ]
             .contains(k)
         }));
@@ -907,6 +993,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)] // Uses a POSIX symlink fixture.
     #[test]
     fn ac1_generate_literal_is_resolved_as_text() {
         let copy = Path::new("/nonexistent/c/build/me");
@@ -940,6 +1027,7 @@ mod tests {
         assert_eq!(generate_paths(&src, &copy), [out]);
     }
 
+    #[cfg(unix)] // Uses a POSIX symlink fixture.
     #[test]
     fn s93_fix6_generate_scan_follows_no_symlink() {
         let temp = tempfile::tempdir().unwrap();
@@ -1040,6 +1128,7 @@ mod tests {
             [PathBuf::from("/c/build/other/wit")]
         );
     }
+    #[cfg(unix)] // Uses a POSIX symlink fixture.
     #[test]
     fn s93_fix2_sibling_paths_are_real_siblings() {
         let (b, c) = (Path::new("/c/build"), Path::new("/c/build/me"));

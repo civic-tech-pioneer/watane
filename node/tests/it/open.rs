@@ -54,17 +54,19 @@ fn s1_refuses_host_home_and_home_with_identity() {
 
 #[test]
 fn s2_net_off_follow_and_fetch_without_a_udp_socket() {
+    #[cfg(unix)] // Isolate the /dev/fd socket count from other tests.
     if support::rerun_alone("open::s2_net_off_follow_and_fetch_without_a_udp_socket") {
         return;
     }
-    let udp = sockets;
     let alice = Alice::new();
     let home = tempfile::tempdir().unwrap();
-    let before = udp();
+    #[cfg(unix)] // /dev/fd socket counts are available on Unix.
+    let before = sockets();
     let bob = Node::open(home.path(), Approve::new(), Options::default()).unwrap();
     // Net off opens no socket; the follow below uses TCP to the web host, which a
     // pooled connection may keep open, so the count is taken at the open.
-    assert_eq!(udp(), before, "a socket exists while net is off");
+    #[cfg(unix)] // Count descriptors on Unix; fetch coverage also runs on Windows.
+    assert_eq!(sockets(), before, "a socket exists while net is off");
     bob.follow(&alice.link()).unwrap();
     let fetched = bob.fetch(&alice.published.info.reference).unwrap();
     assert_eq!(

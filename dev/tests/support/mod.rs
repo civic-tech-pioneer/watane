@@ -70,3 +70,13 @@ fn warm() -> (PathBuf, std::fs::File) {
     lock.lock_shared().unwrap();
     (temp, lock)
 }
+
+/// The path token expected in a shell recovery command.
+pub fn shell_path(path: impl AsRef<Path>) -> String {
+    let path = path.as_ref().to_string_lossy();
+    if path.contains(['\\', ' ', '\'']) {
+        format!("'{}'", path.replace('\'', "'\"'\"'"))
+    } else {
+        path.into_owned()
+    }
+}

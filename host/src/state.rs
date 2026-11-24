@@ -143,6 +143,7 @@ impl State {
             .map(|v| v.value().to_owned()))
     }
     /// Records the owner of a new scratch workspace.
+    #[cfg(any(unix, test))] // Scratch records belong to the Unix Claude runner.
     pub fn scratch_add(&self, id: &str, owner: &str) -> Result<(), CallError> {
         let db = self.database(true)?.expect("created database");
         let txn = db.begin_write().map_err(CallError::internal)?;
@@ -154,6 +155,7 @@ impl State {
         Ok(())
     }
     /// Deletes the row of one scratch workspace (19.3, Folders, Lifetime).
+    #[cfg(any(unix, test))] // Scratch records belong to the Unix Claude runner.
     pub fn scratch_delete(&self, id: &str) -> Result<(), CallError> {
         let Some(db) = self.database(false)? else {
             return Ok(());

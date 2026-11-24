@@ -219,5 +219,8 @@ fn ac4_only_a_5xx_is_retried() {
     let link = Link::new(key, &dead, None).unwrap();
     let start = Instant::now();
     assert!(matches!(bob.follow(&link), Err(DistError::Network { .. })));
+    #[cfg(unix)] // Windows may take longer to report an immediately refused TCP connection.
     assert!(start.elapsed() < Duration::from_millis(200));
+    #[cfg(windows)]
+    assert!(start.elapsed() < Duration::from_secs(3));
 }

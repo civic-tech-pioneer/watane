@@ -17,7 +17,7 @@ pub struct App {
     input: Mutex<ChildStdin>,
     replies: Replies,
     next: AtomicU64,
-    stderr: std::fs::File,
+    stderr: tempfile::NamedTempFile,
 }
 pub struct AskHandle {
     reply: Mutex<mpsc::Receiver<Value>>,
@@ -142,9 +142,13 @@ impl App {
         Self::spawn(home, &[], "hidden", port)
     }
     pub fn stderr(&self) -> String {
-        use std::os::unix::fs::FileExt;
-        let mut bytes = vec![0; self.stderr.metadata().unwrap().len() as usize];
-        self.stderr.read_exact_at(&mut bytes, 0).unwrap();
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        self.stderr
+            .reopen()
+            .unwrap()
+            .read_to_end(&mut bytes)
+            .unwrap();
         String::from_utf8_lossy(&bytes).into_owned()
     }
 
@@ -170,11 +174,11 @@ impl App {
         Self::launch(shell, Path::new(""), 0)
     }
     fn launch(mut command: Command, home: &Path, port: u16) -> App {
-        let stderr = tempfile::tempfile().unwrap();
+        let stderr = tempfile::NamedTempFile::new().unwrap();
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(stderr.try_clone().unwrap())
+            .stderr(stderr.reopen().unwrap())
             .spawn()
             .unwrap();
         let input = Mutex::new(child.stdin.take().unwrap());

@@ -34,6 +34,7 @@ fn ac2_main_requires_boolean_and_page() {
     expect(no_page.path(), "`main` needs a page (ui/index.html)");
 }
 
+#[cfg(unix)] // Uses a POSIX symlink fixture.
 #[test]
 fn main_with_linked_ui_gets_only_the_path_violation() {
     let dir = with_main("true");
