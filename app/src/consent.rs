@@ -69,11 +69,37 @@ pub enum Request {
         link: String,
         release: String,
     },
+    /// One agent consent (19.2). `origin` is the origin client; it asks no manager's request,
+    /// so there is no stop.
+    Agent { what: AgentWhat, origin: Asker },
     Sign {
         statement: Statement,
         signer: Party,
         details: Vec<Detail>,
     },
+}
+/// What an agent consent is for (19.2). `provider` is written as a provider is (section 4).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AgentWhat {
+    Workspace {
+        folder: String,
+        #[serde(default)]
+        profile: Option<String>,
+        provider: String,
+    },
+    Account,
+    Toolset {
+        name: String,
+        functions: Vec<String>,
+    },
+}
+/// One consent a mod holds, for the details (19.2): `key` is the host's `what` text.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ConsentLine {
+    pub key: String,
+    pub kind: String,
+    pub text: String,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Asker {
@@ -135,6 +161,9 @@ pub struct PlanMod {
     pub origin: Option<String>,
     #[serde(default)]
     pub binds: Vec<String>,
+    /// The providers (as `{provider}` of section 4) of Claude Code that its calls reach (19.2).
+    #[serde(default)]
+    pub agents_via: Vec<String>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Party {
@@ -218,7 +247,11 @@ impl Request {
             (Self::Pick { .. }, Some(choice)) if withheld.is_empty() => Ok(Answer::Pick { choice }),
             (Self::Pick { .. }, _) | (_, Some(_)) => Err(ConsentError::WrongAnswer),
             (
-                Self::Join { .. } | Self::Reach { .. } | Self::Manage { .. } | Self::Read { .. },
+                Self::Join { .. }
+                | Self::Reach { .. }
+                | Self::Manage { .. }
+                | Self::Read { .. }
+                | Self::Agent { .. },
                 None,
             ) if !withheld.is_empty() => Err(ConsentError::WrongAnswer),
             (_, None) => Ok(Answer::Approve { withheld }),
@@ -365,7 +398,8 @@ impl Broker {
                     Request::Join { .. }
                     | Request::Reach { .. }
                     | Request::Manage { .. }
-                    | Request::Read { .. },
+                    | Request::Read { .. }
+                    | Request::Agent { .. },
                     Answer::Approve { withheld },
                 ) if !withheld.is_empty() => {
                     return Err(ConsentError::WrongAnswer);
@@ -387,7 +421,8 @@ impl Broker {
                         | Request::Join { .. }
                         | Request::Reach { .. }
                         | Request::Manage { .. }
-                        | Request::Read { .. } => false,
+                        | Request::Read { .. }
+                        | Request::Agent { .. } => false,
                     };
                     if !known {
                         return Err(ConsentError::UnknownGrant(format!(
@@ -632,6 +667,67 @@ mod tests {
             Poll::Ready(())
         })
         .await;
+    }
+
+    fn agent() -> Request {
+        serde_json::from_value(
+            json!({"kind":"agent","what":{"kind":"workspace","folder":"/w",
+            "profile":null,"provider":"claude (local)"},
+            "origin":{"local":"desk","name":"Desk","publisher":null}}),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn ac2_agent_takes_approve_or_deny_only() {
+        let request = agent();
+        let withheld = || {
+            vec![Withheld {
+                local: "desk".into(),
+                key: "storage".into(),
+            }]
+        };
+        assert_eq!(
+            request.answer(true, None, vec![]).unwrap(),
+            Answer::Approve { withheld: vec![] }
+        );
+        assert_eq!(
+            request.answer(false, None, withheld()).unwrap(),
+            Answer::Deny
+        );
+        for (choice, withheld) in [(Some("x".to_owned()), vec![]), (None, withheld())] {
+            assert!(matches!(
+                request.answer(true, choice, withheld),
+                Err(ConsentError::WrongAnswer)
+            ));
+        }
+        for approve in [false, true] {
+            assert!(matches!(
+                request.answer_with_stop(approve, None, vec![], true),
+                Err(ConsentError::WrongAnswer)
+            ));
+        }
+        // The broker refuses the same answers a second time, at the queue.
+        let broker = Broker::new();
+        let ask = broker.ask(request);
+        let mut ask = std::pin::pin!(ask);
+        queue(ask.as_mut()).await;
+        let (id, _) = broker.current().unwrap();
+        for answer in [
+            Answer::Approve {
+                withheld: withheld(),
+            },
+            Answer::Pick { choice: "x".into() },
+        ] {
+            assert!(matches!(
+                broker.answer(&id, answer),
+                Err(ConsentError::WrongAnswer | ConsentError::UnknownGrant(_))
+            ));
+        }
+        broker
+            .answer(&id, Answer::Approve { withheld: vec![] })
+            .unwrap();
+        assert_eq!(ask.await, Answer::Approve { withheld: vec![] });
     }
 
     fn pick() -> Request {

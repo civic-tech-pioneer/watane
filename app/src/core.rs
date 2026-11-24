@@ -29,6 +29,7 @@ pub(crate) struct ModView {
     pub derived_from_label: Option<String>,
     pub error: Option<String>,
     pub grants: Vec<GrantLine>,
+    pub consents: Vec<crate::consent::ConsentLine>,
     pub notice: Option<String>,
     pub offer: Option<String>,
     pub offer_grants: Vec<GrantLine>,
@@ -384,6 +385,11 @@ impl Core {
             &self.host.home().join("mods").join(m.local.as_ref()),
         )
         .ok();
+        let consents = m
+            .consents
+            .iter()
+            .map(|c| words::consent_line(c, &m.name, &self.parties))
+            .collect();
         ModView {
             main: self.main.get().as_deref() == Some(m.local.as_ref()),
             proposes_main: metadata.as_ref().is_some_and(|m| m.main()),
@@ -409,6 +415,7 @@ impl Core {
             package: m.package.to_string(),
             derived_from: m.origin.map(|r| r.to_string()),
             error: m.error,
+            consents,
             grants: m
                 .grants
                 .iter()
@@ -548,6 +555,14 @@ impl Core {
                 .loaded(window.label(), false);
             window.reload()?;
         }
+        Ok(())
+    }
+    /// Takes one consent back (19.2): the host ends what depends on it.
+    pub fn consent_withdraw(&self, local: &str, key: &str) -> Result<(), CmdError> {
+        let local = LocalName::parse(local)?;
+        let consent = watane_host::Consent::parse(key)
+            .map_err(|e| CmdError::new("bad_input", crate::cause_chain(&e)))?;
+        self.host.withdraw_consent(&local, &consent)?;
         Ok(())
     }
     pub fn tools(&self) -> Result<Vec<ToolRow>, CmdError> {
@@ -1623,6 +1638,7 @@ mod stage_d_more_tests {
                 notice: notice.map(str::to_string),
                 offer: offer.map(str::to_string),
                 offer_grants: vec![],
+                consents: vec![],
             };
             let value = serde_json::to_value(row).unwrap();
             assert_eq!(value["notice"], serde_json::json!(notice));

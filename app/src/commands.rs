@@ -206,7 +206,15 @@ pub(crate) fn consent_get(webview: tauri::Webview, state: tauri::State<'_, AppSt
     state
         .broker
         .current()
-        .map(|(id, request)| json!({"id":id,"mark":state.mark,"request":request}))
+        .map(|(id, request)| {
+            let mut view = json!({"id":id,"mark":state.mark,"request":request});
+            if let crate::consent::Request::Agent { what, origin } = &request {
+                let (title, question) = crate::words::agent_consent(what, origin);
+                view["title"] = json!(title);
+                view["question"] = json!(question);
+            }
+            view
+        })
         .unwrap_or(Value::Null)
 }
 #[tauri::command]
@@ -278,6 +286,16 @@ pub(crate) fn grant_give(
 ) -> Result<(), CmdError> {
     record(&webview, "grant_give");
     core(&state)?.grant(&local, &key, true)
+}
+#[tauri::command]
+pub(crate) fn consent_withdraw(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    local: String,
+    key: String,
+) -> Result<(), CmdError> {
+    record(&webview, "consent_withdraw");
+    core(&state)?.consent_withdraw(&local, &key)
 }
 #[tauri::command]
 pub(crate) async fn install_folders(
