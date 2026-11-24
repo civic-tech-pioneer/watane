@@ -124,8 +124,8 @@ fn ac1_find_search_install() {
     let f = Fixture::new();
     f.ivy.include(&f.alice_link, "Alice's releases").unwrap();
     let home = tempfile::tempdir().unwrap();
-    let app = App::start(home.path(), &[]);
-    f.add(&app);
+    let app = App::start(home.path(), &[("WATANE_DRIVER_LISTED_LOCAL", "1")]);
+    choose(&app, &f.ivy_link.to_string());
     app.eval("main", "document.querySelector('#search-text').value = 'no-such-mod'; document.querySelector('#search').click(); null");
     contains(&app, "#result-count", "No mods found");
     search_reading(&app);
@@ -173,6 +173,11 @@ fn ac1_find_search_install() {
     for value in ["Reading list", "Alice", "signature verified", &f.release] {
         assert!(plan.as_str().unwrap().contains(value), "{plan}");
     }
+    let follow_words = format!(
+        "Approving also follows Alice ({}) for updates.",
+        f.alice.fingerprint().unwrap()
+    );
+    assert!(plan.as_str().unwrap().contains(&follow_words), "{plan}");
     approve(&app);
     installed(&app, "reading-list");
     let follows: Value =
@@ -181,6 +186,11 @@ fn ac1_find_search_install() {
     assert_eq!(
         follows["channels"][f.alice.identity().unwrap().to_string()]["followed"],
         true
+    );
+    assert!(
+        follows["channels"][f.alice.identity().unwrap().to_string()]
+            .get("explicit_given")
+            .is_none()
     );
     open(&app, "reading-list");
     until(
@@ -542,7 +552,11 @@ fn regress_s113_deny_from_find_does_not_follow() {
     until(
         &app,
         "main",
-        "document.querySelector('#error').textContent.includes('install was not approved')",
+        "document.querySelector('#action-notice')?.textContent === 'You declined installing Reading list.'",
+    );
+    assert_eq!(
+        app.eval("main", "document.querySelector('#error').textContent"),
+        ""
     );
     let after = followed();
     assert!(app.quit().success());

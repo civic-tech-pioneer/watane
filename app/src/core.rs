@@ -838,6 +838,7 @@ impl Core {
         let planner = Arc::clone(self);
         let target = release.clone();
         let background = pick.is_none();
+        let interactive = !background && matches!(requester, watane_host::Requester::App);
         let result = async {
             let (plan, fetched) = tauri::async_runtime::spawn_blocking(move || {
                 let fetched = fetch_for_install(&planner.node, &target, link.as_ref())?;
@@ -847,7 +848,31 @@ impl Core {
             .map_err(|e| CmdError::new("io", e.to_string()))??;
             let automatic = background && !plan.needs_confirmation();
             let before = self.host.mods();
-            let installed = self.host.install(plan, requester).await?;
+            let following = if interactive {
+                let already = followed_keys(&self.dist, &self.parties).unwrap_or_default();
+                crate::build_on::follow_links(
+                    fetched.iter().filter_map(|f| f.link.clone()),
+                    already.into_iter().chain(self.dist.identity()),
+                )
+                .into_iter()
+                .map(|link| words::party_label(&words::party(&link.channel().to_string(), &self.parties)))
+                .collect()
+            } else {
+                Vec::new()
+            };
+            let installed = crate::confirm::INSTALL_FOLLOWS
+                .scope(following, self.host.install(plan, requester))
+                .await
+                .map_err(|error| {
+                    if interactive
+                        && matches!(&error, watane_host::HostError::Refused(reason) if reason == "install was not approved")
+                        && let Some(first) = fetched.first()
+                    {
+                        CmdError::new("install_declined", format!("You declined installing {}.", first.info.release.name))
+                    } else {
+                        error.into()
+                    }
+                })?;
             self.clear_update_failures(&installed);
             if automatic {
                 let at = std::time::SystemTime::now()
@@ -886,6 +911,7 @@ impl Core {
         .await;
         match &result {
             Ok(_) => {}
+            Err(error) if error.code == "install_declined" => {}
             Err(error) => {
                 for m in self.host.mods().iter().filter(|m| {
                     m.release
@@ -2861,6 +2887,41 @@ mod find_integration_tests {
         choose_index_link(&reader, &link, true).unwrap();
         assert!(reader.dist().channel(&view.channel).unwrap().index);
         assert_no_given(reader_home.path(), view.channel);
+    }
+
+    #[test]
+    fn s113_install_hit_ignores_links_for_other_publishers_or_slugs() {
+        let home = tempfile::tempdir().unwrap();
+        let node =
+            watane_node::Node::open(home.path(), Arc::new(Approve), Default::default()).unwrap();
+        let alice = node.dist();
+        let published = alice.publish(package()).unwrap();
+        let mallory_home = tempfile::tempdir().unwrap();
+        let mallory = open(&mallory_home);
+        let mallory_site = Site::serve(mallory.site_dir());
+        mallory.set_site_url(&mallory_site.base).unwrap();
+        let other = mallory.publish(package()).unwrap();
+        let wrong_slug = watane_dist::Link::new(
+            alice.identity().unwrap(),
+            &mallory_site.base,
+            Some(&"other".parse().unwrap()),
+        )
+        .unwrap();
+
+        for link in [other.link.as_ref().unwrap(), &wrong_slug] {
+            let fetched = fetch_for_install(&node, &published.info.reference, Some(link)).unwrap();
+            assert_eq!(fetched.info.reference, published.info.reference);
+            assert!(fetched.link.is_none());
+            let mut failures = Default::default();
+            follow_installed_links(&node, &[fetched], &[], &mut failures);
+            assert!(failures.is_empty());
+            assert!(
+                !alice
+                    .channel(&mallory.identity().unwrap())
+                    .unwrap()
+                    .followed
+            );
+        }
     }
 
     #[test]

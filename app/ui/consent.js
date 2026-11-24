@@ -94,6 +94,7 @@ try {
       }
     } else if (request.kind === 'install') {
       if (request.by_program) text(main, 'p', 'Asked by a program on this device');
+      for (const label of request.following || []) text(main, 'p', `Approving also follows ${label} for updates.`);
       for (const mod of request.mods) {
         const section = document.createElement('section');
         main.append(section);
