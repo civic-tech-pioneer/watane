@@ -135,7 +135,11 @@ fn script_error_names_original_file_and_stop_conflicts() {
     assert!(!out.status.success());
     let error: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(error["errors"][0]["code"], "env.preview_start");
-    assert_eq!(error["errors"][0]["file"], path.to_str().unwrap());
+    let reported = Path::new(error["errors"][0]["file"].as_str().unwrap());
+    assert_eq!(
+        reported.canonicalize().unwrap(),
+        path.canonicalize().unwrap()
+    );
     assert!(error["errors"][0]["fix"].is_string());
 
     let out = preview.serve(&["--stop", "--script", "bad.json"]);
