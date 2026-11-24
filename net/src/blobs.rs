@@ -28,19 +28,7 @@ pub(crate) async fn open(
     dir: &Path,
 ) -> Result<(FsStore, EventSender, tokio::task::JoinHandle<()>), String> {
     #[cfg(windows)]
-    let _directory = {
-        use watane_log_windows_fs::{self as winfs, FileKind};
-        winfs::create_dir_all(dir).map_err(|e| e.to_string())?;
-        let directory = winfs::open_path(dir, false).map_err(|e| e.to_string())?;
-        if !matches!(
-            winfs::kind(&directory).map_err(|e| e.to_string())?,
-            FileKind::Directory
-        ) {
-            return Err("not a plain Windows blob directory".into());
-        }
-        winfs::check_owner_only(&directory).map_err(|e| e.to_string())?;
-        directory
-    };
+    let _directory = watane_log_windows_fs::private_dir(dir).map_err(|error| error.to_string())?;
     let store = FsStore::load(dir).await.map_err(|e| e.to_string())?;
     #[cfg(unix)]
     std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))

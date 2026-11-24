@@ -230,19 +230,14 @@ pub(crate) fn open(dir: &Path) -> Result<Zeroizing<[u8; 32]>, NetError> {
 /// Open a private node key on Windows, or atomically install a new one.
 #[cfg(windows)]
 pub(crate) fn open(dir: &Path) -> Result<Zeroizing<[u8; 32]>, NetError> {
-    use watane_log_windows_fs::{self as winfs, FileKind};
+    use watane_log_windows_fs::{self as winfs, PrivateDirError};
     if dir.as_os_str().is_empty() {
         return Err(corrupt(dir, "the net directory path is empty"));
     }
-    winfs::create_dir_all(dir).map_err(|e| io_error(dir, e))?;
-    let directory = winfs::open_path(dir, false).map_err(|e| io_error(dir, e))?;
-    if !matches!(
-        winfs::kind(&directory).map_err(|e| io_error(dir, e))?,
-        FileKind::Directory
-    ) {
-        return Err(corrupt(dir, "not a plain Windows directory"));
-    }
-    winfs::check_owner_only(&directory).map_err(|e| corrupt(dir, e.to_string()))?;
+    let _directory = winfs::private_dir(dir).map_err(|error| match error {
+        PrivateDirError::Io(error) => io_error(dir, error),
+        PrivateDirError::Invalid(error) => corrupt(dir, error.to_string()),
+    })?;
     let path = dir.join("node.key");
     match fs::symlink_metadata(&path) {
         Ok(_) => return read(&path),
