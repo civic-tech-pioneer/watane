@@ -89,7 +89,6 @@ target `wasm32-wasip2`.
 | `src/agent/streams.rs` | H1: stream table, FIFO per consumer, batches, backpressure, ends (19.2) |
 | `src/agent/claude/` (`launch.rs`, `run.rs`, `control.rs`, `init.rs`, `mod.rs`) and `src/agent/accounts.rs` | H2: launch parsing, flags, the process, stdin and stdout, `initialize` and `init` checks (19.3) |
 | planned `src/agent/https_stream.rs` | H3: one request, SSE splitting, idle timeout, account binding (19.4) |
-| planned `src/agent/tools.rs` | H4: handles, MCP tokens, keyed jobs, with `src/tools.rs` (19.5) |
 | `src/agent/timers.rs` | H7: timers per mod in host state (19.6); H5 effects are in `src/runtime/call.rs` |
 | `src/agent/consent.rs` | consents per origin client in `installed.json` (19.7) |
 | `src/agent/tools.rs` | H4: the handles, their toolset consents, tokens and jobs (19.5) |
@@ -1555,7 +1554,8 @@ keeps only `blake3(token)` in memory, mapped to (toolset, handle).
 `end_token` or until the host stops; tokens are never written to disk. In a
 participant home, only the app issues toolset tokens, in its process (W6);
 the host also issues a token for each handle that `agent-tools.open` opens,
-after the toolset consents (19.5, 19.7; W6 as changed in spec §7). In a
+when it opens; `/mcp/agent` answers it 401 until the toolset consents are held (19.5, 19.7;
+W6 as changed in spec §7). In a
 preview, the program `watane` issues one token for `preview` with handle
 `preview` at start.
 
