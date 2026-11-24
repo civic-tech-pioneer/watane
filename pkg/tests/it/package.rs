@@ -138,6 +138,19 @@ fn s112_pack_refuses_windows_device_segments_on_unix() {
     ));
 }
 
+/// Review S112 P1.5: `Mod::read` refuses a Windows device segment too (6.2 grammar).
+#[cfg(unix)]
+#[test]
+fn s112_mod_read_refuses_windows_device_wit_name() {
+    let dir = hello();
+    put(dir.path(), "wit/deps/aux.wit", "package a:b;\n");
+    let error = Mod::read(dir.path()).unwrap_err();
+    assert!(
+        matches!(&error, ModError::Invalid(v) if v.iter().any(|v| v.rule == Rule::Path && v.file == "wit/deps/aux.wit")),
+        "{error:?}"
+    );
+}
+
 #[test]
 fn ac1_pack_golden() {
     let dir = hello();

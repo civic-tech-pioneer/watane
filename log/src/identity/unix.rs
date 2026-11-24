@@ -287,6 +287,39 @@ mod tests {
         assert_eq!(fs::read_dir(&dir).expect("list log directory").count(), 0);
     }
 
+    /// Review S112 F1.2: the owner check on `lock_dir`'s handle is the only one for
+    /// `replace` and `remove`.
+    #[test]
+    fn s112_root_refuses_to_replace_or_remove_in_a_directory_now_owned_by_another_user() {
+        if effective_uid() != 0 {
+            return; // Changing the owner needs root.
+        }
+        let parent = tempfile::tempdir().expect("create temporary parent");
+        let dir = parent.path().join("log");
+        let old = open(&dir).expect("create identity");
+        std::os::unix::fs::chown(&dir, Some(65534), None).expect("change directory owner");
+        let new = ed25519_dalek::SigningKey::from_bytes(&[9; 32]);
+        let refused = |result: Result<(), Error>| {
+            matches!(
+                result,
+                Err(Error::DirectoryOwner {
+                    owner: 65534,
+                    current: 0,
+                    ..
+                })
+            )
+        };
+        assert!(refused(super::replace(&dir, &new)));
+        let mut key = Some(new);
+        assert!(refused(super::remove(&dir, &mut key)));
+        assert!(key.is_some());
+        std::os::unix::fs::chown(&dir, Some(0), None).expect("restore directory owner");
+        assert_eq!(
+            open(&dir).expect("reopen identity").to_bytes(),
+            old.to_bytes()
+        );
+    }
+
     #[test]
     fn regress_s109_creation_publishes_a_single_name() {
         let dir = tempfile::tempdir().expect("create log directory");

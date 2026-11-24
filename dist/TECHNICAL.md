@@ -677,12 +677,12 @@ files are written as temp file, fsync, rename.
 | entry | `<base>entries/<n>` | `max_entry_file` | `entry_timeout` | none |
 | package | `<base>packages/<id>` | `release.size`, at most `max_package` | `package_timeout` | none |
 
-Two `ureq::Agent`s per `Dist`, equal but for redirects:
+One `ureq::Agent` per `Dist`; it follows no redirect (`http::follow_hops` does, below):
 
 ```rust
 let agent: ureq::Agent = ureq::Agent::config_builder()
     .http_status_as_error(false)
-    .max_redirects(5)
+    .max_redirects(0).max_redirects_will_error(false)
     .timeout_connect(Some(options.connect_timeout))
     .user_agent(concat!("watane-dist/", env!("CARGO_PKG_VERSION")))
     .build()
@@ -714,25 +714,27 @@ retried: not 404, 410, 403 or 429, not a timeout, not a network error, not a
 body over its limit. The wait is a blocking sleep in the caller's thread
 (rule 7 bans background timers, not a wait in a call).
 
-Redirects to another host are followed: every byte is verified, so the
-host is never trusted. The proxy comes from the environment (`ureq`
+Redirects to another host are followed (below): every byte is verified, so
+the host is never trusted. The proxy comes from the environment (`ureq`
 default). Both `http` and `https` are allowed (decision DD-6).
 
-**Redirects of a listed read (S105, DD-43).** A read whose base came from a
-listing or a provider hint (a listed read: 5.9, 5.11, `read_link`) uses a
-second agent, `listed_agent`, built like the first but with
-`.max_redirects(0).max_redirects_will_error(false)`, and follows redirects
-itself (`http::follow_hops`): on 300, 301, 302, 303, 307 or 308 with a `Location`,
-the target is that `Location` resolved against the current URL; unless
-`Options::listed_local` is set, a target whose host is local (`index::local_base`,
-5.9) is refused before any request to it with `BadUrl { url: <original request URL>,
-cause: "local address" }`; at most 5 redirects are followed, the 6th gives
-`Network { cause: "too many redirects" }`; the one deadline of the read
-covers every hop. A redirect without a `Location` is `Http`. A followed or
-chosen channel's base the participant gave (`explicit_given`, 4.4) uses
-the first agent, which follows redirects anywhere. A base absent from
-`explicit_given` is read as listed (DD-47). The body limit applies to the final
-response. The 5xx retry above repeats the whole chain.
+**Redirects (S105, DD-43; S112).** Every read follows redirects itself
+(`http::follow_hops`): on 300, 301, 302, 303, 307 or 308 with a `Location`,
+the target is that `Location` resolved against the current URL. A target whose
+scheme is not `http` or `https` (`socks5`, `ftp`, ...) is refused before any
+request to it, for every read, with `BadUrl { url: <original request URL>, cause:
+"redirects to a scheme other than http or https" }` (ureq would read a proxy
+scheme as a direct connection, past the local rule). At most 5 redirects are
+followed, the 6th gives `Network { cause: "too many redirects" }`; the one
+deadline of the read covers every hop. A redirect without a `Location` is `Http`.
+A read whose base came from a listing or a provider hint (a listed read: 5.9,
+5.11, `read_link`) also checks each target: unless `Options::listed_local` is
+set, a target whose host is local (`index::local_base`, 5.9) is refused before
+any request to it with `BadUrl { url: <original request URL>, cause: "redirects
+to a local address" }`. A followed or chosen channel's base the participant gave
+(`explicit_given`, 4.4) follows redirects to any http or https host. A base
+absent from `explicit_given` is read as listed (DD-47). The body limit applies to
+the final response. The 5xx retry above repeats the whole chain.
 
 ## 5. Behaviour
 
@@ -972,8 +974,8 @@ of index replaces a listed-only record's bases with that link's base
 (DD-46). Only an explicit participant link gives the base (4.4, DD-48).
 Reads of a base are listed when the record is listed-only or that base
 lacks explicit permission. This covers initial derived follows and derived
-index choices, refreshes, and package reads. The listed policy checks the first address, every redirect
-target, and the listed entry budget. `fetch` and `read_link` can still return
+index choices, refreshes, and package reads. The listed policy checks the first
+address, every redirect target, and the listed entry budget. `fetch` and `read_link` can still return
 a cached package with no link when its base is refused. A listed record is
 created when the walk first reaches the channel and removed when no read set
 or other retention reason holds it.
@@ -1017,14 +1019,16 @@ default `false`), dist skips a listed base whose host is `localhost`, ends
 in `.localhost`, or is an IP literal that is loopback, unspecified,
 private (10/8, 172.16/12, 192.168/16, fc00::/7), link-local, shared
 (100.64/10), for benchmarking (198.18/15), on this network (0/8), or
-site-local (fec0::/10). Refuse the entire local-use NAT64 range
-(64:ff9b:1::/48), whose embedded address layout depends on the network.
-Apply the same IPv4 rules to an embedded address in IPv4-mapped IPv6,
-well-known NAT64 (64:ff9b::/96), or 6to4 (2002::/16). Trailing dots do not change a name: `localhost.` and `a.localhost..` are local, and
-an IPv4 literal with a trailing dot (`127.0.0.1.`) is the literal. A third
-party's listing must not make dist send requests into the participant's
-own network, also through a redirect: every redirect target of a listed read
-passes the same rule (4.5). A followed or chosen channel may use any base (DD-6): the
+site-local (fec0::/10); any address in the local-use NAT64 block
+64:ff9b:1::/48, whose layout depends on the network, is local too. The same
+IPv4 rules apply to the address embedded in IPv4-mapped IPv6, well-known NAT64
+(64:ff9b::/96) or 6to4 (2002::/16). Trailing dots do not change a name:
+`localhost.` and `a.localhost..` are local, and an IPv4 literal with a trailing
+dot (`127.0.0.1.`) is the literal. A third party's listing must not make dist
+send requests into the participant's own network, also through a redirect:
+every redirect target of a listed read passes the same rule, and no redirect
+target of any read may leave `http` or `https` (4.5). A followed or chosen
+channel may use any base (DD-6): the
 participant gave that link. A host name that resolves to a local address
 is not checked (section 6, "Not protected").
 
@@ -1622,7 +1626,7 @@ are `list` and `include` statements of 4.1.
 | DD-40 | Kept channels are search candidates with `Via::Kept`, which counts as no index in the order. | A full machine answers a light machine's query from what the own machines hold; the order still uses only the participant's choices. |
 | DD-41 | A base that the participant gives by a link (`follow`, `choose_index`, `open_link`) for a channel with a record is appended to the record's `bases`, at most 4, and every later read checks every base (5.9). A listing still never changes a followed or chosen record. Deputy decision S54. | Alice's move from one host to another must stick without losing the old host, and a stale mirror must not hide a newer one. Undo: cheap (reader-only, serde default). |
 | DD-42 | A 5xx on a read is tried twice more, after 250 ms and 500 ms, inside the read's own timeout, with a blocking sleep in the caller's thread; nothing else is retried (4.5). | A fresh GitHub Pages site answers 503 for minutes; one failure should not end Bob's install. The wait is bounded by the existing deadline, so no read gets slower than its timeout. Undo: cheap (http.rs). |
-| DD-43 | A listed read follows redirects itself and checks each target against the local-address rule before requesting it; a refused target is `BadUrl { cause: "local address" }`. Followed and chosen bases keep ureq's redirects. Deputy decision S105. | A listed base must not lead dist into the local network by a 302 (A35, A37); the participant's own links keep DD-6. Undo: cheap (http.rs). |
+| DD-43 | A listed read follows redirects itself and checks each target against the local-address rule before requesting it; a refused target is `BadUrl { cause: "redirects to a local address" }` (S112). Followed and chosen bases follow redirects to any http or https host; no read follows one to another scheme (S112). Deputy decision S105. | A listed base must not lead dist into the local network by a 302 (A35, A37); the participant's own links keep DD-6. Undo: cheap (http.rs). |
 | DD-44 | `local_base` ignores trailing dots of a host name; an IPv4 literal with a trailing dot is read as the literal. | `localhost.` is the same host as `localhost`; the rule must not be bypassed by spelling. Undo: cheap (one check). |
 | DD-45 | A listed record on a cache miss tries the record's base first, then the provider bases of 5.11 (at most 4 in all). The record's bases, timestamps and permissions stay unchanged. | A dead record base must not end a fetch that another listing of the channel can serve, as for a channel with no record (S104). Undo: cheap (fetch.rs). |
 | DD-46 | A listed-only record that becomes followed or chosen by `follow` or `choose_index` holds only the base the link gave: `base` is the link's base, `bases` is empty. Foreman decision S105. | The listing's bases were read as the participant's own, which skipped the redirect check of DD-43 (A35). The alternative, a per-base origin in `follows.json`, is a format change. Undo: cheap (follow.rs). |

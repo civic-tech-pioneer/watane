@@ -17,7 +17,8 @@ pub(crate) enum Hop<T> {
 }
 
 /// Follow up to `MAX_REDIRECTS` redirects by hand: each `Location` is resolved against
-/// the current URL and passes `check` before any request to it (TECHNICAL 4.5).
+/// the current URL, must be http or https, and passes `check` before any request to it
+/// (TECHNICAL 4.5). A refused scheme is `BadUrl` with `first`, the URL the caller asked.
 pub(crate) fn follow_hops<T>(
     first: &str,
     check: &Check<'_>,
@@ -38,6 +39,12 @@ pub(crate) fn follow_hops<T>(
                 url: current.clone(),
                 cause: format!("bad redirect location {location:?}"),
             })?;
+        if !matches!(target.scheme(), "http" | "https") {
+            return Err(DistError::BadUrl {
+                url: first.to_owned(),
+                cause: "redirects to a scheme other than http or https",
+            });
+        }
         check(target.as_str())?;
         current = target.into();
     }
@@ -74,9 +81,9 @@ impl Dist {
     ) -> Result<Vec<u8>, DistError> {
         let check = |target: &str| {
             self.check_listed_base(target).map_err(|error| match error {
-                DistError::BadUrl { cause, .. } => DistError::BadUrl {
+                DistError::BadUrl { .. } => DistError::BadUrl {
                     url: url.into(),
-                    cause,
+                    cause: "redirects to a local address",
                 },
                 other => other,
             })
@@ -121,17 +128,14 @@ impl Dist {
         head: bool,
         check: Option<&Check<'_>>,
     ) -> Result<Vec<u8>, DistError> {
-        let Some(check) = check else {
-            return match self.get_hop(url, limit, timeout, head, false)? {
-                Hop::Done(bytes) => Ok(bytes),
-                Hop::Redirect(_) => unreachable!("the agent follows redirects"),
-            };
-        };
+        // Every read follows by hand, so each target meets the scheme rule; an unlisted
+        // read has no local-address rule.
+        let check = check.unwrap_or(&|_: &str| Ok(()));
         // One deadline for all hops.
         let deadline = Instant::now() + timeout;
         follow_hops(url, check, |current| {
             let left = deadline.saturating_duration_since(Instant::now());
-            self.get_hop(current, limit, left, head, true)
+            self.get_hop(current, limit, left, head)
         })
     }
     fn get_hop(
@@ -140,14 +144,9 @@ impl Dist {
         limit: u64,
         timeout: Duration,
         head: bool,
-        by_hand: bool,
     ) -> Result<Hop<Vec<u8>>, DistError> {
-        // `by_hand`: the listed agent follows no redirect; the caller checks each target.
-        let agent = if by_hand {
-            &self.listed_agent
-        } else {
-            &self.agent
-        };
+        // The agent follows no redirect; `follow_hops` checks each target.
+        let agent = &self.agent;
         let map = |error: ureq::Error| match error {
             ureq::Error::Timeout(_) => DistError::Timeout { url: url.into() },
             ureq::Error::BodyExceedsLimit(_) => DistError::TooLarge {
@@ -169,7 +168,7 @@ impl Dist {
         }
         let mut response = request.call().map_err(map)?;
         match response.status().as_u16() {
-            300 | 301 | 302 | 303 | 307 | 308 if by_hand => {
+            300 | 301 | 302 | 303 | 307 | 308 => {
                 match response
                     .headers()
                     .get("location")
@@ -380,6 +379,58 @@ mod tests {
         });
         (base, seen)
     }
+    /// Review S112 F1.1 (adversary): a redirect to a proxy scheme of a listed read
+    /// reached a local port; a target scheme other than http or https is refused
+    /// before any request to it.
+    #[test]
+    fn adv_s112_redirect_to_proxy_scheme_reaches_a_local_port() {
+        let (victim, victim_seen) = serve(vec![("/secret", 200, "internal")]);
+        for scheme in ["socks5", "socks4", "socks", "socks5h", "socks4a"] {
+            let target = victim.replacen("http", scheme, 1) + "/secret";
+            let target: &'static str = Box::leak(target.into_boxed_str());
+            let (base, _) = serve(vec![("/a", 302, target)]);
+            let dir = tempfile::tempdir().unwrap();
+            let dist = Dist::open(dir.path(), Arc::new(NoSign), Options::default()).unwrap();
+            let got = dist.get(
+                &format!("{base}/a"),
+                100,
+                Duration::from_secs(5),
+                false,
+                true,
+            );
+            assert!(
+                matches!(&got, Err(DistError::BadUrl { url, .. }) if url == &format!("{base}/a")),
+                "{scheme}: {got:?}; local server saw {:?}",
+                victim_seen.lock().unwrap()
+            );
+        }
+        assert!(victim_seen.lock().unwrap().is_empty());
+    }
+    /// F1.1, every read: an unlisted read refuses a non-http(s) redirect target too.
+    #[test]
+    fn s112_unlisted_redirect_to_another_scheme_is_refused_before_its_request() {
+        let (victim, victim_seen) = serve(vec![("/secret", 200, "internal")]);
+        for scheme in ["socks5", "socks4", "ftp", "ws"] {
+            let target = victim.replacen("http", scheme, 1) + "/secret";
+            let target: &'static str = Box::leak(target.into_boxed_str());
+            let (base, seen) = serve(vec![("/a", 302, target)]);
+            let dir = tempfile::tempdir().unwrap();
+            let dist = Dist::open(dir.path(), Arc::new(NoSign), Options::default()).unwrap();
+            let got = dist.get(
+                &format!("{base}/a"),
+                100,
+                Duration::from_secs(5),
+                false,
+                false,
+            );
+            assert!(
+                matches!(&got, Err(DistError::BadUrl { url, .. }) if url == &format!("{base}/a")),
+                "{scheme}: {got:?}"
+            );
+            assert_eq!(*seen.lock().unwrap(), ["/a"]);
+        }
+        assert!(victim_seen.lock().unwrap().is_empty());
+    }
     #[test]
     fn ac1_get_guarded_follows_a_checked_target_over_http() {
         let (base, seen) = serve(vec![("/a", 302, "/b"), ("/b", 200, "ok")]);
@@ -523,7 +574,7 @@ mod tests {
             true,
         );
         assert!(
-            matches!(&got, Err(DistError::BadUrl { cause: "local address", url }) if url == &format!("{base}/a")),
+            matches!(&got, Err(DistError::BadUrl { cause: "redirects to a local address", url }) if url == &format!("{base}/a")),
             "{got:?}"
         );
         assert_eq!(*seen.lock().unwrap(), ["/a"]);
@@ -682,10 +733,17 @@ mod tests {
         }
     }
     fn assert_refused(cause: Option<DistError>, target: &str) {
+        assert_bad_url(cause, target, "local address");
+    }
+    /// A refused redirect names the URL asked for, and says the redirect was local.
+    fn assert_redirect_refused(cause: Option<DistError>, target: &str) {
+        assert_bad_url(cause, target, "redirects to a local address");
+    }
+    fn assert_bad_url(cause: Option<DistError>, target: &str, expected: &str) {
         match cause {
             Some(DistError::BadUrl { url, cause }) => {
                 assert_eq!(url, target);
-                assert_eq!(cause, "local address");
+                assert_eq!(cause, expected);
             }
             other => panic!("{other:?}"),
         }
@@ -707,7 +765,7 @@ mod tests {
             w.a.redirect(&format!("/{path}"), &target);
             let before = w.b.count();
             let got = failure(eve.read_channel_entries(w.key, &w.a.url, true));
-            assert_refused(got, &format!("{}{path}", w.a.url));
+            assert_redirect_refused(got, &format!("{}{path}", w.a.url));
             assert_eq!(w.b.count(), before, "{path}: no request to the target");
             // The same redirect of an unlisted (followed or chosen) base is followed.
             let (_dir, eve) = w.eve(&[&w.a]);
@@ -758,12 +816,12 @@ mod tests {
         let (_dir, eve) = w.eve(&[&w.a]);
         let _z = listed_record(&w, &eve);
         let got = eve.read_link(&w.link(&w.a)).map(|_| ()).err();
-        assert_refused(got, &format!("{}{}", w.a.url, w.package));
+        assert_redirect_refused(got, &format!("{}{}", w.a.url, w.package));
         assert_eq!(w.b.count(), 0);
         // No record.
         let (_dir, eve) = w.eve(&[&w.a]);
         let got = eve.read_link(&w.link(&w.a)).map(|_| ()).err();
-        assert_refused(got, &format!("{}{}", w.a.url, w.package));
+        assert_redirect_refused(got, &format!("{}{}", w.a.url, w.package));
         assert_eq!(w.b.count(), 0);
         // Followed record: the participant's own base may redirect anywhere.
         let (_dir, eve) = w.eve(&[&w.a]);
@@ -776,7 +834,7 @@ mod tests {
         w.a.redirect("/head", &head);
         let (_dir, eve) = w.eve(&[&w.a]);
         let got = eve.read_link(&w.link(&w.a)).map(|_| ()).err();
-        assert_refused(got, &format!("{}head", w.a.url));
+        assert_redirect_refused(got, &format!("{}head", w.a.url));
         assert_eq!(w.b.count(), 1);
     }
     /// AC5 / 5.9: a listed record whose base is local, with no provider base, is

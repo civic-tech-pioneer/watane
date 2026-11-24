@@ -119,9 +119,8 @@ pub struct Dist {
     /// work the failed call left (4.4, `follow::Unsynced`). Never held while taking `follows`.
     unsynced: Mutex<follow::Unsynced>,
     read_mutex: Mutex<()>,
-    agent: ureq::Agent,
     /// Never follows a redirect; `http::follow_hops` does, checking each target.
-    listed_agent: ureq::Agent,
+    agent: ureq::Agent,
     /// Tests only: URL prefixes of test servers that count as non-local, so that a first
     /// hop can be local-free while its redirect targets are still checked.
     #[cfg(test)]
@@ -301,18 +300,12 @@ impl Dist {
             confirm,
             own_mutex: Mutex::new(()),
             base: Mutex::new(base),
-            agent: ureq::Agent::config_builder()
-                .http_status_as_error(false)
-                .max_redirects(http::MAX_REDIRECTS as u32)
-                .timeout_connect(Some(options.connect_timeout))
-                .user_agent(concat!("watane-dist/", env!("CARGO_PKG_VERSION")))
-                .build()
-                .into(),
+
             #[cfg(test)]
             test_local_ok: Mutex::new(Vec::new()),
             #[cfg(test)]
             test_fail_saves: Mutex::new(None),
-            listed_agent: ureq::Agent::config_builder()
+            agent: ureq::Agent::config_builder()
                 .http_status_as_error(false)
                 .max_redirects(0)
                 .max_redirects_will_error(false)

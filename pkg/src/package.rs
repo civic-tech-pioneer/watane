@@ -56,7 +56,7 @@ fn check_size(size: u64) -> Result<(), PackageError> {
     }
 }
 /// Win32 treats these stems as devices even if a filename has an extension.
-fn windows_device(segment: &str) -> bool {
+pub(crate) fn windows_device(segment: &str) -> bool {
     let stem = segment.split_once('.').map_or(segment, |(stem, _)| stem);
     matches!(
         stem.to_ascii_uppercase().as_bytes(),
