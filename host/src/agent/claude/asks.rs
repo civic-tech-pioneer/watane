@@ -643,6 +643,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)] // Installs a Unix process-group id in the session fixture.
     #[test]
     fn ac5_a_failed_enqueue_is_reported_and_stops_the_session() {
         let (_hub, session, rx, _clock) = rig();

@@ -819,8 +819,8 @@ fn ac5_missing_base_reports_http_not_found_after_install_fetch() {
         watane_dist::Dist::open(home, std::sync::Arc::new(Approve), Default::default()).unwrap()
     };
     let alice = open(alice_home.path());
-    let site = Pages::start(&alice_home.path().join("dist"));
-    let base = site.url("site");
+    let site = Pages::start_site(&alice.site_dir());
+    let base = format!("http://127.0.0.1:{}/", site.port);
     alice.set_site_url(&base).unwrap();
     let package = watane_host::watane_pkg::pack(&fixtures().join("reading-list"), false).unwrap();
     let link = alice
@@ -886,8 +886,8 @@ fn regress_s54_missing_base_fresh_home_reports_not_found() {
     };
     let alice = open(alice_home.path());
     alice.set_name("Alice").unwrap();
-    let site = Pages::start(&alice_home.path().join("dist"));
-    let base = site.url("site");
+    let site = Pages::start_site(&alice.site_dir());
+    let base = format!("http://127.0.0.1:{}/", site.port);
     alice.set_site_url(&base).unwrap();
     let package = watane_host::watane_pkg::pack(&fixtures().join("reading-list"), false).unwrap();
     let link = alice

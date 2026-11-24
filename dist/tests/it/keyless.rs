@@ -11,6 +11,11 @@ fn snapshot(root: &Path) -> BTreeMap<std::path::PathBuf, Vec<u8>> {
     fn visit(root: &Path, p: &Path, out: &mut BTreeMap<std::path::PathBuf, Vec<u8>>) {
         for item in std::fs::read_dir(p).unwrap() {
             let p = item.unwrap().path();
+            #[cfg(windows)] // Windows holds a mandatory byte-range lock on this empty file.
+            if p == root.join("dist/lock") {
+                assert_eq!(std::fs::metadata(&p).unwrap().len(), 0);
+                continue;
+            }
             if p.is_dir() {
                 out.insert(p.strip_prefix(root).unwrap().to_owned(), Vec::new());
                 visit(root, &p, out);

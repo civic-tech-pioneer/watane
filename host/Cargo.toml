@@ -39,6 +39,9 @@ workspace-hack = { version = "0.1", path = "../workspace-hack" }
 # numbers for host's own A1 tests. Never in a release build.
 test-streams = []
 
+[target.'cfg(windows)'.dependencies]
+watane-log-windows-fs = { path = "../log/windows-fs" }
+
 [dev-dependencies]
 watane-host = { path = ".", features = ["test-streams"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream"] }
