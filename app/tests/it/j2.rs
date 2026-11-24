@@ -249,6 +249,49 @@ fn book(app: &App, title: &str) {
     );
 }
 #[test]
+fn s113_reinstall_after_keep_data_restores_books() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    let paths = [fixture("reading-list")];
+    begin_install(&app, &paths);
+    approve(&app);
+    installed(&app, "reading-list");
+    open(&app, "reading-list");
+    book(&app, "Dune");
+
+    app.eval(
+        "main",
+        "document.querySelector('[data-local=reading-list] button.remove').click(); null",
+    );
+    until(
+        &app,
+        "main",
+        "document.querySelector('#keep-data').checked && !document.querySelector('#confirm-panel').hidden",
+    );
+    app.eval(
+        "main",
+        "document.querySelector('#confirm-continue').click(); null",
+    );
+    until(
+        &app,
+        "main",
+        "!document.querySelector('[data-tile=reading-list]')",
+    );
+
+    begin_install(&app, &paths);
+    approve(&app);
+    installed(&app, "reading-list");
+    open(&app, "reading-list");
+    until(
+        &app,
+        "mod-reading-list",
+        "document.querySelector('#books')?.textContent.includes('Dune')",
+    );
+    assert!(app.quit().success());
+}
+
+#[test]
 #[ignore = "slow: journey J2"]
 fn ac5_journey_j2() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
