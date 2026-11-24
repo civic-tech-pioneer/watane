@@ -5,6 +5,7 @@ interface api {
   call: func(handle: string, key: string, tool: string, args: string) -> result<string, string>;
   call-twice: func(handle: string, key: string, tool: string, args: string) -> list<string>;
   open-describe: func(toolsets: list<string>) -> string;
+  open-many: func(toolsets: list<string>, n: u32) -> list<string>;
   close: func(handle: string);
   items: func(s: string) -> list<string>;
   ended: func() -> list<string>;

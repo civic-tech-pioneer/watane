@@ -74,6 +74,11 @@ impl exports::mods::toolbox::api::Guest for Guest {
             Err(e) => error(e),
         }
     }
+    fn open_many(toolsets: Vec<String>, n: u32) -> Vec<String> {
+        (0..n)
+            .map(|_| agent_tools::open(&toolsets).unwrap_or_else(error))
+            .collect()
+    }
     fn close(handle: String) {
         agent_tools::close(&handle);
     }

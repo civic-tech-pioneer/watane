@@ -972,6 +972,27 @@ fn limits_the_33rd_live_handle_of_an_origin_client_and_opener_is_not_granted() {
 }
 
 #[test]
+fn limits_the_opens_a_chain_queued_count_too() {
+    let home = Home::new();
+    for _ in 0..30 {
+        home.open(&["t"]).unwrap();
+    }
+    let opened: Vec<String> = serde_json::from_value(home.call(
+        "toolbox",
+        "api.open-many",
+        json!({"toolsets": ["t"], "n": 3}),
+    ))
+    .unwrap();
+    assert!(
+        is_hex(&opened[0], 32) && is_hex(&opened[1], 32),
+        "{opened:?}"
+    );
+    assert_eq!(opened[2], "not-granted");
+    // Another opener's queued handles are not this one's: the front still opens.
+    result::<String>(home.call("toolbox-front", "api.open", json!({"toolsets": ["t"]}))).unwrap();
+}
+
+#[test]
 fn limits_one_question_waits_per_origin_client_and_toolset_and_one_answer_serves_all() {
     let home = Home::new();
     let (a, b) = (home.open(&["t"]).unwrap(), home.open(&["t"]).unwrap());
