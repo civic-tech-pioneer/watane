@@ -35,6 +35,7 @@ pub fn serve(
     _: &std::path::Path,
     _: &crate::env::Env,
     _: &str,
+    _: Option<&std::path::Path>,
 ) -> Result<serde_json::Value, Vec<Problem>> {
     Err(vec![unavailable()])
 }

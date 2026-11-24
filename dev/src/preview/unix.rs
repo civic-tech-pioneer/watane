@@ -15,6 +15,10 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use watane_host::{Ready, RunInfo};
+
+#[path = "openai.rs"]
+mod openai;
+use openai::OpenAi;
 const DEFAULT_SCRIPT: &str = r#"{"steps":[{"do":"expect-user"},{"do":"delta","text":"This is the fake claude."},{"do":"message","text":"This is the fake claude."},{"do":"result"},{"do":"idle"}]}"#;
 /// Links the fake into `<P>/claude/` (a copy where links fail), keeps the maker's script (TECHNICAL 18.4).
 fn link_fake_claude(folder: &Path, program: &Path) -> Result<PathBuf, Problem> {
@@ -59,6 +63,7 @@ fn start(
     folder: &Path,
     log: &Path,
     fake_claude: Option<&Path>,
+    openai: Option<&OpenAi>,
 ) -> Result<Ready, Problem> {
     let binary = find_watane()?;
     fs::create_dir_all(folder).map_err(Problem::internal)?;
@@ -84,8 +89,12 @@ fn start(
         )
         .fix(format!("Read {}", log.display()))
     };
-    let mut child = Command::new(binary)
-        .args(spawn_args(home, fake_claude))
+    let mut command = Command::new(binary);
+    command.args(spawn_args(home, fake_claude));
+    if let Some(openai) = openai {
+        openai.configure(&mut command, folder)?;
+    }
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(stderr)
@@ -114,14 +123,25 @@ fn start(
         Err(e) => {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(failure(e));
+            let problem = failure(e);
+            return Err(match openai {
+                Some(openai) => openai.start_failure(problem),
+                None => problem,
+            });
         }
     };
+    if let Err(error) =
+        OpenAi::remember(openai, folder, ready.port).and_then(|()| save_ready(folder, &ready))
+    {
+        let _ = stop_home(home);
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error);
+    }
     // Reap this child if dev remains alive long enough; the host itself outlives dev.
     std::thread::spawn(move || {
         let _ = child.wait();
     });
-    save_ready(folder, &ready)?;
     Ok(ready)
 }
 fn save_ready(folder: &Path, ready: &Ready) -> Result<(), Problem> {
@@ -177,7 +197,12 @@ pub(crate) fn previous_warning(dir: &Path, env: &Env, args: &str) -> Option<Prob
     })
 }
 
-pub fn serve(dir: &Path, env: &Env, rerun: &str) -> Result<Value, Vec<Problem>> {
+pub fn serve(
+    dir: &Path,
+    env: &Env,
+    rerun: &str,
+    script: Option<&Path>,
+) -> Result<Value, Vec<Problem>> {
     let (m, _) = check::check(dir)?;
     let folders = deps::local_order(dir).map_err(|e| vec![e])?;
 
@@ -185,7 +210,9 @@ pub fn serve(dir: &Path, env: &Env, rerun: &str) -> Result<Value, Vec<Problem>> 
         let folder = folder(dir, env, m.slug().as_str());
         let home = folder.join("home");
         let log = folder.join("watane.log");
+        let openai = OpenAi::select(dir, &m, &folders, script)?;
         let (running, cached) = running_preview(&folder)?;
+        let cached = cached.filter(|ready| OpenAi::matches(openai.as_ref(), &folder, ready.port));
         let fake_claude = match find_fake_claude() {
             Ok(program) => Some(link_fake_claude(&folder, &program)?),
             Err(_) => None,
@@ -197,7 +224,13 @@ pub fn serve(dir: &Path, env: &Env, rerun: &str) -> Result<Value, Vec<Problem>> 
             if running.is_some() {
                 stop_home(&home)?;
             }
-            start(&home, &folder, &log, fake_claude.as_deref())?
+            start(
+                &home,
+                &folder,
+                &log,
+                fake_claude.as_deref(),
+                openai.as_ref(),
+            )?
         };
         let client = Client::for_home(&home)?
             .ok_or_else(|| {
@@ -411,7 +444,7 @@ mod tests {
                 write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
             }
         });
-        let result = serve(&dir, &env, "watane-dev serve --json").unwrap();
+        let result = serve(&dir, &env, "watane-dev serve --json", None).unwrap();
         assert_eq!(result["reused"], true);
         assert_eq!(
             result["pages"],

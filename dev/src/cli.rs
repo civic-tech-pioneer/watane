@@ -94,6 +94,12 @@ pub enum Command {
     Serve {
         #[arg(long, help = "Stops the preview and deletes its data")]
         stop: bool,
+        #[arg(
+            long,
+            conflicts_with = "stop",
+            help = "Script for the preview's OpenAI responses"
+        )]
+        script: Option<PathBuf>,
         #[arg(long, help = "Home of the running watane app")]
         home: Option<PathBuf>,
     },
@@ -233,10 +239,13 @@ fn fallback_rerun(cli: &Cli, cwd: Option<&Path>) -> String {
         Command::Check => format!("watane-dev check --json{dir}"),
         Command::Doctor => format!("watane-dev doctor --json{dir}"),
         Command::Test { home } => format!("watane-dev test --json{dir}{}", home_of(home)),
-        Command::Serve { stop, home } => format!(
-            "watane-dev serve{} --json{dir}{}",
+        Command::Serve { stop, home, script } => format!(
+            "watane-dev serve{} --json{dir}{}{}",
             if *stop { " --stop" } else { "" },
-            home_of(home)
+            home_of(home),
+            script
+                .as_deref()
+                .map_or_else(String::new, |script| format!(" --script {}", path(script)))
         ),
         Command::Add {
             provider,
@@ -372,7 +381,14 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
         Err(e) => return Outcome::new(name, Some(dir)).fail(vec![Problem::internal(e)]),
     };
     // ` --dir <mod>` and ` --home <home>` for the reruns of test and serve, only as given.
-    let args = rerun_args(dir_given, &dir, home_given);
+    let mut args = rerun_args(dir_given, &dir, home_given);
+    if let Command::Serve {
+        script: Some(script),
+        ..
+    } = &cli.command
+    {
+        args.push_str(&format!(" --script {}", quote(&cwd.join(script))));
+    }
     let mut outcome = Outcome::new(name, Some(dir.clone()));
     let result = match cli.command {
         Command::Search { .. } => unreachable!("search needs no mod folder"),
@@ -441,7 +457,7 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
                 outcome.dir = dir.canonicalize().ok();
                 outcome.next = Some(format!("Copy the lines that the mod needs from result.imports and result.subscriptions into the world in wit/world.wit (result.subscriptions holds `export` lines: they are how the mod answers the provider's events and collects; each line is a grant that the participant approves), then run: watane-dev test --json --dir {}", quote(outcome.dir.as_deref().unwrap_or(&dir))));
             }),
-        Command::Serve { stop, .. } => dir
+        Command::Serve { stop, script, .. } => dir
             .canonicalize()
             .or_else(|e| match e.kind() {
                 // A missing folder has no mod.toml: check reports usage.not_a_mod.
@@ -455,6 +471,7 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
                 if stop {
                     preview::stop(&dir, &env)
                 } else {
+                    let script = script.map(|path| cwd.join(path));
                     let mut tested = test_local(&dir);
                     if !tested.ok {
                         outcome.next = if tested.dir.as_deref() == Some(dir.as_path()) {
@@ -477,7 +494,7 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
                     if let Err(warning) = preview::find_fake_claude() {
                         outcome.warnings.push(warning);
                     }
-                    preview::serve(&dir, &env, &format!("watane-dev serve --json{args}"))
+                    preview::serve(&dir, &env, &format!("watane-dev serve --json{args}"), script.as_deref())
                 }
             }),
     };
