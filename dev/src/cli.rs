@@ -1012,7 +1012,13 @@ fn resolved_path(path: &Path) -> std::io::Result<PathBuf> {
         for part in path.components() {
             if part == Component::ParentDir && !prefix.as_os_str().is_empty() {
                 // Win32 normalizes `..` before opening, even if the component is missing.
-                if !prefix.metadata()?.is_dir() {
+                let metadata = prefix.metadata().map_err(|error| {
+                    std::io::Error::new(
+                        error.kind(),
+                        format!("{} does not exist", prefix.display()),
+                    )
+                })?;
+                if !metadata.is_dir() {
                     return Err(std::io::ErrorKind::NotADirectory.into());
                 }
             }
@@ -1059,9 +1065,14 @@ fn app_home(home: Option<PathBuf>, rerun: Rerun) -> Result<PathBuf, Vec<Problem>
                     && p.parent()
                         .is_some_and(|p| p.as_os_str().is_empty() || p.exists())
             });
-            let detail = missing.map_or_else(
-                || e.to_string(),
-                |p| format!("{} does not exist", p.display()),
+            let detail = e.get_ref().map_or_else(
+                || {
+                    missing.map_or_else(
+                        || e.to_string(),
+                        |p| format!("{} does not exist", p.display()),
+                    )
+                },
+                ToString::to_string,
             );
             vec![
                 Problem::new(

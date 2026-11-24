@@ -193,7 +193,7 @@ fn ac1_derive_source_guides_origin_mentions_and_default_slug() {
         v["next"],
         format!(
             "Replace reading-list with ratings (and reading_list with ratings) at each result.mentions entry, then run: watane-dev test --json --dir {}",
-            v["dir"].as_str().unwrap()
+            crate::support::shell_path(v["dir"].as_str().unwrap())
         )
     );
     let (code, v) = f.run_process(&["new", "--from", &link("reading-list")]);
@@ -204,7 +204,7 @@ fn ac1_derive_source_guides_origin_mentions_and_default_slug() {
         v["next"],
         format!(
             "Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev test --json --dir {}",
-            v["dir"].as_str().unwrap()
+            crate::support::shell_path(v["dir"].as_str().unwrap())
         )
     );
 }
@@ -298,7 +298,7 @@ fn ac4_add_release_records_publisher_wit_link_and_rejects_bad_target() {
             v["next"],
             format!(
                 "Copy the lines that the mod needs from result.imports and result.subscriptions into the world in wit/world.wit (result.subscriptions holds `export` lines: they are how the mod answers the provider's events and collects; each line is a grant that the participant approves; contract tests use a fake of it, see AGENTS.md), then run: watane-dev test --json --dir {}",
-                v["dir"].as_str().unwrap()
+                crate::support::shell_path(v["dir"].as_str().unwrap())
             )
         );
     }
