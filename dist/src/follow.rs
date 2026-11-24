@@ -199,7 +199,8 @@ impl Dist {
         Ok(())
     }
 
-    /// Whether a derived link needs the restrictions of a listed read (TECHNICAL 5.9).
+    /// Whether a derived link uses listed restrictions. A followed or chosen
+    /// channel can reuse an explicitly supplied base (TECHNICAL 5.9).
     pub(crate) fn derived_base_is_listed(&self, link: &Link) -> bool {
         self.follows
             .lock()

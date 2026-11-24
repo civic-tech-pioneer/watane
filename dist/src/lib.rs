@@ -300,7 +300,6 @@ impl Dist {
             confirm,
             own_mutex: Mutex::new(()),
             base: Mutex::new(base),
-
             #[cfg(test)]
             test_local_ok: Mutex::new(Vec::new()),
             #[cfg(test)]
