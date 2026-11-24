@@ -571,11 +571,11 @@ fn ac1_busy_port_shows_recovery_in_main_status_and_stderr() {
     assert!(app.wait("main", TIMEOUT));
     until(&app, "main", "document.body.dataset.ready === 'true'");
     let expected = format!(
-        "The local API is not running. Port {port} is in use, maybe by another watane app. Start this one with --port <n> or WATANE_PORT=<n> to use another port, or --port 0 for any free port."
+        "Port {port} is in use, maybe by another watane app. Start this one with --port <n> or WATANE_PORT=<n> to use another port, or --port 0 for any free port."
     );
     assert_eq!(
         app.eval("main", "document.querySelector('main').textContent"),
-        expected
+        format!("The local API is not running. {expected}")
     );
     app.eval("main", "window.__status = null; window.__TAURI_INTERNALS__.invoke('status').then(s => window.__status = s); null");
     until(&app, "main", "window.__status !== null");

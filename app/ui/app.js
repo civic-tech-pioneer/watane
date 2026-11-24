@@ -322,7 +322,7 @@ function refresh() {
     checkedAt = status.checkedAt ?? checkedAt; renderCheck();
     if (status.error) {
       startupFailed = true;
-      launcher.textContent = status.error;
+      launcher.textContent = `The local API is not running. ${status.error}`;
       $('#manager-header nav').hidden = true;
       route();
       for (const id of ['agents', 'chatgpt', 'claude', 'distribution', 'find']) $(`#${id}`).hidden = true;
