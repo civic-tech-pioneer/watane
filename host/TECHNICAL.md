@@ -3243,7 +3243,10 @@ the session flags, `--no-session-persistence`, `--include-partial-messages`, and
 `--plugin-dir=<run folder>/watane-run`. `--tools=` always goes out, empty when the launch
 names no tool, because `claude` has every built-in tool without it; at `subagent-depth`
 0 `Task` is dropped from it. The program is started with `process_group(0)`; the workspace
-forbids `unsafe`, so a group is killed with `rustix::process::kill_process_group` (SIGKILL), only for a pgid above 1 (review r3, F3.6). A line over 4 MiB
+sets `unsafe_code = "deny"`. Only `watane-log-windows-fs` may use `#[allow(unsafe_code)]`
+(spec/TECHNICAL 2). Review enforces this rule. Host kills a group
+with `rustix::process::kill_process_group` (SIGKILL), only for a pgid above 1
+(review r3, F3.6). A line over 4 MiB
 ends the stream `failed`. `claude-code-shell.start` requires a `sandbox` object and
 takes its content unchecked until Q39 and Q42 are decided.
 

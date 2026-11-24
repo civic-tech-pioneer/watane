@@ -17,7 +17,7 @@ text says so.
 |---|---|
 | Package | `watane-node`, lib `watane_node`, binary `watane-node` |
 | Edition, toolchain | 2024, stable, `rust-version = "1.91"` |
-| Lints | `unsafe_code = "forbid"`; `cargo clippy --all-targets -- -D warnings` is clean |
+| Lints | Workspace `unsafe_code = "deny"`. Only `watane-log-windows-fs` may use `#[allow(unsafe_code)]` (spec/TECHNICAL 2). Review enforces this rule. `cargo clippy --all-targets -- -D warnings` is clean. |
 | Threads | No runtime of its own. The library API blocks, like `dist`'s and `net`'s: call it from a blocking thread, never from inside a tokio runtime (`net` 1). `net` calls the holder of section 4 from its blocking threads; no holder method calls `net` or reads from a web host (RV-06). The program runs one thread that prints `net`'s events and waits for a signal on the main thread. |
 | Network | None of its own. `net` makes every connection between machines; `dist` every read from a web host. |
 | Opens | Nothing directly: `Dist` opens `<home>/log/` and `<home>/dist/`, `Net` opens `<home>/net/`. The program reads only whether `<home>/home.json` exists, and the `relays` and `dht` through `Net::options()` (6.1). |
