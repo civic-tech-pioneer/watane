@@ -66,7 +66,6 @@ const FIELDS: [&str; 22] = [
 ];
 const FIELDS_2: [&str; 3] = ["persist", "partial", "profile"];
 
-const STAGE_HANDLE: &str = "an agent handle waits for stage A3";
 const STAGE_SKILLS: &str = "skills wait for a later slice of stage A2";
 
 /// A workspace named by the launch: a new scratch one, one that the origin client holds, or a
@@ -120,6 +119,9 @@ pub(crate) struct Launch {
     pub ask: bool,
     /// `pre-tool-check {timeout-s}`: the hook's timeout in seconds; its callback gives `check` items.
     pub check: Option<u64>,
+    /// `agent-handle`: a handle (19.5) whose MCP server the run hands `claude` on fd 3. Whether
+    /// the origin client holds it is the call's check.
+    pub agent_handle: Option<String>,
 }
 
 fn is_model(s: &str) -> bool {
@@ -866,9 +868,19 @@ impl Launch {
             flags.push("--permission-prompts=none".into());
         }
         let check = doc.get("pre-tool-check").map(pre_tool_check).transpose()?;
-        if doc.contains_key("agent-handle") {
-            return bad("agent-handle", STAGE_HANDLE);
-        }
+        let agent_handle = match doc.get("agent-handle") {
+            None => None,
+            Some(v) => {
+                let handle = string("agent-handle", v)?;
+                if !is_scratch_id(handle) {
+                    return bad(
+                        "agent-handle",
+                        "a handle is 32 lowercase hexadecimal characters",
+                    );
+                }
+                Some(handle.to_owned())
+            }
+        };
         let agents = match doc.get("subagents") {
             Some(v) => subagents(v, &tools, &mut flags)?,
             None => vec![],
@@ -951,6 +963,7 @@ impl Launch {
             depth,
             ask,
             check,
+            agent_handle,
         })
     }
 }
@@ -958,6 +971,34 @@ impl Launch {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    /// 19.3: `agent-handle` is 32 lowercase hex characters; nothing else parses.
+    #[test]
+    fn ac5_an_agent_handle_is_32_lowercase_hex_characters() {
+        let parse = |v: Value| {
+            let doc = json!({"version": 1, "workspace": "scratch", "agent-handle": v});
+            Launch::parse(&doc.to_string(), Kind::Code)
+        };
+        let ok = parse(json!("0123456789abcdef0123456789abcdef")).unwrap();
+        assert_eq!(
+            ok.agent_handle.as_deref(),
+            Some("0123456789abcdef0123456789abcdef")
+        );
+        for v in [
+            json!("h"),
+            json!(""),
+            json!("0123456789ABCDEF0123456789abcdef"),
+            json!("0123456789abcdef0123456789abcde"),
+            json!("0123456789abcdef0123456789abcdef0"),
+            json!(7),
+            json!(null),
+        ] {
+            let e = parse(v.clone()).unwrap_err();
+            assert_eq!(e.field, "agent-handle", "{v}");
+            assert!(!e.reason.contains("stage"), "{v}");
+        }
+    }
 
     /// AC2 (19.3, Picked workspace): the folders that hold credentials, and what lies inside them.
     #[test]

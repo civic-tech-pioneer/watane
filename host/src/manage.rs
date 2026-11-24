@@ -595,6 +595,8 @@ impl Host {
     pub(crate) fn catalog_written(&self) {
         // A mod stream depends on the consumer's `Call` grant of its link (19.2, Ends).
         self.end_lost_streams();
+        // A handle depends on its owner and its origin client (19.5).
+        self.end_lost_handles();
         let managers: Vec<LocalName> = self
             .catalog
             .lock()

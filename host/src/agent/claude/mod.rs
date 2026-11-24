@@ -376,6 +376,15 @@ pub(crate) fn start(inv: &Invocation, kind: Kind, args: &[Val]) -> Result<Value,
             ));
         }
     }
+    // A handle is the origin client's (19.5); one opened in this chain is not applied yet.
+    if let Some(handle) = &launch.agent_handle
+        && !host.handles.held_by(handle, &inv.origin)
+    {
+        return Ok(bad_launch(
+            "agent-handle",
+            "the origin client holds no such handle",
+        ));
+    }
     let me = inv.me();
     let key = Consumer::Mod(me.clone()).key().unwrap_or_default();
     let gate = inv.gate();

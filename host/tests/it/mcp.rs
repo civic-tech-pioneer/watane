@@ -368,6 +368,11 @@ fn ac7_toolset_grammar_and_persistence() {
             .code(),
         "bad_name"
     );
+    // `agent` is the route of handle tokens (10.1, 19.5): reserved as `preview` is.
+    assert_eq!(
+        host.set_toolset(&name("agent"), vec![]).unwrap_err().code(),
+        "bad_name"
+    );
     for bad in [
         "",
         "Counter",
@@ -412,4 +417,30 @@ fn ac7_toolset_grammar_and_persistence() {
     reopened
         .issue_token(&name("t"), &watane_host::Handle::parse("alice").unwrap())
         .unwrap();
+}
+#[tokio::test]
+async fn s103_a_toolset_token_is_refused_on_mcp_agent_and_an_unknown_one_is_401() {
+    let (_home, host) = setup();
+    host.set_toolset(&name("t"), vec!["counter:api".into()])
+        .unwrap();
+    let token = token(&host, "t");
+    let (served, client, _) = server(&host).await;
+    let url = format!("http://localhost:{}/mcp/agent", served.port);
+    let post = |bearer: String| {
+        let (client, url) = (client.clone(), url.clone());
+        async move {
+            client
+                .post(url)
+                .bearer_auth(bearer)
+                .json(&json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))
+                .send()
+                .await
+                .unwrap()
+                .status()
+                .as_u16()
+        }
+    };
+    assert_eq!(post(token.as_str().to_owned()).await, 403);
+    assert_eq!(post("wt_nothing".into()).await, 401);
+    served.shutdown().await;
 }

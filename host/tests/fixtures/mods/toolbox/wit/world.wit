@@ -9,12 +9,15 @@ interface api {
   items: func(s: string) -> list<string>;
   ended: func() -> list<string>;
   who: func() -> string;
+  start: func(launch: string) -> string;
 }
 world toolbox {
   import watane:host/state@0.1.0;
   import watane:host/caller@0.1.0;
   import watane:host/streams@0.1.0;
   import watane:host/agent-tools@0.1.0;
+  import watane:host/claude-types@0.1.0;
+  import watane:host/claude-code@0.1.0;
   export api;
   export watane:host/stream-sink@0.1.0;
 }

@@ -108,6 +108,8 @@ pub struct Host {
     sessions: Arc<agent::claude::Sessions>,
     /// A preview only: the program run in place of `claude` (19.9).
     fake_claude: Mutex<Option<PathBuf>>,
+    /// The handles of `agent-tools` (19.5).
+    handles: Arc<agent::tools::Handles>,
 }
 
 impl Host {
@@ -131,6 +133,7 @@ impl Host {
             timers: agent::timers::Timers::new(),
             generation,
             sessions: Arc::default(),
+            handles: Arc::default(),
             fake_claude: Mutex::new(None),
             tools: Mutex::new(tools),
             bus: bus::PageBus::new(1024),
@@ -422,25 +425,34 @@ impl Host {
     pub fn get(&self, local: &LocalName) -> Option<InstalledMod> {
         self.mods().into_iter().find(|m| &m.local == local)
     }
-    fn change_mod(
+    /// Changes the whole catalog in one write: nothing changes if `change` fails.
+    fn change_catalog(
         &self,
-        local: &LocalName,
-        change: impl FnOnce(&mut InstalledMod) -> Result<(), HostError>,
+        change: impl FnOnce(&mut catalog::Catalog) -> Result<(), HostError>,
     ) -> Result<(), HostError> {
         let mut catalog = self
             .catalog
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         let mut next = catalog.clone();
-        let m = next
-            .mods
-            .iter_mut()
-            .find(|m| &m.local == local)
-            .ok_or_else(|| HostError::NoSuchMod(local.to_string()))?;
-        change(m)?;
+        change(&mut next)?;
         next.save(self.home())?;
         *catalog = next;
         Ok(())
+    }
+    fn change_mod(
+        &self,
+        local: &LocalName,
+        change: impl FnOnce(&mut InstalledMod) -> Result<(), HostError>,
+    ) -> Result<(), HostError> {
+        self.change_catalog(|next| {
+            let m = next
+                .mods
+                .iter_mut()
+                .find(|m| &m.local == local)
+                .ok_or_else(|| HostError::NoSuchMod(local.to_string()))?;
+            change(m)
+        })
     }
     pub fn enable(&self, local: &LocalName) -> Result<(), HostError> {
         self.change_mod(local, |m| {
@@ -472,7 +484,12 @@ impl Host {
         grant: &watane_pkg::Grant,
         granted: bool,
     ) -> Result<(), HostError> {
-        self.change_mod(local, |m| {
+        self.change_catalog(|next| {
+            let m = next
+                .mods
+                .iter_mut()
+                .find(|m| &m.local == local)
+                .ok_or_else(|| HostError::NoSuchMod(local.to_string()))?;
             let state = m
                 .grants
                 .iter_mut()
@@ -482,6 +499,10 @@ impl Host {
                     grant: grant.clone(),
                 })?;
             state.granted = granted;
+            // A mod that became a manager reaches no agent until a new consent (4.4, S68).
+            if granted && *grant == watane_pkg::Grant::Manage {
+                next.drop_toolset_names(local);
+            }
             Ok(())
         })?;
         self.catalog_written();
@@ -532,6 +553,8 @@ impl Host {
         for m in &mut next.mods {
             m.binds.retain(|b| b.to != identity);
         }
+        // A later mod under this local name reaches no agent until a new consent (4.4, S68).
+        next.drop_toolset_names(local);
         next.relink(self.home(), self.is_preview())?;
         next.save(self.home())?;
         *catalog = next;

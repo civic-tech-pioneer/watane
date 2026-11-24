@@ -1,6 +1,7 @@
 use watane::host::agent_tools::{self, ToolsError};
 use watane::host::streams::{Item, Outcome, SinkOutcome};
-use watane::host::{caller, state};
+use watane::host::claude_types::StartError;
+use watane::host::{caller, claude_code, state};
 
 wit_bindgen::generate!({ path: "../../mods/toolbox/wit", world: "toolbox", generate_all });
 struct Guest;
@@ -87,6 +88,13 @@ impl exports::mods::toolbox::api::Guest for Guest {
     }
     fn who() -> String {
         caller::identity()
+    }
+    fn start(launch: String) -> String {
+        match claude_code::start(&launch) {
+            Ok(s) => s,
+            Err(StartError::BadLaunch(b)) => format!("bad-launch:{}:{}", b.field, b.reason),
+            Err(e) => format!("{e:?}"),
+        }
     }
 }
 impl exports::watane::host::stream_sink::Guest for Guest {

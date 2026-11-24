@@ -173,13 +173,17 @@ pub(crate) fn ask(
 
 /// A consent was withdrawn from the origin client with this identity: ends what depends on it
 /// (19.7, Withdrawal). A workspace consent ends the `claude` streams of that origin client through
-/// that `via` whose launch names the folder, and kills their process groups. The handles of a
-/// toolset consent (19.5, s103-2) and the streams of an account consent (19.4, stage A4) are
-/// closed here when those exist.
+/// that `via` whose launch names the folder, and kills their process groups. A toolset consent
+/// closes the handles of that origin client that hold the toolset, and their jobs' streams end
+/// `gone` (19.5). The streams of an account consent (19.4, stage A4) end here when those exist.
 pub(crate) fn withdrawn(host: &Host, consent: &Consent, origin: &str) {
-    if let Consent::Workspace { via, folder } = consent {
-        let ids = host.sessions.depending(origin, via, folder);
-        host.hub.end_gone(&ids);
+    match consent {
+        Consent::Workspace { via, folder } => {
+            let ids = host.sessions.depending(origin, via, folder);
+            host.hub.end_gone(&ids);
+        }
+        Consent::Toolset { toolset, .. } => host.close_handles_of_toolset(origin, toolset),
+        Consent::Account { .. } => {}
     }
 }
 
@@ -258,13 +262,19 @@ impl Host {
             return Err(());
         };
         let key = consent.to_string();
-        if m.consents.iter().any(|c| c.to_string() == key) {
+        // A toolset consent given again replaces the stored list (19.5, S65); any other kind
+        // is kept as it was.
+        let held = m.consents.iter().position(|c| c.to_string() == key);
+        if held.is_some() && !matches!(consent, Consent::Toolset { .. }) {
             return Ok(());
         }
         let local = m.local.clone();
         let mut next = catalog.clone();
         if let Some(m) = next.mods.iter_mut().find(|m| m.local == local) {
-            m.consents.push(consent);
+            match held {
+                Some(at) => m.consents[at] = consent,
+                None => m.consents.push(consent),
+            }
         }
         next.save(self.home()).map_err(|_| ())?;
         *catalog = next;

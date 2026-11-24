@@ -234,6 +234,12 @@ fn view(m: &Mod, local: LocalName, package: PackageId) -> InstalledMod {
 }
 
 impl Catalog {
+    /// Drops the names `<local>_…` from the function list of every toolset consent (4.4, 19.5).
+    pub(crate) fn drop_toolset_names(&mut self, local: &LocalName) {
+        for m in &mut self.mods {
+            crate::agent::tools::drop_names(&mut m.consents, local.as_ref());
+        }
+    }
     /// The install generation of a local name (19.6, At apply).
     pub fn install_of(&self, local: &LocalName) -> Option<u64> {
         self.installs.get(local).copied()

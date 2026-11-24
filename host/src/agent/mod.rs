@@ -7,6 +7,7 @@ pub(crate) mod claude;
 pub(crate) mod consent;
 pub(crate) mod streams;
 pub(crate) mod timers;
+pub(crate) mod tools;
 
 use crate::runtime::call::{Chain, Invocation, Who};
 use crate::runtime::json;
@@ -102,6 +103,32 @@ pub(crate) enum Effect {
         id: String,
         what: claude::Write,
         by: ModRef,
+    },
+    /// `agent-tools.open` (19.5).
+    AgentOpen {
+        id: String,
+        /// The caller name of the handle, `h<30 hex>`.
+        name: String,
+        owner: ModRef,
+        owner_gen: Option<u64>,
+        origin: String,
+        origin_gen: Option<u64>,
+        toolsets: Vec<String>,
+    },
+    /// `agent-tools.call` (19.5).
+    AgentCall {
+        handle: String,
+        key: String,
+        /// The id of the job's stream.
+        id: String,
+        local: LocalName,
+        /// `<interface>.<function>` of the tool.
+        function: String,
+        args: String,
+        owner: ModRef,
+        owner_gen: Option<u64>,
+        origin: String,
+        origin_gen: Option<u64>,
     },
     /// A harness only: a request that a fake answered (19.1, Harness).
     Fake {
@@ -459,6 +486,7 @@ pub(crate) fn call(
         ("claude-code", "start") => claude::start(inv, claude::launch::Kind::Code, args),
         ("claude-code-shell", "start") => claude::start(inv, claude::launch::Kind::Shell, args),
         ("claude-session", _) => claude::session_call(inv, function, args),
+        ("agent-tools", _) => tools::call(inv, function, args),
         ("streams", "open") => {
             let Some(consumer) = inv.open_consumer(who) else {
                 return Ok(err(StreamError::NotYours));
@@ -709,6 +737,39 @@ fn fake(
             result = Value::Null;
         }
         ("streams", "close" | "cancel") => result = Value::Null,
+        ("agent-tools", "open") => {
+            let n = inv
+                .chain
+                .host
+                .fake_serial
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+                + 1;
+            result = json!({"ok": format!("{n:032x}")});
+            log.push(Effect::Fake {
+                function: "agent-tools.open",
+                args: json!({"toolsets": args.first().map(json::encode).transpose()?}),
+            });
+        }
+        ("agent-tools", "describe") => result = json!({"ok": []}),
+        ("agent-tools", "call") => {
+            let n = inv
+                .chain
+                .host
+                .fake_serial
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+                + 1;
+            result = json!({"ok": format!("s{n}")});
+            log.push(Effect::Fake {
+                function: "agent-tools.call",
+                args: json!({
+                    "handle": args.first().map(json::encode).transpose()?,
+                    "key": args.get(1).map(json::encode).transpose()?,
+                    "tool": args.get(2).map(json::encode).transpose()?,
+                    "args": args.get(3).map(json::encode).transpose()?,
+                }),
+            });
+        }
+        ("agent-tools", "close") => result = Value::Null,
         ("claude-code" | "claude-code-shell", "start") => {
             let n = inv
                 .chain
@@ -945,6 +1006,59 @@ impl Host {
                     drop(catalog);
                 }
                 Effect::ClaudeWrite { id, what, by } => self.claude_write(&id, what, &by),
+                Effect::AgentOpen {
+                    id,
+                    name,
+                    owner,
+                    owner_gen,
+                    origin,
+                    origin_gen,
+                    toolsets,
+                } => {
+                    // The owner and the origin client must still be the installs of the call.
+                    let valid = {
+                        let catalog = self
+                            .catalog
+                            .lock()
+                            .expect("lock poisoned: another thread panicked while holding it");
+                        live_mod(&catalog, Some(&owner.local), &owner.identity, owner_gen)
+                            && live_mod(&catalog, None, &origin, origin_gen)
+                    };
+                    self.agent_open(
+                        id, name, owner, owner_gen, origin, origin_gen, toolsets, valid,
+                    );
+                }
+                Effect::AgentCall {
+                    handle,
+                    key,
+                    id,
+                    local,
+                    function,
+                    args,
+                    owner,
+                    owner_gen,
+                    origin,
+                    origin_gen,
+                } => {
+                    let valid = {
+                        let catalog = self
+                            .catalog
+                            .lock()
+                            .expect("lock poisoned: another thread panicked while holding it");
+                        live_mod(&catalog, Some(&owner.local), &owner.identity, owner_gen)
+                            && live_mod(&catalog, None, &origin, origin_gen)
+                    };
+                    self.agent_call(
+                        handle,
+                        key,
+                        id,
+                        (local, function),
+                        args,
+                        owner,
+                        (origin, origin_gen),
+                        valid,
+                    );
+                }
                 Effect::Fake { .. } => {}
                 other => self.hub.apply(self, other, true),
             }

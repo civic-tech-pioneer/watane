@@ -3,6 +3,7 @@
 
 mod adv_s96;
 mod agent_load;
+mod agent_tools;
 mod binds;
 mod claude;
 mod claude_launch;

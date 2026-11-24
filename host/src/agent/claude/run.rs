@@ -777,6 +777,63 @@ impl Job {
         Ok(())
     }
 
+    /// The MCP config of the launch's handle, in a pipe that `claude` inherits as fd 3 (19.3, The
+    /// run; 19.5 for the token). The run waits for the handle's consents first; `consent-pending`
+    /// goes on the stream once per consent that waits. The token is in this pipe and nowhere else.
+    fn mcp_pipe(&self) -> Result<Option<std::io::PipeReader>, Value> {
+        use crate::agent::tools::Readiness;
+        use std::io::Write;
+        let Some(id) = &self.launch.agent_handle else {
+            return Ok(None);
+        };
+        let mut said: Option<String> = None;
+        let (token, port) = loop {
+            if self.session.stopped() {
+                return Err(json!("gone"));
+            }
+            let host = self.weak.upgrade().ok_or_else(|| json!("gone"))?;
+            match host.handle_readiness(id, &self.session.origin) {
+                Readiness::Ready(token) => {
+                    break (token, host.port.load(std::sync::atomic::Ordering::Acquire));
+                }
+                Readiness::Refused(what) => return Err(json!({"consent-refused": what})),
+                Readiness::Gone => return Err(json!("gone")),
+                Readiness::Pending(what) => {
+                    drop(host);
+                    if said.as_ref() != Some(&what) {
+                        push_wait(
+                            &self.session,
+                            &self.hub,
+                            format!(
+                                r#"{{"type":"consent-pending","what":{}}}"#,
+                                Value::String(what.clone())
+                            )
+                            .into_bytes(),
+                        )?;
+                        said = Some(what);
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            }
+        };
+        if port == 0 {
+            return Err(Self::failed(
+                "the host serves no port for the MCP server of an agent handle",
+            ));
+        }
+        let config = json!({"mcpServers": {"watane": {
+            "type": "http",
+            "url": format!("http://localhost:{port}/mcp/agent"),
+            "headers": {"Authorization": format!("Bearer {token}")},
+        }}});
+        let (reader, mut writer) =
+            std::io::pipe().map_err(|e| Self::failed(format!("cannot make the MCP pipe: {e}")))?;
+        writer
+            .write_all(config.to_string().as_bytes())
+            .map_err(|e| Self::failed(format!("cannot write the MCP config: {e}")))?;
+        Ok(Some(reader))
+    }
+
     #[expect(clippy::too_many_lines, reason = "one run, in the steps of 19.3")]
     fn run(&self) -> Value {
         if self.session.stopped() {
@@ -849,6 +906,13 @@ impl Job {
                 .iter()
                 .map(|path| format!("--add-dir={}", path.display())),
         );
+        let mcp = match self.mcp_pipe() {
+            Ok(pipe) => pipe,
+            Err(outcome) => return outcome,
+        };
+        if mcp.is_some() {
+            args.push("--mcp-config=/dev/fd/3".into());
+        }
         args.extend(launch.flags.iter().cloned());
         if self.session.stopped() {
             return json!("gone");
@@ -881,14 +945,27 @@ impl Job {
         if self.session.stopped() {
             return json!("gone");
         }
-        let child = match Command::new(&program)
+        let mut command = if mcp.is_some() {
+            // `claude` reads its MCP config on fd 3 (19.3), and no `unsafe` can put a pipe there:
+            // the pipe comes in as stderr, and the shell moves it to fd 3 as it execs `claude`,
+            // whose stderr is then `/dev/null`, as without a handle. The program is `$0`, never
+            // part of the script.
+            let mut c = Command::new("/bin/sh");
+            c.arg("-c")
+                .arg(r#"exec "$0" "$@" 3<&2 2>/dev/null"#)
+                .arg(&program);
+            c
+        } else {
+            Command::new(&program)
+        };
+        let child = match command
             .args(&args)
             .current_dir(&cwd)
             .env_clear()
             .envs(environment(launch.depth))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(mcp.map_or_else(Stdio::null, Stdio::from))
             .process_group(0)
             .spawn()
         {
@@ -1599,6 +1676,7 @@ mod tests {
                 depth: 0,
                 ask: false,
                 check: None,
+                agent_handle: None,
             }),
             home: host.home().to_path_buf(),
             mode: Mode::Preview,
