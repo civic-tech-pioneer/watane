@@ -1358,6 +1358,20 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   session's stream. Touches: `host/src/agent/`, `host/src/` consent, `app/` consent view and details. Also adds
   S100's accepted deep-tree line to host TECHNICAL 14 'Not protected' (deputy, 2026-11-24). The
   agentic-harness half (console consent activity and plan line) follows S35/S36. Builder by rule 3.
+- [~] **S113 (upkeep) the app says what it is doing and what Alice agrees to.** (in flight, cloud, builder codex,
+  reviewer claude; rule 3: last two S112 codex, S111 claude; the upkeep lane, sketched 2026-11-24 by deputy-3 from
+  Leftovers `### app`; runs beside S111, which touches only `app/TECHNICAL.md` in app.) Outcomes, each item's check, on the
+  real app (user-sim under xvfb; macOS CI for window tests):
+  1. Consent words: "Deny" says what was denied; the Call line names the interface in words, not `mods:x/y@0.1.0`
+     (from agentic-harness S39's review); installing from an index says it follows the channel; Remove asks first.
+  2. Busy and failure states: a hanging follow or add-index shows a busy state; a disabled provider shows the host's own
+     message; the busy-port window says the local API is not running.
+  3. Plumbing: a grant change updates the page without reloading the whole window; hidden windows still refresh;
+     reinstall after "Keep data" keeps the storage as kept; `/api/fetch` with a wrong body names the field.
+  4. CI noise: the Linux runner prints names with versions and sets `NO_AT_BRIDGE`.
+  Words in app TECHNICAL first. Touches: `app/` (ui, src, scripts, tests), `app/TECHNICAL.md`. No boundary moves (the
+  consent texts are words of existing grants): no adversary unless the build changes what a consent covers. Size: an upkeep
+  slice. Protects: *polish*.
 - [~] **S111 A mod streams from OpenAI on Alice's ChatGPT plan (stage D, the watane half: host A4, dev 18).** (in flight, cloud, builder claude, reviewer codex; rule 3: last two S39 codex, S38 codex; handed out 2026-11-24 ~15:20 UTC beside S103 (the human asked for more concurrency): S111's work is mostly new files (`host/src/agent/https_stream.rs`, dev's `ScriptedResponses`); it builds against S103's branch for `consent` and borrowed authority, and merges main once S103 merges; it must not edit S103's files beyond the wiring line; routine `trig_01F4feSQK4npLjE7VcKYS2pd`, fires 15:16 UTC; DELIVERED ~17:30 UTC as PR #28 (S111's own diff over slice/s103: +5755/-48; user-sim ACCEPTED, adversary HELD with open questions R2 account-identifying response headers to the mod, R3 extra request headers); r1: Codex review https://chatgpt.com/local/6b05cb69-1fc4-83eb-8ef6-624f3ebf9050, dispatched 17:40 UTC, weighs R2 and R3; withheld by Codex's cyber filter; r1 runs on Claude (routine, fires 18:43 UTC): a Claude review of a Claude build, because the other side is down for this content.) agentic-harness stage D needs
   H3 (host 19.4) with the account `openai`, and dev's scripted Responses server, before its OpenAI loop can run.
   Outcomes (user-sim on `watane-dev serve` with a test mod and dev's `ScriptedResponses`, `test-net`):
