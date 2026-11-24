@@ -1375,7 +1375,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   and the token never reaching a mod (adversary); from S103 r3 F3.2: `https-stream.start` under borrowed authority (a tool's job or tools/call) is refused `not_granted`, as host 19.5 says. Protects: *core*.
 - [~] **S112 (upkeep, guard) dist, log, net and pkg close their known gaps.** (in flight, cloud, builder codex,
   reviewer claude; sketched 2026-11-24 by deputy-3 from Leftovers, run beside S103 and S111: it touches none of
-  `host/` or `app/`; Codex task https://chatgpt.com/local/6b05a9c2-788c-83ed-a2bd-c772a853c056, dispatched 15:17 UTC; DELIVERED ~16:20 UTC as PR #27 at 6f0aea0 (+474/-67, all four CI jobs green); r1: Claude review routine, fires 16:31 UTC; r1 (17:14): 2/9, changes (2) (validators PASS x4, adversary BREACHED 2, user-sim ACCEPTED): F1.1 a redirect to a SOCKS scheme reaches a local port, F1.2 lock_dir's owner check untested; answer r1 dispatched 17:18 UTC into the Codex task. Codex's task reported that a shell diagnostic printed fragments of an environment credential into its own transcript (not on GitHub: diff, commits, PR and CI log scanned clean): told the human.) Outcomes, each item's check:
+  `host/` or `app/`; Codex task https://chatgpt.com/local/6b05a9c2-788c-83ed-a2bd-c772a853c056, dispatched 15:17 UTC; DELIVERED ~16:20 UTC as PR #27 at 6f0aea0 (+474/-67, all four CI jobs green); r1: Claude review routine, fires 16:31 UTC; r1 (17:14): 2/9, changes (2) (validators PASS x4, adversary BREACHED 2, user-sim ACCEPTED): F1.1 a redirect to a SOCKS scheme reaches a local port, F1.2 lock_dir's owner check untested; answer r1 dispatched 17:18 UTC into the Codex task; withheld by Codex's cyber filter (as S105 r5); the answer round went to Claude (routine, fires 17:57 UTC); while Codex cannot take this slice's SSRF work, its later rounds stay on Claude, review included (the other vendor's side is down for it). Codex's task reported that a shell diagnostic printed fragments of an environment credential into its own transcript (not on GitHub: diff, commits, PR and CI log scanned clean): told the human.) Outcomes, each item's check:
   1. (guard, S105 adversary) dist's local ranges (5.9) also refuse 100.64.0.0/10, 198.18.0.0/15, 0.0.0.0/8, fec0::/10 and
      the NAT64 and 6to4 forms of a local address, each with a test.
   2. (guard, S109 review) the log refuses a log directory owned by another user (root over a 0700 folder someone else
@@ -2187,6 +2187,8 @@ The human may veto each one.
   Rejected: accepting the race (two runs can interleave swaps in one home).
 
 ## Friction
+
+- 2026-11-24 (S112 r1) Codex's cyber filter withheld an answer round on dist's SSRF guards (third time after S105 r5 twice): a slice of network-boundary guards should start with Claude as builder. (deputy-3)
 
 - (2026-11-23, deputy-2) Codex withheld S105's r5 review behind its cybersecurity filter (adversary output); re-sent once as a new task asking for findings as defects and red tests, not attack steps. A second hit sends that round to Claude: it did (21:44).
 
