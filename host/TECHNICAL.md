@@ -3525,9 +3525,11 @@ The toolsets are those of 10.1; `open` with no toolset, or one that
   it) may only do work that ends with that call. So in such a chain the host refuses, at the
   call, each request that would outlive it: `agent-tools.open` fails `not-granted`; and
   `agent-tools.call`, `streams.open`, `claude-code.start`, `claude-code-shell.start`,
-  `https-stream.start` and `timers.after` fail the call `not_granted` (their WIT has no such
-  case), so the tool's call ends as any failed call does (a job's item `{"err":{"code":
-  "not_granted",..}}`, `tools/call` an error result). A handle, a stream or a timer therefore
+  `https-stream.start` and `timers.after` fail the call `not_granted`, so the tool's call ends as any failed call does (a job's item `{"err":{"code":
+  "not_granted",..}}`, `tools/call` an error result). Most of these have no such case in their
+  WIT. `agent-tools.call` has `not-granted`, but the host still fails the whole call, on
+  purpose: a returned case would let the tool go on and commit what it did before, while a
+  failed call rolls all of it back. A handle, a stream or a timer therefore
   never carries borrowed authority past the call, and a withdrawn toolset consent leaves none
   behind (19.7). Work on streams and timers that the tool's mod already holds (`push`, `close`,
   `cancel`, `claude-session`, `timers.cancel`) and synchronous calls are unchanged. Outside

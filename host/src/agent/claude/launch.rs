@@ -1018,6 +1018,7 @@ mod tests {
 
     /// AC2 (19.3, Picked workspace): the folders that hold credentials, and what lies inside them.
     #[test]
+    #[cfg(unix)] // Unix paths: `/` as the root and a control character in a folder name.
     fn ac2_credential_folders_and_the_homes_are_refused_and_ordinary_ones_pass() {
         let base = tempfile::tempdir().unwrap();
         let base = base.path().canonicalize().unwrap();
@@ -1054,6 +1055,7 @@ mod tests {
     /// S103 fix1 AC2 (19.3, Picked workspace): the added credential folders, and a linked one in
     /// both spellings.
     #[test]
+    #[cfg(unix)] // Links a folder with a Unix symlink.
     fn ac2_s103_fix1_more_credential_folders_and_both_spellings_are_refused() {
         let base = tempfile::tempdir().unwrap();
         let base = base.path().canonicalize().unwrap();
@@ -1100,6 +1102,7 @@ mod tests {
     /// `~/.claude`. Its canonical path must be refused, and so must any folder inside it; else a
     /// mod asks the consent for a path that does not look like a credential folder.
     #[test]
+    #[cfg(unix)] // Links folders with Unix symlinks.
     fn adv_s103_a_symlinked_credential_folder_is_refused() {
         let base = tempfile::tempdir().unwrap();
         let base = base.path().canonicalize().unwrap();
