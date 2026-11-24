@@ -92,6 +92,42 @@ jobs:
         shell: bash
         run: cargo clippy --workspace --all-targets --locked --features "${{ matrix.features }}" -- -D warnings
 
+  # S115, temporary: net's test binary 20 times on Windows, where the reach test flaked
+  # (`Database already open`). Only on a manual run; removed before the slice is delivered.
+  net-repeat:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain (rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: false
+      - name: Build
+        shell: bash
+        run: cargo test -p watane-net --locked --test it --no-run
+      - name: net's tests, 20 times
+        shell: bash
+        run: |
+          failed=0
+          for i in $(seq 1 20); do
+            if cargo test -p watane-net --locked --test it > "run-$i.log" 2>&1; then
+              echo "run $i: green, $(grep -c 'reach::s11_machines_on_different_networks_connect_through_the_servers_relay ... ok' "run-$i.log") x s11 ok"
+            else
+              failed=$((failed + 1)); echo "run $i: RED"; grep -E "panicked|FAILED|cause" "run-$i.log" || true
+            fi
+          done
+          for i in $(seq 1 20); do
+            cargo test -p watane-net --locked --test it reach::s11_ > "s11-$i.log" 2>&1 \
+              && echo "s11 alone $i: green" || { failed=$((failed + 1)); echo "s11 alone $i: RED"; grep -E "panicked|cause" "s11-$i.log" || true; }
+          done
+          echo "red runs: $failed"
+          test "$failed" -eq 0
+
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 15
