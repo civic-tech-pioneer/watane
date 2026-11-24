@@ -443,6 +443,18 @@ impl Broker {
         Ok(())
     }
 
+    /// A test's answer to the head of the queue.
+    #[cfg(test)]
+    pub(crate) fn answer_head(&self, approve: bool) {
+        let (id, _) = self.current().expect("a request waits");
+        let answer = if approve {
+            Answer::Approve { withheld: vec![] }
+        } else {
+            Answer::Deny
+        };
+        self.answer(&id, answer).expect("the head takes the answer");
+    }
+
     pub fn deny_all(&self) {
         {
             let mut state = self

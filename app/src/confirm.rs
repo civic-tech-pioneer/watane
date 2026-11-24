@@ -867,7 +867,7 @@ mod tests {
         ] {
             let future = tokio::spawn(confirm.consent(request("recommendations")));
             wait_head(Arc::clone(&confirm.broker), true).await;
-            let (id, view) = confirm.broker.current().unwrap();
+            let (_, view) = confirm.broker.current().unwrap();
             let consent::Request::Agent { what, origin } = view else {
                 panic!("not an agent request");
             };
@@ -875,12 +875,7 @@ mod tests {
                 words::agent_consent(&what, &origin).1,
                 "Let Recommendations (local) have agents work in /w (coder, through reading-list (local))?"
             );
-            let answer = if approve {
-                consent::Answer::Approve { withheld: vec![] }
-            } else {
-                consent::Answer::Deny
-            };
-            confirm.broker.answer(&id, answer).unwrap();
+            confirm.broker.answer_head(approve);
             assert_eq!(future.await.unwrap(), expected);
         }
         // A closed view or a quit denies every request.
