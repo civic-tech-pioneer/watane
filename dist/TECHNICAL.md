@@ -1140,11 +1140,14 @@ so it works offline (F-QUAL-1). It derives each view once.
    refuses it.
 
 **Install a hit** (the one definition; app 9.6 cites it). `hit.link` names
-the publisher's channel, the front base of its record, and the mod; it is
-`None` for the own channel. The caller follows `hit.link` when it is set
-(`follow_derived`, so that updates and withdrawals keep coming after the index
-drops the mod) and then fetches `hit.info.reference` (5.7). A search never
-installs and never follows.
+the publisher's channel, the front base of its record, and the mod. It is
+`None` for the own channel. The caller uses `read_link(hit.link)` when a
+link is present. If the latest release differs from `hit.info.reference`,
+or there is no link, the caller fetches that exact reference (5.7). The
+caller applies `follow_derived` only after installation succeeds so that
+updates and withdrawals keep coming after the index drops the mod.
+A declined or failed install follows nothing. A search never installs
+and never follows.
 
 ### 5.11 Provider bases (step 5)
 
