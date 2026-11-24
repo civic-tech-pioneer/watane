@@ -477,7 +477,14 @@ which `Host::open` creates (3.1 step 6).
    into lines; each line is parsed into a full record on its own, so a line that
    is not UTF-8 or fails to parse is logged and skipped and the next line is
    still handled; `runs/` is removed only after every line was handled (review
-   r8, F8.1 and F8.2; the deputy's ruling). The check and the signal are one step
+   r8, F8.1 and F8.2; the deputy's ruling). `runs/pids` is opened without
+   following a link and without blocking (`O_NOFOLLOW|O_NONBLOCK`) and read only
+   when it is a regular file, at most 64 KiB; anything else, or the part past
+   64 KiB, is dropped with one log line. A bad line is logged as at most its
+   first 64 bytes, and at most 16 bad lines are logged at one open; one more
+   line gives the count of the rest (adversary S100 pass 13). A leader is
+   verified as a leader: on Linux, with the pidfd open, field 5 (`pgrp`) of
+   `/proc/<pid>/stat` must equal the pid, read with the start time. The check and the signal are one step
    (review r6, F6.3; the deputy's ruling): on Linux the host opens a pidfd of
    the leader, checks the start time and boot id with it open, and sends
    SIGKILL to that exact process through the pidfd (`pidfd_send_signal`), so
@@ -1806,7 +1813,10 @@ run on the preview install path.
 | A rolled-back call has no outside effect | requests and stream effects ride up the chain and apply only after its durable commit; a deferred or failed call drops its own and those of the calls nested in it (19.6). File: `src/runtime/call.rs` | A1: cases 21, 36; S53 |
 
 Not protected (spec §6): another program of the same user, which can read
-the home and call `/call` or `/events` with a forged `Origin`; a
+the home and call `/call` or `/events` with a forged `Origin`, and can write
+`runs/pids` naming a live group leader of that user with its true start time
+and boot id, which the host then kills at open (3.1 step 3; adversary S100
+pass 13); a
 compromised OS; a fault in Wasmtime; a privileged network change that adds
 `::1` after a host started without it (8.1): `[::1]:<port>` is then free for
 another program until the host restarts. Step 11 (agentic-harness TECHNICAL
