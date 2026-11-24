@@ -1548,13 +1548,21 @@ sign-title wording functions, shared by the pages and their wording tests.
   `uncheckedSince` as `not read since <ago>`, as in 5.3.5. A compromised
   hit shows the compromised tag and explanation, with no install button.
 - `install_release(release, link)`: `ReleaseRef::from_str`,
-  `Link::from_str`. A link naming the release's publisher and slug is read
+  `Link::from_str`; follow dist 5.10 “Install a hit”. A link naming the release's publisher and slug is read
   with `node.read_link`; if the latest release differs, fetch the exact
   reference with `node.fetch`. Without a matching link, fetch the exact
   reference through the locations already known to dist. Then run steps
   3 to 5 of 9.4, with the fetched release as the first source and derived
   follows only after install succeeds. Return the same `installed` and newly
   `followed` labels as 9.4.
+  In interactive install consent, each linked channel the app expects to
+  start following is named as `Approving also follows <party> for updates.`
+  The labels come from the fetched releases, excluding channels already
+  followed and the own channel. If the participant declines the install,
+  the manager shows `You declined installing <mod name>.` in its normal
+  status notice and stays in the current view. The next action clears
+  the notice. Other install failures still show their cause in the error
+  line.
 - `index_list`, `index_include`, `index_unlist`: `dist.list`,
   `dist.include`, `dist.unlist` in `spawn_blocking`; the participant sees
   the `Sign` request (6.2). dist's refusals before the consent view
