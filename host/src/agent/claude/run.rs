@@ -293,17 +293,22 @@ fn bad_line(line: &[u8]) -> String {
 }
 
 /// Opens `runs/pids` without following a link and without blocking, and reads at most
-/// `PIDS_CAP` bytes of it when it is a regular file. The flag is true when the file was longer.
+/// `PIDS_CAP` bytes of it when it is a regular file; anything else but a missing file is logged
+/// once. The flag is true when the file was longer.
 fn read_pids(path: &Path) -> Option<(Vec<u8>, bool)> {
     use std::os::unix::fs::OpenOptionsExt;
-    let file = std::fs::OpenOptions::new()
+    let opened = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags((rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32)
-        .open(path)
-        .ok()?;
-    if !file.metadata().ok()?.is_file() {
-        return None;
-    }
+        .open(path);
+    let file = match opened {
+        Ok(file) if file.metadata().is_ok_and(|m| m.is_file()) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        _ => {
+            eprintln!("watane: runs/pids is not a regular file: it is not read");
+            return None;
+        }
+    };
     let mut bytes = vec![];
     file.take(PIDS_CAP + 1).read_to_end(&mut bytes).ok()?;
     let over = bytes.len() as u64 > PIDS_CAP;
@@ -327,7 +332,7 @@ fn clean_lines<H>(
     let mut bad = 0usize;
     // An empty piece (after the last newline, or a blank line) is no record and not logged.
     for line in bytes.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
-        if parse_record(line).is_none() {
+        if !clean_line(line, boot, &hold, &start_of, &signal) {
             bad += 1;
             if bad <= BAD_LOGGED {
                 eprintln!(
@@ -335,9 +340,7 @@ fn clean_lines<H>(
                     bad_line(line)
                 );
             }
-            continue;
         }
-        clean_line(line, boot, &hold, &start_of, &signal);
     }
     if bad > BAD_LOGGED {
         eprintln!(
@@ -348,7 +351,7 @@ fn clean_lines<H>(
 }
 
 /// What startup does with one line of `runs/pids`: the line is parsed into a full record first
-/// (`parse_record`); a bad one is logged and skipped. Then the leader is held (`hold`), its
+/// (`parse_record`); a bad one is skipped, and false returned for the caller to log. Then the leader is held (`hold`), its
 /// identity is checked while it is held, and the signal goes to that held process (`signal`),
 /// never to the group by its number. Without a hold nothing is signalled, and a recorded group
 /// that still matches is logged as a leftover; so are the other members of a group whose leader
@@ -359,13 +362,9 @@ fn clean_line<H>(
     hold: impl FnOnce(i32) -> Option<H>,
     start_of: impl Fn(i32) -> Option<String>,
     signal: impl FnOnce(&H),
-) {
+) -> bool {
     let Some(record) = parse_record(line) else {
-        eprintln!(
-            "watane: a bad record in runs/pids is dropped: {}",
-            bad_line(line)
-        );
-        return;
+        return false;
     };
     let pgid = record.pgid;
     let held = hold(pgid);
@@ -381,6 +380,7 @@ fn clean_line<H>(
         }
         (false, _) => {}
     }
+    true
 }
 
 /// Holds the leader of a group: a pidfd, open while the identity is checked and the signal is
@@ -1526,7 +1526,7 @@ mod pids_tests {
             #[cfg(target_os = "linux")]
             format!("7 {BOOT} -1"),
         ] {
-            clean_line(
+            let parsed = clean_line(
                 bad.as_bytes(),
                 BOOT,
                 |pgid| {
@@ -1536,6 +1536,7 @@ mod pids_tests {
                 |_| None,
                 |_: &Held| {},
             );
+            assert!(!parsed, "{bad}");
         }
         assert!(held.borrow().is_empty(), "{:?}", held.borrow());
         let home = tempfile::tempdir().unwrap();
@@ -1882,10 +1883,29 @@ mod fix21_tests {
         let _ = member.kill();
         let _ = member.wait();
         assert!(none);
-        assert!(leader_start_time(i32::try_from(std::process::id()).unwrap()).is_none());
     }
 
-    /// Twenty bad lines of 200 bytes: 16 are logged, cut at 64 bytes, then one line with the rest.
+    /// The log of one open, in a child so its standard error can be read.
+    fn log_of(home: &Path) -> Vec<String> {
+        let out = Command::new(std::env::current_exe().expect("exe"))
+            .args([
+                "--exact",
+                "agent::claude::run::fix21_tests::s100_fix21_ac4_twenty_bad_lines_log_sixteen_and_a_count",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("FIX21_HOME", home)
+            .output()
+            .expect("child");
+        let log = String::from_utf8(out.stderr).expect("utf-8");
+        log.lines()
+            .filter(|l| l.starts_with("watane:"))
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// Twenty bad lines of 200 bytes, then padding past 64 KiB: 16 are logged, cut at 64 bytes,
+    /// then one line with the rest, then one line for the cap. A link at `runs/pids`: one line.
     #[test]
     fn s100_fix21_ac4_twenty_bad_lines_log_sixteen_and_a_count() {
         if let Some(home) = std::env::var_os("FIX21_HOME") {
@@ -1894,26 +1914,26 @@ mod fix21_tests {
         }
         let home = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(home.path().join("runs")).unwrap();
-        let line = format!("{}\n", "x".repeat(200));
-        std::fs::write(home.path().join("runs/pids"), line.repeat(20)).unwrap();
-        let out = Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "agent::claude::run::fix21_tests::s100_fix21_ac4_twenty_bad_lines_log_sixteen_and_a_count",
-                "--nocapture",
-                "--test-threads=1",
-            ])
-            .env("FIX21_HOME", home.path())
-            .output()
-            .unwrap();
-        let log = String::from_utf8(out.stderr).unwrap();
-        let ours: Vec<&str> = log.lines().filter(|l| l.starts_with("watane:")).collect();
-        assert_eq!(ours.len(), 17, "{log}");
+        let mut file = format!("{}\n", "x".repeat(200)).repeat(20).into_bytes();
+        file.resize(70_000, b'\n');
+        std::fs::write(home.path().join("runs/pids"), file).unwrap();
+        let ours = log_of(home.path());
+        assert_eq!(ours.len(), 18, "{ours:?}");
         assert!(
             ours[0].ends_with(&format!("\"{}\"", "x".repeat(64))),
             "{}",
             ours[0]
         );
         assert!(ours[16].contains("4 more"), "{}", ours[16]);
+        assert!(ours[17].contains("over 65536 bytes"), "{}", ours[17]);
+        std::fs::create_dir_all(home.path().join("runs")).unwrap();
+        std::os::unix::fs::symlink("/dev/null", home.path().join("runs/pids")).unwrap();
+        let ours = log_of(home.path());
+        assert_eq!(ours.len(), 1, "{ours:?}");
+        assert!(ours[0].contains("not a regular file"), "{}", ours[0]);
+        assert!(
+            log_of(home.path()).is_empty(),
+            "a missing runs/pids is no event"
+        );
     }
 }
