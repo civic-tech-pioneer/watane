@@ -115,8 +115,8 @@ required-features = ["fake-claude"]
 Step 11 adds the feature `fake-claude` (18.1), on by default. Unlike
 `fake-host`, it stays in the distribution build: the programs
 `fake-claude` and `scripted-responses` ship in the release (18.1).
-`[dev-dependencies]` also gain a TLS client (`ureq` with its `rustls`
-feature, or `rustls` itself) for the tests of 15.5.
+`[dev-dependencies]` also gain a TLS client (`reqwest` with rustls, and
+`rustls-native-certs` for the system roots) for the tests of 15.5 and 18.3.
 
 Distribution builds use `cargo build --release --no-default-features
 --features fake-claude` to omit the fake host and keep the agent layer
