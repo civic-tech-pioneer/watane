@@ -1371,6 +1371,14 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Touches: `app/`, `dist/`, `log/`, `net/` and their TECHNICAL, never `host/` or `dev/`. Boundaries: dist 5.9 and log's
   key folder are touched by tests only, the managed install by item 1 (adversary on item 1). Size: an upkeep slice.
   Protects: *guard* (item 1), else *polish*.
+- [~] **S117 (upkeep) the app's last leftovers and S116's polish.** (in flight, cloud, builder codex, reviewer claude;
+  rule 3: last two S116 codex, S115 claude; the upkeep lane, sketched 2026-11-25 by deputy-3; beside S114, which holds
+  `host/` and `dev/`.) Outcomes, each item's check: (1) S116 r1 P1.1 to P1.7 (the mixed-plan consent test, the dist
+  redirect test that records calls, `Io` for OS failures in `check_owner_only`, the `icacls` oracle on parent and dir, a
+  test-only STORE_WAIT that brings net's unit tests back near 1 s); (2) S44: `Core::mods()` stops re-reading every
+  related channel view on each 2 s refresh (memoize or read on change), with a test that counts the reads; (3) S58:
+  channel rows show words, not raw transport text, with words in app TECHNICAL first. Touches: `app/`, `dist/`, `log/`,
+  `net/`, never `host/` or `dev/`. No boundary moves (adversary not run unless one does). Protects: *polish*.
 - [~] **S114 A maker previews an OpenAI-backed mod on scripted responses (stage D, dev 18; F-MAKE-4).** (in flight,
   cloud, builder codex, reviewer claude; rule 3: last two S40 claude, S113 codex; main line, sketched 2026-11-24 by
   deputy-3: F-MAKE-4 promises a scripted OpenAI stream in a preview from stage D, and dev TECHNICAL question 15 recommends
