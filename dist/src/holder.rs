@@ -2,8 +2,7 @@
 //! that `node` serves to and stores from other machines. Takes no read lock.
 
 use crate::{
-    Dist, DistError, Entry, EntryId, Follow, Package, PackageId, PublicKey, ReleaseInfo, follow,
-    site, view,
+    Dist, DistError, Entry, EntryId, Follow, Package, PackageId, PublicKey, ReleaseInfo, site, view,
 };
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -134,7 +133,7 @@ impl Dist {
         let mut next = records.clone();
         let record = next
             .entry(*channel)
-            .or_insert_with(|| self.new_record(*channel, false, false, true));
+            .or_insert_with(|| Self::new_record(false, false, true));
         record.kept = true;
         self.save_follows(records, next)?;
         Ok(())
@@ -226,32 +225,15 @@ impl Dist {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
-        let mut staged = None;
         match next.get_mut(channel) {
             // A follow between step 2 and here keeps the record, not the mark.
             Some(r) if had || r.followed => r.kept = false,
-            // The record took its channel's tombstone (4.4, DD-48): leave it again.
-            Some(r) if !r.followed => {
-                if !r.seen.is_empty() || !r.given.is_empty() {
-                    let tomb = crate::Tombstone {
-                        seen: r.seen.clone(),
-                        given: r.given.clone(),
-                        seen_full: r.seen_full,
-                        at: follow::now(),
-                    };
-                    let mut tombs = self
-                        .tombs
-                        .lock()
-                        .expect("lock poisoned: another thread panicked while holding it")
-                        .clone();
-                    follow::add_tombstone(&mut tombs, channel.to_string(), tomb);
-                    staged = Some(tombs);
-                }
+            Some(_) => {
                 next.remove(channel);
             }
             _ => return Ok(()),
         }
-        let saved = self.save_staged(&mut records, next, staged);
+        let saved = self.save_follows(&mut records, next);
         if saved.is_err() {
             drop(records);
             self.leave_pending(|state| state.take_back.push((*channel, had)));

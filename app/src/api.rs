@@ -357,6 +357,7 @@ fn publish_providers(
                         })
                     })
             });
+        // List preflight uses the listed-read policy for both sources of the link.
         let listed = already
             || link.is_some_and(|link| {
                 dist.list(&link, &format!("used by {}", release.slug))

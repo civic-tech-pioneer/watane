@@ -232,9 +232,9 @@ mod windows {
     }
     impl FindFixture {
         fn new() -> Self {
-            use super::support::publish::{Site, dist};
+            use super::support::publish::{Site, dist, listing_dist};
             let publisher_home = tempfile::tempdir().unwrap();
-            let publisher = dist(publisher_home.path());
+            let publisher = listing_dist(publisher_home.path());
             publisher.set_name("Ivy").unwrap();
             let site = Site::serve(publisher.site_dir());
             publisher.set_site_url(&site.base).unwrap();

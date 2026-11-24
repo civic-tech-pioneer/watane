@@ -352,14 +352,8 @@ async fn ac1_fetch_link_verified_without_follow_or_consent() {
         watane_dist::PackageId::of(&bytes).to_string()
     );
     assert_eq!(bytes, package());
-    // dist A40: no record; the only change is Carol's provenance tombstone.
-    let file: Value = serde_json::from_slice(&std::fs::read(follows).unwrap()).unwrap();
-    let carol_key = link.channel().to_string();
-    assert_eq!(file["channels"], json!({}), "{file}");
-    let seen = file["seen"].as_object().expect("tombstones");
-    assert_eq!(seen.keys().collect::<Vec<_>>(), [&carol_key], "{file}");
-    assert_eq!(seen[&carol_key]["seen"], json!([link.base()]), "{file}");
-    assert_eq!(seen[&carol_key]["given"], json!([]), "{file}");
+    // A read leaves no follow or provenance.
+    assert!(!follows.exists());
     assert!(dist.followed().unwrap().is_empty());
     assert!(dist.own().unwrap().releases.is_empty());
     assert!(confirm.requests.lock().unwrap().is_empty());
@@ -521,6 +515,42 @@ async fn ac3_fetch_errors_loopback_and_host_origin_guard() {
         .unwrap();
     assert_eq!(response.status().as_u16(), 403);
     served.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn s107_publish_provider_read_uses_listed_entry_budget() {
+    let publisher_home = tempfile::tempdir().unwrap();
+    let publisher = open(publisher_home.path(), Recording::new(true), true);
+    let site = Site::serve(publisher.site_dir()).await;
+    publisher.set_site_url(&site.base).unwrap();
+    let link = publisher.publish(package()).unwrap().link.unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let confirm = Recording::new(true);
+    let dist = Arc::new(
+        watane_dist::Dist::open(
+            home.path(),
+            Arc::<Recording>::clone(&confirm),
+            watane_dist::Options {
+                listed_local: true,
+                max_listed_entries: 0,
+                ..Default::default()
+            },
+        )
+        .unwrap(),
+    );
+    let (status, _, bytes) = api_request(
+        Some(dist),
+        "/api/publish",
+        api_support::consumer(&publisher.identity().unwrap()),
+        Some(&link.to_string()),
+    )
+    .await;
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&bytes));
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["providers"][0]["listed"], false);
+    let requests = confirm.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].statement.kind(), "release");
 }
 
 #[tokio::test(flavor = "multi_thread")]

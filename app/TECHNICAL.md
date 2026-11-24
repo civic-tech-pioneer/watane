@@ -1024,7 +1024,7 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `channel_unfollow` | main | `channel` | `null` | C |
 | `channels_refresh` | main | — | `[ChannelRow]` | C |
 | `indexes_list` | main | — | `[IndexRow]` | D |
-| `index_choose` | main | `link` | `[IndexRow]` | D |
+| `index_choose` | main | `link, derived?` | `[IndexRow]` | D |
 | `index_drop` | main | `channel` | `null` | D |
 | `search` | main | `text`, `publisher: string \| null`, `interface: string \| null`, `origin: string \| null` (step 5: `<key>/<slug>`, for the derived list of 9.7) | `[HitView]` | D |
 | `install_release` | main | `release` (ReleaseRef text), `link: string \| null` (the hit's) | `{installed: [local], followed: [label]}` | D |
@@ -1223,6 +1223,8 @@ the release whose key is not the own key, in grant order:
 3. Else `listed: false`.
 
 A header link whose key and slug match no such provider is ignored.
+Provider listing preflight uses the listed-read policy (dist 5.9), including
+when the provider link comes from a mod request header.
 
 A `false` never fails the publish: the release is signed. It means that a
 person who installs it needs a followed channel or an index that names the
@@ -1414,7 +1416,7 @@ text as the Updates failed-channel card. The base URL may be the row's
 4. `host.install(plan, Requester::App).await` (the consent view through
    HostConfirm).
 5. Step 5: for each `Fetched` of this install (the hit of a pick too) whose `link` is set and whose
-   channel is not followed, `dist.follow(&link)` (dist 5.11, DD-29), so
+   channel is not followed, `node.follow_derived(&link)` (dist 5.11, DD-29), so
    that a provider's updates and withdrawals keep coming. A failed follow
    does not undo the install; it shows as that channel's failure
    (APP-F-37).
@@ -1494,8 +1496,9 @@ When the own channel is the only index and has no live listings or includes,
 its row is hidden and the hint shows alone. Any live own listing or include,
 or another chosen index, makes the own row visible again.
 watane adds no index by itself (W23). A row of the channels view gets the
-buttons "Use as index" (`index_choose` with the row's link), "Include in my
-index", and for each of its mods "List in my index".
+buttons "Use as index", "Include in my index", and for each of its mods
+"List in my index". "Use as index" sets `derived: true` on `index_choose`.
+Row listing buttons use the listed preflight rules and give no base.
 
 The page gets a followed channel's mods with `search` filtered by that
 channel's publisher key. The channels row builds its channel and mod links
@@ -1508,8 +1511,9 @@ sign-title wording functions, shared by the pages and their wording tests.
   its live `list` listings. `status` and `cause` as for
   `ChannelRow` (9.3), except an index failure reads `Could not read <index>: <cause>`
   with its profile name, else its key fingerprint. The own row has `you: true`.
-- `index_choose(link)`: `Link::from_str`, `dist.choose_index(&link)` in
-  `spawn_blocking`; keep each `Outcome::Failed` cause; refill the parties
+- `index_choose(link, derived?)`: parse the link. In `spawn_blocking`, call
+  `node.choose_index_derived(&link)` for a row link, or `node.choose_index(&link)`
+  for a pasted link. Keep each `Outcome::Failed` cause; refill the parties
   cache; answer `indexes_list`. A failed first read is a command error with
   `Could not read <index>: <cause>` with its stored name, else the link's
   fingerprint (APP-F-37).
@@ -1531,7 +1535,7 @@ sign-title wording functions, shared by the pages and their wording tests.
   `uncheckedSince` as `not read since <ago>`, as in 5.3.5. A compromised
   hit shows the compromised tag and explanation, with no install button.
 - `install_release(release, link)`: `ReleaseRef::from_str`,
-  `Link::from_str`; then dist 5.10 "Install a hit" (follow the link when
+  `Link::from_str`; then dist 5.10 "Install a hit" (follow the derived link when
   it is set, `dist.fetch(&release)`); then steps 3 and 4 of 9.4 with the
   fetched release as the first source. The consent view shows the plan as
   for a link. Return the same `installed` and newly `followed` labels as 9.4,
@@ -1630,7 +1634,7 @@ existing fields (in particular no `verified`; the UI HitView has it).
 **Calls through node.** In sections 8, 9.1 to 9.7, these calls go to
 `node` in place of `dist`: `set_name`, `publish`, `withdraw`, `list`,
 `include`, `unlist`, `confirm_own`, `follow`, `refresh`,
-`refresh_channel`, `choose_index`, `fetch`, `fetch_for`, `open_link`,
+`refresh_channel`, `choose_index`, `choose_index_derived`, `fetch`, `fetch_for`, `open_link`,
 `read_link` and `search` (`node.search` gives `NodeHit`; `HitView.from`
 is its machines' short keys, APP-F-59). After each install of a fetched
 release (9.4, 9.6, 9.7), `node.installed(&fetched)` (node 5.3). The views

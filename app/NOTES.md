@@ -1804,3 +1804,12 @@ S98-fix1: `gui_shell::ac5_install_and_each_*` enabled `#approve` and clicked it 
 
 S103-3: `Request::Agent` has no `asked_by`, so `stop` is `WrongAnswer`; `consent_get` carries the words (`title`, `question`) from `words::agent_consent`, the page does not rebuild them. The details' consent line names the mod by its name alone (`Let <mod> ...`), and has no profile, because host keeps none (`Consent::Workspace {via, folder}`); the consent view names the origin as an asker. `PlanMod.agents_via` is read from the provider's grants (the plan's, or the installed mod's granted ones). The S58/S60 fixtures `claude`, `claude-front` and `fake-claude` are host's own (`host/tests/fixtures`), read in place as J9 does; the test copies `claude` and adds a `ui/index.html` so it can call it from a page (validator: the first version kept copies, which would drift from host's).
 S103-3 (accounts): `HostConfirm::accounts` now hands the host an `AccountSource` (`accounts::Source`) that gives the chosen `claude` program; before it the host answered `no-app` to every start in a real home. `openai_token` and `judge` are `NoAccount` until the ChatGPT and judge stages wire them.
+
+## S107 — Listing and follow provenance
+
+A fetch link leaves no follows file behind. Direct test publishers that build
+listings from fixture sites opt in to local listed reads. Tests for refusal
+keep the production address policy.
+
+The channel-row index action uses a derived link. Its fixture checks that
+choosing the index leaves the base without explicit permission.

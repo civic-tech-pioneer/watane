@@ -1340,7 +1340,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   (regular file, nlink 1, owner the user, mode 0600); a symlink, a hard link, a FIFO or a device node at the key path is
   refused with a clear error and the key is never read from it; each has a test. Unix only: the Windows design waits on
   the human (factory/README "Windows"). A security boundary (spec/TECHNICAL.md 6): the adversary runs. Touches: `log/`.
-- [~] **S107 (guard) a base reached through dist's own links is never given (S105 option A).** (in flight, cloud, builder codex, reviewer claude; rule 3: last two S110 codex, S105 claude; dispatched ~07:29 UTC 2026-11-24, https://chatgpt.com/local/6b053cd8-4bc8-83eb-aba3-7bb52479b044; S110 runs beside it in dist/ with cfg gates only, the later one rebases; DELIVERED 07:45 UTC as PR #25 (Codex skipped its own offensive run); r1: Claude review routine `trig_01Sa7fvx79L7MQPknvbpYMV6`, fires 08:41 UTC; r1 (10:05): 2/6, changes (2) (validators RETURN x3, adversary BREACHED 1: 'Use as index' on a channel row gives Eve's derived base; user-sim REJECTED 1: a legacy local base fails with a wrong cause); F1.2 narrowed to naming the cause, the card hint is polish; answer r1 dispatched 10:09 UTC into the Codex task; r1 answered at 67152c1 (F1.1, F1.2 and P1.1-P1.6 fixed; the card hint skipped); r2: Claude review routine `trig_01BtdcWAYmzzB6gMRk5cJHA4`, fires 10:18 UTC; r2 (10:48): 1/2, changes (1): adversary HELD, user-sim ACCEPTED, F2.1 a test fixture that keeps macOS CI red; answer r2 dispatched 10:51 UTC; r2 answered at 3779fa6 (F2.1, P2.1, P2.2); r3: validator plus an adversary pass on P2.2's read-policy change, routine `trig_017bcbSmkXwXLc2sHx4aUZ39`, fires 10:53 UTC.) (was sketch ahead; S102 merged;
+- [x] **S107 (guard) a base reached through dist's own links is never given (S105 option A).** DONE 2026-11-24: PR #25 merged with --admin at e3302e25 on the human's word, ~4.3 h in flight, builder codex, reviewer claude, 3 rounds (2/6, 1/2, 0/3; r1 adversary BREACHED 1: 'Use as index' on a channel row, fixed). Only Bob's own follow, open or index choice gives a base; search hits, fetched releases, listings and row buttons read listed; a legacy local base fails naming 'local address'. One risk accepted by the deputy (Deputy decisions). (Was: in flight, cloud, builder codex, reviewer claude; rule 3: last two S110 codex, S105 claude; dispatched ~07:29 UTC 2026-11-24, https://chatgpt.com/local/6b053cd8-4bc8-83eb-aba3-7bb52479b044; S110 runs beside it in dist/ with cfg gates only, the later one rebases; DELIVERED 07:45 UTC as PR #25 (Codex skipped its own offensive run); r1: Claude review routine `trig_01Sa7fvx79L7MQPknvbpYMV6`, fires 08:41 UTC; r1 (10:05): 2/6, changes (2) (validators RETURN x3, adversary BREACHED 1: 'Use as index' on a channel row gives Eve's derived base; user-sim REJECTED 1: a legacy local base fails with a wrong cause); F1.2 narrowed to naming the cause, the card hint is polish; answer r1 dispatched 10:09 UTC into the Codex task; r1 answered at 67152c1 (F1.1, F1.2 and P1.1-P1.6 fixed; the card hint skipped); r2: Claude review routine `trig_01BtdcWAYmzzB6gMRk5cJHA4`, fires 10:18 UTC; r2 (10:48): 1/2, changes (1): adversary HELD, user-sim ACCEPTED, F2.1 a test fixture that keeps macOS CI red; answer r2 dispatched 10:51 UTC; r2 answered at 3779fa6 (F2.1, P2.1, P2.2); r3: validator plus an adversary pass on P2.2's read-policy change, routine `trig_017bcbSmkXwXLc2sHx4aUZ39`, fires 10:53 UTC; r3 (11:45): 0/3, VERDICT approve (validator PASS, adversary HELD), CI green but Windows (continue-on-error, S110's); waits on the human's merge word.) (was sketch ahead; S102 merged;
   waits for S105 to merge, since both touch dist/.) A follow from a derived link (a search-hit install, the app's `follow_fetched` after
   an install, DD-29) never gives its base; only a link the participant opens or pastes (`open_link`, a pasted follow,
   `choose_index`) does. dist gets a way to say which (e.g. `follow_derived(link)` or a `Given` flag), and the app calls it.
@@ -1351,7 +1351,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   its own: the same question (which links may give a base), the same files, and S107 already goes out as soon as S105
   merges. Touches: `dist/` (incl. `own.rs`), `app/src/core.rs`, `app/src/api.rs`. A security boundary: the adversary runs.
 - [~] **S103 Alice gives a mod's agents a folder, and can take it back (stage C, the watane half: host A3,
-  app 19.2).** (in flight, cloud, builder claude, reviewer codex; rule 3: last two S107 and S110 codex; routine `trig_01HDxDURcJvT2C5LrfygVeXb`, fires 07:33 UTC 2026-11-24; app window outcomes go to the macOS CI job; S110 runs beside it in host/src/agent/ with cfg gates only.) (was sketch ahead; after S100 merges: it touches host/src/agent/, as S100 does.) agentic-harness
+  app 19.2).** (in flight, cloud, builder claude, reviewer codex; DELIVERED 11:28 UTC as PR #26 (+9327/-184; adversary BREACHED 2 fixed then HELD, user-sim ACCEPTED 5/5; its foreman chose Q38 (b), Q49 (a), Q50 (a)); r1: Codex review https://chatgpt.com/local/6b057a0e-c9d4-83eb-aa82-158d1014304c, dispatched 11:53 UTC; rule 3: last two S107 and S110 codex; routine `trig_01HDxDURcJvT2C5LrfygVeXb`, fires 07:33 UTC 2026-11-24; app window outcomes go to the macOS CI job; S110 runs beside it in host/src/agent/ with cfg gates only.) (was sketch ahead; after S100 merges: it touches host/src/agent/, as S100 does.) agentic-harness
   stage C: the workspace consent held before `initialized`, the consent view's words (app S58, S60),
   withdrawal ending dependent streams and closing handles, H4 agent tools (host 19.5), `consent-pending`.
   Outcomes: app S58 and S60 on the real app; host case 31 `consent` part; a withdrawal mid-turn ends that
@@ -1393,7 +1393,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   adversary runs on the `log` change. Size: a whole capability (Windows as a checked platform).
   Progress: draft PR #23; BLOCKED at 80ffd54 (20:56 UTC) as briefed: log (native no-follow handles, owner-only ACLs,
   refusal tests), net, pkg, install ported; Windows build now fails only in host/src/agent/ and dist/. Resume after S100
-  and S105 merge: a build brief "continue from branch slice/s110; rebase onto main" into the same Codex task. Resumed ~07:28 UTC 2026-11-24 in the same task (edits in dist/ and host/src/agent/ kept to cfg gates and refusals, since S107 and S103 run there).
+  and S105 merge: a build brief "continue from branch slice/s110; rebase onto main" into the same Codex task. Resumed ~07:28 UTC 2026-11-24 in the same task (edits in dist/ and host/src/agent/ kept to cfg gates and refusals, since S107 and S103 run there). Windows failures per run: 358, 85, 30, 16, 15, 2, 0; DELIVERED ~11:45 UTC at 68d1dd4 (Windows green on attempts 1-3 of run 45370144960; Linux and macOS suite times within 10% of a parallel main run); r1: Claude review routine `trig_01CRaJJrcV955wX2NNsZP4NR`, fires 11:52 UTC.
 
 ## Suite time
 
@@ -1627,6 +1627,11 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### dist
 
+- [S107 P3.1] `dist/TECHNICAL.md:1046` rewrap the `choose_index_derived` line and cite 'Listed records'; ~973 add 'and derived index choices'.
+- [S107 P3.2] `dist/src/follow.rs:201` `derived_base_is_listed` needs a `///` line and a blank line before it.
+- [S107 P3.3] `app/tests/it/find.rs:286` create the home in-process (`build_on.rs:167` `app_home()`) instead of an app launch.
+- [S107 skipped] the Updates card hint for a refused legacy local base: 'open or paste the publisher's link again'.
+
 
 - [S26] Q12: log entries of unlisted channels are never removed. `prune_listed_channels` touches
   only follows.json (dist/src/index.rs:463); log has no `forget` API (log/src/lib.rs:81).
@@ -1834,6 +1839,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+
+- 2026-11-24 (S103) host 18 Q49 (a) and Q50 (a) accepted: each was open with (a) recommended, the stricter option, cheap to undo (deny lines; one table and one check); S103's foreman built them. Q38 stays the human's (Waiting on the human); S103 built (b), which keeps (a) open. Undo: as host 18 states for each.
+
+- 2026-11-24 (S107 r3) accepted: a base the participant gave for a channel survives an unfollow while an index still lists that channel, and a later derived re-follow reads it unlisted again. Needs three events together, the participant's own base for the same channel, no new address for Eve. Undo: clear `explicit_given` on unfollow (dist follow.rs).
 
 - 2026-11-23 (S105, the 'gone' filter) Accepted until S107: the 32768-bit gone filter saturates under listing churn, after which a new channel's link at a LAN mirror stays a listed read (availability only, fails closed; same kind as the seen_full lock).
 - 2026-11-23 (S100, ninth adversary pass) Not accepted: `clean_runs` killing a recorded pgid at open without checking it is still this home's run, and `probe()` killing its group after the reap. Same class as the stop() pgid reuse the human vetoed; added to S100's last answer round as item 5.

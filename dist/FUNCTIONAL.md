@@ -314,14 +314,12 @@ its own local host.
   The same holds for `http://localhost./`, and when a listed base answers
   with a redirect to such an address: that target gets no request and the
   read fails with `BadUrl` ("local address"); a redirect to a non-local
-  host is followed, at most 5 times. A base the participant gave by a link
-  (follow, choose, open) may redirect anywhere. A base of a followed or
-  chosen record that the participant never gave, such as one saved before
-  this rule or learned from a listing, is read like a listed base: when
-  that base is itself local it gets no request, at follow and choose too,
-  and a redirect target is checked. A link gives a base when the
-  participant gave it before, or the channel never saw it and its record
-  is not full (TECHNICAL 4.4, DD-48). (DIST-F-49)
+  host is followed, at most 5 times. A base of a followed or chosen record
+  without explicit permission is read as listed. This covers legacy bases,
+  listing bases, search hits and fetched releases. A local base gets no
+  request, including the first read of a derived follow or index choice.
+  Only `follow`, `choose_index`, or `open_link` of the participant's link
+  gives its base (TECHNICAL 4.4, DD-48). (DIST-F-49)
 
 ### Step 5
 
@@ -355,9 +353,8 @@ its own local host.
   of `ratings` has Dave's base for Carol, and no dead base is read before
   it. (DIST-F-50)
 - **A40 Read a link.** When Eve calls `read_link` on Carol's link, then
-  she gets the verified package and no record of Carol in `follows.json`:
-  its only change is a tombstone for Carol whose `seen` holds the link's
-  base (the provenance of 4.4, S105 r8). No consent is asked. A link on
+  she gets the verified package and no record of Carol in `follows.json`.
+  The read confers no permission to use the base. No consent is asked. A link on
   `127.0.0.1` with `listed_local` false is `BadUrl`, with no request.
   (DIST-F-54)
 - **A41 Offline provider.** Given A36 done once, when every host stops,

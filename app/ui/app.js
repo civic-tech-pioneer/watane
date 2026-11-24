@@ -384,7 +384,7 @@ async function channelsView() {
     button(row, 'Unfollow', 'unfollow', () => action('channel_unfollow', {channel: channel.channel}));
     if (!channel.base) continue;
     const link = `watane:${channel.channel}@${channel.base}`;
-    button(row, 'Use as index', 'use-index', () => action('index_choose', {link}));
+    button(row, 'Use as index', 'use-index', () => action('index_choose', {link, derived: true}));
     if (!canSign) continue;
     const note = noteInput(row, 'Note for including this channel', 'include-note');
     button(row, 'Include in my index', 'include-index', () => action('index_include', {link, note: note.value}));

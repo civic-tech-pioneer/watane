@@ -389,6 +389,16 @@ if (which === 's90-channels') {
     assert.ok(!row.textContent.includes(channel.base));
     assert.ok(!/\b(ok|failed|compromised)\b/.test(row.textContent));
   }
+  let chosen;
+  context.call=async (cmd,args)=>{
+    if (cmd==='channels_list') return [{channel:'key',name:'Alice',fingerprint:'fp',base:'https://transport.test/',status:'ok',cause:null,readAt:null}];
+    if (cmd==='index_choose') chosen=args;
+    return [];
+  };
+  await vm.runInContext('channelsView()',context);
+  await $('#channels .use-index').click();
+  assert.equal(chosen?.link,'watane:key@https://transport.test/');
+  assert.equal(chosen?.derived,true);
   // read_at is memory-only and set by refresh, not follow; dist may mark a channel compromised with no failure cause.
   for (const [status,expected] of [['ok','Alice (fp) '],['compromised','Alice (fp) · Compromised ']]) {
     context.call=async cmd=>cmd==='channels_list' ? [{channel:'key',name:'Alice',fingerprint:'fp',base:'https://transport.test',status,cause:null,readAt:null}] : [];

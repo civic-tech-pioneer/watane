@@ -107,3 +107,59 @@ fn s3_keyed_home_is_anchor_and_stores_kept_pull_without_record() {
     // NO-8: no record on the anchor
     assert!(h.heads(None).iter().all(|(k, _)| *k != alice.key));
 }
+
+/// S107: a derived follow through the node follows the channel and gives no base;
+/// a participant's follow of the same link gives it.
+#[test]
+fn s107_a_derived_follow_through_node_gives_no_base() {
+    let alice = Alice::new();
+    let dir = tempfile::tempdir().unwrap();
+    let options = Options {
+        dist: watane_dist::Options {
+            listed_local: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let bob = Node::open_keyless(dir.path(), options).unwrap();
+    bob.follow_derived(&alice.link()).unwrap();
+    let channels: Vec<_> = bob
+        .dist()
+        .followed()
+        .unwrap()
+        .into_iter()
+        .map(|f| f.channel)
+        .collect();
+    assert_eq!(channels, vec![alice.key]);
+    let record = || {
+        let file: serde_json::Value =
+            serde_json::from_slice(&fs::read(dir.path().join("dist/follows.json")).unwrap())
+                .unwrap();
+        file["channels"][alice.key.to_string()]["explicit_given"].clone()
+    };
+    assert_eq!(record(), serde_json::Value::Null);
+    bob.follow(&alice.link()).unwrap();
+    assert_eq!(record(), serde_json::json!([alice.link().base()]));
+}
+
+#[test]
+fn s107_a_derived_index_through_node_gives_no_base() {
+    let alice = Alice::new();
+    let dir = tempfile::tempdir().unwrap();
+    let options = Options {
+        dist: watane_dist::Options {
+            listed_local: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let bob = Node::open_keyless(dir.path(), options).unwrap();
+    bob.choose_index_derived(&alice.link()).unwrap();
+    assert!(bob.dist().channel(&alice.key).unwrap().index);
+    let file: serde_json::Value =
+        serde_json::from_slice(&fs::read(dir.path().join("dist/follows.json")).unwrap()).unwrap();
+    assert_eq!(
+        file["channels"][alice.key.to_string()]["explicit_given"],
+        serde_json::Value::Null
+    );
+}

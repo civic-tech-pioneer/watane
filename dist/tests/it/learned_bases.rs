@@ -192,7 +192,15 @@ fn ac9_a_step_3_record_reads_from_base_only() {
     let old = serde_json::json!({"version": 1, "channels": {key.to_string(): {
         "base": a, "given": [a], "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
     std::fs::write(home.join("dist/follows.json"), old.to_string()).unwrap();
-    let bob = open(&home);
+    let bob = Dist::open(
+        &home,
+        std::sync::Arc::new(RecordingConfirm::new([])),
+        Options {
+            listed_local: true,
+            ..fast_options()
+        },
+    )
+    .unwrap();
     let reports = bob.refresh();
     assert!(matches!(reports[0].outcome, Outcome::Current { head: 1 }));
     assert!(bases(&home, key).is_empty());
@@ -201,7 +209,7 @@ fn ac9_a_step_3_record_reads_from_base_only() {
 }
 
 fn given(home: &std::path::Path, key: PublicKey) -> Vec<String> {
-    record(home, key)["given"]
+    record(home, key)["explicit_given"]
         .as_array()
         .cloned()
         .unwrap_or_default()
@@ -222,7 +230,7 @@ fn ac1_follow_choose_and_a_learned_link_mark_the_base_given() {
     w.bob.choose_index(&w.link(&w.a())).unwrap();
     assert_eq!(given(w.bob_home.path(), w.key), [w.a()]);
 
-    // open_link of a link at a base the record holds but was never given gives nothing.
+    // An explicitly opened link can give a base already held by the record.
     let w = world();
     w.bob.follow(&w.link(&w.a())).unwrap();
     let home = w.bob_home.path().to_owned();
@@ -235,7 +243,7 @@ fn ac1_follow_choose_and_a_learned_link_mark_the_base_given() {
     assert!(given(&home, key).is_empty());
     let link = Link::new(key, &b, Some(&"reading-list".parse().unwrap())).unwrap();
     let _ = bob.open_link(&link);
-    assert!(given(&home, key).is_empty(), "a held base stays unknown");
+    assert_eq!(given(&home, key), std::slice::from_ref(&b));
 
     // open_link at a base the record does not hold still learns and gives it.
     drop(bob);
@@ -248,115 +256,64 @@ fn ac1_follow_choose_and_a_learned_link_mark_the_base_given() {
     assert_eq!(given(&home, key), [b]);
 }
 
-/// AC6 (DD-48): a file without `seen` reads unchanged and its held bases become seen, so
-/// a link at one of them gives nothing; the top level gets no `seen` without a tombstone.
+/// S107 user-sim: Bob's pre-S107 home follows Alice at a LAN base (127.0.0.1 here). The base
+/// now reads as listed and is refused; the failure must name the reason, not call his
+/// followed channel "listed" or blame a link he never gave.
 #[test]
-fn ac6_a_file_without_seen_marks_its_held_bases_seen() {
+fn regress_s107_legacy_local_base_failure_names_local_address() {
+    let w = world();
+    w.bob.follow(&w.link(&w.b())).unwrap();
+    let home = w.bob_home.path().to_owned();
+    let (key, b) = (w.key, w.b());
+    drop(w.bob);
+    let legacy = serde_json::json!({"version": 1, "channels": {key.to_string(): {
+        "base": b, "given": [b], "seen": [b], "followed_at": 1, "last_attempt": 1,
+        "last_success": 1}}});
+    std::fs::write(home.join("dist/follows.json"), legacy.to_string()).unwrap();
+    let bob = open(&home);
+    let report = bob
+        .refresh()
+        .into_iter()
+        .find(|r| r.channel == key)
+        .unwrap();
+    let Outcome::Failed { cause } = report.outcome else {
+        panic!("a legacy local base must not be read: {:?}", report.outcome);
+    };
+    let text = cause.to_string();
+    assert!(
+        text.contains("local address") && !text.contains("listed channel"),
+        "Bob's followed channel fails with: {text}"
+    );
+}
+
+/// open_link at a base given before and since evicted by the 4-base cap holds it again;
+/// opening a chosen index learns the base but does not follow it.
+#[test]
+fn s107_open_link_relearns_an_evicted_given_base_and_keeps_an_index_unfollowed() {
     let w = world();
     w.bob.follow(&w.link(&w.a())).unwrap();
     let home = w.bob_home.path().to_owned();
     let (key, a, b) = (w.key, w.a(), w.b());
     drop(w.bob);
+    let dead = "http://127.0.0.1:9/";
     let old = serde_json::json!({"version": 1, "channels": {key.to_string(): {
-        "base": a, "bases": [a, b], "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
+        "base": a, "bases": [a, dead], "explicit_given": [a, b],
+        "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
     std::fs::write(home.join("dist/follows.json"), old.to_string()).unwrap();
     let bob = open(&home);
-    assert_eq!(bob.channel(&key).unwrap().base, Some(a.clone()));
-    bob.refresh();
-    let file: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(home.join("dist/follows.json")).unwrap()).unwrap();
-    assert_eq!(file["version"], 1);
-    assert!(
-        file.get("seen").is_none(),
-        "no tombstone, no top-level seen"
-    );
-    let r = &file["channels"][key.to_string()];
-    assert_eq!(r["seen"], serde_json::json!([a, b]));
-    assert!(r.get("given").is_none(), "an empty given is not written");
-    assert_eq!(bases(&home, key), [a, b]);
-}
+    let link = Link::new(key, &b, Some(&"reading-list".parse().unwrap())).unwrap();
+    let _ = bob.open_link(&link);
+    assert!(bases(&home, key).contains(&b), "{:?}", bases(&home, key));
 
-/// A fresh home whose `follows.json` holds only `tombs` (top-level `seen`), then a follow of `base`.
-fn follow_after_tombstone(w: World, tombs: serde_json::Value, base: &str) -> serde_json::Value {
-    let home = w.bob_home.path().to_owned();
-    let key = w.key;
-    let link = w.link(base);
-    drop(w.bob);
-    let file = serde_json::json!({"version": 1, "channels": {}, "seen": {key.to_string(): tombs}});
-    std::fs::create_dir_all(home.join("dist")).unwrap();
-    std::fs::write(home.join("dist/follows.json"), file.to_string()).unwrap();
-    // The test hosts are local: `listed_local` lets the listed first read reach them (F2.1).
-    let bob = Dist::open(
-        &home,
-        std::sync::Arc::new(RecordingConfirm::new(std::iter::repeat_n(
-            Decision::Approve,
-            20,
-        ))),
-        Options {
-            listed_local: true,
-            ..fast_options()
-        },
-    )
-    .unwrap();
-    let _ = bob.follow(&link);
-    record(&home, key)
-}
-
-/// AC4 (DD-48): a tombstone's bases are normalised on load as a record's are, so one
-/// spelled without the trailing slash still blocks a link at `a`.
-#[test]
-fn ac4_a_tombstone_base_is_normalised_on_load() {
     let w = world();
-    let (a, spelled) = (w.a(), w.a().trim_end_matches('/').to_owned());
-    assert_ne!(spelled, a);
-    let r = follow_after_tombstone(
-        w,
-        serde_json::json!({"seen": [spelled], "given": [], "at": 1}),
-        &a,
+    w.bob.choose_index(&w.link(&w.a())).unwrap();
+    let link = Link::new(w.key, &w.b(), Some(&"reading-list".parse().unwrap())).unwrap();
+    let _ = w.bob.open_link(&link);
+    assert_eq!(given(w.bob_home.path(), w.key), [w.a(), w.b()]);
+    let r = record(w.bob_home.path(), w.key);
+    assert_eq!(
+        (&r["index"], &r["followed"]),
+        (&serde_json::json!(true), &serde_json::json!(false)),
+        "{r}"
     );
-    assert!(
-        r.get("given").is_none(),
-        "a link at a tombstoned base gave it: {r}"
-    );
-    assert_eq!(r["seen"], serde_json::json!([a]));
-}
-
-/// AC3 (DD-48 r5): a tombstone carries `seen_full` and a new record takes it back, so a
-/// link at an unseen base gives nothing and the record writes `seen_full`.
-#[test]
-fn ac3_a_new_record_takes_seen_full_back_from_its_tombstone() {
-    let w = world();
-    let a = w.a();
-    let seen: Vec<String> = (0..16).map(|n| format!("http://h{n}.invalid/")).collect();
-    let r = follow_after_tombstone(
-        w,
-        serde_json::json!({"seen": seen, "given": [], "seen_full": true, "at": 1}),
-        &a,
-    );
-    assert!(
-        r.get("given").is_none(),
-        "an unseen base of a full seen was given: {r}"
-    );
-    assert_eq!(r["seen_full"], true);
-    assert_eq!(r["seen"], serde_json::json!(seen));
-}
-
-/// AC3 (DD-48 r5): `prune_listed` writes a removed record's `seen_full` into its tombstone.
-#[test]
-fn ac3_a_pruned_record_leaves_seen_full_in_its_tombstone() {
-    let w = world();
-    let home = w.bob_home.path().to_owned();
-    let (key, a) = (w.key, w.a());
-    drop(w.bob);
-    let old = serde_json::json!({"version": 1, "channels": {key.to_string(): {
-        "base": a, "followed": true, "seen": [a], "seen_full": true,
-        "followed_at": 1, "last_attempt": 1}}});
-    std::fs::create_dir_all(home.join("dist")).unwrap();
-    std::fs::write(home.join("dist/follows.json"), old.to_string()).unwrap();
-    let bob = open(&home);
-    bob.unfollow(&key).unwrap();
-    let file: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(home.join("dist/follows.json")).unwrap()).unwrap();
-    assert!(file["channels"].get(key.to_string()).is_none(), "pruned");
-    assert_eq!(file["seen"][key.to_string()]["seen_full"], true, "{file}");
 }

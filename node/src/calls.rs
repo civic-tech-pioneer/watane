@@ -203,6 +203,12 @@ impl Node {
         self.reading(|| self.dist.follow(link))
             .map_err(|e| cause_or(cause, e))
     }
+    /// Follows a link produced by discovery or a fetched release.
+    pub fn follow_derived(&self, link: &Link) -> Result<RefreshReport, DistError> {
+        let cause = self.need_channel(&link.channel());
+        self.reading(|| self.dist.follow_derived(link))
+            .map_err(|e| cause_or(cause, e))
+    }
     pub fn refresh(&self) -> Vec<RefreshReport> {
         self.reading(|| self.dist.refresh())
     }
@@ -214,6 +220,12 @@ impl Node {
     pub fn choose_index(&self, link: &Link) -> Result<Vec<RefreshReport>, DistError> {
         let cause = self.need_channel(&link.channel());
         self.reading(|| self.dist.choose_index(link))
+            .map_err(|e| cause_or(cause, e))
+    }
+    /// Chooses an index from a link built from a channel record.
+    pub fn choose_index_derived(&self, link: &Link) -> Result<Vec<RefreshReport>, DistError> {
+        let cause = self.need_channel(&link.channel());
+        self.reading(|| self.dist.choose_index_derived(link))
             .map_err(|e| cause_or(cause, e))
     }
     pub fn fetch(&self, release: &ReleaseRef) -> Result<Fetched, DistError> {

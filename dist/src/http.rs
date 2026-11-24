@@ -807,80 +807,31 @@ mod tests {
         assert!(record["bases"].as_array().is_none_or(|b| b.is_empty()));
         assert_eq!(w.a.count(), before, "the listing's base was read again");
     }
-    /// AC4 (DD-48): a listed-only record that a link at the listing's base turns followed
-    /// or chosen takes that base but does not give it; the first read is listed too.
     #[test]
-    fn ac4_a_link_at_the_listed_base_gives_nothing() {
-        for choose in [false, true] {
+    fn s107_explicit_links_can_give_a_base_already_held_by_a_listing() {
+        for action in ["follow", "choose", "open"] {
             let w = world();
             let (dir, eve) = w.eve(&[&w.a]);
-            let _z = listed_record(&w, &eve);
+            let _index = listed_record(&w, &eve);
+            exempt(&eve, &[]);
             let link = crate::Link::new(w.key, &w.a.url, None).unwrap();
-            let take = |eve: &Dist| match choose {
-                true => eve.choose_index(&link).map(|_| ()),
-                false => eve.follow(&w.link(&w.a)).map(|_| ()),
-            };
-            w.a.redirect("/head", &format!("{}head", w.b.url));
-            assert_refused(take(&eve).err(), &format!("{}head", w.b.url));
-            assert_eq!(w.b.count(), 0, "the first read was not listed");
-            w.a.redirects.lock().unwrap().clear();
-            take(&eve).unwrap();
-            let file: serde_json::Value = serde_json::from_slice(
-                &std::fs::read(dir.path().join("dist/follows.json")).unwrap(),
-            )
-            .unwrap();
-            let record = &file["channels"][w.key.to_string()];
-            assert_eq!(record["base"], w.a.url.as_str());
-            assert!(record["given"].as_array().is_none_or(|g| g.is_empty()));
-            w.a.redirect("/head", &format!("{}head", w.b.url));
-            let report = eve.refresh_channel(&w.key).unwrap();
-            assert_refused(failure(Ok(report)), &format!("{}head", w.b.url));
-            assert_eq!(w.b.count(), 0, "the listing's base was given");
+            match action {
+                "choose" => {
+                    eve.choose_index(&link).unwrap();
+                }
+                "open" => {
+                    eve.open_link(&w.link(&w.a)).unwrap();
+                }
+                _ => {
+                    eve.follow(&link).unwrap();
+                }
+            }
+            let file = follows_file(dir.path());
+            assert_eq!(
+                file["channels"][w.key.to_string()]["explicit_given"],
+                serde_json::json!([w.a.url])
+            );
         }
-    }
-    /// AC1 (F1.1): a record without `given` (saved before S105) is read under the listed
-    /// rule, redirects included; no link gives its seen base (DD-48).
-    #[test]
-    fn ac2_ac3_an_old_followed_record_base_is_never_given_by_a_link() {
-        let w = world();
-        let c = Host::serve(&w.publisher.site_dir());
-        let (dir, eve) = w.eve(&[&w.a]);
-        eve.follow(&w.link(&c)).unwrap();
-        drop(eve);
-        let old = serde_json::json!({"version": 1, "channels": {w.key.to_string(): {
-            "base": w.a.url, "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
-        std::fs::write(dir.path().join("dist/follows.json"), old.to_string()).unwrap();
-        let eve = Dist::open(dir.path(), Arc::new(Yes), Options::default()).unwrap();
-        exempt(&eve, &[&w.a]);
-        w.a.redirect("/head", &format!("{}head", w.b.url));
-        w.a.redirect(
-            &format!("/{}", w.package),
-            &format!("{}{}", w.b.url, w.package),
-        );
-        let report = eve.refresh_channel(&w.key).unwrap();
-        assert_refused(failure(Ok(report)), &format!("{}head", w.b.url));
-        let got = eve.fetch(&w.reference).map(|_| ()).err();
-        assert_refused(got, &format!("{}{}", w.b.url, w.package));
-        assert_eq!(w.b.count(), 0, "no request to a redirect target");
-        // AC2: a follow at the held base gives nothing; the redirect is still refused.
-        let got = eve.follow(&w.link(&w.a)).map(|_| ());
-        assert!(got.is_err(), "the listed rule refuses the local redirect");
-        let index = crate::Link::new(w.key, &w.a.url, None).unwrap();
-        assert!(eve.choose_index(&index).is_err(), "so does choose_index");
-        let report = eve.refresh_channel(&w.key).unwrap();
-        assert_refused(failure(Ok(report)), &format!("{}head", w.b.url));
-        assert_eq!(w.b.count(), 0, "a repeated link gives no base");
-        // DD-48: unfollow, then follow by a link at the seen base gives nothing either.
-        eve.unfollow(&w.key).unwrap();
-        let redirects = w.a.redirects.lock().unwrap().clone();
-        w.a.redirects.lock().unwrap().clear();
-        eve.follow(&w.link(&w.a)).unwrap();
-        *w.a.redirects.lock().unwrap() = redirects;
-        let report = eve.refresh_channel(&w.key).unwrap();
-        assert_refused(failure(Ok(report)), &format!("{}head", w.b.url));
-        let got = eve.fetch(&w.reference).map(|_| ()).err();
-        assert_refused(got, &format!("{}{}", w.b.url, w.package));
-        assert_eq!(w.b.count(), 0, "a link never gives a seen base");
     }
     /// DD-47 as a listed record: an unknown local base still gives a cached package,
     /// and refuses the base on a miss.
@@ -920,278 +871,125 @@ mod tests {
         eve.open_link(&w.link(&w.a)).unwrap();
         assert_eq!(heads(), before + 1);
     }
-    /// Adversary S105 r3: "Install a hit" (5.10) follows `hit.link`, whose base is the
-    /// record's front base. For a record saved before S105 that base is unknown (DD-47);
-    /// the install marks it `given` though the participant never gave a link at it, and
-    /// its redirects to a local address are then followed unchecked.
-    #[test]
-    fn adv_s105_r3_hit_install_gives_an_unknown_base() {
-        let w = world();
-        let c = Host::serve(&w.publisher.site_dir());
-        let (dir, eve) = w.eve(&[&w.a]);
-        eve.follow(&w.link(&c)).unwrap();
-        drop(eve);
+    fn write_old(dir: &std::path::Path, w: &World) {
         let old = serde_json::json!({"version": 1, "channels": {w.key.to_string(): {
             "base": w.a.url, "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
-        std::fs::write(dir.path().join("dist/follows.json"), old.to_string()).unwrap();
-        let eve = Dist::open(dir.path(), Arc::new(Yes), Options::default()).unwrap();
-        exempt(&eve, &[&w.a]);
-        let hits = eve
-            .search(&crate::Query {
-                text: String::new(),
-                publisher: Some(w.key),
-                origin: None,
-                interface: None,
-            })
-            .unwrap();
-        let link = hits[0].link.clone().expect("hit link");
-        assert_eq!(link.base(), w.a.url, "the hit names the unknown base");
-        // The app installs the hit: follow(hit.link), then fetch (5.10).
-        let _ = eve.follow(&link);
-        w.a.redirect("/head", &format!("{}head", w.b.url));
-        let before = w.b.count();
-        let report = eve.refresh_channel(&w.key).unwrap();
-        assert_refused(failure(Ok(report)), &format!("{}head", w.b.url));
-        assert_eq!(
-            w.b.count(),
-            before,
-            "no request to the local redirect target"
-        );
-    }
-
-    /// Adversary S105 r4: the 4-base cap drops an unknown (listing-learned) base after a
-    /// search named it; installing that stale hit then finds the base "new to the record"
-    /// and marks it given, so its local redirects are followed (DD-47, 5.9).
-    #[test]
-    fn adv_s105_r4_cap_evicts_unknown_base_then_hit_install_gives_it() {
-        let w = world();
-        let c = Host::serve(&w.publisher.site_dir());
-        let e = Host::serve(&w.publisher.site_dir());
-        let (dir, eve) = w.eve(&[&w.a, &c, &e]);
-        eve.follow(&w.link(&c)).unwrap();
-        drop(eve);
-        // A home saved before S105: four bases, none given; `a` is a listing-learned one.
-        let old = serde_json::json!({"version": 1, "channels": {w.key.to_string(): {
-            "base": w.a.url, "bases": [w.a.url, c.url, "http://127.0.0.1:9/", "http://127.0.0.1:8/"],
-            "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
-        std::fs::write(dir.path().join("dist/follows.json"), old.to_string()).unwrap();
-        let eve = Dist::open(dir.path(), Arc::new(Yes), Options::default()).unwrap();
-        exempt(&eve, &[&w.a, &c, &e]);
-        let hits = eve
-            .search(&crate::Query {
-                text: String::new(),
-                publisher: Some(w.key),
-                origin: None,
-                interface: None,
-            })
-            .unwrap();
-        let hit = hits[0].link.clone().expect("hit link");
-        assert_eq!(hit.base(), w.a.url, "the hit names the unknown base");
-        // `a` fails one refresh, so `c` moves to the front and `a` to index 1.
-        w.a.redirect("/head", &format!("{}head", w.b.url));
-        let _ = eve.refresh_channel(&w.key);
-        w.a.redirects.lock().unwrap().clear();
-        // The participant opens a link at a new base: the cap drops `a`.
-        let _ = eve.open_link(&w.link(&e));
-        // The app installs the hit it showed earlier: follow(hit.link) (5.10).
-        let _ = eve.follow(&hit);
-        w.a.redirect("/head", &format!("{}head", w.b.url));
-        let before = w.b.count();
-        let _ = eve.refresh_channel(&w.key);
-        assert_eq!(
-            w.b.count(),
-            before,
-            "no request to the local redirect target of a listing-learned base"
-        );
-    }
-
-    /// Adversary S105 r4 (prune): `unfollow` prunes the record, but its `seen` stays as a
-    /// tombstone, so a kept hit link makes a new record that gives nothing (DD-48).
-    #[test]
-    fn adv_s105_r4_prune_then_hit_install_gives_nothing() {
-        let w = world();
-        let c = Host::serve(&w.publisher.site_dir());
-        let (dir, eve) = w.eve(&[&w.a]);
-        eve.follow(&w.link(&c)).unwrap();
-        drop(eve);
-        let old = serde_json::json!({"version": 1, "channels": {w.key.to_string(): {
-            "base": w.a.url, "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
-        std::fs::write(dir.path().join("dist/follows.json"), old.to_string()).unwrap();
-        let eve = Dist::open(dir.path(), Arc::new(Yes), Options::default()).unwrap();
-        exempt(&eve, &[&w.a]);
-        let hits = eve
-            .search(&crate::Query {
-                text: String::new(),
-                publisher: Some(w.key),
-                origin: None,
-                interface: None,
-            })
-            .unwrap();
-        let hit = hits[0].link.clone().expect("hit link");
-        assert_eq!(hit.base(), w.a.url);
-        eve.unfollow(&w.key).unwrap();
-        let file = || -> serde_json::Value {
-            serde_json::from_slice(&std::fs::read(dir.path().join("dist/follows.json")).unwrap())
-                .unwrap()
-        };
-        let key = w.key.to_string();
-        assert!(
-            file()["channels"].get(&key).is_none(),
-            "the record is pruned"
-        );
-        assert_eq!(file()["seen"][&key]["seen"], serde_json::json!([w.a.url]));
-        // The first read of the tombstone's seen base is listed: the redirect is refused.
-        w.a.redirect("/head", &format!("{}head", w.b.url));
-        assert_refused(eve.follow(&hit).err(), &format!("{}head", w.b.url));
-        w.a.redirects.lock().unwrap().clear();
-        let _ = eve.follow(&hit);
-        let record = &file()["channels"][&key];
-        assert!(record["given"].as_array().is_none_or(|g| g.is_empty()));
-        assert!(
-            file()["seen"].get(&key).is_none(),
-            "the tombstone is used up"
-        );
-        w.a.redirect("/head", &format!("{}head", w.b.url));
-        let before = w.b.count();
-        let _ = eve.refresh_channel(&w.key);
-        assert_eq!(w.b.count(), before, "no request to the redirect target");
-    }
-
-    /// Adversary S105 r5: an index moves its listing of a channel off base `a` to a fresh
-    /// base each refresh (unlist, list again); 16 such refreshes push `a` out of the
-    /// listed record's 16-entry `seen`. A hit the app showed while `a` was listed is then
-    /// installed: `a` looks never seen, the link gives it, and its redirects into the
-    /// local network are followed (A35, DD-48).
-    #[test]
-    fn adv_s105_r5_listing_churn_evicts_base_from_seen_then_stale_hit_gives_it() {
-        let w = world();
-        let (dir, eve) = w.eve(&[&w.a]);
-        let (_zdir, zed, _zhost) = listed_record(&w, &eve);
-        let hits = eve
-            .search(&crate::Query {
-                text: String::new(),
-                publisher: Some(w.key),
-                origin: None,
-                interface: None,
-            })
-            .unwrap();
-        let hit = hits[0].link.clone().expect("hit link");
-        assert_eq!(hit.base(), w.a.url, "the hit names the listing's base");
-        let mut listed = zed.own().unwrap().listings[0].entry;
-        for round in 0..16 {
-            zed.unlist(&listed).unwrap();
-            let base = format!("{}j{round}/", w.a.url);
-            let link = crate::Link::new(w.key, &base, Some(&w.slug)).unwrap();
-            listed = zed.list(&link, "moved").unwrap().id();
-            eve.refresh();
-        }
-        let file: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(dir.path().join("dist/follows.json")).unwrap())
-                .unwrap();
-        let record = file["channels"][w.key.to_string()].clone();
-        // The app installs the hit it showed earlier (5.10): follow(hit.link), then fetch.
-        w.a.redirect("/head", &format!("{}head", w.b.url));
-        w.a.redirect(
-            &format!("/{}", w.package),
-            &format!("{}{}", w.b.url, w.package),
-        );
-        let _ = eve.follow(&hit);
-        let _ = eve.refresh_channel(&w.key);
-        assert_eq!(
-            w.b.count(),
-            0,
-            "a listing's base pushed out of `seen` was given by a stale hit: {record}"
-        );
-    }
-
-    // Codex review r2 of PR #19 (F2.1 to F2.4) and S105-CHURN "(a) fail closed".
-
-    /// Rewrites `follows.json` of `dir` as a home saved before S105: one record for the
-    /// publisher at base `a`, nothing in `given`.
-    fn write_old(dir: &std::path::Path, w: &World, record: serde_json::Value) {
-        let old = serde_json::json!({"version": 1, "channels": {w.key.to_string(): record}});
         std::fs::write(dir.join("dist/follows.json"), old.to_string()).unwrap();
     }
-    fn old_record(w: &World, given: &[&str], index: bool) -> serde_json::Value {
-        serde_json::json!({"base": w.a.url, "followed": !index, "index": index, "given": given,
-            "followed_at": 1, "last_attempt": 1, "last_success": 1})
-    }
+
     fn strict(dir: &std::path::Path) -> Dist {
         Dist::open(dir, Arc::new(Yes), Options::default()).unwrap()
     }
-    fn tomb(seen: &[&str], at: u64) -> crate::Tombstone {
-        crate::Tombstone {
-            seen: seen.iter().map(|b| (*b).to_owned()).collect(),
-            given: Vec::new(),
-            seen_full: false,
-            at,
+
+    #[test]
+    fn s107_derived_follow_keeps_listed_policy_across_record_changes() {
+        for change in ["legacy", "cap", "prune"] {
+            let w = world();
+            let (dir, eve) = w.eve(&[&w.a]);
+            // Keep the fixture's HTTP reads local and inspect the saved authorization.
+            eve.follow(&w.link(&w.b)).unwrap();
+            drop(eve);
+            write_old(dir.path(), &w);
+            let eve = strict(dir.path());
+            exempt(&eve, &[&w.a]);
+            let hit = eve
+                .search(&crate::Query {
+                    publisher: Some(w.key),
+                    ..Default::default()
+                })
+                .unwrap()
+                .remove(0)
+                .link
+                .unwrap();
+            let mirrors;
+            let eve = match change {
+                "cap" => {
+                    // Start with the captured base behind another mirror.
+                    drop(eve);
+                    let path = dir.path().join("dist/follows.json");
+                    let mut file = follows_file(dir.path());
+                    let record = &mut file["channels"][w.key.to_string()];
+                    record["base"] = serde_json::json!(w.b.url);
+                    record["bases"] = serde_json::json!([w.b.url, w.a.url]);
+                    std::fs::write(path, file.to_string()).unwrap();
+                    let eve = strict(dir.path());
+                    exempt(&eve, &[&w.a, &w.b]);
+                    mirrors = (0..3)
+                        .map(|_| Host::serve(&w.publisher.site_dir()))
+                        .collect::<Vec<_>>();
+                    for mirror in &mirrors {
+                        eve.follow(&w.link(mirror)).unwrap();
+                    }
+                    let file = follows_file(dir.path());
+                    let bases = file["channels"][w.key.to_string()]["bases"]
+                        .as_array()
+                        .unwrap();
+                    assert_eq!(bases.len(), 4);
+                    assert!(!bases.iter().any(|base| base == hit.base()));
+                    eve
+                }
+                "prune" => {
+                    eve.unfollow(&w.key).unwrap();
+                    assert!(!eve.follows.lock().unwrap().contains_key(&w.key));
+                    eve
+                }
+                _ => eve,
+            };
+            eve.follow_derived(&hit).unwrap();
+            let file = follows_file(dir.path());
+            let record = &file["channels"][w.key.to_string()];
+            assert!(
+                record["explicit_given"]
+                    .as_array()
+                    .is_none_or(|bases| !bases.iter().any(|base| base == hit.base())),
+                "{change}: {record}"
+            );
+            assert!(file.get("seen").is_none(), "{change}: {file}");
+            exempt(&eve, &[]);
+            let before = w.a.count();
+            eve.refresh_channel(&w.key).unwrap();
+            assert_eq!(w.a.count(), before, "{change}: derived base was requested");
         }
     }
-    /// A home that saw the publisher only through a pre-S105 record at `a`, then pruned it:
-    /// a tombstone `seen = [a]`, and the hit link the app showed before.
-    fn pruned_old_record(w: &World) -> (tempfile::TempDir, Dist, crate::Link) {
-        let c = Host::serve(&w.publisher.site_dir());
-        let (dir, eve) = w.eve(&[&w.a, &c]);
-        eve.follow(&w.link(&c)).unwrap();
-        drop(eve);
-        write_old(dir.path(), w, old_record(w, &[], false));
-        let eve = strict(dir.path());
+
+    #[test]
+    fn s107_a_derived_index_uses_the_listed_address_policy() {
+        let w = world();
+        let (dir, eve) = w.eve(&[&w.a]);
+        eve.follow_derived(&w.link(&w.a)).unwrap();
+        let view = eve.followed().unwrap().remove(0);
+        let link = crate::Link::new(view.channel, view.base.as_deref().unwrap(), None).unwrap();
+        exempt(&eve, &[]);
+        let before = w.a.count();
+        assert_refused(eve.choose_index_derived(&link).err(), &w.a.url);
+        assert_eq!(w.a.count(), before);
         exempt(&eve, &[&w.a]);
-        let hits = eve
-            .search(&crate::Query {
-                text: String::new(),
-                publisher: Some(w.key),
-                origin: None,
-                interface: None,
-            })
-            .unwrap();
-        let hit = hits[0].link.clone().expect("hit link");
-        assert_eq!(hit.base(), w.a.url);
-        eve.unfollow(&w.key).unwrap();
-        assert!(eve.test_tomb_keys().contains(&w.key.to_string()));
-        (dir, eve, hit)
+        eve.choose_index_derived(&link).unwrap();
+        let file = follows_file(dir.path());
+        let record = &file["channels"][w.key.to_string()];
+        assert_eq!(record["index"], true);
+        assert!(record.get("explicit_given").is_none(), "{record}");
     }
 
-    /// F2.1: a listed read of a first base that is itself local gets no request, at follow
-    /// and choose too.
-    fn local_first_base_gets_no_request(choose: bool) {
+    #[test]
+    fn s107_a_derived_index_can_read_an_explicitly_given_base() {
         let w = world();
-        let c = Host::serve(&w.publisher.site_dir());
-        let (dir, eve) = w.eve(&[&c]);
-        eve.follow(&w.link(&c)).unwrap();
-        drop(eve);
-        write_old(dir.path(), &w, old_record(&w, &[], choose));
-        let eve = strict(dir.path());
-        let before = w.a.count();
+        let (dir, eve) = w.eve(&[]);
         let link = crate::Link::new(w.key, &w.a.url, None).unwrap();
-        let got = if choose {
-            eve.choose_index(&link).map(|_| ()).err()
-        } else {
-            eve.follow(&link).map(|_| ()).err()
-        };
-        assert_eq!(w.a.count(), before, "the local base was requested");
-        assert_refused(got, &w.a.url);
+        eve.follow(&link).unwrap();
+        eve.choose_index_derived(&link).unwrap();
+        let file = follows_file(dir.path());
+        let record = &file["channels"][w.key.to_string()];
+        assert_eq!(record["index"], true);
+        assert_eq!(record["explicit_given"], serde_json::json!([link.base()]));
     }
+
     #[test]
-    fn adv_s105_r2_follow_of_a_listed_local_first_base_gets_no_request() {
-        local_first_base_gets_no_request(false);
-    }
-    #[test]
-    fn adv_s105_r2_choose_index_of_a_listed_local_first_base_gets_no_request() {
-        local_first_base_gets_no_request(true);
-    }
-    /// F2.1: a base the participant gave still reads a local base (a LAN mirror).
-    #[test]
-    fn adv_s105_r2_a_given_local_first_base_is_still_read() {
+    fn s107_derived_follow_checks_the_initial_base() {
         let w = world();
-        let c = Host::serve(&w.publisher.site_dir());
-        let (dir, eve) = w.eve(&[&c]);
-        eve.follow(&w.link(&c)).unwrap();
-        drop(eve);
-        write_old(dir.path(), &w, old_record(&w, &[&w.a.url], false));
-        let eve = strict(dir.path());
-        eve.follow(&w.link(&w.a)).unwrap();
-        assert!(w.a.count() > 0, "a given local base is read");
+        let (_dir, eve) = w.eve(&[]);
+        assert_refused(eve.follow_derived(&w.link(&w.a)).err(), &w.a.url);
+        assert_eq!(w.a.count(), 0);
     }
 
     /// F2.3: `read_link` gives a cached package for a refused listed base, as `fetch`
@@ -1203,7 +1001,7 @@ mod tests {
         eve.follow(&w.link(&w.a)).unwrap();
         eve.fetch(&w.reference).unwrap();
         drop(eve);
-        write_old(dir.path(), &w, old_record(&w, &[], false));
+        write_old(dir.path(), &w);
         let eve = strict(dir.path());
         let before = w.a.count();
         let got = eve.read_link(&w.link(&w.a)).unwrap();
@@ -1220,66 +1018,22 @@ mod tests {
         assert_eq!(w.a.count(), before, "no request on a miss either");
     }
 
-    /// F2.2: `held_ungiven` classifies from one snapshot. A `keep` that moves the
-    /// tombstone into a record between the two lookups must not turn a seen, never-given
-    /// base into a given-looking one: at the gap between the record and the tombstone
-    /// lookup, the classifier still holds the follows lock, so no `keep` can run there
-    /// (Codex r3 P3.2: shown by the lock itself, with no timeout).
     #[test]
-    fn adv_s105_r2_held_ungiven_reads_one_snapshot() {
+    fn s107_a_failed_prune_save_keeps_the_record() {
         let w = world();
-        let (_dir, eve, _hit) = pruned_old_record(&w);
-        let (gap_tx, gap_rx) = std::sync::mpsc::channel::<()>();
-        let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
-        let done_rx = std::sync::Mutex::new(done_rx);
-        *eve.test_held_gap.lock().unwrap() = Some(Box::new(move || {
-            gap_tx.send(()).unwrap();
-            done_rx.lock().unwrap().recv().unwrap();
-        }));
-        let (locked, held) = std::thread::scope(|s| {
-            let classify = s.spawn(|| eve.held_ungiven(w.key, &w.a.url).unwrap());
-            gap_rx.recv().unwrap();
-            let locked = matches!(
-                eve.follows.try_lock(),
-                Err(std::sync::TryLockError::WouldBlock)
-            );
-            done_tx.send(()).unwrap();
-            (locked, classify.join().unwrap())
-        });
-        assert!(locked, "the follows lock was free at the lookup gap");
-        assert!(held, "a seen, never-given base was classified as given");
-        eve.keep(&w.key).unwrap();
-        assert!(
-            eve.held_ungiven(w.key, &w.a.url).unwrap(),
-            "the kept record forgot the tombstone"
-        );
-    }
-
-    /// F2.4: a failed save leaves the tombstones as they were, also when 1024 were held.
-    #[test]
-    fn adv_s105_r2_a_failed_save_leaves_the_tombstones_in_a_prune() {
-        for held in [0u64, 1024] {
-            let w = world();
-            let (dir, eve) = w.eve(&[&w.a]);
-            let (_zdir, zed, _zhost) = listed_record(&w, &eve);
-            for n in 0..held {
-                eve.test_add_tombstone(&format!("k{n}"), tomb(&[], n + 2));
-            }
-            let id = zed.own().unwrap().listings[0].entry;
-            zed.unlist(&id).unwrap();
-            eve.refresh_channel(&zed.identity().unwrap()).unwrap();
-            let before = eve.test_tomb_keys();
-            let file = std::fs::read(dir.path().join("dist/follows.json")).unwrap();
-            *eve.test_fail_saves.lock().unwrap() = Some(0);
-            assert!(eve.prune_listed().is_err());
-            assert_eq!(eve.test_tomb_keys(), before, "held={held}");
-            let after = std::fs::read(dir.path().join("dist/follows.json")).unwrap();
-            assert_eq!(after, file, "held={held}: the file changed");
-        }
+        let (dir, eve) = w.eve(&[&w.a]);
+        let (_zdir, zed, _zhost) = listed_record(&w, &eve);
+        zed.unlist(&zed.own().unwrap().listings[0].entry).unwrap();
+        eve.refresh_channel(&zed.identity().unwrap()).unwrap();
+        let file = follows_file(dir.path());
+        *eve.test_fail_saves.lock().unwrap() = Some(0);
+        assert!(eve.prune_listed().is_err());
+        assert!(eve.follows.lock().unwrap().contains_key(&w.key));
+        assert_eq!(follows_file(dir.path()), file);
     }
 
     /// F3.2 (Codex r3): a directory sync that fails after the rename still installed the
-    /// new `follows.json`; the save reports the error, and the records and tombstones in
+    /// new `follows.json`; the save reports the error, and the records in
     /// memory are the ones in the file.
     #[test]
     fn f3_2_a_failed_dir_sync_after_the_rename_keeps_memory_on_the_file() {
@@ -1290,7 +1044,6 @@ mod tests {
         let id = zed.own().unwrap().listings[0].entry;
         zed.unlist(&id).unwrap();
         eve.refresh_channel(&zed_key).unwrap();
-        assert!(!eve.test_tomb_keys().contains(&w.key.to_string()));
         crate::site::TEST_FAIL_DIR_SYNC.with(|fail| fail.set(1));
         let err = eve.prune_listed().unwrap_err();
         assert!(
@@ -1298,15 +1051,7 @@ mod tests {
             "the save reports the sync error: {err:?}"
         );
         let file = follows_file(dir.path());
-        let on_disk: Vec<String> = file["seen"]
-            .as_object()
-            .map(|m| m.keys().cloned().collect())
-            .unwrap_or_default();
-        assert!(
-            on_disk.contains(&w.key.to_string()),
-            "the prune was installed: {file}"
-        );
-        assert_eq!(eve.test_tomb_keys(), on_disk, "tombstones in memory");
+        assert!(file["channels"].get(w.key.to_string()).is_none(), "{file}");
         let records: Vec<String> = eve
             .follows
             .lock()
@@ -1323,421 +1068,8 @@ mod tests {
         assert_eq!(records, in_file, "records in memory");
     }
 
-    /// F2.4: a failed kept ingest that cannot take its record back leaves the tombstones
-    /// as the first save left them (the record took its channel's tombstone).
-    #[test]
-    fn adv_s105_r2_a_failed_save_leaves_the_tombstones_in_take_back_kept() {
-        for held in [0u64, 1023] {
-            let w = world();
-            let (dir, eve) = w.eve(&[]);
-            let key = w.key.to_string();
-            eve.test_add_tombstone(&key, tomb(&[&w.a.url], 1));
-            for n in 0..held {
-                eve.test_add_tombstone(&format!("k{n}"), tomb(&[], n + 2));
-            }
-            let mut expected = eve.test_tomb_keys();
-            expected.retain(|k| *k != key);
-            // Entries from seq 1 on, with no seq 0 stored: the ingest has a gap and fails.
-            let entries = w.publisher.entries(&w.key, 1, 100, usize::MAX).unwrap();
-            assert!(!entries.is_empty());
-            // The first save (the kept mark) passes, the take back fails.
-            *eve.test_fail_saves.lock().unwrap() = Some(1);
-            let got = eve.ingest(&w.key, entries, crate::Reason::Kept);
-            assert!(matches!(got, crate::Ingested::Failed(_)), "{got:?}");
-            assert_eq!(eve.test_tomb_keys(), expected, "held={held}");
-            let file: serde_json::Value = serde_json::from_slice(
-                &std::fs::read(dir.path().join("dist/follows.json")).unwrap(),
-            )
-            .unwrap();
-            assert_eq!(file["channels"][&key]["kept"], true);
-            assert!(file["seen"].get(&key).is_none());
-        }
-    }
-
-    /// S105-CHURN (a): once the tombstone of a channel is evicted, a stale hit link at its
-    /// seen base gives nothing (the DELIVERED RISK of the churn route).
-    #[test]
-    fn adv_s105_churn_tombstone_overflow_then_stale_hit_gives_nothing() {
-        let w = world();
-        let (dir, eve, hit) = pruned_old_record(&w);
-        let key = w.key.to_string();
-        for n in 0..1024 {
-            eve.test_add_tombstone(&format!("k{n}"), tomb(&[], u64::MAX - 5000 + n));
-        }
-        assert!(
-            !eve.test_tomb_keys().contains(&key),
-            "the tombstone is evicted"
-        );
-        w.a.redirect("/head", &format!("{}head", w.b.url));
-        let first = eve.follow(&hit).map(|_| ()).err();
-        assert_eq!(w.b.count(), 0, "the first read followed a local redirect");
-        assert_refused(first, &format!("{}head", w.b.url));
-        w.a.redirects.lock().unwrap().clear();
-        eve.follow(&hit).unwrap();
-        let file: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(dir.path().join("dist/follows.json")).unwrap())
-                .unwrap();
-        let record = &file["channels"][&key];
-        assert!(record["given"].as_array().is_none_or(|g| g.is_empty()));
-        w.a.redirect("/head", &format!("{}head", w.b.url));
-        let report = eve.refresh_channel(&w.key).unwrap();
-        assert_refused(failure(Ok(report)), &format!("{}head", w.b.url));
-        assert_eq!(w.b.count(), 0, "the stale hit gave its base");
-    }
-
-    /// S105-CHURN (a): a channel dist never knew still gets its base from a link, also
-    /// after tombstones overflowed.
-    #[test]
-    fn adv_s105_churn_after_overflow_a_fresh_channel_link_gives_its_base() {
-        let w = world();
-        let (dir, eve) = w.eve(&[]);
-        for n in 0..1100 {
-            eve.test_add_tombstone(&format!("k{n}"), tomb(&[], n + 2));
-        }
-        eve.follow(&w.link(&w.a)).unwrap();
-        let file: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(dir.path().join("dist/follows.json")).unwrap())
-                .unwrap();
-        let record = &file["channels"][w.key.to_string()];
-        assert_eq!(record["given"], serde_json::json!([w.a.url]));
-    }
-
-    /// S105-CHURN (a): the `gone` filter is written to `follows.json` and read back on open,
-    /// so a restart does not forget an evicted channel.
-    #[test]
-    fn adv_s105_churn_the_gone_filter_survives_a_reopen() {
-        let w = world();
-        let (dir, eve) = w.eve(&[]);
-        eve.test_add_tombstone(&w.key.to_string(), tomb(&[], 1));
-        for n in 0..1024 {
-            eve.test_add_tombstone(&format!("k{n}"), tomb(&[], n + 2));
-        }
-        eve.save_follows(&mut std::collections::BTreeMap::new(), Default::default())
-            .unwrap();
-        drop(eve);
-        let path = dir.path().join("dist/follows.json");
-        let mut file: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        assert_eq!(file["gone"].as_str().map(str::len), Some(8192));
-        // The throwaway tombstone keys are no channel keys: keep only the filter.
-        file.as_object_mut().unwrap().remove("seen");
-        std::fs::write(&path, file.to_string()).unwrap();
-        let eve = strict(dir.path());
-        assert!(
-            eve.held_ungiven(w.key, &w.a.url).unwrap(),
-            "the reopened filter forgot"
-        );
-    }
-
-    /// S105-CHURN (a): the filter rules only a channel with no tombstone; a gone channel
-    /// that was pruned again starts from its new tombstone, which gives a new base.
-    #[test]
-    fn adv_s105_churn_a_new_tombstone_wins_over_the_filter() {
-        let w = world();
-        let (dir, eve) = w.eve(&[]);
-        let key = w.key.to_string();
-        eve.test_add_tombstone(&key, tomb(&[], 1));
-        for n in 0..1024 {
-            eve.test_add_tombstone(&format!("k{n}"), tomb(&[], n + 2));
-        }
-        eve.test_add_tombstone(&key, tomb(&[], u64::MAX));
-        assert!(eve.test_tomb_keys().contains(&key));
-        eve.follow(&w.link(&w.a)).unwrap();
-        let file: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(dir.path().join("dist/follows.json")).unwrap())
-                .unwrap();
-        assert_eq!(
-            file["channels"][&key]["given"],
-            serde_json::json!([w.a.url])
-        );
-    }
-
-    /// r7: a provider hint's base (another channel's listing, 5.11) becomes
-    /// `Fetched.link` of a channel with no record; dist keeps it in no `seen` and no
-    /// tombstone, so a follow of that derived link gives the hint's base, and its
-    /// redirect into the local network is followed (A35, A37, DD-48).
-    #[test]
-    fn adv_s105_r7_provider_fetched_link_gives_a_hint_base() {
-        let w = world();
-        // Dave lists the publisher at `a`: for Eve that base is only a hint.
-        let (_dave_dir, dave) = home("Dave", true);
-        dave.list(&w.link(&w.a), "hint").unwrap();
-        let dave_host = Host::serve(&dave.site_dir());
-        let dave_key = dave.identity().unwrap();
-        let (_dir, eve) = w.eve(&[&w.a, &dave_host]);
-        eve.follow(&crate::Link::new(dave_key, &dave_host.url, None).unwrap())
-            .unwrap();
-        let got = eve.fetch_for(&w.reference, Some(&dave_key)).unwrap();
-        let derived = got.link.expect("a provider fetch names its base");
-        assert_eq!(
-            derived,
-            w.link(&w.a),
-            "the link is built from the hint base"
-        );
-        // The app installs from the fetched link; the hint host now redirects home.
-        w.a.redirect("/head", &format!("{}head", w.b.url));
-        let _ = eve.follow(&derived);
-        let _ = eve.refresh_channel(&w.key);
-        assert_eq!(
-            w.b.count(),
-            0,
-            "a hint base led dist into the local network"
-        );
-    }
-
-    /// r7: the same for a listed-only record: a hint base the record never held becomes
-    /// `Fetched.link`, and a follow of it gives that base (not in `seen`).
-    #[test]
-    fn adv_s105_r7_listed_record_provider_link_gives_a_hint_base() {
-        let w = world();
-        let a2 = Host::serve(&w.publisher.site_dir());
-        let (_dave_dir, dave) = home("Dave", true);
-        dave.list(&w.link(&a2), "hint").unwrap();
-        let dave_host = Host::serve(&dave.site_dir());
-        let dave_key = dave.identity().unwrap();
-        let (_dir, eve) = w.eve(&[&w.a, &a2, &dave_host]);
-        let _z = listed_record(&w, &eve);
-        eve.follow(&crate::Link::new(dave_key, &dave_host.url, None).unwrap())
-            .unwrap();
-        // The listed base fails its package (a refused redirect); the hint base serves it.
-        let target = format!("{}{}", w.b.url, w.package);
-        w.a.redirect(&format!("/{}", w.package), &target);
-        let got = eve.fetch_for(&w.reference, Some(&dave_key)).unwrap();
-        let derived = got.link.expect("a provider fetch names its base");
-        assert_eq!(derived, w.link(&a2), "the link is built from the hint base");
-        assert_eq!(w.b.count(), 0);
-        a2.redirect("/head", &format!("{}head", w.b.url));
-        let _ = eve.follow(&derived);
-        let _ = eve.refresh_channel(&w.key);
-        assert_eq!(
-            w.b.count(),
-            0,
-            "a hint base led dist into the local network"
-        );
-    }
     fn follows_file(dir: &std::path::Path) -> serde_json::Value {
         serde_json::from_slice(&std::fs::read(dir.join("dist/follows.json")).unwrap()).unwrap()
-    }
-
-    /// r7 AC2: a provider fetch through a hint base for a channel with no record leaves a
-    /// tombstone for it that saw the base, and no record (A36).
-    #[test]
-    fn ac2_provider_fetch_notes_the_hint_base_in_a_tombstone() {
-        let w = world();
-        let (_dave_dir, dave) = home("Dave", true);
-        dave.list(&w.link(&w.a), "hint").unwrap();
-        let dave_host = Host::serve(&dave.site_dir());
-        let dave_key = dave.identity().unwrap();
-        let (dir, eve) = w.eve(&[&w.a, &dave_host]);
-        eve.follow(&crate::Link::new(dave_key, &dave_host.url, None).unwrap())
-            .unwrap();
-        eve.fetch_for(&w.reference, Some(&dave_key)).unwrap();
-        let file = follows_file(dir.path());
-        let key = w.key.to_string();
-        assert!(
-            file["channels"].get(&key).is_none(),
-            "a tombstone is no record"
-        );
-        assert_eq!(file["seen"][&key]["seen"], serde_json::json!([w.a.url]));
-        assert!(file["seen"][&key]["given"].as_array().unwrap().is_empty());
-    }
-
-    /// r7 AC2: with a listed record, the record's `seen` holds the hint base.
-    #[test]
-    fn ac2_provider_fetch_notes_the_hint_base_in_a_listed_record() {
-        let w = world();
-        let a2 = Host::serve(&w.publisher.site_dir());
-        let (_dave_dir, dave) = home("Dave", true);
-        dave.list(&w.link(&a2), "hint").unwrap();
-        let dave_host = Host::serve(&dave.site_dir());
-        let dave_key = dave.identity().unwrap();
-        let (dir, eve) = w.eve(&[&w.a, &a2, &dave_host]);
-        let _z = listed_record(&w, &eve);
-        eve.follow(&crate::Link::new(dave_key, &dave_host.url, None).unwrap())
-            .unwrap();
-        w.a.redirect(
-            &format!("/{}", w.package),
-            &format!("{}{}", w.b.url, w.package),
-        );
-        eve.fetch_for(&w.reference, Some(&dave_key)).unwrap();
-        let file = follows_file(dir.path());
-        let seen = file["channels"][w.key.to_string()]["seen"].clone();
-        assert!(
-            seen.as_array().unwrap().contains(&a2.url.clone().into()),
-            "{seen}"
-        );
-    }
-
-    /// r7 AC4: a failed save while noting the base makes no request to it, and the
-    /// tombstones stay as they were.
-    #[test]
-    fn ac4_a_failed_save_noting_a_hint_base_makes_no_request_to_it() {
-        let w = world();
-        let (_dave_dir, dave) = home("Dave", true);
-        dave.list(&w.link(&w.a), "hint").unwrap();
-        let dave_host = Host::serve(&dave.site_dir());
-        let dave_key = dave.identity().unwrap();
-        let (dir, eve) = w.eve(&[&w.a, &dave_host]);
-        eve.follow(&crate::Link::new(dave_key, &dave_host.url, None).unwrap())
-            .unwrap();
-        let before = eve.test_tomb_keys();
-        let file = std::fs::read(dir.path().join("dist/follows.json")).unwrap();
-        let requests = w.a.count();
-        *eve.test_fail_saves.lock().unwrap() = Some(0);
-        let err = eve.fetch_for(&w.reference, Some(&dave_key)).unwrap_err();
-        assert!(
-            matches!(&err, DistError::Io { source, .. } if source.to_string() == "test: save fails"),
-            "the read fails with the save's error: {err:?}"
-        );
-        assert_eq!(
-            w.a.count(),
-            requests,
-            "the base was read before it was noted"
-        );
-        assert_eq!(eve.test_tomb_keys(), before);
-        let after = std::fs::read(dir.path().join("dist/follows.json")).unwrap();
-        assert_eq!(after, file);
-    }
-
-    /// r7: a new tombstone for a channel in the `gone` filter starts `seen_full`, so noting
-    /// a provider base does not undo the fail-closed state (4.4, DD-48).
-    #[test]
-    fn provider_base_tombstone_of_a_gone_channel_starts_full() {
-        let w = world();
-        let (_dave_dir, dave) = home("Dave", true);
-        dave.list(&w.link(&w.a), "hint").unwrap();
-        let dave_host = Host::serve(&dave.site_dir());
-        let dave_key = dave.identity().unwrap();
-        let (dir, eve) = w.eve(&[&w.a, &dave_host]);
-        eve.follow(&crate::Link::new(dave_key, &dave_host.url, None).unwrap())
-            .unwrap();
-        eve.test_add_tombstone(&w.key.to_string(), tomb(&[], 1));
-        for n in 0..1024 {
-            eve.test_add_tombstone(&format!("k{n}"), tomb(&[], n + 2));
-        }
-        assert!(
-            eve.held_ungiven(w.key, &w.b.url).unwrap(),
-            "the channel is gone"
-        );
-        eve.fetch_for(&w.reference, Some(&dave_key)).unwrap();
-        let file = follows_file(dir.path());
-        assert_eq!(file["seen"][w.key.to_string()]["seen_full"], true);
-        assert!(
-            eve.held_ungiven(w.key, &w.b.url).unwrap(),
-            "the new tombstone forgot"
-        );
-    }
-
-    /// r7: a failed save while noting one provider base skips only that base; the read
-    /// ends with the other bases' result and the unnoted base gets no request.
-    #[test]
-    fn provider_base_a_failed_note_moves_to_the_next_base() {
-        let w = world();
-        let a2 = Host::serve(&w.publisher.site_dir());
-        let (_dir, eve) = w.eve(&[&w.a, &a2]);
-        w.a.redirect(
-            &format!("/{}", w.package),
-            &format!("{}{}", w.b.url, w.package),
-        );
-        eve.list(&w.link(&w.a), "first").unwrap();
-        let (_dave_dir, dave) = home("Dave", true);
-        dave.list(&w.link(&a2), "second").unwrap();
-        let dave_host = Host::serve(&dave.site_dir());
-        let dave_key = dave.identity().unwrap();
-        eve.follow(&crate::Link::new(dave_key, &dave_host.url, None).unwrap())
-            .unwrap();
-        let (a_before, a2_before) = (w.a.count(), a2.count());
-        // The first note (base `a`) saves; the second (base `a2`) fails.
-        *eve.test_fail_saves.lock().unwrap() = Some(1);
-        let err = eve.fetch_for(&w.reference, Some(&dave_key)).unwrap_err();
-        assert!(matches!(err, DistError::BadUrl { .. }), "{err:?}");
-        assert!(w.a.count() > a_before, "the noted base is read");
-        assert_eq!(a2.count(), a2_before, "a base not noted is not read");
-    }
-
-    /// r8: `read_link` of a link for a channel with no record reads its base as listed
-    /// (5.11, A37) and returns it as `Fetched.link`, but notes it in no `seen` and no
-    /// tombstone, unlike a provider base (fix7). After a managed install (app
-    /// `read_managed_release`, a manager mod's link) the caller follows `Fetched.link`
-    /// (DD-29); that follow finds the base unseen and gives it, so the host's later
-    /// redirect into the local network is followed (A35, A37, DD-48).
-    #[test]
-    fn adv_s105_r8_read_link_fetched_link_gives_its_listed_base() {
-        let w = world();
-        let (_dir, eve) = w.eve(&[&w.a]);
-        let got = eve.read_link(&w.link(&w.a)).unwrap();
-        let derived = got.link.expect("read_link names its base");
-        w.a.redirect("/head", &format!("{}head", w.b.url));
-        let _ = eve.follow(&derived);
-        let _ = eve.refresh_channel(&w.key);
-        assert_eq!(
-            w.b.count(),
-            0,
-            "a base read as listed by read_link led dist into the local network"
-        );
-    }
-
-    /// r8 AC2: `read_link` of a link for a channel with no record leaves no record and a
-    /// tombstone whose `seen` holds the link's base (DD-48).
-    #[test]
-    fn ac2_read_link_notes_its_base_in_a_tombstone() {
-        let w = world();
-        let (dir, eve) = w.eve(&[&w.a]);
-        eve.read_link(&w.link(&w.a)).unwrap();
-        let file = follows_file(dir.path());
-        assert!(file["channels"].get(w.key.to_string()).is_none(), "{file}");
-        let seen = file["seen"][w.key.to_string()]["seen"].clone();
-        assert!(
-            seen.as_array().unwrap().contains(&w.a.url.clone().into()),
-            "{seen}"
-        );
-    }
-
-    /// r8 AC3: a failed save while `read_link` notes its base makes no request.
-    #[test]
-    fn ac3_read_link_with_a_failed_note_makes_no_request() {
-        let w = world();
-        let (dir, eve) = w.eve(&[&w.a]);
-        let requests = w.a.count();
-        let before = eve.test_tomb_keys();
-        *eve.test_fail_saves.lock().unwrap() = Some(0);
-        let err = eve.read_link(&w.link(&w.a)).unwrap_err();
-        assert!(
-            matches!(&err, DistError::Io { source, .. } if source.to_string() == "test: save fails"),
-            "{err:?}"
-        );
-        assert_eq!(
-            w.a.count(),
-            requests,
-            "the base was read before it was noted"
-        );
-        assert_eq!(eve.test_tomb_keys(), before);
-        assert!(!dir.path().join("dist/follows.json").exists());
-    }
-
-    /// r8: a followed channel's `read_link` notes a new link base in the record before any
-    /// request; the own channel notes nothing (DD-48).
-    #[test]
-    fn read_link_notes_a_record_base_first_and_never_the_own_key() {
-        let w = world();
-        let (dir, eve) = w.eve(&[&w.a, &w.b]);
-        eve.follow(&w.link(&w.a)).unwrap();
-        let requests = (w.a.count(), w.b.count());
-        *eve.test_fail_saves.lock().unwrap() = Some(0);
-        assert!(matches!(
-            eve.read_link(&w.link(&w.b)),
-            Err(DistError::Io { .. })
-        ));
-        assert_eq!((w.a.count(), w.b.count()), requests, "read before the note");
-        *eve.test_fail_saves.lock().unwrap() = None;
-        eve.read_link(&w.link(&w.b)).unwrap();
-        let seen = follows_file(dir.path())["channels"][w.key.to_string()]["seen"].clone();
-        assert!(
-            seen.as_array().unwrap().contains(&w.b.url.clone().into()),
-            "{seen}"
-        );
-        *w.publisher.test_fail_saves.lock().unwrap() = Some(0);
-        w.publisher.read_link(&w.link(&w.a)).unwrap();
     }
 
     fn sync_fails(n: u32) {
@@ -1749,23 +1081,6 @@ mod tests {
             matches!(&err, DistError::Io { source, .. } if source.raw_os_error() == Some(5)),
             "{err:?}"
         );
-    }
-
-    /// F4.1 (Codex r4): after a rename whose directory sync failed, a retry that reads
-    /// provenance first retries the sync; while it fails, the call makes no request.
-    #[test]
-    fn f4_1_a_retry_reads_no_provenance_while_the_dir_sync_fails() {
-        let w = world();
-        let (_dir, eve) = w.eve(&[&w.a]);
-        let before = w.a.count();
-        sync_fails(u32::MAX);
-        for _ in 0..2 {
-            assert_eio(eve.read_link(&w.link(&w.a)).map(|_| ()));
-        }
-        assert_eq!(w.a.count(), before, "a request while the store is unsynced");
-        sync_fails(0);
-        eve.read_link(&w.link(&w.a)).unwrap();
-        assert!(w.a.count() > before);
     }
 
     /// F4.2 (Codex r4): a failed kept ingest whose kept mark was installed by a rename with
@@ -1815,7 +1130,6 @@ mod tests {
         let file = follows_file(dir.path());
         let key = w.key.to_string();
         assert!(file["channels"].get(&key).is_none(), "{file}");
-        assert!(file["seen"].get(&key).is_some(), "{file}");
     }
 
     /// F4.3 (Codex r4): the same for `drop_index`.
@@ -1831,7 +1145,6 @@ mod tests {
         let file = follows_file(dir.path());
         for key in [zed_key.to_string(), w.key.to_string()] {
             assert!(file["channels"].get(&key).is_none(), "{key}: {file}");
-            assert!(file["seen"].get(&key).is_some(), "{key}: {file}");
         }
     }
 
@@ -1870,25 +1183,6 @@ mod tests {
         let before = w.a.count();
         assert_eio(eve.fetch(&w.reference).map(|_| ()));
         assert_eq!(w.a.count(), before, "a request while the store is unsynced");
-    }
-
-    /// F5.3: a save inside `read_link` that leaves the store unsynced stops it before the
-    /// package request.
-    #[test]
-    fn adv_s105_r9_read_link_requests_the_package_after_its_save_unsynced() {
-        let w = world();
-        let (_dir, eve) = w.eve(&[&w.a]);
-        eve.follow(&w.link(&w.a)).unwrap();
-        sync_fails(u32::MAX);
-        let got = eve.read_link(&w.link(&w.a));
-        sync_fails(0);
-        assert!(eve.unsynced.lock().unwrap().dirty, "the store is unsynced");
-        let path = format!("/{}", w.package);
-        assert!(
-            !w.a.requests.lock().unwrap().contains(&path),
-            "a package request from an unsynced store: {:?}",
-            got.map(|f| f.link)
-        );
     }
 
     /// P5.1: a retried unfollow answers Ok also when another call finished its prune.

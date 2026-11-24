@@ -245,6 +245,19 @@ impl Dist {
         result
     }
     pub fn choose_index(&self, link: &Link) -> Result<Vec<RefreshReport>, DistError> {
+        self.choose_index_link(link, false)
+    }
+
+    /// Chooses an index from a link built from a channel record.
+    pub fn choose_index_derived(&self, link: &Link) -> Result<Vec<RefreshReport>, DistError> {
+        self.choose_index_link(link, true)
+    }
+
+    fn choose_index_link(
+        &self,
+        link: &Link,
+        derived: bool,
+    ) -> Result<Vec<RefreshReport>, DistError> {
         if link.slug().is_some() {
             return Err(DistError::BadLink {
                 cause: "index needs a channel link",
@@ -257,7 +270,8 @@ impl Dist {
             .read_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        let listed = self.held_ungiven(link.channel(), link.base())?;
+        self.settle(true)?;
+        let listed = derived && self.derived_base_is_listed(link);
         let report = self.read_channel_mode(link.channel(), link.base(), listed)?;
         match report.outcome {
             Outcome::Failed { cause } => return Err(cause),
@@ -277,10 +291,13 @@ impl Dist {
         let time = follow::now();
         let r = next
             .entry(link.channel())
-            .or_insert_with(|| self.new_record(link.channel(), false, true, false));
-        follow::adopt_given_base(r, link.base());
+            .or_insert_with(|| Self::new_record(false, true, false));
+        follow::adopt_base(r, link.base());
+        if !derived {
+            follow::note_given(&mut r.given, link.base());
+        }
         r.index = true;
-        let learned = follow::learn_base(r, link.base());
+        let learned = follow::add_base(r, link.base());
         r._last_attempt = time;
         if matches!(report.outcome, Outcome::Current { .. }) {
             r.last_success = Some(time);
@@ -361,7 +378,7 @@ impl Dist {
             .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
         let record = next.entry(key).or_insert_with(|| {
-            let mut r = self.new_record(key, false, false, false);
+            let mut r = Self::new_record(false, false, false);
             r._last_attempt = 0;
             r.base = bases[0].clone();
             r
@@ -376,9 +393,6 @@ impl Dist {
             ordered.extend(bases.iter().filter(|b| !record.bases.contains(b)).cloned());
             record.bases = ordered;
             record.base = record.bases[0].clone();
-            for base in &record.bases {
-                follow::note_seen(&mut record.seen, &mut record.seen_full, base);
-            }
         }
         self.save_follows(&mut records, next)?;
         Ok(())
@@ -411,12 +425,14 @@ impl Dist {
             record.bases.clone()
         };
         let mut best = None;
+        let mut refused = None;
         let mut changes = Vec::new();
         let mut highest: Option<(u64, String)> = None;
         let mut any_current = false;
         for base in bases {
             let listed = follow::listed_read(&record, &base);
-            if listed && self.check_listed_base(&base).is_err() {
+            if listed && let Err(cause) = self.check_listed_base(&base) {
+                refused.get_or_insert(cause);
                 continue;
             }
             let mut report = self
@@ -480,9 +496,9 @@ impl Dist {
         let mut report = best.unwrap_or(RefreshReport {
             channel: key,
             outcome: Outcome::Failed {
-                cause: DistError::BadLink {
+                cause: refused.unwrap_or(DistError::BadLink {
                     cause: "listed channel has no permitted base",
-                },
+                }),
             },
             changes: Vec::new(),
         });
@@ -523,42 +539,14 @@ impl Dist {
         let Some(channel) = channel else {
             return Ok(());
         };
-        let gone: BTreeMap<_, _>;
-        (next, gone) = next
-            .into_iter()
-            .partition(|(k, r)| r.followed || r.index || r.kept || walk.bases.contains_key(k));
-        // Staged on a copy: published with the records when the rename installs the file (4.4).
-        let mut tombs = self
-            .tombs
-            .lock()
-            .expect("lock poisoned: another thread panicked while holding it")
-            .clone();
-        for (
-            key,
-            Follow {
-                seen,
-                given,
-                seen_full,
-                ..
-            },
-        ) in gone
-        {
-            let at = follow::now();
-            let tomb = crate::Tombstone {
-                seen,
-                given,
-                seen_full,
-                at,
-            };
-            follow::add_tombstone(&mut tombs, key.to_string(), tomb);
-        }
+        next.retain(|key, r| r.followed || r.index || r.kept || walk.bases.contains_key(key));
         for (key, record) in &mut next {
             if record.kept && !record.followed && !record.index && !walk.bases.contains_key(key) {
                 record.base.clear();
                 record.bases.clear();
             }
         }
-        self.save_staged(&mut records, next, Some(tombs))
+        self.save_follows(&mut records, next)
             .map_err(|cause| Box::new((channel, cause)))
     }
 }

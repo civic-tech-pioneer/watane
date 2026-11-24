@@ -16,6 +16,18 @@ pub fn dist(home: &std::path::Path) -> watane_dist::Dist {
     watane_dist::Dist::open(home, std::sync::Arc::new(Approve), Default::default()).unwrap()
 }
 
+pub fn listing_dist(home: &std::path::Path) -> watane_dist::Dist {
+    watane_dist::Dist::open(
+        home,
+        Arc::new(Approve),
+        watane_dist::Options {
+            listed_local: true,
+            ..Default::default()
+        },
+    )
+    .unwrap()
+}
+
 pub fn choose(app: &App, link: &str) {
     // A click while an earlier add is still busy is ignored (TECHNICAL 5.3.5 item 6).
     until(
