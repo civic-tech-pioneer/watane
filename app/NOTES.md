@@ -1801,3 +1801,5 @@ condition in one JavaScript turn (`(window.__page.modsView(B), CONDITION)`). `un
 (journey, gui_shell, gui_isolation) uses `App::is_true`, which treats a failed eval (`""`,
 page between documents) as "not yet"; the timeout message adds the last raw result.
 S98-fix1: `gui_shell::ac5_install_and_each_*` enabled `#approve` and clicked it in two evals; the consent focus gate could disable it between them (1 in 12 runs). Now one eval, one JS turn, as `journey::approve`.
+
+S103-3: `Request::Agent` has no `asked_by`, so `stop` is `WrongAnswer`; `consent_get` carries the words (`title`, `question`) from `words::agent_consent`, the page does not rebuild them. The details' consent line names the mod by its name alone (`Let <mod> ...`), and has no profile, because host keeps none (`Consent::Workspace {via, folder}`); the consent view names the origin as an asker. `PlanMod.agents_via` is read from the provider's grants (the plan's, or the installed mod's granted ones). The S58/S60 fixtures `claude`, `claude-front` and `fake-claude` are copies of host's own (`host/tests/fixtures`), with a `ui/index.html` added to `claude` so the test can call it from a page.

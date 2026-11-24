@@ -2118,7 +2118,7 @@ Step 11, from **host** (`../host/TECHNICAL.md` 12.1, 19.4, 19.7), all there:
 | `Account { OpenAi, Judge { provider } }` (`provider`: the identity, `<publisher>/<slug>`) and `Host::account_changed(&self, &Account)`, called for a sign-out, a judge key removed or replaced, and an uninstall; the host ends the live streams that used the account, outcome `gone` (host 19.4) | 19.1 Sign out, 19.4 Removing, Uninstalling |
 | `Confirm::consent(&self, ConsentRequest) -> Pin<Box<dyn Future<Output = ConsentAnswer> + Send>>`, one method for the three consents, default `Refused`; the host may drop the future (host 12.1, 19.7) | 19.2 |
 | `ConsentRequest { origin, via, consent, profile: Option<String>, functions }` and `ConsentAnswer { Granted, Refused }` (host 19.7) | 19.2 |
-| `Consent { Workspace { folder }, Account { account }, Toolset { toolset, functions } }` with its `what` text `workspace:<folder>`, `account:openai`, `toolset:<name>` (Display and `parse`), which is `ConsentLine.key`; `InstalledMod.consents` | 19.2 |
+| `Consent { Workspace { via, folder }, Account { via, account }, Toolset { toolset, functions } }` with its `what` text `workspace:<via>:<folder>`, `account:<via>:openai`, `toolset:<name>` (Display and `parse`), which is `ConsentLine.key`; `InstalledMod.consents` | 19.2 |
 | `Host::withdraw_consent(&self, &LocalName, &Consent) -> Result<(), HostError>` | 19.2 Shown and withdrawn |
 | `watane_host::judge_origin(text: &str) -> Result<String, HostError>` (host 19.4) | 19.4 Origin parse |
 | The re-export of `watane_pkg::Grant` with `ClaudeCode` and `ClaudeCodeShell` (pkg 5.1); the consents kept with the grants, listed and withdrawn like grants (host 19.7) | 19.2 |
@@ -2574,12 +2574,14 @@ when it is absent (`None`) the words are `Let <origin> have agents work in
 published one (section 4). `<folder>` is the folder as the host resolved it.
 `<functions>` is the toolset's calls by their MCP tool names (the names of
 `tools_list`, 7), separated by `, `, in the order of the toolset, at most 12
-and then `and <n> more`; each name is set with `textContent`. The page shows
+and then `and <n> more` as one more item of the list (`f1, ..., f12, and 3 more`); each name is set with `textContent`. The page shows
 the question first, then `Approve` and `Deny` as for any request (6.3): the
 800 ms gate, the focus on `Deny`, no form. The request takes only `Approve`
 with no `withheld` and no choice, or `Deny` (`WrongAnswer` otherwise), as
 `Manage` does (17.4); it has no stop button, because the asker is not a
 manager.
+
+`Request::Agent` is JSON `{"kind":"agent","what":{"kind":"workspace","folder":..,"profile":..|null,"provider":..} | {"kind":"account"} | {"kind":"toolset","name":..,"functions":[..]},"origin":Asker}`; `consent_get` adds `title` and `question` (the words above, written once in Rust) to the view of an `agent` request, and the page sets both with `textContent`.
 
 **No call waits.** The host asks through `Confirm::consent` (host 12.1,
 19.7; one method for the three consents) and the
@@ -2769,7 +2771,7 @@ judge origin for the judge key (dev 18), for S65.
 | `words::tests` (L, step 11) | `words::agent_consent` for each `what`; the two grant rows; `grant_short` of both; the map of `watane_host::judge_origin`'s result to the page line: accepted (a lone trailing `/`, upper case, port 443) and refused (another path, a query, a fragment, userinfo, `http`, trailing dot) origins | literal strings |
 | `consent::tests` (L) | `Agent` takes `Approve` with no withheld and no choice, or `Deny`; `stop` is `WrongAnswer` | the answers submitted |
 | `tests/it/gui_shell.rs` (L, step 11) | through the driver's `ask`: an `agent` request of each `what` shows its title and question, hostile folder, origin and function names as text, and no stop button; an install with `agents_via` shows `Uses Claude Code through <provider>.` | `eval` of the consent DOM text |
-| `tests/it/agent.rs` (L) | S54 to S68 | below |
+| `tests/it/agent.rs` (L) | S54 to S68 | below; S58 and S60 run on the real host with the fixtures `claude` and `claude-front` (copies of host's) and the shell script `fake-claude` (a copy of host's), chosen through `claude_binary_pick` |
 
 Scenarios of `tests/it/agent.rs`:
 
