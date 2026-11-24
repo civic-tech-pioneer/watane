@@ -24,6 +24,7 @@ mod journey;
 mod journey_s11;
 mod publish;
 mod regress_s78;
+mod scripted;
 mod search;
 #[cfg(unix)] // Preview start and stop depend on Unix process groups.
 mod serve;

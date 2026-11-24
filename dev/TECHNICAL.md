@@ -64,7 +64,7 @@ publish = false
 [features]
 default = ["fake-host", "fake-claude"]
 fake-host = ["dep:tiny_http"]
-fake-claude = ["dep:rustls", "dep:rcgen"]   # step 11 (18.1): ships in the release; `fake-claude` itself needs no crate
+fake-claude = ["dep:rustls", "dep:rcgen", "dep:base64"]   # step 11 (18.1): ships in the release; `fake-claude` itself needs no crate
 
 [dependencies]
 watane-pkg = { path = "../pkg" }
@@ -80,13 +80,15 @@ wasmtime = { version = "=48.0.10", default-features = false, features = ["compon
 wasmtime-wasi = { version = "=48.0.10", default-features = false, features = ["p2"] }
 tiny_http = { version = "0.12", optional = true }
 # step 11, feature `fake-claude` (18.1); versions are fixed by the stage 14 and 15 briefs
-rustls = { version = "*", optional = true }                       # the TLS server of scripted-responses
-rcgen = { version = "*", optional = true }                        # the test authority and its certificates
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }   # the TLS server of scripted-responses (blocking, one thread per connection: no async runtime)
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"], optional = true }             # the test authority and its certificates
+base64 = { version = "0.22", optional = true }                    # `body_b64` of the request log
 
 [dev-dependencies]
 tempfile = "3.27"
 claude-codes = { version = "=2.1.330", default-features = false, features = ["types"] }   # the kernel's version: the oracle that parses every line of fake-claude (18.1)
 regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls-manual-roots"] }   # the https client of the tests of 18.3 (build it with `.no_proxy()`)
 
 [[bin]]
 name = "fake-watane"
@@ -2887,6 +2889,26 @@ with `Delta("ok")` and `Completed`, and one `Safe([])`). With `--log`, it
 writes each request it receives as `<dir>/responses/<n>.json` or
 `<dir>/judge/<n>.json` (`n` from 1: `{"method","path","headers","body_b64"}`),
 so a test reads `requests()` and `count()` as the files of the folder.
+
+**Shapes** (those of OpenAI's Responses API; a test reads them as literals).
+Every response closes its connection (`connection: close`); the body of an
+`Sse` is read to the close. `Reply` and `Play` serialize externally tagged
+with kebab-case variant names and the field names as written above, e.g.
+`{"usage-limit":{"resets_in_s":60}}`, `{"sse":[{"delta":"a"},"cut"]}`,
+`"reset"`, `{"slow":{"ms":5,"then":"down"}}`.
+
+- `GET /v1/models`: `{"object":"list","data":[{"id":"<slug>","object":"model","created":0,"owned_by":"openai"}, ...]}`.
+- `Delta(t)`: `{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":t}`.
+- `ToolCalls(n)`: n events in one write, each `{"type":"response.output_item.done","output_index":i,"item":{"type":"function_call","id":"fc_<k>","call_id":"call_<k>","name":"tool","arguments":"{}","status":"completed"}}`; `k` counts from 1 over the life of the server, so every call id is distinct.
+- `Completed{i,o}`: `{"type":"response.completed","response":{"id":"resp_1","object":"response","status":"completed","usage":{"input_tokens":i,"output_tokens":o,"total_tokens":i+o}}}`.
+- `Failed{code}`: `{"type":"response.failed","response":{"id":"resp_1","object":"response","status":"failed","error":{"code":code,"message":code}}}`.
+- `Raw(line)`: the text as given, nothing added (the test writes its own `\n\n`). `Cut` ends the body there; later events are not sent.
+- `UsageLimit{resets_in_s}`: 429, `{"error":{"type":"usage_limit_reached","code":"usage_limit_reached","message":"The usage limit has been reached","plan_type":"plus","resets_in_seconds":<resets_in_s>}}`.
+- `Status{code,body}`: that status with `body` and `content-type: application/json`. `Raw{..}`: the status line, the headers and the body exactly as given (no length added: the close ends the body).
+- A verdict body is `{"reasons":[...],"verdict":"safe"}` (JSON, keys in this order).
+- The 401 of a wrong token or key, the 404 and a script gone empty are `application/json` texts without further shape.
+- The log of `--log` is `{"method","path","headers":[["name","value"],...],"body_b64"}` in the order received, written when the request is recorded.
+- The program offers one method beyond the list above, `log_to(dir)`, which `--log` uses.
 
 **Responses origin.** It answers `POST /v1/responses` with the next `Reply`
 (a text event stream for `Sse`) and `GET /v1/models` with the slugs of
