@@ -613,8 +613,6 @@ pub(crate) fn local_base(base: &str) -> bool {
         match octets {
             // RFC 6052 well-known NAT64 prefix.
             [0, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0, a, b, c, d] => Some([a, b, c, d].into()),
-            // RFC 8215 local-use prefix, with the RFC 6052 /48 layout.
-            [0, 0x64, 0xff, 0x9b, 0, 1, a, b, 0, c, d, ..] => Some([a, b, c, d].into()),
             // RFC 3056 6to4 puts the IPv4 address immediately after 2002::/16.
             [0x20, 0x02, a, b, c, d, ..] => Some([a, b, c, d].into()),
             _ => None,
@@ -632,11 +630,15 @@ pub(crate) fn local_base(base: &str) -> bool {
         }
         Some(url::Host::Ipv4(ip)) => local_v4(ip),
         Some(url::Host::Ipv6(ip)) => {
+            let [first, second, third, ..] = ip.segments();
             ip.is_loopback()
                 || ip.is_unspecified()
-                || (ip.segments()[0] & 0xfe00 == 0xfc00)
-                || (ip.segments()[0] & 0xffc0 == 0xfe80)
-                || (ip.segments()[0] & 0xffc0 == 0xfec0)
+                || (first & 0xfe00 == 0xfc00)
+                || (first & 0xffc0 == 0xfe80)
+                || (first & 0xffc0 == 0xfec0)
+                // RFC 8215 reserves this block for local-use translation.
+                // Its subprefix length and IPv4 layout depend on the network.
+                || [first, second, third] == [0x64, 0xff9b, 1]
                 || embedded_v4(ip).is_some_and(local_v4)
         }
         None => true,
@@ -674,7 +676,9 @@ mod tests {
             ("[64:ff9b::192.168.1.1]", true),
             ("[64:ff9b::8.8.8.8]", false),
             ("[64:ff9b:1:c0a8:1:100::]", true),
-            ("[64:ff9b:1:808:8:800::]", false),
+            ("[64:ff9b:1:808:8:800::]", true),
+            ("[64:ff9b:1:2:3:4:192.168.1.1]", true),
+            ("[64:ff9b:2::8.8.8.8]", false),
             ("[2002:7f00:1::]", true),
             ("[2002:808:808::]", false),
         ] {

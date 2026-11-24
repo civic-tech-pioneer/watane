@@ -1017,9 +1017,10 @@ default `false`), dist skips a listed base whose host is `localhost`, ends
 in `.localhost`, or is an IP literal that is loopback, unspecified,
 private (10/8, 172.16/12, 192.168/16, fc00::/7), link-local, shared
 (100.64/10), for benchmarking (198.18/15), on this network (0/8), or
-site-local (fec0::/10). Apply the same IPv4 rules to an embedded address
-in IPv4-mapped IPv6, NAT64 (64:ff9b::/96 and the 64:ff9b:1::/48 layout),
-or 6to4 (2002::/16). Trailing dots do not change a name: `localhost.` and `a.localhost..` are local, and
+site-local (fec0::/10). Refuse the entire local-use NAT64 range
+(64:ff9b:1::/48), whose embedded address layout depends on the network.
+Apply the same IPv4 rules to an embedded address in IPv4-mapped IPv6,
+well-known NAT64 (64:ff9b::/96), or 6to4 (2002::/16). Trailing dots do not change a name: `localhost.` and `a.localhost..` are local, and
 an IPv4 literal with a trailing dot (`127.0.0.1.`) is the literal. A third
 party's listing must not make dist send requests into the participant's
 own network, also through a redirect: every redirect target of a listed read
