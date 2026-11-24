@@ -170,12 +170,15 @@ fn ac2_panic_names_assert_and_counts_remaining_tests() {
         v["next"],
         "Fix the unit test fails_on_purpose, then run: watane-dev test --json"
     );
-    // The served mod's recovery is a serve run, in the fix as in the next.
-    let (status, v) = output(&mut f.command("serve"));
-    assert_eq!(status, 1, "{v}");
-    let fix = "Fix the unit test fails_on_purpose, then run: watane-dev serve --json";
-    assert_eq!(v["errors"][0]["fix"], fix);
-    assert_eq!(v["next"], fix);
+    #[cfg(unix)] // The preview pipeline requires Unix process-group controls.
+    {
+        // The served mod's recovery is a serve run, in the fix as in the next.
+        let (status, v) = output(&mut f.command("serve"));
+        assert_eq!(status, 1, "{v}");
+        let fix = "Fix the unit test fails_on_purpose, then run: watane-dev serve --json";
+        assert_eq!(v["errors"][0]["fix"], fix);
+        assert_eq!(v["next"], fix)
+    };
 }
 
 #[test]

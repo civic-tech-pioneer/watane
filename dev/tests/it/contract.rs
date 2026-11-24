@@ -163,6 +163,7 @@ fn ac6_bad_contract_file_names_file() {
     assert_eq!(errors[0].file.as_deref(), Some("tests/counter.json"));
 }
 
+#[cfg(unix)] // This tests the Unix preview pipeline.
 #[test]
 #[ignore = "slow: full serve pipeline gates preview creation on contracts"]
 fn ac8_serve_does_not_start_preview_for_failed_or_absent_contracts() {

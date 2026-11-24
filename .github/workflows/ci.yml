@@ -55,6 +55,8 @@ jobs:
         run: rustup show active-toolchain || rustup toolchain install
       # Saved from every ref: a PR's fix push reuses its own cache; main's serves every new PR.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-on-failure: ${{ runner.os == 'Windows' }}
       - name: dev's vendor folder (git-ignored; dev's build tests need it)
         shell: bash
         run: dev/scripts/vendor.sh

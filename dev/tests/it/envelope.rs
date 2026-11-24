@@ -63,7 +63,13 @@ fn ac1_new_counter_template_envelope() {
             if path.is_dir() {
                 walk(root, &path, files);
             } else {
-                files.push(path.strip_prefix(root).unwrap().to_str().unwrap().into());
+                files.push(
+                    path.strip_prefix(root)
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .replace(std::path::MAIN_SEPARATOR, "/"),
+                );
             }
         }
     }
@@ -310,7 +316,7 @@ fn ac5_scenario_map_covers_every_scenario_and_names_existing_tests() {
             "missing {scenario}"
         );
     }
-    let sources: String = ["src", "tests/it"]
+    let sources: String = ["src", "src/preview", "tests/it"]
         .into_iter()
         .flat_map(|folder| fs::read_dir(root.join(folder)).unwrap())
         .map(|entry| entry.unwrap().path())

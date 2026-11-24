@@ -22,7 +22,7 @@ fn files(dir: &Path) -> BTreeMap<String, Vec<u8>> {
                         .unwrap()
                         .to_str()
                         .unwrap()
-                        .into(),
+                        .replace(std::path::MAIN_SEPARATOR, "/"),
                     fs::read(e.path()).unwrap(),
                 );
             }

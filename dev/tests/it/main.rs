@@ -18,7 +18,9 @@ mod envelope;
 #[cfg(unix)] // Session fixtures use POSIX symlinks and signals.
 mod fake_claude;
 mod install;
+#[cfg(unix)] // The journey starts and stops Unix preview process groups.
 mod journey;
+#[cfg(unix)] // The journey starts and stops Unix preview process groups.
 mod journey_s11;
 mod publish;
 mod regress_s78;
