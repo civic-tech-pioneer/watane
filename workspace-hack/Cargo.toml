@@ -67,6 +67,7 @@ regex-automata = { version = "0.4", default-features = false, features = ["dfa-b
 regex-syntax = { version = "0.8" }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "stream"] }
 ring = { version = "0.17", features = ["std"] }
+rustix = { version = "1", features = ["event", "fs", "process"] }
 schemars = { version = "0.8", features = ["preserve_order", "url", "uuid1"] }
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["alloc", "derive", "rc"] }
@@ -159,6 +160,7 @@ regex-automata = { version = "0.4", default-features = false, features = ["dfa-b
 regex-syntax = { version = "0.8" }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "stream"] }
 ring = { version = "0.17", features = ["std"] }
+rustix = { version = "1", features = ["event", "fs", "process"] }
 schemars = { version = "0.8", features = ["preserve_order", "url", "uuid1"] }
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["alloc", "derive", "rc"] }
@@ -206,7 +208,7 @@ hyper = { version = "1", default-features = false, features = ["http2"] }
 hyper-util = { version = "0.1", default-features = false, features = ["client-legacy", "client-proxy", "http2"] }
 libc = { version = "0.2" }
 linux-raw-sys = { version = "0.12", default-features = false, features = ["auxvec", "elf", "errno", "general", "if_ether", "ioctl", "net", "netlink", "no_std", "prctl", "xdp"] }
-rustix = { version = "1", features = ["event", "fs", "mm", "net", "param", "process", "termios", "thread", "time"] }
+rustix = { version = "1", default-features = false, features = ["mm", "net", "param", "termios", "thread", "time"] }
 simdutf8 = { version = "0.1", features = ["aarch64_neon", "public_imp"] }
 tower = { version = "0.5", default-features = false, features = ["log", "make", "retry", "timeout"] }
 tower-http = { version = "0.6", features = ["follow-redirect", "fs", "set-header"] }
@@ -219,7 +221,7 @@ hyper = { version = "1", default-features = false, features = ["http2"] }
 hyper-util = { version = "0.1", default-features = false, features = ["client-legacy", "client-proxy", "http2"] }
 libc = { version = "0.2" }
 linux-raw-sys = { version = "0.12", default-features = false, features = ["auxvec", "elf", "errno", "general", "if_ether", "ioctl", "net", "netlink", "no_std", "prctl", "xdp"] }
-rustix = { version = "1", features = ["event", "fs", "mm", "net", "param", "process", "termios", "thread", "time"] }
+rustix = { version = "1", default-features = false, features = ["mm", "net", "param", "termios", "thread", "time"] }
 simdutf8 = { version = "0.1", features = ["aarch64_neon", "public_imp"] }
 tower = { version = "0.5", default-features = false, features = ["log", "make", "retry", "timeout"] }
 tower-http = { version = "0.6", features = ["follow-redirect", "fs", "set-header"] }
@@ -236,7 +238,7 @@ libc = { version = "0.2" }
 objc2 = { version = "0.6", features = ["disable-encoding-assertions", "exception"] }
 objc2-core-foundation = { version = "0.3", features = ["CFBase"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["NSAffineTransform", "NSArray", "NSAttributedString", "NSAutoreleasePool", "NSBundle", "NSCharacterSet", "NSCoder", "NSData", "NSDate", "NSDictionary", "NSDistributedNotificationCenter", "NSEnumerator", "NSError", "NSException", "NSFileWrapper", "NSFormatter", "NSGeometry", "NSHTTPCookie", "NSItemProvider", "NSJSONSerialization", "NSKeyValueCoding", "NSKeyValueObserving", "NSLocale", "NSNotification", "NSNull", "NSObjCRuntime", "NSObject", "NSOrthography", "NSPathUtilities", "NSProcessInfo", "NSProgress", "NSRange", "NSRunLoop", "NSScriptCommand", "NSScriptStandardSuiteCommands", "NSSet", "NSStream", "NSString", "NSTextCheckingResult", "NSThread", "NSURL", "NSURLAuthenticationChallenge", "NSURLCredential", "NSURLRequest", "NSURLResponse", "NSURLSession", "NSUUID", "NSUndoManager", "NSUserActivity", "NSValue", "NSZone", "block2", "objc2-core-foundation", "std"] }
-rustix = { version = "1", features = ["event", "fs", "mm", "net", "param", "process", "termios", "thread", "time"] }
+rustix = { version = "1", default-features = false, features = ["mm", "net", "param", "termios", "thread", "time"] }
 simdutf8 = { version = "0.1", features = ["aarch64_neon", "public_imp"] }
 tower = { version = "0.5", default-features = false, features = ["log", "make", "retry", "timeout"] }
 tower-http = { version = "0.6", features = ["follow-redirect", "fs", "set-header"] }
@@ -253,7 +255,7 @@ libc = { version = "0.2" }
 objc2 = { version = "0.6", features = ["disable-encoding-assertions", "exception"] }
 objc2-core-foundation = { version = "0.3", features = ["CFBase"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["NSAffineTransform", "NSArray", "NSAttributedString", "NSAutoreleasePool", "NSBundle", "NSCharacterSet", "NSCoder", "NSData", "NSDate", "NSDictionary", "NSDistributedNotificationCenter", "NSEnumerator", "NSError", "NSException", "NSFileWrapper", "NSFormatter", "NSGeometry", "NSHTTPCookie", "NSItemProvider", "NSJSONSerialization", "NSKeyValueCoding", "NSKeyValueObserving", "NSLocale", "NSNotification", "NSNull", "NSObjCRuntime", "NSObject", "NSOrthography", "NSPathUtilities", "NSProcessInfo", "NSProgress", "NSRange", "NSRunLoop", "NSScriptCommand", "NSScriptStandardSuiteCommands", "NSSet", "NSStream", "NSString", "NSTextCheckingResult", "NSThread", "NSURL", "NSURLAuthenticationChallenge", "NSURLCredential", "NSURLRequest", "NSURLResponse", "NSURLSession", "NSUUID", "NSUndoManager", "NSUserActivity", "NSValue", "NSZone", "block2", "objc2-core-foundation", "std"] }
-rustix = { version = "1", features = ["event", "fs", "mm", "net", "param", "process", "termios", "thread", "time"] }
+rustix = { version = "1", default-features = false, features = ["mm", "net", "param", "termios", "thread", "time"] }
 simdutf8 = { version = "0.1", features = ["aarch64_neon", "public_imp"] }
 tower = { version = "0.5", default-features = false, features = ["log", "make", "retry", "timeout"] }
 tower-http = { version = "0.6", features = ["follow-redirect", "fs", "set-header"] }
