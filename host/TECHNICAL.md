@@ -3923,7 +3923,7 @@ review r1 of S103 a gate in place of a sleep.
   (12.2); `watane-dev serve` passes the `fake-claude` it linked into
   `<P>/claude/` (dev 18.4). Tests in a participant home give the path through
   their fake `AccountSource::claude_binary` instead.
-- **Scripted OpenAI in a development preview.** On Unix with debug
+- **Scripted OpenAI in a development preview.** In Unix development builds with debug
   assertions, `watane --preview <dir> --scripted-openai <program> [--openai-script <file>]`
   starts the S111 `scripted-responses` program after the preview home opens
   and before the ready line. Both flags require preview mode. The script is
@@ -3938,7 +3938,7 @@ review r1 of S103 a gate in place of a sleep.
   A fake failure ends the stream without retrying a public address.
   The setting lives in memory and real homes refuse it, including a home
   named with `--preview` (3). Release builds compile out the flags and the
-  setting. The app has no entry point to configure it.
+  setting, including when debug assertions are enabled in the release profile. The app has no entry point to configure it.
 - **Test routes** (feature `test-net`, off by default; host 1). With the
   feature, `Host::set_test_net(TestNet)` makes `https-stream` connect a
   request whose host equals a route's name to the route's local address,

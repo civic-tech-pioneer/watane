@@ -34,7 +34,7 @@ fn scripted_setting_is_rejected_in_a_real_home() {
     let marker = r#"{"watane_home":1,"mode":"home"}"#;
     fs::write(home.join("home.json"), marker).unwrap();
     let (status, error) = invoke("--preview", &home, &fake);
-    if cfg!(debug_assertions) {
+    if cfg!(all(watane_dev_profile, debug_assertions)) {
         assert_eq!(status, Some(1));
         assert_eq!(error["error"]["code"], "mode_mismatch");
     } else {
@@ -45,7 +45,7 @@ fn scripted_setting_is_rejected_in_a_real_home() {
     assert!(!home.join("run.json").exists());
 }
 
-#[cfg(debug_assertions)]
+#[cfg(all(watane_dev_profile, debug_assertions))]
 #[test]
 fn scripted_child_with_invalid_address_or_ca_is_reaped() {
     use std::os::unix::fs::PermissionsExt;
