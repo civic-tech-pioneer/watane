@@ -617,19 +617,27 @@ unicode-normalization = "0.1.26"
 zeroize = "1.9"
 thiserror = "2.0"
 
+[target.'cfg(windows)'.dependencies]
+watane-log-windows-fs = { path = "windows-fs" }
+
 [dev-dependencies]
 tempfile = "3.27"
 ed25519-compact = "2.6"          # oracle signer: KeyPair::from_seed(Seed::new(seed)), kp.sk.sign(msg, None)
 proptest = "1.12"
 
-[lints.rust]
-unsafe_code = "forbid"
+[lints]
+workspace = true
 
 [profile.dev.package.argon2]
 opt-level = 3
 [profile.dev.package.blake2]
 opt-level = 3
 ```
+
+The shared Windows platform crate `watane-log-windows-fs` lives in
+`windows-fs/`. It uses `windows-sys` 0.61 for Win32 security and file APIs.
+It inherits workspace lints and allows `unsafe_code` only for that FFI
+(spec/TECHNICAL 2). `watane-log` uses no unsafe code.
 
 z-base-32 with `data-encoding`: `Specification::new()`, push the alphabet to
 `symbols`, keep the default `check_trailing_bits = true`, no padding. The
@@ -722,6 +730,7 @@ channels by kind, a schema version 2 adds an index on a `kind` column; the
 | `Entry::bytes` | `dist` | the exact bytes that `dist` writes to the published folder and reads back. |
 | `Log` (all of section 2) | `dist` only | the identity, the own channel, followed channels, backup and restore; from step 8 the keyless open of a replica (5.5). |
 | `Status`, `Fork`, `Ingest`, `Head` | `dist`, through `dist` to `app` | gap and compromise reports (F-PUB-6, F-PUB-7). |
+| `watane-log-windows-fs` (4.7, 6) | `net`, `dist`, `host`, `app` on Windows | Create owner-only directories and files, open handles without following reparse points, check file kind, links, ownership and ACLs, read handle-based file IDs, and publish with write-through renames. |
 | `MAX_KIND`, `MAX_BODY` | `dist`, `pkg` | `pkg` keeps an encoded `Release` body within `MAX_BODY`. |
 
 ## 11. Needs from other subsystems

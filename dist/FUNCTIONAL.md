@@ -373,7 +373,9 @@ its own local host.
 - **A43 Drop an unused identity.** Given a home whose identity signed
   nothing, when dist drops it, then the key file is gone and publish gives
   `NoIdentity`. Given one statement, the drop fails with `IdentityInUse`
-  and the key file is unchanged. (DIST-F-60)
+  and the key file is unchanged. On Windows, dropping an unused identity
+  also refuses and leaves the key file intact because a durable directory
+  flush is unavailable. (DIST-F-60)
 - **A44 Holder answers and ingest.** Given Bob's home holding Alice's
   channel, then `heads`, `entries` and `fork` give the stored bytes. When a
   keyless home ingests those entries as `Kept`, then it stores them and

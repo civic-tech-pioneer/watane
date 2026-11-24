@@ -87,3 +87,46 @@ fn windows_key_reopens_and_refuses_an_exposed_acl() {
     assert!(cause.contains("owner-only Windows ACL"), "{cause}");
     assert_eq!(fs::read(&path).unwrap(), before);
 }
+
+#[cfg(windows)] // Checks the Windows owner-only DACL of the blob store.
+#[test]
+fn windows_blob_store_is_private_and_an_exposed_one_is_refused() {
+    use watane_log_windows_fs as winfs;
+
+    let home = tempfile::tempdir().unwrap();
+    let dir = home.path().join("net");
+    let options = Options {
+        on: true,
+        bind: Some(lo()),
+        ..Options::default()
+    };
+    let net = open(&dir).unwrap();
+    net.set_options(options.clone()).unwrap();
+    drop(net);
+    let blobs = dir.join("blobs");
+    winfs::check_owner_only(&winfs::open_path(&blobs, false).unwrap()).unwrap();
+    let output = std::process::Command::new("icacls.exe")
+        .arg(&blobs)
+        .args(["/grant", "*S-1-1-0:(R)"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let error = Net::open(&dir, MemHoldings::empty(), options).unwrap_err();
+    assert!(
+        error.to_string().contains("owner-only Windows ACL"),
+        "{error:?}"
+    );
+}
+
+#[cfg(windows)] // A Windows hard link shares the key's DACL.
+#[test]
+fn windows_a_linked_key_is_corrupt() {
+    let home = tempfile::tempdir().unwrap();
+    let dir = home.path().join("net");
+    open(&dir).unwrap();
+    fs::hard_link(dir.join("node.key"), home.path().join("copy")).unwrap();
+    let Err(NetError::Corrupt { cause, .. }) = open(&dir) else {
+        panic!("hard-linked key must be refused");
+    };
+    assert!(cause.contains("regular file with one link"), "{cause}");
+}

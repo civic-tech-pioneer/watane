@@ -236,6 +236,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `env.allowlist` | 3 | the vendor folder is missing or differs from the allowlist | `the crate allowlist at <path> is missing` / `... differs from the allowlist of this watane-dev: <detail>` | `'<abs dev>/scripts/vendor.sh' '<path>'` (6.2; no export needed); a resolved logic crate outside the allowlist: `Reinstall watane-dev, or set WATANE_DEV_VENDOR` |
 | `env.watane_missing` | 3 | the program `watane` is not found | `the program watane was not found (<where>)` | `Install watane, or set WATANE_BIN to the program` |
 | `env.preview_start` | 3 | the preview host printed an error, exited, or gave no ready line in 30 s | `the preview did not start: <host error or last 20 log lines>` | `Read <log path>` |
+| `env.preview_start` | 3 | `serve` or `serve --stop` on Windows | `preview is unavailable on Windows because it requires Unix process-group controls` | `Run watane-dev serve on Linux or macOS; on Windows, watane-dev test still builds and tests the mod` |
 | `env.host_not_running` | 3 | no `run.json`, no answer, a preview in that home, or a home host with no app | `no watane app runs for the home <home>` (or the specific cause) | `Start the watane app, then run: <rerun>`; for a home with a missing ancestor, `Pass --home the folder that the watane app uses (<missing> does not exist), then run: <rerun with its --home value replaced by the literal <folder>>`. `<rerun>` is the command's own rerun (2.4), for publish too; `next` is `<rerun>` for every command that needs the app (install, publish, search, `add --release`, `new --from`), and for `test` and `serve` the command of the fix without its `Start the watane app, then run: ` |
 | `mod.invalid` | 1 | each `pkg` `Violation` | `[<rule>] <message>`, with the violation's `file`; preserve wit-parser `--> <file>:<line>:<col>` locations when present, using the more specific WIT file relative to the mod | — |
 | `mod.cargo_key` | 1 | a key of `logic/Cargo.toml` outside 5.2 | ``logic/Cargo.toml: `<key>` is not allowed`` | `Remove it. Allowed: <list>` |
@@ -1018,9 +1019,10 @@ The shared pipeline order and prebuilt exception are in 7.1.
 ### 6.1 Toolchain
 
 1. If `WATANE_DEV_TOOLCHAIN` is set, `cargo` and `rustc` are
-   `<it>/bin/cargo` and `<it>/bin/rustc`.
+   `<it>/bin/cargo` and `<it>/bin/rustc`. On Windows their names are
+   `cargo.exe` and `rustc.exe`.
 2. Else dev finds `rustup` on `PATH`, then in `$CARGO_HOME/bin`, then in
-   `~/.cargo/bin`, and runs `rustup which cargo` and `rustup which rustc`
+   `~/.cargo/bin` (`rustup.exe` on Windows), and runs `rustup which cargo` and `rustup which rustc`
    with the cache folder as working folder (so no toolchain file of a mod
    applies). This avoids a packaged `rustc` that shadows rustup on `PATH`
    (colos `explore/dev-onboarding`, finding 2).
@@ -1095,9 +1097,11 @@ All cargo runs use one command builder, `builder::cargo(...)`:
   build scripts of allowlisted crates). Thus `RUSTFLAGS`, `RUSTC_WRAPPER`,
   proxies and every secret of the maker stay out (DEV-F-15). If cargo needs
   `HOME`, set `HOME=<cache>/cargo-home`.
-  On Windows, `PATH` contains the Rust toolchain directory. `USERPROFILE`
-  points at the disposable Cargo home, and `TEMP` and `TMP` point at the
-  cache temporary directory. `SystemRoot` is forwarded for system libraries.
+  On Windows, `PATH` contains the Rust toolchain directory and the
+  discovered MSVC linker's directory. The tool discovery supplies `LIB`
+  and `LIBPATH` when available. `SystemRoot` is forwarded for system
+  libraries. `USERPROFILE` points at the disposable Cargo home, and `TEMP`
+  and `TMP` point at the cache temporary directory.
 
 - Arguments common to every run (`<x>` is a canonical absolute path; each
   `--config` value is TOML, quoted with `toml::Value::String(..).to_string()`):

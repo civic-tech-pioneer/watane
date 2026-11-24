@@ -322,7 +322,9 @@ On any other home it does nothing: the app follows `fetched.link` as before
 The identity is dropped first, so no crash leaves a replica with a key.
 If step 2 fails, the home stays keyless until it is opened again; it is
 then no replica, and `Dist::open` creates a fresh identity (dist 5.1). An
-unused identity loses nothing.
+unused identity loses nothing. On Windows, step 1 refuses to drop an
+unused identity because a durable directory flush is unavailable. The key
+stays in place and the join never reaches step 2. A keyless home can join.
 
 ### 5.6 Open
 
