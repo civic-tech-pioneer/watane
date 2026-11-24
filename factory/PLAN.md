@@ -1351,7 +1351,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   its own: the same question (which links may give a base), the same files, and S107 already goes out as soon as S105
   merges. Touches: `dist/` (incl. `own.rs`), `app/src/core.rs`, `app/src/api.rs`. A security boundary: the adversary runs.
 - [~] **S103 Alice gives a mod's agents a folder, and can take it back (stage C, the watane half: host A3,
-  app 19.2).** (in flight, cloud, builder claude, reviewer codex; rule 3: last two S107 and S110 codex; routine `trig_01HDxDURcJvT2C5LrfygVeXb`, fires 07:33 UTC 2026-11-24; app window outcomes go to the macOS CI job; S110 runs beside it in host/src/agent/ with cfg gates only.) (was sketch ahead; after S100 merges: it touches host/src/agent/, as S100 does.) agentic-harness
+  app 19.2).** (in flight, cloud, builder claude, reviewer codex; DELIVERED 11:28 UTC as PR #26 (+9327/-184; adversary BREACHED 2 fixed then HELD, user-sim ACCEPTED 5/5; its foreman chose Q38 (b), Q49 (a), Q50 (a)); r1: Codex review https://chatgpt.com/local/6b057a0e-c9d4-83eb-aa82-158d1014304c, dispatched 11:53 UTC; rule 3: last two S107 and S110 codex; routine `trig_01HDxDURcJvT2C5LrfygVeXb`, fires 07:33 UTC 2026-11-24; app window outcomes go to the macOS CI job; S110 runs beside it in host/src/agent/ with cfg gates only.) (was sketch ahead; after S100 merges: it touches host/src/agent/, as S100 does.) agentic-harness
   stage C: the workspace consent held before `initialized`, the consent view's words (app S58, S60),
   withdrawal ending dependent streams and closing handles, H4 agent tools (host 19.5), `consent-pending`.
   Outcomes: app S58 and S60 on the real app; host case 31 `consent` part; a withdrawal mid-turn ends that
@@ -1393,7 +1393,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   adversary runs on the `log` change. Size: a whole capability (Windows as a checked platform).
   Progress: draft PR #23; BLOCKED at 80ffd54 (20:56 UTC) as briefed: log (native no-follow handles, owner-only ACLs,
   refusal tests), net, pkg, install ported; Windows build now fails only in host/src/agent/ and dist/. Resume after S100
-  and S105 merge: a build brief "continue from branch slice/s110; rebase onto main" into the same Codex task. Resumed ~07:28 UTC 2026-11-24 in the same task (edits in dist/ and host/src/agent/ kept to cfg gates and refusals, since S107 and S103 run there).
+  and S105 merge: a build brief "continue from branch slice/s110; rebase onto main" into the same Codex task. Resumed ~07:28 UTC 2026-11-24 in the same task (edits in dist/ and host/src/agent/ kept to cfg gates and refusals, since S107 and S103 run there). Windows failures per run: 358, 85, 30, 16, 15, 2, 0; DELIVERED ~11:45 UTC at 68d1dd4 (Windows green on attempts 1-3 of run 45370144960; Linux and macOS suite times within 10% of a parallel main run); r1: Claude review routine `trig_01CRaJJrcV955wX2NNsZP4NR`, fires 11:52 UTC.
 
 ## Suite time
 
@@ -1834,6 +1834,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Deputy decisions
+
+- 2026-11-24 (S103) host 18 Q49 (a) and Q50 (a) accepted: each was open with (a) recommended, the stricter option, cheap to undo (deny lines; one table and one check); S103's foreman built them. Q38 stays the human's (Waiting on the human); S103 built (b), which keeps (a) open. Undo: as host 18 states for each.
 
 - 2026-11-24 (S107 r3) accepted: a base the participant gave for a channel survives an unfollow while an index still lists that channel, and a later derived re-follow reads it unlisted again. Needs three events together, the participant's own base for the same channel, no new address for Eve. Undo: clear `explicit_given` on unfollow (dist follow.rs).
 
