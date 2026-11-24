@@ -1437,7 +1437,8 @@ when no preview folder matches.
 2. Run `kill -TERM <pid>`.
 3. Poll every 100 ms until `kill -0 <pid>` fails or `run.json` is gone.
    Then wait for the host to release the home lock before deleting the
-   folder or restarting the preview. The two waits share a 10 s limit.
+   folder or restarting the preview. Host TECHNICAL §3 guarantees that the
+   lock outlives the state database. The two waits share a 10 s limit.
 4. Delete `P`.
 
 ### 9.5 `add <mod folder>` (step 2)
@@ -2366,6 +2367,7 @@ rules belong to 15.1.
 | DEV-S-62 | `scripted::ac6_judge_plays`, `scripted::ac7_judge_counts_every_request` | https client; planned: dev stage 16 |
 | DEV-S-63 | `scripted::ac7_judge_counts_every_request`, `scripted::ac8_judge_key` | https client; planned: dev stage 16 |
 | DEV-S-64 | `preview::unix::tests::ac7_link_writes_default_script_once_and_keeps_the_makers`, `preview::unix::tests::ac7_link_is_replaced_and_copied_where_linking_fails`, `preview::unix::tests::ac7_find_fake_claude_reads_the_variable`, `preview::unix::tests::ac7_spawn_arguments_with_and_without_the_fake`, `doctor::tests::ac7_fake_claude_field_and_warning`; `fake_claude::ac7_serve_passes_the_flag_to_the_host` (slow) | unit: temp folder, literal script and argument vector; slow: the full `serve` against `fake-watane` |
+| DEV-S-67 | `scripted_preview::*`, `preview::unix::tests::s114_restart_*` | CLI diagnostics, loopback scripted preview, and the home lock across shutdown |
 | DEV-S-65 | `scripted::ac6_program_default_and_log` | child process |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
@@ -2554,6 +2556,11 @@ Carol's. The raw URL itself appears only as text (`raw`,
 `next`): the local server stands in for raw.githubusercontent.com.
 
 ### 15.5 The agent layer fakes (step 11)
+
+The scripted preview tests in `tests/it/scripted_preview.rs` cover automatic
+fallback, validation of the maker's script, and the real preview lifecycle.
+The `s114_restart_*` preview unit tests check that shutdown waits for the
+home lock after the run marker is gone.
 
 The fakes are tested without the host, by their own clients: `fake-claude`
 and `scripted-responses` as child processes that the test drives over pipes, `ScriptedResponses` by
@@ -2974,11 +2981,15 @@ once. The maker tools offer the fake `claude` instead:
 - Dev finds `scripted-responses` beside `watane-dev`, on PATH, or via the
   override `WATANE_SCRIPTED_RESPONSES` (checked first). Dev passes the host
   a private, temporary snapshot of the script and removes it after startup
-  (host 19.9). A missing program, unreadable or bad
-  script, or an unavailable host setting fails with `env.preview_start`.
+  (host 19.9). Dev validates a supplied script against the 18.3 format
+  before testing the mod. A missing program or a host that rejects the
+  setting gives `preview.scripted_openai_missing` and starts or reuses
+  an ordinary preview when no script was supplied. With a supplied script,
+  invalid input or unavailable scripted preview support fails with
+  `env.preview_start` and names the maker's file.
   An unchanged script reuses a live preview. Changing the script or enabling
   or disabling scripted Responses restarts the preview and keeps its data.
-  A release can still serve ordinary previews.
+  Released tools lack the scripted server until the distribution packs it (question 14).
 - Contract tests (8) do not use the fakes: a contract test fakes the host's
   interfaces by key (8.1), and the agent layer's calls are tested with the
   kernel's own tests.

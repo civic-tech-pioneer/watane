@@ -245,7 +245,7 @@ fn fallback_rerun(cli: &Cli, cwd: Option<&Path>) -> String {
             home_of(home),
             script
                 .as_deref()
-                .map_or_else(String::new, |script| format!(" --script {}", path(script)))
+                .map_or_else(String::new, |script| serve_script_arg(cwd, script))
         ),
         Command::Add {
             provider,
@@ -387,7 +387,7 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
         ..
     } = &cli.command
     {
-        args.push_str(&format!(" --script {}", quote(&cwd.join(script))));
+        args.push_str(&serve_script_arg(Some(&cwd), script));
     }
     let mut outcome = Outcome::new(name, Some(dir.clone()));
     let result = match cli.command {
@@ -525,6 +525,14 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
             outcome.fail(e)
         }
     }
+}
+
+fn serve_script_arg(cwd: Option<&Path>, script: &Path) -> String {
+    let path = cwd.map(|cwd| {
+        let absolute = cwd.join(script);
+        resolved_path(&absolute).unwrap_or(absolute)
+    });
+    format!(" --script {}", quote(path.as_deref().unwrap_or(script)))
 }
 
 fn is_cached_provider(dir: &Path) -> bool {
@@ -1498,6 +1506,24 @@ mod tests {
             ]
         );
         assert_eq!(outcome.next.as_deref(), Some(fixes[0]));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn s114_serve_reruns_resolve_the_script_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let cwd = temp.path().canonicalize().unwrap();
+        let real = cwd.join("actual script.json");
+        std::fs::write(&real, "{}").unwrap();
+        std::os::unix::fs::symlink(&real, cwd.join("linked.json")).unwrap();
+        let script = Path::new("linked.json");
+        let cli = Cli::try_parse_from(["watane-dev", "serve", "--script", "linked.json"]).unwrap();
+        let expected = format!(" --script {}", quote(&real));
+        assert_eq!(
+            fallback_rerun(&cli, Some(&cwd)),
+            format!("watane-dev serve --json{expected}")
+        );
+        assert_eq!(serve_script_arg(Some(&cwd), script), expected);
     }
 
     #[cfg(unix)] // Uses fixed absolute Unix paths as the command oracle.
