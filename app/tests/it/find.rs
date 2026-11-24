@@ -202,6 +202,35 @@ fn ac1_find_search_install() {
 }
 
 #[test]
+fn s116_own_release_consent_omits_follow_copy() {
+    let home = support::app_home();
+    let own = dist(home.path());
+    own.set_site_url("http://127.0.0.1:1/").unwrap();
+    let published = own.publish(update_package("0.1.0", false)).unwrap();
+    drop(own);
+
+    let app = App::start(home.path(), &[]);
+    begin(
+        &app,
+        "install_release",
+        json!({
+            "release": published.info.reference.to_string(),
+            "link": published.link.unwrap().to_string()
+        }),
+    );
+    consent(&app);
+    let text = app.eval("consent", "document.body.textContent");
+    assert!(
+        !text.as_str().unwrap().contains("Approving also follows"),
+        "{text}"
+    );
+    approve(&app);
+    assert_eq!(finish(&app)["ok"]["followed"], json!([]));
+    installed(&app, "reading-list");
+    assert!(app.quit().success());
+}
+
+#[test]
 fn ac1_find_stale_mark() {
     let mut f = Fixture::new();
     let home = tempfile::tempdir().unwrap();
