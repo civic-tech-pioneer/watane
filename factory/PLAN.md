@@ -1360,7 +1360,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   agentic-harness half (console consent activity and plan line) follows S35/S36. Builder by rule 3.
 - [~] **S113 (upkeep) the app says what it is doing and what Alice agrees to.** (in flight, cloud, builder codex,
   reviewer claude; rule 3: last two S112 codex, S111 claude; the upkeep lane, sketched 2026-11-24 by deputy-3 from
-  Leftovers `### app`; runs beside S111, which touches only `app/TECHNICAL.md` in app.) Outcomes, each item's check, on the
+  Leftovers `### app`; runs beside S111, which touches only `app/TECHNICAL.md` in app; Codex task https://chatgpt.com/local/6b05df95-c29c-83eb-bac0-cb04ace5305d, dispatched 19:05 UTC.) Outcomes, each item's check, on the
   real app (user-sim under xvfb; macOS CI for window tests):
   1. Consent words: "Deny" says what was denied; the Call line names the interface in words, not `mods:x/y@0.1.0`
      (from agentic-harness S39's review); installing from an index says it follows the channel; Remove asks first.
