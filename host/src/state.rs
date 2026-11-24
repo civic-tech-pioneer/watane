@@ -209,6 +209,10 @@ impl State {
     }
     /// Records that `owner`'s run reported session `id`. `Ok(false)` and no write when another
     /// identity holds the id.
+    #[cfg_attr(
+        windows,
+        allow(dead_code, reason = "only the Unix Claude runner reads it")
+    )]
     pub fn session_add(&self, id: &str, owner: &str) -> Result<bool, CallError> {
         let db = self.database(true)?.expect("created database");
         let txn = db.begin_write().map_err(CallError::internal)?;

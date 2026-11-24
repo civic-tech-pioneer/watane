@@ -220,6 +220,10 @@ impl Host {
     }
 
     /// Whether the mod with this identity holds the consent (by its `what` key).
+    #[cfg_attr(
+        windows,
+        allow(dead_code, reason = "only the Unix Claude runner reads it")
+    )]
     pub(crate) fn consent_held(&self, identity: &str, consent: &Consent) -> bool {
         let key = consent.to_string();
         self.catalog

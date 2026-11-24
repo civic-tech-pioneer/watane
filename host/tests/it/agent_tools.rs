@@ -1327,6 +1327,8 @@ fn s103_r1_ac1_a_tools_call_runs_the_tool_as_the_handles_origin_client() {
     );
     assert_eq!(status, 200, "{body}");
     assert_eq!(body["result"]["isError"], true, "{body}");
+    let text = body["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.starts_with("not_granted:"), "{body}");
     assert_eq!(home.asked().len(), 2);
 }
 
@@ -1367,6 +1369,8 @@ fn s103_r2_f2_1_an_open_from_a_tools_call_is_not_granted() {
         body["result"]["content"][0]["text"], "ToolsError::NotGranted",
         "{body}"
     );
+    // Refused, not asked: no question was added.
+    assert_eq!(home.asked().len(), 1);
 }
 
 /// F2.2 (review r2; 19.5, Borrowed authority): arming a timer under borrowed authority is refused
@@ -1389,6 +1393,8 @@ fn s103_r2_f2_2_a_timer_under_borrowed_authority_is_not_granted() {
     );
     assert_eq!(status, 200, "{body}");
     assert_eq!(body["result"]["isError"], true, "{body}");
+    let text = body["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.starts_with("not_granted:"), "{body}");
     // Both refused calls were rolled back whole: `toolc` noted neither.
     assert_eq!(home.seen(), Vec::<String>::new());
     assert_eq!(
