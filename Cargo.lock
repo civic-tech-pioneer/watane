@@ -8479,6 +8479,7 @@ dependencies = [
  "wasmtime-wasi",
  "watane-host",
  "watane-log",
+ "watane-log-windows-fs",
  "watane-pkg",
  "wit-parser",
  "workspace-hack",

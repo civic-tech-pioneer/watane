@@ -564,7 +564,7 @@ mod resolved_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))] // The Unix Claude runner interprets these tool paths.
 mod ac2_own_key {
     use super::*;
     use serde_json::json;
@@ -633,7 +633,7 @@ mod ac2_own_key {
 /// tool, so a Grep or Glob ask that also carries a `file_path`, or a NotebookEdit ask that
 /// carries one beside its `notebook_path`, shows the kernel another path than the one the
 /// tool reaches, and the kernel scopes a session allow on it.
-#[cfg(test)]
+#[cfg(all(test, unix))] // The Unix Claude runner interprets these tool paths.
 mod adv_s100_path_key {
     use super::*;
     use serde_json::json;

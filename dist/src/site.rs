@@ -122,7 +122,13 @@ pub(crate) fn replace_equal(
     {
         let _ = mode; // Both private state and the owner-served site use a private DACL.
         let tmp = tmp.into_temp_path();
-        watane_log_windows_fs::publish(&tmp, path, true).map_err(|e| io(path, e))?;
+        if let Err(error) = watane_log_windows_fs::publish(&tmp, path, true) {
+            // A concurrent writer may already have durably installed these bytes.
+            if read_plain(path)?.as_deref() == Some(bytes) {
+                return Ok((false, Ok(())));
+            }
+            return Err(io(path, error));
+        }
         #[cfg(test)]
         if test_dir_sync_fails() {
             return Ok((true, Err(io(parent, std::io::Error::from_raw_os_error(5)))));

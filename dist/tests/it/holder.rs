@@ -490,7 +490,7 @@ fn ac3_failed_kept_ingest_leaves_earlier_record_as_it_was() {
             "last_success": null,
         });
         let h = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(h.path().join("dist")).unwrap();
+        drop(Dist::open_keyless(h.path(), fast_options()).unwrap());
         std::fs::write(
             h.path().join("dist/follows.json"),
             serde_json::to_vec(&serde_json::json!({
@@ -540,7 +540,7 @@ fn s107_a_failed_kept_ingest_discards_legacy_provenance() {
             .unwrap();
     assert!(saved.get("seen").is_none());
     let h = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(h.path().join("dist")).unwrap();
+    drop(Dist::open_keyless(h.path(), fast_options()).unwrap());
     let file = serde_json::json!({"version": 1, "channels": {}, "seen": {key.to_string(): tomb}});
     std::fs::write(h.path().join("dist/follows.json"), file.to_string()).unwrap();
     let d = Dist::open_keyless(h.path(), fast_options()).unwrap();
