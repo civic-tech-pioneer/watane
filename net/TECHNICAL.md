@@ -13,7 +13,7 @@ Stage N1 (section 9) created the crate and added it to the workspace.
 |---|---|
 | Package | `watane-net`, lib `watane_net`, no binary |
 | Edition, toolchain | 2024, stable, `rust-version = "1.91"` |
-| Lints | `unsafe_code = "forbid"`; `cargo clippy --all-targets -- -D warnings` is clean |
+| Lints | Workspace `unsafe_code = "deny"`. Only `watane-log-windows-fs` may use `#[allow(unsafe_code)]` (spec/TECHNICAL 2). Review enforces this rule. `cargo clippy --all-targets -- -D warnings` is clean. |
 | Threads | `net` owns one multi-thread tokio runtime. The public API is blocking: each call runs on that runtime and waits. A caller must not call it from inside a tokio runtime. `net` calls the holder only from blocking threads (`spawn_blocking`). |
 | Network | QUIC through iroh (UDP), and nothing while off (NET-F-3). |
 | Opens | `<home>/net/` only. Never `<home>/log/` or `<home>/dist/`. |

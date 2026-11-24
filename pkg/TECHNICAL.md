@@ -9,7 +9,9 @@ fixed only as far as the formats of steps 1 to 3 need them.
 
 One crate at the root of this folder: package `watane-pkg`, library
 `watane_pkg`, edition 2024, stable Rust, no binary, no `build.rs`,
-`unsafe_code = "forbid"`. It depends on no watane subsystem.
+`unsafe_code = "deny"`. It depends on no watane subsystem.
+Only `watane-log-windows-fs` may use `#[allow(unsafe_code)]`
+(spec/TECHNICAL 2). Review enforces this rule.
 
 ```text
 pkg/

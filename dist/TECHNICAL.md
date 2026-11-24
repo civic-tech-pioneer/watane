@@ -10,7 +10,7 @@ the questions for `spec/`.
 |---|---|
 | Package | `watane-dist`, lib `watane_dist`, no binary |
 | Edition, toolchain | 2024, stable, `rust-version = "1.91"` (needs `File::try_lock`, stable since 1.89) |
-| Lints | `unsafe_code = "forbid"`; `cargo clippy --all-targets -- -D warnings` is clean |
+| Lints | Workspace `unsafe_code = "deny"`. Only `watane-log-windows-fs` may use `#[allow(unsafe_code)]` (spec/TECHNICAL 2). Review enforces this rule. `cargo clippy --all-targets -- -D warnings` is clean. |
 | Threads | No thread, no timer, no async runtime. Every call is blocking. From step 8 the holder methods (5.12) are called from `net`'s blocking threads while other calls run: none of them takes the read lock or the own-channel lock, and no lock is held across a request (5.12). |
 | Network | Outgoing HTTP GET only. `dist` never listens and never uploads. |
 

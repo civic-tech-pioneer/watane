@@ -28,7 +28,7 @@ fn s110_preview_refuses_start_and_stop_before_touching_the_cache() {
             result["errors"][0]["fix"],
             "Run watane-dev serve on Linux or macOS; on Windows, watane-dev test still builds and tests the mod"
         );
-        assert_eq!(result["next"], result["errors"][0]["fix"]);
+        assert_eq!(result["next"], "watane-dev doctor --json");
         assert!(!cache.exists());
     }
 }
