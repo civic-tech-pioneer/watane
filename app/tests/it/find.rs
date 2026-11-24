@@ -210,6 +210,7 @@ fn s116_own_release_consent_omits_follow_copy() {
     drop(own);
 
     let app = App::start(home.path(), &[]);
+    until(&app, "main", "document.body.dataset.ready === 'true'");
     begin(
         &app,
         "install_release",
@@ -225,8 +226,13 @@ fn s116_own_release_consent_omits_follow_copy() {
         "{text}"
     );
     approve(&app);
-    assert_eq!(finish(&app)["ok"]["followed"], json!([]));
-    installed(&app, "reading-list");
+    let result = finish(&app);
+    assert_eq!(result["ok"]["followed"], json!([]), "{result}");
+    assert_eq!(
+        result["ok"]["installed"],
+        json!(["reading-list"]),
+        "{result}"
+    );
     assert!(app.quit().success());
 }
 
