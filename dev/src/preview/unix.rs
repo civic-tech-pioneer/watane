@@ -18,7 +18,8 @@ use watane_host::{Ready, RunInfo};
 
 #[path = "openai.rs"]
 mod openai;
-use openai::OpenAi;
+use openai::{OpenAi, unavailable_warning};
+pub(crate) use openai::{ScriptInput, read_script};
 const DEFAULT_SCRIPT: &str = r#"{"steps":[{"do":"expect-user"},{"do":"delta","text":"This is the fake claude."},{"do":"message","text":"This is the fake claude."},{"do":"result"},{"do":"idle"}]}"#;
 /// Links the fake into `<P>/claude/` (a copy where links fail), keeps the maker's script (TECHNICAL 18.4).
 fn link_fake_claude(folder: &Path, program: &Path) -> Result<PathBuf, Problem> {
@@ -58,13 +59,39 @@ fn spawn_args(home: &Path, fake_claude: Option<&Path>) -> Vec<std::ffi::OsString
     }
     args
 }
+struct StartFailure {
+    problem: Problem,
+    scripted_unavailable: bool,
+}
+
+impl From<Problem> for StartFailure {
+    fn from(problem: Problem) -> Self {
+        Self {
+            problem,
+            scripted_unavailable: false,
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct HostStartError {
+    watane: u32,
+    error: HostErrorDetail,
+}
+
+#[derive(serde::Deserialize)]
+struct HostErrorDetail {
+    code: String,
+    message: String,
+}
+
 fn start(
     home: &Path,
     folder: &Path,
     log: &Path,
     fake_claude: Option<&Path>,
     openai: Option<&OpenAi>,
-) -> Result<Ready, Problem> {
+) -> Result<Ready, StartFailure> {
     let binary = find_watane()?;
     fs::create_dir_all(folder).map_err(Problem::internal)?;
     let stderr = fs::OpenOptions::new()
@@ -111,24 +138,40 @@ fn start(
     });
     let ready = rx
         .recv_timeout(Duration::from_secs(30))
-        .map_err(|e| e.to_string())
-        .and_then(|v| v.map_err(|e| e.to_string()))
-        .and_then(|line| serde_json::from_str::<Ready>(&line).map_err(|e| format!("{e}: {line}")));
+        .map_err(|err| err.to_string())
+        .and_then(|result| result.map_err(|err| err.to_string()))
+        .map_err(|detail| StartFailure::from(failure(detail)))
+        .and_then(|line| {
+            if let Ok(reported) = serde_json::from_str::<HostStartError>(&line)
+                && reported.watane == 1
+            {
+                let problem = Problem::new(
+                    Code::EnvPreviewStart,
+                    format!("the preview did not start: {}", reported.error.message),
+                )
+                .fix(format!("Read {}", log.display()));
+                if let Some(openai) = openai
+                    && (reported.error.code == "usage"
+                        || reported.error.message.starts_with("scripted OpenAI:"))
+                {
+                    return Err(StartFailure {
+                        problem: openai.start_failure(problem),
+                        scripted_unavailable: true,
+                    });
+                }
+                return Err(problem.into());
+            }
+            serde_json::from_str::<Ready>(&line)
+                .map_err(|err| failure(format!("invalid ready line: {err}")).into())
+        });
     let ready = match ready {
         Ok(r) if r.watane == 1 && r.mode == "preview" && r.home == home && r.port != 0 => r,
-        Ok(_) => {
+        invalid => {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(failure("invalid ready line".into()));
-        }
-        Err(e) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            let problem = failure(e);
-            return Err(match openai {
-                Some(openai) => openai.start_failure(problem),
-                None => problem,
-            });
+            return Err(invalid
+                .err()
+                .unwrap_or_else(|| failure("invalid ready line".into()).into()));
         }
     };
     if let Err(error) =
@@ -137,7 +180,7 @@ fn start(
         let _ = stop_home(home);
         let _ = child.kill();
         let _ = child.wait();
-        return Err(error);
+        return Err(error.into());
     }
     // Reap this child if dev remains alive long enough; the host itself outlives dev.
     std::thread::spawn(move || {
@@ -202,7 +245,8 @@ pub(crate) fn serve_with_script(
     dir: &Path,
     env: &Env,
     rerun: &str,
-    script: Option<&Path>,
+    script: Option<ScriptInput>,
+    warnings: &mut Vec<Problem>,
 ) -> Result<Value, Vec<Problem>> {
     let (m, _) = check::check(dir)?;
     let folders = deps::local_order(dir).map_err(|e| vec![e])?;
@@ -211,7 +255,7 @@ pub(crate) fn serve_with_script(
         let folder = folder(dir, env, m.slug().as_str());
         let home = folder.join("home");
         let log = folder.join("watane.log");
-        let openai = OpenAi::select(dir, &m, &folders, script)?;
+        let openai = OpenAi::select(dir, &m, &folders, script, warnings)?;
         let (running, cached) = running_preview(&folder)?;
         let cached = cached.filter(|ready| OpenAi::matches(openai.as_ref(), &folder, ready.port));
         let fake_claude = match find_fake_claude() {
@@ -225,13 +269,24 @@ pub(crate) fn serve_with_script(
             if running.is_some() {
                 stop_home(&home)?;
             }
-            start(
+            match start(
                 &home,
                 &folder,
                 &log,
                 fake_claude.as_deref(),
                 openai.as_ref(),
-            )?
+            ) {
+                Ok(ready) => ready,
+                Err(error)
+                    if error.scripted_unavailable
+                        && openai.as_ref().is_some_and(OpenAi::automatic) =>
+                {
+                    warnings.push(unavailable_warning(error.problem));
+                    start(&home, &folder, &log, fake_claude.as_deref(), None)
+                        .map_err(|error| error.problem)?
+                }
+                Err(error) => return Err(error.problem),
+            }
         };
         let client = Client::for_home(&home)?
             .ok_or_else(|| {
@@ -445,7 +500,12 @@ mod tests {
             let early = result.recv_timeout(Duration::from_millis(350));
             drop(lock);
             assert!(matches!(early, Err(mpsc::RecvTimeoutError::Timeout)));
-            assert!(result.recv_timeout(Duration::from_secs(3)).unwrap().unwrap());
+            assert!(
+                result
+                    .recv_timeout(Duration::from_secs(3))
+                    .unwrap()
+                    .unwrap()
+            );
         });
     }
 

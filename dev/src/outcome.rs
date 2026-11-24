@@ -50,6 +50,7 @@ pub enum Code {
     BuildImports,
     PreviewPrevious,
     PreviewFakeClaudeMissing,
+    PreviewScriptedOpenaiMissing,
     EnvGitMissing,
     EnvGhMissing,
     EnvGhAuth,
@@ -105,6 +106,7 @@ impl Code {
             Self::BuildImports => "build.imports",
             Self::PreviewPrevious => "preview.previous",
             Self::PreviewFakeClaudeMissing => "preview.fake_claude_missing",
+            Self::PreviewScriptedOpenaiMissing => "preview.scripted_openai_missing",
             Self::EnvGitMissing => "env.git_missing",
             Self::EnvGhMissing => "env.gh_missing",
             Self::EnvGhAuth => "env.gh_auth",
@@ -120,6 +122,7 @@ impl Code {
             Self::NewPrebuiltRenamed
             | Self::PreviewPrevious
             | Self::PreviewFakeClaudeMissing
+            | Self::PreviewScriptedOpenaiMissing
             | Self::PublishProviderUnlisted
             | Self::NewForkUnavailable
             | Self::NewForkDiffers
