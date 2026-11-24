@@ -3358,10 +3358,13 @@ checks of the table above are made at the call.
     changes no interface.
 - Picked workspace: canonical, symlinks resolved. Refused: `/`, the home
   folder, the watane home and its ancestors, `~/.claude`, `~/.codex`, `~/.ssh`,
-  `~/.aws`, `~/Library/Keychains`, the run and scratch trees, and any folder
-  inside one of these (the watane home, `~/.claude`, `~/.codex`, `~/.ssh`,
-  `~/.aws`, `~/Library/Keychains`, `runs/`, `scratch/`); compared without
-  case on a case-insensitive file system.
+  `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.docker`, `~/.kube`,
+  `~/Library/Keychains`, the run and scratch trees, and any folder inside one
+  of these (the watane home, the credential folders just named, `runs/`,
+  `scratch/`); each credential folder is compared in both spellings, as named
+  under `$HOME` and canonical (a `~/.ssh` that is a link to `~/dotfiles/ssh`
+  refuses both: S103's adversary); compared without case on a
+  case-insensitive file system.
 
 ### 19.4 HTTPS streams and accounts (H3)
 
@@ -3533,6 +3536,12 @@ The toolsets are those of 10.1; `open` with no toolset, or one that
   under a removed mod's local name has the same names. So `remove` and a
   `grant` of `Manage` drop that mod's names from every stored list (4.4), and
   its functions are asked again like gained ones.
+  A question that waits across such a change does not undo it (S103's adversary):
+  the host notes the catalog generation when it builds the question's list, and at
+  `Granted` it stores the list only if no `remove`, `grant` of `Manage` or update that
+  grants `Manage` touched a mod of that list since; otherwise it stores nothing and
+  asks again with the current list (one more question, never a name the participant
+  did not see for the mod as it is now).
 
 ### 19.6 Requests and timers (H5, H7)
 
