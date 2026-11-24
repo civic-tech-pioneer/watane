@@ -468,24 +468,16 @@ async fn s103_r1_ac3_a_legacy_agent_toolset_opens_is_listed_and_removed_and_has_
         host.set_toolset(&name("agent"), vec![]).unwrap_err().code(),
         "bad_name"
     );
-    // A token that names it, if one can be issued, gets 403 on `/mcp/agent`.
-    if let Ok(token) = host.issue_token(
-        &name("agent"),
-        &watane_host::Handle::parse("alice").unwrap(),
-    ) {
-        let (served, client, _) = server(&host).await;
-        let status = client
-            .post(format!("http://localhost:{}/mcp/agent", served.port))
-            .bearer_auth(token.as_str())
-            .json(&json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))
-            .send()
-            .await
-            .unwrap()
-            .status()
-            .as_u16();
-        assert_eq!(status, 403);
-        served.shutdown().await;
-    }
+    // No toolset token names it: the only tokens bound to `agent` are handle tokens (10.2).
+    assert_eq!(
+        host.issue_token(
+            &name("agent"),
+            &watane_host::Handle::parse("alice").unwrap()
+        )
+        .unwrap_err()
+        .code(),
+        "no_toolset"
+    );
     host.remove_toolset(&name("agent")).unwrap();
     assert_eq!(serde_json::to_value(host.toolsets()).unwrap(), json!({}));
     assert_eq!(

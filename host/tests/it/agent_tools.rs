@@ -1392,6 +1392,54 @@ fn s103_r1_ac2_a_job_whose_tool_mod_was_reinstalled_before_it_ran_does_not_run()
     assert_eq!(home.seen(), Vec::<String>::new());
 }
 
+/// F1.2: the tool's mod reinstalled and its names consented to again between the `call` and the
+/// run: the tool is in the handle's tools again, but its mod is not the install the call resolved.
+#[test]
+fn s103_r1_ac2_a_job_resolved_to_an_install_that_was_replaced_and_consented_again_does_not_run() {
+    let home = Home::new();
+    let h = home.granted(&["c"], 0);
+    let hold = home.host.hold_agent_runs();
+    let job = home.call_tool(&h, "k", "toolc_api_touch", "{}").unwrap();
+    home.wait_held(&hold, 1);
+    home.reinstall("toolc", "toolc");
+    // The reinstall may hold its declared `Manage` again; without it its names are tools.
+    let _ = home
+        .host
+        .revoke(&local("toolc"), &watane_host::watane_pkg::Grant::Manage);
+    home.granted(&["c"], 1);
+    let names: Vec<String> = home
+        .describe(&h)
+        .unwrap()
+        .iter()
+        .map(|d| d.split('|').next().unwrap().to_owned())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "toolc_api_seen",
+            "toolc_api_slow",
+            "toolc_api_start",
+            "toolc_api_touch"
+        ]
+    );
+    hold.release();
+    assert_eq!(home.err_code(&job), "unknown-tool");
+    assert_eq!(home.seen(), Vec::<String>::new());
+}
+
+/// F1.2: the tool's mod removed (and not installed again) between the `call` and the run.
+#[test]
+fn s103_r1_ac2_a_job_whose_tool_mod_was_removed_before_it_ran_is_unknown_tool() {
+    let home = Home::new();
+    let h = home.granted(&["c"], 0);
+    let hold = home.host.hold_agent_runs();
+    let job = home.call_tool(&h, "k", "toolc_api_touch", "{}").unwrap();
+    home.wait_held(&hold, 1);
+    home.host.remove(&local("toolc"), false).unwrap();
+    hold.release();
+    assert_eq!(home.err_code(&job), "unknown-tool");
+}
+
 /// F1.2: a withdrawn toolset consent ends the job's stream `gone`, and the held run does not run.
 #[test]
 fn s103_r1_ac2_a_job_whose_toolset_consent_was_withdrawn_before_it_ran_does_not_run() {

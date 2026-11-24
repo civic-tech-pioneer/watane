@@ -266,6 +266,9 @@ pub(crate) fn run_agent(
     match (done.denied, done.result) {
         (Some(d), _) => Err(AgentFailure::Denied(d)),
         (None, Ok(v)) => Ok(v),
+        // The tool's mod was removed, disabled or updated before the call started: the tool is
+        // not in the handle's tools now (19.5, Authority at the run).
+        (None, Err(_)) if done.unavailable => Err(AgentFailure::Denied(Denied::UnknownTool)),
         (None, Err(e)) => Err(AgentFailure::Call(e)),
     }
 }

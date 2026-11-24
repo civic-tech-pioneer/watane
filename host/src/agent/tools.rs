@@ -424,12 +424,7 @@ impl Host {
         }
         let tools = self.handle_tools_in(catalog, &toolsets, &origin);
         match tools.get(&run.tool) {
-            Some(t)
-                if t.local == *local
-                    && t.function == function
-                    && t.install == run.install
-                    && catalog.install_of(local) == run.install =>
-            {
+            Some(t) if t.local == *local && t.function == function && t.install == run.install => {
                 Ok((origin, origin_gen))
             }
             _ => Err(Denied::UnknownTool),
