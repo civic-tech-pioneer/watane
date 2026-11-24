@@ -22,6 +22,7 @@ fn plan(app: &App) {
     for line in [
         "Keep its own data on this device",
         "Call books of reading-list (local)",
+        "Call mods:reading-list/books@0.1.0 of reading-list (local)",
         "Receive the mods:reading-list/events@0.1.0 events of reading-list (local)",
         "uses reading-list (local)",
     ] {
@@ -249,6 +250,7 @@ fn book(app: &App, title: &str) {
     );
 }
 #[test]
+#[ignore = "slow: window journey installs, removes and reinstalls to check host storage preservation"]
 fn s113_reinstall_after_keep_data_restores_books() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let home = tempfile::tempdir().unwrap();

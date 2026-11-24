@@ -858,6 +858,17 @@ fn ac6_s37_install_origin_bind_and_release_made_from_are_literal() {
 }
 
 #[test]
+fn regress_s113_consent_dom_keeps_exact_grants_visible() {
+    assert!(
+        std::process::Command::new("node")
+            .args(["tests/support/consent_dom.mjs", "s113"])
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
+#[test]
 fn ac5_s37_page_dom_pick_and_focus_gate() {
     assert!(
         std::process::Command::new("node")

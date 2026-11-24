@@ -95,6 +95,22 @@ if (process.argv[2] === 's82') {
     assert.ok((main.textContent + nodes.h1.textContent).includes(asked_by.name));
     assert.equal(all(main).filter(n => n.tagName === 'img').length,0);
   }
+} else if (process.argv[2] === 's113') {
+  const short = 'Call books of Ratings';
+  const exact = 'Call mods:a/books@0.1.0 of Ratings';
+  const collision = 'Call mods:b/books@0.1.0 of Ratings';
+  await load({kind:'install',mods:[{name:'Notes',version:'1.0.0',local:'notes',publisher:null,uses:[],
+    grants:[{short,text:exact,key:'one',new:true},{short:'',text:collision,key:'two'}]}]});
+  const labels = all(main).filter(node => node.tagName === 'label');
+  assert.equal(labels.length, 2);
+  assert.ok(labels[0].textContent.includes(short));
+  assert.ok(labels[0].textContent.includes(exact));
+  assert.ok(labels[0].textContent.includes('new'));
+  assert.equal(labels[1].textContent.trim(), `Allow: ${collision}`);
+  await load({kind:'manage',asked_by:{name:'Desk',local:'desk',publisher:null},action:'grant',
+    target:{name:'Notes',version:'1.0.0',publisher:null},users:[],grant:{short,text:exact}});
+  assert.ok(main.textContent.includes(short));
+  assert.ok(main.textContent.includes(exact));
 } else if (process.argv[2] === 'main') {
   for (const becomes_main of [true, false, undefined]) {
     await load({kind:'install',by_program:false,mods:[{name:'Desk',version:'1.0.0',local:'desk',publisher:null,

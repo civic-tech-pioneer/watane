@@ -105,7 +105,7 @@ The main mod and the manager (stage I, W36) are designed and not built.
 - **APP-F-42** The app shall show the release a mod was made from as the publisher's claim, in the details, the install consent and the release signature, and list the mods made from an installed release as far as the chosen indexes list them. An installed derived mod shows `Installed` and no install button. Traces: F-BUILD-1, F-BUILD-4, W24.
 - **APP-F-47** When the participant publishes a release that depends on a mod of another publisher, the app shall offer to list that mod in the own index, each listing with its own signature, and report which providers are listed. Traces: F-BUILD-2, W25, J5.
 - **APP-F-48** When a local program asks for a release by its link, the app shall fetch and verify it and answer with the package, and shall install, grant, sign and follow nothing. A request with both/neither link and release (including both null) answers 400 `bad_request`, `give link or release`. Non-JSON or wrong-shaped bodies answer 400 `bad_request`, `give link or release: <serde cause>`, keeping the rejection body text. A wrong method on an app API route answers 405 `method_not_allowed` in the common JSON error envelope. Traces: F-BUILD-1, F-BUILD-2, F-AGENT-4.
-- **APP-F-49** After it installs a release of a publisher that it does not follow, the app shall follow that publisher's channel when it has a link. A declined install follows nothing. Traces: F-INST-7, F-INST-8, J5.
+- **APP-F-49** After it installs a release of a publisher that it does not follow, the app shall follow that publisher's channel when it has a link. A declined Find install follows nothing. Traces: F-INST-7, F-INST-8, J5.
 
 ## Step 8: Own machines
 

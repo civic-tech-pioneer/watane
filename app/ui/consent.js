@@ -37,6 +37,9 @@ function text(parent, tag, value) {
   parent.append(node);
   return node;
 }
+function grantText(grant) {
+  return grant.short ? `${grant.text} · ${grant.short}` : grant.text;
+}
 function party(p) {
   return partyLabel(p);
 }
@@ -83,7 +86,7 @@ try {
       text(main, 'p', target.version);
       text(main, 'p', target.publisher ? `by ${party(target.publisher)}` : 'local');
       if (request.action === 'grant' && request.grant) {
-        text(main, 'p', request.grant.short || request.grant.text).title = request.grant.text;
+        text(main, 'p', grantText(request.grant));
       }
       if (request.action === 'remove' || request.action === 'remove_data') {
         text(main, 'p', request.action === 'remove' ? 'Its data is kept. Installing it again brings it back.' : 'Its data is deleted. This cannot be undone.');
@@ -107,7 +110,7 @@ try {
           input.type = 'checkbox';
           input.checked = true;
           label.append(input);
-          text(label, 'span', `Allow: ${grant.short || grant.text}${grant.new ? ' · new' : ''}`).title = grant.text;
+          text(label, 'span', `Allow: ${grantText(grant)}${grant.new ? ' · new' : ''}`);
           section.append(label);
           grants.push({input, local: mod.local, key: grant.key});
         }

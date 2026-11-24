@@ -444,6 +444,42 @@ pub(crate) fn sign_denied(kind: &str, target: &str) -> String {
 mod tests {
     use super::*;
     #[test]
+    fn s113_bound_call_consent_keeps_exact_words_and_storage_has_no_short_form() {
+        let parties = Parties::new();
+        let provider = Provider {
+            slug: "ratings".parse().unwrap(),
+            publisher: None,
+        };
+        let grant = Grant::Call {
+            interface: "mods:ratings/books@0.1.0".parse().unwrap(),
+            provider: provider.clone(),
+        };
+        let binds = [watane_host::Bind {
+            consumer: "local/notes".into(),
+            provider,
+            to: "local/other".into(),
+        }];
+        let line = consent_grant_line(&grant, &binds, &parties, true, false);
+        assert_eq!(
+            line.short,
+            "Call books of other (local) (in place of ratings (local))"
+        );
+        assert_eq!(
+            line.text,
+            "Call mods:ratings/books@0.1.0 of other (local) (in place of ratings (local))"
+        );
+        assert_eq!(
+            line.text,
+            grant_line_bound(&grant, &binds, &parties, true, false).text
+        );
+        assert!(
+            consent_grant_line(&Grant::Storage, &binds, &parties, true, false)
+                .short
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn ac3_short_grants_name_interfaces_providers_binds_and_you() {
         let key = "y".repeat(52);
         let parties = Parties::new();

@@ -472,7 +472,7 @@ reach you.` in the note. In Find, a verified installable result with a
 channel link says that installing may follow the publisher’s channel
 for updates. Reading the result and showing its plan follow nothing.
 After installation succeeds, follow any linked channel through
-`follow_derived` (9.4). Denying the install follows nothing. An absent
+`follow_derived` (9.4). Denying a Find install follows nothing. An absent
 or empty array leaves the note unchanged.
 
 #### 5.3.4 Details
