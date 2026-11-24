@@ -768,6 +768,12 @@ impl Job {
                 return Err(json!("gone"));
             }
         }
+        // An answer may come minutes after the check: each folder must still be the one the
+        // call resolved when the process starts in it (fail closed).
+        let moved = |f: &String| Path::new(f).canonicalize().ok().as_deref() != Some(Path::new(f));
+        if self.launch.picked().iter().any(moved) {
+            return Err(json!("gone"));
+        }
         Ok(())
     }
 

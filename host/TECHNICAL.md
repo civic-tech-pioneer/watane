@@ -3320,7 +3320,9 @@ checks of the table above are made at the call.
     and asks `Confirm::consent` (19.7), one folder at a time in launch order;
     `Granted` is stored and the next is checked; `Refused`, a dropped answer or
     600 s ends the stream `consent-refused("workspace:<via>:<folder>")` and no
-    process starts. So `consent-pending` items, when any, come before
+    process starts. After the last answer the host resolves each folder once more
+    (an answer may take minutes); a changed one ends the stream `gone`, and the
+    consent just stored stays. So `consent-pending` items, when any, come before
     `initialized`, which stays the first item of a run.
   - **Sessions are the origin client's** (section 18, Q50, option (a), decided by
     S103's foreman). The host keeps the session ids each origin client's runs

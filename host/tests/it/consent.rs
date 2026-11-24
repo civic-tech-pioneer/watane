@@ -409,6 +409,27 @@ fn ac4_refused_ends_consent_refused_stores_nothing_and_the_next_start_asks_again
     home.wait_asked(2);
 }
 
+/// A folder that became a link while the answer was held ends `gone`: no process starts in it.
+#[test]
+fn ac4_a_folder_swapped_for_a_link_while_the_answer_is_held_starts_nothing() {
+    let home = Home::new(&[]);
+    let (dir, f) = folder();
+    let (_other, elsewhere) = folder();
+    let picked = dir.path().canonicalize().unwrap().join("work");
+    std::fs::create_dir(&picked).unwrap();
+    let p = picked.display().to_string();
+    let s = home.start(&launch(&p));
+    home.wait_asked(1);
+    std::fs::rename(&picked, Path::new(&f).join("moved")).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &picked).unwrap();
+    home.answer(0, ConsentAnswer::Granted);
+    assert_eq!(home.wait_ended(1), [format!("{s} gone")]);
+    assert!(
+        home.log().is_empty(),
+        "claude started in the swapped folder"
+    );
+}
+
 #[test]
 fn ac4_a_dropped_answer_ends_consent_refused() {
     let home = Home::new(&[]);
@@ -503,6 +524,13 @@ fn ac5_a_consent_given_through_one_provider_is_not_used_through_another() {
     );
     assert_eq!(asked[1].origin, local("claude-b"));
     assert_eq!(asked[1].via, local("claude-b"));
+    // Another origin client through the same provider `claude` asks again: the consent is
+    // claude-b's.
+    let s3 = home.start(&launch(&f));
+    home.wait_asked(3);
+    assert_eq!(home.asked()[2].origin, local("claude"));
+    assert_eq!(home.asked()[2].consent, asked[0].consent);
+    assert_eq!(home.items("claude", &s3), [pending("local/claude", &f)]);
 }
 
 #[test]
@@ -596,6 +624,11 @@ fn ac6_withdrawal_ends_the_dependent_streams_at_once_and_only_those() {
         .withdraw_consent(&local("claude"), &missing)
         .unwrap_err();
     assert_eq!(e.code(), "bad_request");
+    let e = home
+        .host()
+        .withdraw_consent(&local("nobody"), &missing)
+        .unwrap_err();
+    assert_eq!(e.code(), "no_mod");
     let started = std::time::Instant::now();
     home.host()
         .withdraw_consent(
@@ -633,6 +666,45 @@ fn ac6_disable_keeps_the_consents_and_remove_deletes_them() {
     home.host().disable(&local("claude")).unwrap();
     assert_eq!(home.consents_of("claude"), expected);
     home.host().enable(&local("claude")).unwrap();
+    assert_eq!(home.consents_of("claude"), expected);
+    // An update keeps them: the fixture with another summary is another package.
+    let copy = tempfile::tempdir().unwrap();
+    let to = copy.path().join("claude");
+    std::fs::create_dir(&to).unwrap();
+    let from = fixture("claude");
+    std::fs::copy(from.join("logic.wasm"), to.join("logic.wasm")).unwrap();
+    let wit = std::process::Command::new("cp")
+        .args([
+            "-R",
+            &from.join("wit").display().to_string(),
+            &to.display().to_string(),
+        ])
+        .status()
+        .unwrap();
+    assert!(wit.success());
+    std::fs::write(
+        to.join("mod.toml"),
+        "name = \"claude\"\nsummary = \"S103 update.\"\n",
+    )
+    .unwrap();
+    let plan = home
+        .host()
+        .plan(vec![watane_host::Source::Folder(to)])
+        .unwrap();
+    assert!(
+        matches!(plan.entries()[0].change, watane_host::Change::Update { .. }),
+        "{:?}",
+        plan.entries()[0].change
+    );
+    let host = Arc::clone(home.host());
+    home._rt
+        .block_on(host.install(plan, watane_host::Requester::App))
+        .unwrap();
+    drop(host);
+    assert_eq!(
+        home.host().get(&local("claude")).unwrap().summary,
+        "S103 update."
+    );
     assert_eq!(home.consents_of("claude"), expected);
     // It survives a restart.
     home.close();

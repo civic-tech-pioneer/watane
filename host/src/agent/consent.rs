@@ -277,7 +277,6 @@ impl Host {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     /// AC1 (19.7): the JSON of each consent, by literal.
     #[test]
@@ -329,7 +328,6 @@ mod tests {
                 folder: "/a:b".into()
             }
         );
-        let _ = json!(null);
     }
 
     #[test]

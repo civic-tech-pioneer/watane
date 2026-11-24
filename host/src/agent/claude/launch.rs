@@ -988,5 +988,9 @@ mod tests {
         let ok = resolve_picked(user.join("code/app").to_str().unwrap(), &forbidden).unwrap();
         assert_eq!(ok, user.join("code/app").to_str().unwrap());
         resolve_picked("relative", &forbidden).unwrap_err();
+        let control = user.join("code/a\u{7}b");
+        std::fs::create_dir(&control).unwrap();
+        let e = resolve_picked(control.to_str().unwrap(), &forbidden).unwrap_err();
+        assert_eq!(e, "the folder's name holds a control character");
     }
 }
