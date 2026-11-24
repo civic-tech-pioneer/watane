@@ -64,6 +64,7 @@ fn ac8_journey_j4_updates_withdrawal_and_compromise() {
     ivy.list(
         &first["link"].as_str().unwrap().parse().unwrap(),
         "good for books",
+        "Installing may follow this channel for updates.",
     )
     .unwrap();
     let ivy_site = Site::serve(ivy.site_dir());

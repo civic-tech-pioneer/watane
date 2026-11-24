@@ -2,30 +2,15 @@ const field = id => document.getElementById(id);
 const result = field('result');
 const show = value => { result.textContent = JSON.stringify(value); };
 const failed = error => show({code: error.code, message: error.message});
-// A grant change destroys this context. Put the pending signal in the
-// document's reload URL, so it needs no asynchronously persisted storage.
-const pendingHash = '#desk-call-pending';
-const page = globalThis.location;
-const markPending = pending => globalThis.history?.replaceState(
-  null, '', page.pathname + page.search + (pending ? pendingHash : '')
-);
-let interrupted = page?.hash === pendingHash;
-markPending(false);
-if (interrupted) show({code: 'page_reloaded', message: 'The page reloaded before the call returned.'});
 let request = null;
-// Calls may overlap: the marker stays until the last outstanding one settles.
-let pending = 0;
 const read = async () => {
   try {
     field('mods-result').textContent = JSON.stringify(await watane.call('api.mods'));
     if (request) show(await watane.call('api.request', {id: request}));
-  } catch (error) { if (!interrupted) failed(error); }
+  } catch (error) { field('mods-result').textContent = JSON.stringify({code: error.code, message: error.message}); }
 };
 for (const button of document.querySelectorAll('button')) {
   button.onclick = async () => {
-    interrupted = false;
-    pending += 1;
-    markPending(true);
     request = null;
     result.textContent = '';
     try {
@@ -46,8 +31,8 @@ for (const button of document.querySelectorAll('button')) {
         await read();
       }
     } catch (error) { failed(error); }
-    finally { pending -= 1; if (pending === 0) markPending(false); }
   };
 }
 watane.on(read);
+window.addEventListener('watane:grant-changed', read);
 read();

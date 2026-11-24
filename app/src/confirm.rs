@@ -253,7 +253,7 @@ fn request_view(
                     .grants
                     .iter()
                     .map(|g| {
-                        words::grant_line_bound(
+                        words::consent_grant_line(
                             g,
                             &e.binds,
                             parties,
@@ -503,7 +503,7 @@ async fn manage(
                 Ask::Enable(_) => (consent::ManageAction::Enable, None, vec![]),
                 Ask::Grant { grant, .. } => (
                     consent::ManageAction::Grant,
-                    Some(words::grant_line_bound(
+                    Some(words::consent_grant_line(
                         grant,
                         &m.binds,
                         &core.parties,

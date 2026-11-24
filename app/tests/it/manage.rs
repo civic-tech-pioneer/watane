@@ -412,12 +412,23 @@ fn ac2_s48_enable_and_grant_wait_for_consent() {
     let text = consent_text(&app);
     assert!(text.contains(ASKED), "{text}");
     assert!(
-        text.contains("Call mods:reading-list/books@0.1.0 of reading-list (local)"),
+        text.contains("Call books of reading-list (local)"),
         "{text}"
     );
     assert_eq!(
         app.eval("consent", "document.querySelector('h1').textContent"),
         "Desk asks to give Notes a grant"
+    );
+    assert_eq!(
+        app.eval(
+            "consent",
+            "document.querySelector('#deny').getAttribute('aria-label')"
+        ),
+        "Deny: Desk asks to give Notes a grant"
+    );
+    assert_eq!(
+        app.eval("consent", "document.querySelector('p[title]').title"),
+        "Call mods:reading-list/books@0.1.0 of reading-list (local)"
     );
     assert_eq!(
         app.eval(
@@ -551,73 +562,67 @@ fn ac1_fixture_packages_and_page_messages() {
 
 // Quiet: every reload is observed through the native page-load event, then DOM.
 #[test]
-fn ac1_manage_calls_settle_across_grant_reload() {
+fn ac1_manage_calls_settle_across_grant_notification() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let f = Fixture::new();
     let home = tempfile::tempdir().unwrap();
     let app = App::start(home.path(), &[]);
     f.install(&app);
-    let mut cancelled = serde_json::Value::Null;
-    for command in ["grant_withdraw", "grant_give"] {
-        // Hold the response after the real host processed the request. This
-        // guarantees a live JS promise when the grant operation reloads Desk.
-        app.eval(DESK, "window.oldContext = true; window.responseHeld = false; const fetchNow = window.fetch; window.fetch = async (...args) => { const response = await fetchNow(...args); if (JSON.parse(args[1]?.body || '{}').fn !== 'api.request-remove') return response; window.responseValue = await response.clone().json(); window.responseHeld = true; await new Promise(() => {}); return response; }; null");
-        click(
-            &app,
-            "request-remove",
-            json!({"local":"recommendations","delete-data":true}),
-        );
-        // Confirm both the live call and its navigation marker before granting.
-        // The marker travels in the reload URL, independent of storage flushes.
-        until(
-            &app,
-            DESK,
-            "window.responseHeld === true && location.hash === '#desk-call-pending'",
-        );
-        // WebKit's native view must know that URL too: that is the address
-        // Core's reload will use, across the web-content process boundary.
-        let deadline = std::time::Instant::now() + TIMEOUT;
-        while !app.windows().iter().any(|w| {
-            w["label"] == DESK
-                && w["url"]
-                    .as_str()
-                    .is_some_and(|url| url.ends_with("#desk-call-pending"))
-        }) {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "pending URL not visible to app"
-            );
-            std::thread::yield_now();
-        }
-        if command == "grant_withdraw" {
-            consent(&app);
-            cancelled = app.eval(DESK, "window.responseValue.value.ok");
-            assert!(cancelled.is_string(), "{cancelled}");
-        }
-        invoke(&app, command, json!({"local":"manager","key":"manage"}));
-        assert!(app.wait(DESK, TIMEOUT));
-        until(
-            &app,
-            DESK,
-            "!window.oldContext && !!document.querySelector('#result')",
-        );
-        // The old context is gone. Desk must say so instead of leaving silence.
-        outcome(&app, "page_reloaded");
-        no_window(&app, "consent");
-        assert!(home.path().join("mods/recommendations").is_dir());
-        click(&app, "mods", json!({}));
-        outcome(
-            &app,
-            if command == "grant_withdraw" {
-                "not_granted"
-            } else {
-                "recommendations"
-            },
-        );
-        // A load-time read can show the same error: the cleared marker proves
-        // the clicked call itself settled before the next pass clicks again.
-        until(&app, DESK, "location.hash === ''");
-    }
+    // Pause the real host response until the grant has changed in this document.
+    app.eval(
+        DESK,
+        r#"window.grantChanges = 0;
+        window.addEventListener('watane:grant-changed', () => window.grantChanges++);
+        const originalFetch = window.fetch;
+        window.fetch = async (...args) => {
+          const response = await originalFetch(...args);
+          if (JSON.parse(args[1]?.body || '{}').fn === 'api.request-remove') {
+            window.responseValue = await response.clone().json();
+            await new Promise(resolve => { window.releaseResponse = resolve; });
+          }
+          return response;
+        };
+        null"#,
+    );
+    click(
+        &app,
+        "request-remove",
+        json!({"local":"recommendations","delete-data":true}),
+    );
+    consent(&app);
+    until(&app, DESK, "typeof window.releaseResponse === 'function'");
+    let cancelled = app.eval(DESK, "window.responseValue.value.ok");
+    assert!(cancelled.is_string(), "{cancelled}");
+    invoke(
+        &app,
+        "grant_withdraw",
+        json!({"local":"manager","key":"manage"}),
+    );
+    until(&app, DESK, "window.grantChanges === 1");
+    until(
+        &app,
+        DESK,
+        "document.querySelector('#mods-result').textContent.includes('not_granted')",
+    );
+    no_window(&app, "consent");
+    app.eval(DESK, "window.releaseResponse(); null");
+    outcome(&app, cancelled.as_str().unwrap());
+    assert!(home.path().join("mods/recommendations").is_dir());
+    click(&app, "mods", json!({}));
+    outcome(&app, "not_granted");
+
+    invoke(
+        &app,
+        "grant_give",
+        json!({"local":"manager","key":"manage"}),
+    );
+    until(&app, DESK, "window.grantChanges === 2");
+    until(
+        &app,
+        DESK,
+        "document.querySelector('#mods-result').textContent.includes('recommendations')",
+    );
+    app.eval(DESK, "window.fetch = originalFetch; null");
     click(&app, "request", json!({"request-id":cancelled}));
     outcome(&app, "denied");
     // The cancelled request was ended by host on revoke: no pending request

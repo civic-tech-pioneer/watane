@@ -3,10 +3,10 @@ set -euo pipefail
 # Resolve relative to this file, so callers can run from any directory.
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 image=watane-app-linux-test
-# Stage F uses native arm64 Linux on Apple Silicon, not x86_64 emulation.
-docker build --platform linux/arm64 -f "$repo/app/linux.Dockerfile" -t "$image" "$repo/app"
+# Use Docker’s native architecture, including arm64 on Apple Silicon.
+docker build -f "$repo/app/linux.Dockerfile" -t "$image" "$repo/app"
 # glibc does not resolve *.localhost as macOS does; the dist tests serve on site.localhost.
-docker run --rm --init --platform linux/arm64 --shm-size=1g --add-host site.localhost:127.0.0.1 \
+docker run --rm --init --shm-size=1g --add-host site.localhost:127.0.0.1 \
   --mount "type=bind,source=$repo,target=/repo" \
   --mount type=volume,source=watane-app-linux-registry,target=/usr/local/cargo/registry \
   --mount type=volume,source=watane-app-linux-target,target=/linux-target \

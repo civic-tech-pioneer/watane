@@ -21,7 +21,7 @@ fn plan(app: &App) {
     assert_eq!(app.eval("consent", "Array.from(document.querySelectorAll('main section'), e => e.textContent.includes('local'))"), json!([true, true]));
     for line in [
         "Keep its own data on this device",
-        "Call mods:reading-list/books@0.1.0 of reading-list (local)",
+        "Call books of reading-list (local)",
         "Receive the mods:reading-list/events@0.1.0 events of reading-list (local)",
         "uses reading-list (local)",
     ] {
@@ -285,7 +285,7 @@ fn ac5_journey_j2() {
     until(
         &app,
         "mod-recommendations",
-        "document.querySelector('#error').textContent.includes('not granted') && document.querySelector('#error').textContent.includes('disabled or unavailable')",
+        "document.querySelector('#error').textContent.includes('disabled or unavailable')",
     );
     invoke(&app, "mod_enable", json!({"local":"reading-list"}));
     // The consumer stays open: enabling its provider reloads it and reads again.
@@ -301,7 +301,7 @@ fn ac5_journey_j2() {
     until(
         &app,
         "mod-recommendations",
-        "document.querySelector('#error').textContent.includes('not granted') && document.querySelector('#error').textContent.includes('disabled or unavailable')",
+        "document.querySelector('#error').textContent.includes('disabled or unavailable')",
     );
     invoke(&app, "mod_enable", json!({"local":"reading-list"}));
     assert!(app.wait("mod-recommendations", TIMEOUT));
@@ -326,7 +326,7 @@ fn ac5_journey_j2() {
     until(
         &app,
         "mod-recommendations",
-        "document.body.textContent.includes('not granted') && document.body.textContent.includes('no provider is linked')",
+        "document.querySelector('#error').textContent.includes('no provider is linked')",
     );
     invoke(
         &app,

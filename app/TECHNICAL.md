@@ -205,10 +205,9 @@ no interface, host or provider.
   an interface named `events` reads `Receive the events of {provider}`
   (not `the events events`). Example:
   `Call books of Reading list by Alice`. Install and grant consent show
-  the short Call line and expose the exact interface in its tooltip.
-  Other consent lines and every request
-  show only `text`; `short` never replaces it there, because the
-  participant decides on the exact words. `GrantLine.short` is
+  a Call line with the interface word, retaining the full provider and
+  binding labels. The exact interface is in its tooltip.
+  The remaining consent lines show `text`. `GrantLine.short` is
   `#[serde(default)]`; an empty `short` renders `text`.
 
 ```rust
@@ -940,8 +939,9 @@ or the fingerprint when no profile is stored. `signer` is the own identity.
   adapter sends it as a detail with an empty label, rendered as its value
   alone through `textContent`.
 - Buttons: `Deny` and `Approve`. Deny has an accessible label and tooltip
-  that include the heading of the request it declines. Plus `Deny and stop asks from <asker name>`
-  after `Deny` for requests with `asked_by` (17.4). `Deny` has the focus at load. The page has
+  that include the heading of the request it declines. Requests with
+  `asked_by` offer `Deny and stop asks from <asker name>` after `Deny`
+  (17.4). `Deny` has the focus at load. The page has
   no form and no default button; Enter and Space act only on the focused
   control.
 - `Approve` is `disabled` at load, on each window `blur`, and for 800 ms
@@ -1108,8 +1108,8 @@ Behaviour:
 - `mod_disable`, `mod_remove`: `views::close_mod` first, then host.
 - `mod_enable`, `mod_disable` (S90): after host, reload the open page of
   every mod whose resolved host links (calls or subscriptions) name that
-  mod, once per consumer, clearing the driver's loaded state first as for
-  a grant change. J2 checks it with Recommendations kept open.
+  mod, once per consumer, clearing the driver's loaded state first. J2
+  checks it with Recommendations kept open.
 - `install_paths` (I): as `install_folders` with the dropped paths in
   place of the dialog; a path that is not a directory gives `bad_request`.
 - `main_set` (I): `null` deletes `<home>/app/main`; a local name of an
