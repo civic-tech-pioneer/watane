@@ -2295,7 +2295,7 @@ mod fix24_tests {
             "{:?}",
             log.lines
         );
-        assert!(home.path().join("runs").symlink_metadata().is_err());
+        assert!(!home.path().join("runs").is_symlink());
         assert!(target.path().join("pids").exists());
     }
 
