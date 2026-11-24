@@ -2353,9 +2353,9 @@ rules belong to 15.1.
 | DEV-S-55 | `fake_claude::ac3_missing_and_forbidden_arguments_exit_64` | child process |
 | DEV-S-56 | `fake_claude::ac5_lines_no_step_awaits_exit_70`, `fake_claude::ac5_expect_user_contains_mismatch_exits_70` | child process |
 | DEV-S-57 | `fake_claude::ac6_ask_check_cancel_and_answers`, `fake_claude::ac6_sleep_exit_and_crash`, `fake_claude::ac6_hang_ignores_stdin_until_killed` | child process |
-| DEV-S-58 | `scripted::ac1_sse_and_usage`, `scripted::ac4_records_requests` | https client; planned: dev stage 15 |
-| DEV-S-59 | `scripted::ac1_sse_and_usage`, `scripted::ac2_errors_redirect_reset_stall` | https client; planned: dev stage 15 |
-| DEV-S-60 | `scripted::ac3_models_and_token` | https client; planned: dev stage 15 |
+| DEV-S-58 | `scripted::ac1_sse_and_usage`, `scripted::ac4_records_requests`; `scripted_host::ac1_case_3_a_scripted_turn_streams_into_the_mod_with_the_accounts_token` | https client; planned: dev stage 15 |
+| DEV-S-59 | `scripted::ac1_sse_and_usage`, `scripted::ac2_errors_redirect_reset_stall`; `scripted_host::ac2_case_19_a_redirect_is_an_item_and_is_not_followed`, `ac2_case_19_a_usage_limit_and_a_server_error_arrive_as_items_and_the_stream_closes`, `ac2_case_19_stall_ends_idle_timeout_cut_ends_closed_and_reset_ends_failed`, `ac2_case_19_every_refused_form_reaches_no_server` | https client; planned: dev stage 15 |
+| DEV-S-60 | `scripted::ac3_models_and_token`; `scripted_host::ac2_case_19_models_with_the_account_streams_the_models_answer` | https client; planned: dev stage 15 |
 | DEV-S-61 | `scripted::ac5_trust_only_ca` | https client; planned: dev stage 15 |
 | DEV-S-62 | `scripted::ac6_judge_plays`, `scripted::ac7_judge_counts_every_request` | https client; planned: dev stage 16 |
 | DEV-S-63 | `scripted::ac7_judge_counts_every_request`, `scripted::ac8_judge_key` | https client; planned: dev stage 16 |
@@ -2938,6 +2938,15 @@ the host followed none. A verdict is the body
 It checks `expect_key` as the Responses origin checks its token, answers a
 wrong or missing key 401, and records the request, so a test sees that the
 key was added by the host and that the request holds no key of its own.
+
+**Use with a host** (the example is `tests/it/scripted_host.rs`, host 19.9). `Host::open` of a
+temp home with `Mode::Home { app: Some(<a Confirm whose accounts() is a fake AccountSource>) }`,
+`Host::set_test_net(TestNet { routes: [("api.openai.com", responses_addr), ("judge.test",
+judge_addr)], root_pem: ca_pem })`, `expect_token` set to the fake's token, and host's fixture
+`https` installed. A mod's `https-stream.start` of `POST https://api.openai.com/v1/responses` with
+`account: "openai"` then reaches the fake with `Authorization: Bearer <token>`; every refused
+request leaves `requests()` and `judge().count()` at 0. The crate's `[dev-dependencies]` enable
+`watane-host`'s `test-net` and `tokio` (`rt`, for the async `Host::install`).
 
 ### 18.4 In a preview (W5, F-MAKE-4)
 

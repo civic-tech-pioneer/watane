@@ -3482,7 +3482,8 @@ checks of the table above are made at the call.
   webpki roots and no client certificate (6.8); the name is the URL's host. Certificate and
   name checks are never off, also under `test-net` (19.9: the test root is an added root).
   A connect, TLS or HTTP failure ends the stream `failed("<what>")` (a message that holds no
-  token). **Reading stops while the stream is full** (19.2, In flight and Deferred batch): the
+  token). A connection that the server resets or closes before the response head ends the stream
+  `failed("HTTP: <what>")`. **Reading stops while the stream is full** (19.2, In flight and Deferred batch): the
   host pushes an item, and when the push fails `full` it tries again every 5 ms without reading
   the connection, so a consumer that defers makes the server's writes block once the kernel
   buffers are full. Items counted in the budgets of 19.2 are the 64 KiB chunks and the events.
@@ -3932,7 +3933,10 @@ review r1 of S103 a gate in place of a sleep.
   system's resolver (a unit test of `https_stream.rs` shows it). `set_test_net` again replaces
   the routes. A route belongs to the streams that start after it.
   `ScriptedResponses` gives the addresses (`responses_addr`, `judge_addr`)
-  and the root (`ca_pem`). Another crate that tests with it enables the
+  and the root (`ca_pem`). `dev/tests/it/scripted_host.rs` is the example: a home with a `Confirm` whose
+  `accounts()` is a fake `AccountSource`, `set_test_net` with both addresses, and the `https`
+  fixture installed from `host/tests/fixtures/mods/https`; the first account request of an origin
+  client also records a `consent-pending` item (19.7) before the head. Another crate that tests with it enables the
   feature in its `[dev-dependencies]` only, and host's own A4 tests run with
   it (A4's brief names how); the release builds of `watane` and the app
   never hold it (checked in A4: `cargo tree -e features -i watane-host

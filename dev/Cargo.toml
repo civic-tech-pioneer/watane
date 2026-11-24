@@ -41,6 +41,8 @@ tempfile = "3"
 # the https client of the tests of 18.3; the system roots of DEV-S-61
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls-manual-roots"] }
 rustls-native-certs = "0.8"
+watane-host = { path = "../host", features = ["test-net"] }   # scripted_host.rs: a host that routes api.openai.com to ScriptedResponses (host 19.9); a dev-dependency only
+tokio = { version = "1", default-features = false, features = ["rt"] }   # a runtime for Host::install, which is async
 # the oracle of fake-claude's tests: the kernel's own types read every line it writes (18.1)
 claude-codes = { version = "=2.1.330", default-features = false, features = ["types"] }
 
