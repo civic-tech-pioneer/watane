@@ -275,6 +275,8 @@ struct Shared {
     /// runtime and no socket.
     runtime: OnceLock<tokio::runtime::Runtime>,
     running: Mutex<Option<Running>>,
+    #[cfg(test)]
+    stall_store_shutdown: std::sync::atomic::AtomicBool,
 }
 
 /// One node. Cheap to clone. The API blocks: do not call it from inside a
@@ -376,6 +378,8 @@ impl Net {
             shared: Arc::new(Shared {
                 runtime: OnceLock::new(),
                 running: Mutex::new(None),
+                #[cfg(test)]
+                stall_store_shutdown: std::sync::atomic::AtomicBool::new(false),
             }),
         };
         // `Options.on` false keeps the endpoint off; otherwise the book decides
@@ -449,13 +453,24 @@ impl Net {
             let _ = self.runtime()?.block_on(async {
                 tokio::time::timeout(CLOSE_WAIT, current.router.shutdown()).await
             });
-            // The database of the blob store is closed before the next open of
-            // its folder; redb holds the file exclusively while it is open.
+            // Give the store a separate budget to release redb's exclusive lock.
+            // If it runs out, the next open still reports its own result.
             let store = current.store.clone();
             drop(current);
-            let _ = self
-                .runtime()?
-                .block_on(async { tokio::time::timeout(STORE_WAIT, store.shutdown()).await });
+            let _ = self.runtime()?.block_on(async {
+                tokio::time::timeout(STORE_WAIT, async {
+                    #[cfg(test)]
+                    if self
+                        .shared
+                        .stall_store_shutdown
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                    {
+                        std::future::pending::<()>().await;
+                    }
+                    store.shutdown().await
+                })
+                .await
+            });
         }
         // a relay server of the same address keeps running across a rebuild
         if let Some((addr, server)) = relay.take() {
@@ -813,6 +828,46 @@ mod tests {
             urls.len() <= 1 && urls.iter().all(|u| *u == relay),
             "{urls:?}"
         );
+        net.close();
+    }
+
+    #[test]
+    fn s116_store_timeout_reports_the_reopen_error() {
+        use iroh_blobs::store::fs::FsStore;
+        use std::sync::atomic::Ordering;
+        use std::time::Instant;
+
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("net");
+        let net = Net::open(&home, Arc::new(Nothing), on(vec![])).unwrap();
+        net.set_options(on(vec![])).unwrap();
+
+        // Give the teardown a store that is independent of the router's
+        // own shutdown hook, but locks the real database in the same folder.
+        let rt = net.runtime().unwrap();
+        let original = lock(&net.shared.running).as_ref().unwrap().store.clone();
+        rt.block_on(original.shutdown()).unwrap();
+        let held = rt.block_on(FsStore::load(home.join("blobs"))).unwrap();
+        lock(&net.shared.running).as_mut().unwrap().store = held.clone();
+        net.shared
+            .stall_store_shutdown
+            .store(true, Ordering::Relaxed);
+
+        let start = Instant::now();
+        let rebuild = on(vec!["http://127.0.0.1:9/".parse().unwrap()]);
+        let error = net.set_options(rebuild.clone()).unwrap_err();
+        assert!(start.elapsed() >= STORE_WAIT);
+        assert!(
+            matches!(&error, NetError::Io { path, cause }
+                if path == &home && cause.contains("Database already open. Cannot acquire lock.")),
+            "expected the locked database error from reopening: {error:?}"
+        );
+
+        rt.block_on(held.shutdown()).unwrap();
+        net.shared
+            .stall_store_shutdown
+            .store(false, Ordering::Relaxed);
+        net.set_options(rebuild).unwrap();
         net.close();
     }
 

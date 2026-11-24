@@ -412,9 +412,11 @@ machines of the list have an entry. Measurements and gossip state live in
 memory only.
 
 Windows uses the private Windows file operations in log TECHNICAL 4.7
-for the directory, node key and pairing records. It validates the node
-key's owner, DACL, link count and file type on the opened handle before
-reading it. The first creator publishes with a write-through rename that
+for the node key and pairing records. `windows-fs::private_dir` opens
+and checks the net and blob-store directories before use. Net validates
+the node key's owner, DACL, link count and file type on the opened
+handle before reading it. The first creator calls
+`windows-fs::publish(tmp, key, false)` for a write-through rename that
 cannot overwrite a concurrent winner. The blob store inherits the
 private directory's access control and staging files have an owner-only
 DACL.
@@ -443,7 +445,10 @@ off until `set_options` turns it on. `set_options` writes `on`, `relays` and
 `dht` to `book.json`; `close` writes nothing. `limits`, `bind` and
 `relay_server` come from `Options` only. A change of `relays`, `dht`, `bind`
 or `relay_server` while on rebuilds the endpoint (a running relay server of
-the same address keeps running).
+the same address keeps running). Turning off or rebuilding waits up to
+`STORE_WAIT` (5 s) for the blob store to close its redb database and release
+the exclusive lock. After a timeout, a rebuild or a subsequent `Net::open`
+still attempts to open the store and reports any error from that open.
 
 ### 5.2 Connect and hello
 
@@ -935,12 +940,8 @@ N4 part 1 notes (built, S67):
   connection with an application close code, then waits at most `CLOSE_WAIT`
   (500 ms, `lib.rs`) for the router and endpoint to finish closing; the keeper
   and the blobs hook are aborted first, the router is told to stop at once and
-  ends by itself on the runtime if the wait runs out. Then the blob store is
-  shut down (`Store::shutdown`, which closes its redb database) and awaited at
-  most `STORE_WAIT` (5 s, `lib.rs`): the blob store is closed before a rebuild
-  or `Net::open` reopens its folder, because redb locks the file exclusively
-  (on Windows the late close failed the reopen). A timeout there is ignored;
-  the reopen reports its own error.
+  ends by itself on the runtime if the wait runs out. Then `Store::shutdown`
+  gets its own wait to close the database before a reopen (5.1).
 
 N4 part 2 notes (built, S68):
 
