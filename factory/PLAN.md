@@ -1704,6 +1704,8 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### net / node
 
+- [S111 CI] (guard) possible Windows flake: `net/tests/it/reach.rs:193` `reach::s11_machines_on_different_networks_connect_through_the_servers_relay` failed once on windows-latest with `database error: Database already open. Cannot acquire lock.` (net's redb reopen on Windows) at watane 3e8d788 (slice/s111, no net change); green on the head before. Watch for a second time.
+
 - From S92: with every full machine off, a light fetch still says "channel ... is not followed"
   after ~22 s (NoFullMachine dropped by design; the most common case); a holder refusing a
   channel reads Unreachable { server } though the cause may be local; a bad copy reads "node X is
