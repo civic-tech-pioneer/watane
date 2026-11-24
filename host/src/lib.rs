@@ -5,8 +5,10 @@ pub const HOST_WIT: &str = include_str!("../wit/host.wit");
 pub const WATANE_JS: &str = include_str!("watane.js");
 
 mod agent;
-pub use agent::accounts::{AccountError, AccountSource, JudgeAccount};
+pub use agent::accounts::{Account, AccountError, AccountSource, JudgeAccount};
 pub use agent::consent::{Consent, ConsentAnswer, ConsentRequest};
+#[cfg(feature = "test-net")]
+pub use agent::https_stream::TestNet;
 mod api;
 mod bus;
 mod catalog;
@@ -110,6 +112,11 @@ pub struct Host {
     fake_claude: Mutex<Option<PathBuf>>,
     /// The handles of `agent-tools` (19.5).
     handles: Arc<agent::tools::Handles>,
+    /// The live streams of `https-stream` (19.4).
+    https: Arc<agent::https_stream::Live>,
+    /// Tests only: the names that `https-stream` connects to a local address (19.9).
+    #[cfg(feature = "test-net")]
+    test_net: Mutex<Option<TestNet>>,
     /// Tests only: holds the runs of agent tools just before their authority is read (19.9).
     #[cfg(feature = "test-streams")]
     agent_gate: agent::tools::AgentGate,
@@ -137,6 +144,9 @@ impl Host {
             generation,
             sessions: Arc::default(),
             handles: Arc::default(),
+            https: Arc::default(),
+            #[cfg(feature = "test-net")]
+            test_net: Mutex::new(None),
             #[cfg(feature = "test-streams")]
             agent_gate: agent::tools::AgentGate::default(),
             fake_claude: Mutex::new(None),
@@ -634,6 +644,7 @@ impl Drop for Host {
     /// The host closes: no `claude` outlives it.
     fn drop(&mut self) {
         self.sessions.stop_all();
+        self.https.stop_all();
     }
 }
 

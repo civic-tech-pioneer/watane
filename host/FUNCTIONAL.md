@@ -484,7 +484,8 @@ otherwise `relay` holds no grant beyond storage and its call of `latch`.
 - **S64 Lookalike bytes** (HOST-F-67, 69). `say` of `"\u{FEFF}/skill"`,
   `"\u{200B}/skill"` and `"\u{00A0}/skill"` each fail `slash-command`, and
   the recorded stdin holds no `user` line for them. An `https-stream.start`
-  with the header `host`, `authorization`, `PROXY-AUTHORIZATION` or `:authority`
+  with the header `host`, `authorization`, `PROXY-AUTHORIZATION`, `:authority`, or one that
+  the host's client sets itself (`Content-Length`, `Transfer-Encoding`, `Accept-Encoding`; 19.4)
   fails `forbidden-header`, and the scripted server counts no request.
 - **S65 Toolset grows** (HOST-F-75). Given `notes` with a granted consent
   for toolset `t` = `["tool:api"]` while `api` has `a`, and a handle of `t`.
