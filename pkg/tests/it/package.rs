@@ -97,6 +97,23 @@ fn format_error(bytes: Vec<u8>) {
 }
 
 #[test]
+fn s112_windows_device_segments_are_refused_during_decode() {
+    for path in [
+        "ui/CON", "ui/con.html", "ui/AuX/assets/index.html", "ui/PRN.",
+        "ui/nUl.tar.gz", "ui/COM1.txt", "ui/com9/index.html",
+        "ui/LPT1", "ui/lPt9.css",
+    ] {
+        path_error(raw(&[(path, b"")]), path);
+    }
+    for path in ["ui/console", "ui/auxiliary", "ui/com0", "ui/com10", "ui/lpt10", "ui/foo.con"] {
+        let mut files = HELLO.to_vec();
+        files.push((path, b""));
+        files.sort_unstable_by_key(|(path, _)| *path);
+        Package::from_bytes(raw(&files)).expect(path);
+    }
+}
+
+#[test]
 fn ac1_pack_golden() {
     let dir = hello();
     let p = pack(dir.path(), false).unwrap();

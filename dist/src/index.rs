@@ -623,6 +623,42 @@ pub(crate) fn local_base(base: &str) -> bool {
 mod tests {
     use super::*;
     #[test]
+    fn s112_shared_benchmark_and_this_network_ranges_are_local() {
+        for (host, local) in [
+            ("0.255.255.255", true),
+            ("1.0.0.0", false),
+            ("100.63.255.255", false),
+            ("100.64.0.0", true),
+            ("100.127.255.255", true),
+            ("100.128.0.0", false),
+            ("198.17.255.255", false),
+            ("198.18.0.0", true),
+            ("198.19.255.255", true),
+            ("198.20.0.0", false),
+            ("[fec0::]", true),
+            ("[feff::1]", true),
+            ("[fe7f::1]", false),
+        ] {
+            assert_eq!(local_base(&format!("http://{host}/")), local, "{host}");
+        }
+    }
+
+    #[test]
+    fn s112_local_ipv4_addresses_stay_local_when_embedded_in_ipv6() {
+        for (host, local) in [
+            ("[::ffff:100.64.0.1]", true),
+            ("[64:ff9b::192.168.1.1]", true),
+            ("[64:ff9b::8.8.8.8]", false),
+            ("[64:ff9b:1:c0a8:1:100::]", true),
+            ("[64:ff9b:1:808:8:800::]", false),
+            ("[2002:7f00:1::]", true),
+            ("[2002:808:808::]", false),
+        ] {
+            assert_eq!(local_base(&format!("http://{host}/")), local, "{host}");
+        }
+    }
+
+    #[test]
     fn ac8_local_literal_hosts() {
         for host in [
             "localhost",

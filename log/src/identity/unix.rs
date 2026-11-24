@@ -32,7 +32,7 @@ fn check_mode(path: &Path, meta: &fs::Metadata) -> Result<(), Error> {
     }
     Ok(())
 }
-fn check_dir(path: &Path) -> Result<(), Error> {
+fn check_dir(path: &Path, _current: u32) -> Result<(), Error> {
     let meta = fs::symlink_metadata(path).map_err(|e| io_error(path, e))?;
     if !meta.is_dir() {
         return Err(not_plain(path, "directory", meta.file_type().is_symlink()));
@@ -150,7 +150,7 @@ fn prepare_dir(dir: &Path) -> Result<(), Error> {
         Err(e) => return Err(io_error(dir, e)),
         _ => {}
     }
-    check_dir(dir)
+    check_dir(dir, effective_uid())
 }
 pub(crate) fn open_keyless(dir: &Path) -> Result<(), Error> {
     prepare_dir(dir)?;
@@ -231,11 +231,21 @@ fn write_key(dir: &Path, directory: &File, path: &Path, seed: &[u8; 32]) -> Resu
 }
 #[cfg(test)]
 mod tests {
-    use super::{check_key_owner, effective_uid, open, publish_key, read};
+    use super::{check_dir, check_key_owner, effective_uid, open, publish_key, read};
     use crate::Error;
     use std::fs;
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
     use std::path::Path;
+
+    #[test]
+    fn s112_private_directory_with_foreign_owner_is_refused() {
+        let dir = tempfile::tempdir().expect("create log directory");
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700))
+            .expect("set private directory mode");
+        let owner = fs::metadata(dir.path()).expect("stat directory").uid();
+        let error = check_dir(dir.path(), owner ^ 1).expect_err("refuse the foreign owner");
+        assert!(error.to_string().contains("log directory must be owned"), "{error}");
+    }
 
     #[test]
     fn regress_s109_creation_publishes_a_single_name() {
