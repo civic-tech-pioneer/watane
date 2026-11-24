@@ -2186,4 +2186,44 @@ mod adv_s100_p15 {
             "open: {status}, runs/ left: {left}"
         );
     }
+
+    /// Lines that differ only in white space, a sign or a leading zero are one record (same
+    /// pgid, boot id, start time), yet each is handled: the line set does not make a repeated
+    /// record handled once (3.1 step 3, pass 14).
+    #[test]
+    fn adv_s100_p15_a_record_in_white_space_variants_is_handled_each_time() {
+        let Some(boot) = boot_id() else { return };
+        let mut leader = Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pgid = i32::try_from(leader.id()).unwrap();
+        let record = pid_record(pgid).expect("the leader is alive");
+        let mut bytes = vec![];
+        for line in [
+            record.clone(),
+            format!(" {record}"),
+            format!("{record} "),
+            format!("+{record}"),
+            format!("0{record}"),
+            record.replacen(' ', "\t", 1),
+        ] {
+            bytes.extend_from_slice(line.as_bytes());
+            bytes.push(b'\n');
+        }
+        let kills = std::cell::Cell::new(0);
+        let mut log = CleanupLog::default();
+        clean_lines(
+            &bytes,
+            &boot,
+            |_| Some(()),
+            leader_start_time,
+            |_: &()| kills.set(kills.get() + 1),
+            &mut log,
+        );
+        leader.kill().unwrap();
+        leader.wait().unwrap();
+        assert_eq!(kills.get(), 1, "{:?}", log.lines);
+    }
 }
