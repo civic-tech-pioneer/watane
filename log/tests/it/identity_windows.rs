@@ -82,21 +82,20 @@ fn s116_private_dir_creates_and_pins_a_checked_directory() {
     use watane_log_windows_fs::{PrivateDirError, private_dir};
 
     let temp = tempfile::tempdir().expect("create temporary parent");
-    let dir = temp.path().join("fresh/nested");
+    let parent = temp.path().join("fresh");
+    let dir = parent.join("nested");
     let directory = private_dir(&dir).expect("create and open a private directory");
+    drop(private_dir(&parent).expect("check the intermediate directory"));
     assert!(directory.metadata().expect("inspect directory").is_dir());
     let moved = dir.with_file_name("moved");
-    assert!(
-        fs::rename(&dir, &moved).is_err(),
-        "the open directory must be pinned"
-    );
+    fs::rename(&dir, &moved).expect_err("the open directory must be pinned");
     drop(directory);
     fs::rename(&dir, &moved).expect("move directory after releasing its handle");
 
-    let image = moved.join("regular-file");
-    fs::write(&image, b"not a directory").expect("create a regular file");
+    let file = moved.join("regular-file");
+    fs::write(&file, b"regular file").expect("create a regular file");
     assert!(matches!(
-        private_dir(&image),
+        private_dir(&file),
         Err(PrivateDirError::Invalid(_))
     ));
 
