@@ -1109,7 +1109,7 @@ fn s58_agent_consent_words_literal_text_and_no_stop() {
     let app = App::start(home.path(), &[]);
     let hostile = "<img src=x onerror=alert(1)>";
     let origin = json!({"local":"desk","name":hostile,"publisher":null});
-    // The first function name is hostile too; 14 names show 12 and `and 2 more`.
+    // The first function name is hostile too; all 14 names show, none folded into `more`.
     let many: Vec<String> = std::iter::once(hostile.to_owned())
         .chain((2..=14).map(|i| format!("f{i}")))
         .collect();
@@ -1134,10 +1134,7 @@ fn s58_agent_consent_words_literal_text_and_no_stop() {
         (
             json!({"kind":"toolset","name":"t","functions":many}),
             "Tools for agents",
-            format!(
-                "Let {hostile} (local)'s agents call: {}, and 2 more?",
-                many[..12].join(", ")
-            ),
+            format!("Let {hostile} (local)'s agents call: {}?", many.join(", ")),
         ),
     ];
     for (what, title, question) in cases {

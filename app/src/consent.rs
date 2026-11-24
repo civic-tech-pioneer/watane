@@ -241,7 +241,13 @@ impl Request {
         withheld: Vec<Withheld>,
     ) -> Result<Answer, ConsentError> {
         if !approve {
-            return Ok(Answer::Deny);
+            let agent_payload =
+                matches!(self, Self::Agent { .. }) && (choice.is_some() || !withheld.is_empty());
+            return if agent_payload {
+                Err(ConsentError::WrongAnswer)
+            } else {
+                Ok(Answer::Deny)
+            };
         }
         match (self, choice) {
             (Self::Pick { .. }, Some(choice)) if withheld.is_empty() => Ok(Answer::Pick { choice }),
@@ -703,15 +709,14 @@ mod tests {
             request.answer(true, None, vec![]).unwrap(),
             Answer::Approve { withheld: vec![] }
         );
-        assert_eq!(
-            request.answer(false, None, withheld()).unwrap(),
-            Answer::Deny
-        );
-        for (choice, withheld) in [(Some("x".to_owned()), vec![]), (None, withheld())] {
-            assert!(matches!(
-                request.answer(true, choice, withheld),
-                Err(ConsentError::WrongAnswer)
-            ));
+        assert_eq!(request.answer(false, None, vec![]).unwrap(), Answer::Deny);
+        for approve in [false, true] {
+            for (choice, withheld) in [(Some("x".to_owned()), vec![]), (None, withheld())] {
+                assert!(matches!(
+                    request.answer(approve, choice, withheld),
+                    Err(ConsentError::WrongAnswer)
+                ));
+            }
         }
         for approve in [false, true] {
             assert!(matches!(
@@ -725,6 +730,8 @@ mod tests {
         let mut ask = std::pin::pin!(ask);
         queue(ask.as_mut()).await;
         let (id, _) = broker.current().unwrap();
+        // A refused Deny payload never reaches the broker: the head stays open.
+        assert!(broker.current().is_some_and(|(head, _)| head == id));
         for answer in [
             Answer::Approve {
                 withheld: withheld(),

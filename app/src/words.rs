@@ -270,16 +270,10 @@ fn agent_words(what: &AgentWhat, origin: &str) -> (String, String) {
             "Your ChatGPT plan".into(),
             format!("Let {origin} use your ChatGPT plan?"),
         ),
-        AgentWhat::Toolset { functions, .. } => {
-            let mut names = functions.iter().take(12).cloned().collect::<Vec<_>>();
-            if functions.len() > 12 {
-                names.push(format!("and {} more", functions.len() - 12));
-            }
-            (
-                "Tools for agents".into(),
-                format!("Let {origin}'s agents call: {}?", names.join(", ")),
-            )
-        }
+        AgentWhat::Toolset { functions, .. } => (
+            "Tools for agents".into(),
+            format!("Let {origin}'s agents call: {}?", functions.join(", ")),
+        ),
     }
 }
 
@@ -552,10 +546,15 @@ mod tests {
             agent_consent(&toolset(12), &local).1,
             "Let Desk (local)'s agents call: f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12?"
         );
-        assert_eq!(
-            agent_consent(&toolset(15), &local).1,
-            "Let Desk (local)'s agents call: f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, and 3 more?"
-        );
+        for n in [13, 40] {
+            let names = (1..=n).map(|i| format!("f{i}")).collect::<Vec<_>>();
+            let text = agent_consent(&toolset(n), &local).1;
+            assert_eq!(
+                text,
+                format!("Let Desk (local)'s agents call: {}?", names.join(", "))
+            );
+            assert!(!text.contains("more"));
+        }
     }
     #[test]
     fn ac4_consent_lines_use_the_mods_own_name_and_key() {
