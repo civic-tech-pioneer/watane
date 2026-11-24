@@ -1092,7 +1092,7 @@ mod tests {
         }
         // The folder beside them is no credential folder.
         let dotfiles = user.join("dotfiles");
-        assert!(resolve_picked(dotfiles.to_str().unwrap(), &forbidden).is_ok());
+        resolve_picked(dotfiles.to_str().unwrap(), &forbidden).unwrap();
     }
 
     /// Adversary S103 (19.3, Picked workspace): a credential folder kept elsewhere and linked
