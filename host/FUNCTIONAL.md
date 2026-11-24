@@ -433,7 +433,9 @@ otherwise `relay` holds no grant beyond storage and its call of `latch`.
   none it ends `no-binary`; `account: "openai"` ends `no-account`.
 - **S60 Tools** (HOST-F-70). Two `agent-tools.call` of one handle with key
   `k1` while the job lives return one stream id; `describe` lists
-  `parallel: true` for a tool whose WIT doc comment holds `@parallel`; a
+  `parallel: true` for a tool whose WIT doc comment holds `@parallel`; the one
+  item of a job's stream is `{"ok": <json>}` or `{"err": {"code", "message"}}`, and the
+  tool's mod sees `caller.identity()` `agent:h<30 hex>`, not the handle; a
   handle of a toolset that names a `manage` function lists it only when the
   consent named it.
 - **S61 Subscriber is its own origin** (HOST-F-73). Given `notes` holding a

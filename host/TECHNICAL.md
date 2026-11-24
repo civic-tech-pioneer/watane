@@ -92,6 +92,7 @@ target `wasm32-wasip2`.
 | planned `src/agent/tools.rs` | H4: handles, MCP tokens, keyed jobs, with `src/tools.rs` (19.5) |
 | `src/agent/timers.rs` | H7: timers per mod in host state (19.6); H5 effects are in `src/runtime/call.rs` |
 | `src/agent/consent.rs` | consents per origin client in `installed.json` (19.7) |
+| `src/agent/tools.rs` | H4: the handles, their toolset consents, tokens and jobs (19.5) |
 | `tests/*.rs`, `tests/fixtures/` | section 13 |
 
 ## 2. Public API
@@ -1756,6 +1757,9 @@ folder in pkg's format, package `mods:<name>@0.1.0`.
 | `latch` (step 11, A1) | import state; export `api { trip: func(key: string) -> bool; }`: `true` and puts the key when it is absent, else `false`. Its write commits when its call succeeds, even if the caller then traps (6.6, Q3), so it remembers across a rolled-back call what `relay` cannot |
 | `relay` (step 11, A1) | `deps.json` `{"mods:latch": null}`; import state, caller, `streams`, `timers`, `mods:latch/api`; export `api { open: func() -> result<string, string>; push: func(s: string, text: string) -> result<_, string>; close: func(s: string); cancel: func(s: string); hand-off: func(s: string) -> result<_, string>; resume: func(s: string) -> result<_, string>; after: func(id: string, ms: u64) -> result<_, string>; cancel-timer: func(id: string); after-then-fail: func(id: string, ms: u64); mode: func(m: string); forward: func(up: string, down: string, write: bool); received: func() -> list<string>; ended: func() -> list<string>; fired: func() -> list<string>; who: func() -> string; }` (each `result` error is the WIT error case's name, e.g. `"not-yours"`) and the host-only exports `stream-sink`, `stream-producer`, `timer-sink`. `close(s)` closes with `closed`, or with `gone` while `mode` is `close-gone` (the test of the host-only outcome, 19.2). It keeps an `index` key of the `got/` keys, since `state` cannot list. `items(s, batch)`: when `forward` named `s` as an `up`, it pushes each body to that `down` and puts nothing else (with `write`, it also puts `last/<s>` = the last seq: one write per batch, for V8), and answers `defer` when a push fails `full`; else it puts each body at `got/<s>/<seq as 20 digits>` and the key `who/<s>` = `caller.identity()` (S56; a forwarded batch writes no key, so the load test sees no state bytes written per item). Then it answers by `mode` (state key, default `taken`): `taken`, `defer`, `trap` (traps), `trap-once` (calls `latch.trip("<s>/<first seq>")` and traps when it returns `true`, else answers `taken`). `received` returns the values of `got/` in key order. `stream-sink.ended` and `stream-producer.ended` add the line `<s> <outcome case>` (e.g. `"<s> consumer-failed"`) to `ended`; `ready(d)` adds `<d> ready` and calls `resume` for each `up` forwarded to `d`, and `stream-producer.ended(d, ..)` resumes them too (the forwarding rule of 19.2); `fired` adds the id to `fired`. `who` returns `caller.identity()` |
 | `relay-front` (step 11, A1) | import `mods:relay/api`; export `api { after-then-fail: func(id: string, ms: u64); push-then-fail: func(s: string, text: string); who: func() -> string; }`; the first two call that function of `relay` (`after`, `push`), which succeeds, and then trap: the nested request and push that 19.6 drops; `who` returns `relay`'s `who` (S56) |
+| `tool`, `tool-plus` (S103, 19.5) | package `mods:tool`; import caller; export `api { hello: func(name: string) -> string; double: func(n: u32) -> u32; who: func() -> string; slow: func(ms: u32) -> string; refuse: func() -> result<string, string>; boom: func(); }`: `hello` has the doc lines `Says hello.` and `@parallel`, `double` has `Doubles a number.` and `@idempotent`, `who` returns `caller.identity()`, `slow` sleeps `ms`, `refuse` returns `err("refused")`, `boom` traps. `tool-plus` is the same package with one more function, `extra() -> string`, so that installing it is an update that gains a function (S65) |
+| `toolbox` (S103, 19.5) | import state, caller, streams, `agent-tools`, `claude-types`, `claude-code`; export `api { open: func(toolsets: list<string>) -> result<string, string>; describe: func(handle: string) -> result<list<string>, string>; call: func(handle, key, tool, args: string) -> result<string, string>; call-twice: func(..) -> list<string>; open-describe: func(toolsets: list<string>) -> string; close: func(handle: string); items: func(s: string) -> list<string>; ended: func() -> list<string>; who: func() -> string; start: func(launch: string) -> string; }` and the host-only `stream-sink`. An error is the case's name (`unknown-handle`; `consent-pending:<what>`). `describe` gives one line per tool, `name\|parallel\|idempotent\|description\|input-schema`. `call-twice` calls twice in one chain and returns both stream ids; `open-describe` opens and describes in one chain; `items` and `ended` read what its sink took |
+| `toolbox-front` (S103, 19.5) | `deps.json` `{"mods:toolbox": null}`; import caller, `mods:toolbox/api`; export `api { open, describe, call }` passing through, so that `toolbox` runs with the front as origin client |
 
 The mutual fixtures copy only provider interfaces and outlets into
 dependency worlds, without back-references (Q23). Their real components
@@ -1782,6 +1786,7 @@ run on the preview install path.
 | `tests/it/manage.rs` (stage 11) | S40 to S47 with `manager`, `counter`, `shelf`, `recs` in a participant home whose `Confirm` fake records `reduced`, `manage` and `install` calls and answers `manage` from a script; the harness rows of 6.10; `manager` refused at plan when the world lacks `manage` but the component imports it (5.3) | literal `mod-info` JSON; `installed.json` parsed as plain JSON; the fake's recorded calls; request ids matched by the regex `^[0-9a-f]{32}$`; page-bus messages read from `/events` of a served manager |
 | `tests/it/streams.rs` (A1) | agentic-harness cases 7, 36 and 51 (host parts) and 58, with `relay`, `latch` and the test streams of 19.9 (feature `test-streams`: `Host::test_stream`, `TestConsumer::Held`, `TestClock`; no H2 to H4): 19.2 and FUNCTIONAL S48 to S52; a page consumer through a served `relay` and a `reqwest` reader of `/events`; a page that stops reading is a reader that stops polling the body, with items of 64 KiB so the socket buffers fill | literal item numbers and bodies read from the consumer's state; `ended` lines; `TestStream::deliveries()` |
 | `tests/it/requests.rs` (A1) | agentic-harness cases 20 and 21 with `relay`; the rows of 19.6 (limits, replacement, rollback); with `relay-front` for the nested rollback; FUNCTIONAL S53 to S56 | literal `fired` lines; `timers` table read from `state/state.redb` after `drop(host)`; a restart on the same home |
+| `tests/it/agent_tools.rs` (A3, S103) | 19.5, 19.7, 10.2, 10.3; FUNCTIONAL S56 (agent), S60, S65, S68: a home whose `Confirm` fake holds each consent answer, the fake `claude` that copies fd 3, and `toolbox`, `toolbox-front`, `tool`, `tool-plus`, `manager`; `open` `not-granted`; the question's fields; `consent-pending` and `consent-refused`; the stored list in `installed.json`; annotations; keys and jobs; foreign and same-chain handles; the manager's functions; a gained function; `remove` and a `grant` of `Manage`; `--mcp-config=/dev/fd/3` and the token on `/mcp/agent` (listed tools, 403 on another route, 401 after `close` and after either mod ends, never in an item, argument or file); withdrawal | literal strings and JSON; `installed.json` parsed as plain JSON; the ended lines of `toolbox`; HTTP status codes |
 | `tests/it/agent_load.rs` (A1, `#[ignore = "slow: stage A budgets and V8"]`) | the load row of stage A (15): 8 `Host::test_stream(TestConsumer::Mod(relay))`, each forwarded by `relay.forward(up, down, false)` to a stream that a served page of `relay` opened with its connection id; each body starts with its send time; 60 s at 100 items/s each; then `api.cancel` of one page stream from the page; then the V8 run (15) again with `write` true | p95 item delay (send time to the `/events` read); `cancel` `/call` to its `stream-end` message; writer busy share and state bytes per item from two `Host::test_stats()` readings; every page stream's seqs read in order with no gap |
 | `tests/it/verify.rs` (stage 8) | S31, S32 | a `watane_log::Log` on a temporary directory signs the body with `append(RELEASE_KIND, ..)`; the expected `ReleaseRef` text is built from `Log::identity()` and literals; bytes are changed by the test |
 
@@ -2087,8 +2092,15 @@ for the host's whatever its `callback_id`: the host registers one callback.
 apply before the process, `consent-pending`, `consent-refused`); the protected paths once per
 workspace root (Q49); the `sessions` table and the session rule (Q50, 7); `via` in the workspace
 key (Q38). The account consent is only a type until A4. The second task (agent tools) builds
-the toolset consent and the handles of 19.5, and fills `agent::consent::withdrawn` for them;
-`agent-handle` is still cut here.
+the toolset consent and the handles of 19.5, and fills `agent::consent::withdrawn` for them.
+**Built (S103, second task):** `agent-tools` (`open`, `describe`, `call`, `close`) in
+`src/agent/tools.rs`: the handle table, the toolset consent asked on a thread of its own, one
+token per handle (`Host::issue_agent_token`, bound to the toolset name `agent`), the jobs with
+their keys, and the annotations `@parallel` and `@idempotent` read from the doc comment;
+`/mcp/agent` (10.3); `agent-handle` in a launch with the MCP config on fd 3 (19.3, The run);
+the toolset rows of withdrawal (`withdrawn` closes the handles and ends their jobs `gone`);
+`remove` and a `grant` of `Manage` drop a mod's names from the stored lists (4.4); the
+reserved toolset name `agent` (10.1). `agent-handle` is no longer cut.
 
 **Budgets of stage A** (the "Load" kind; all p95; a slow test on a stage's
 fakes, recorded with the date and the machine below; a stage is done only
@@ -2924,7 +2936,7 @@ argument.
 | `mode` | `manual`, `accept-edits`, `plan`, `dont-ask` | `--permission-mode=` with Claude's names: `default`, `acceptEdits`, `plan`, `dontAsk`; `system/init` has `permissionMode` in the same names (an absent `mode` reads `default`) |
 | `ask` | bool | `--permission-prompts=host --permission-prompt-tool=stdio`, or `--permission-prompts=none` |
 | `pre-tool-check` | `{timeout-s: 5..120}` | the host's PreToolUse callback in `initialize` |
-| `agent-handle` | a handle the origin client holds (19.5) | `--mcp-config=/dev/fd/3` |
+| `agent-handle` | 32 lowercase hex characters, a handle the origin client holds (19.5): else `bad-launch {field: "agent-handle"}` at the call (a handle opened in the same chain is not held yet) | `--mcp-config=/dev/fd/3` |
 | `subagents` | each exactly `{name [a-z0-9-]{1,64}, description, prompt, tools ⊆ tools, model}`; any other key is refused by name; 64 KiB in all (N9, the human, 2026-11-20: subagents stay `--agents=` flags) | `--agents=` |
 | `subagent-depth` | 0..3, default 1; 0 also removes `Task` | env `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` |
 | `skills` | `{name [a-z0-9-]{1,64}, files}`; paths under the skill folder, no `..`, 1 MiB in all; a `SKILL.md` that starts with `---` has strict frontmatter, below | the run folder's plugin, `--plugin-dir=` |
@@ -3070,8 +3082,16 @@ not keep a credential from a mod on their own. Three rules do:
   `CLAUDE_CODE_OAUTH_TOKEN` when the participant set it. The host never reads
   that token. Whether a sandboxed `Bash` child can read it, and
   whether `WebFetch` reaches loopback, is section 18, Q39 (probe V28).
-- MCP: `{"mcpServers":{"watane":{"type":"http","url":…,"headers":{"Authorization":"Bearer <token>"}}}}`
-  written to a pipe that the child inherits as fd 3 (19.5 for the token).
+- MCP: with an `agent-handle`, `{"mcpServers":{"watane":{"type":"http","url":"http://localhost:<port>/mcp/agent","headers":{"Authorization":"Bearer <token>"}}}}`
+  written to a pipe that the child inherits as fd 3 (19.5 for the token); the run adds
+  `--mcp-config=/dev/fd/3`. The crate forbids `unsafe`, so the pipe comes in as the child's stderr and
+  `/bin/sh -c 'exec "$0" "$@" 3<&2 2>/dev/null' <claude> <arguments>` moves it to fd 3 and
+  execs `claude` (the same pid, so the process group, the record in `runs/pids` and the
+  kills are those of `claude`; the program path is `$0`, never part of the script). The run
+  waits for the handle's consents first, and puts `consent-pending` on the stream once per
+  consent that waits; a refused one ends the stream `consent-refused(what)`. A host that
+  serves no port ends it `failed`. No handle: no pipe, stderr is `/dev/null`, `claude` is
+  started directly. The token is in the pipe and in no argument, item or file.
 
 **The control protocol.**
 
@@ -3094,8 +3114,8 @@ not keep a credential from a mod on their own. Three rules do:
    it: `tools`, `mcp_servers`, `agents`, `permissionMode`, `plugins`. The lists hold
    names, as strings or as objects with a `name` (Claude Code's `{"name","path"}`
    plugins and `{"name","status"}` servers). Only an entry that the launch did not
-   ask for is a difference (a tool not in the launch's `tools`, any MCP server until
-   A3, an agent neither in `subagents` nor one of Claude Code's own, another plugin);
+   ask for is a difference (a tool not in the launch's `tools`, an MCP server other than the
+   host's `watane` of an `agent-handle`, an agent neither in `subagents` nor one of Claude Code's own, another plugin);
    a missing list holds nothing, a missing or other `permissionMode` differs. Every `system/init` line is checked,
    and then passed on as an ordinary line after `initialized`. The first line after the answer
    to `initialize` that is not a control line (`control_request`, `control_response`) must be a
@@ -3463,17 +3483,27 @@ The toolsets are those of 10.1; `open` with no toolset, or one that
   unknown or foreign handle fail `unknown-handle`; a tool not in the handle's
   toolsets `unknown-tool`. A handle whose `open` has not been applied yet (the
   same chain) is `unknown-handle`.
-- **Token.** One MCP token per handle, 32 bytes, memory only (10.2), written to
-  `claude`'s fd 3 (19.3). It names the handle's toolsets together and is
+  The first `describe` or `call` that finds a refusal returns `consent-refused(what)` and
+  closes the handle; the next is `unknown-handle`. A handle is the origin client's: a
+  `describe`, `call`, `close` or launch of another origin client, or by another mod than the
+  opener (`describe`, `call`, `close`), finds `unknown-handle`. When each toolset's consent is
+  held at `open` the handle is ready as soon as the call returns. The questions of the toolsets
+  that wait go one after the other, on a thread of the host.
+- **Token.** One MCP token per handle, 32 bytes, memory only (10.2), made when the handle
+  opens, and written to `claude`'s fd 3 (19.3) only once its consents are held. It names the handle's toolsets together and is
   presented on `/mcp/agent` (10.3). A tool's mod sees the caller
   `agent:<handle-name>`: `h` and 30 lowercase hex chars (a `Handle`, 2.3), a
   second random value, never the handle itself.
-- **Job.** `call(handle, key, tool, args)` returns a stream at once; the tool
-  runs later as its own top-level call with its own budget and the caller of
-  the previous bullet; its result is the stream's one item `{ok: <json>} |
-  {err: {code, message}}`.
-- **Key.** A live job with the same (handle, key) returns the same stream.
-  Keys are memory only.
+- **Job.** `call(handle, key, tool, args)` returns a stream at once (its consumer is the
+  opening mod, its origin client the handle's); the tool runs later as its own top-level
+  call with its own budget and the caller of the previous bullet; its result is the stream's
+  one item `{"ok": <json>} | {"err": {"code", "message"}}` (`args` that are not JSON: the
+  `err` item with code `bad_request`, no call), and then the stream ends `closed`. `close`,
+  a withdrawn consent, and the end of either mod end the job's stream `gone`; the
+  running call is not interrupted, its result goes nowhere.
+- **Key.** A live job with the same (handle, key) returns the same stream, also a job that
+  the same chain, or another chain in flight, queued. The key is free when the result is
+  there. Keys are memory only.
 - **Annotations `@parallel` and `@idempotent`** come from the tool mod: a
   doc-comment line of the WIT function (`@parallel`, `@idempotent`); no
   `mod.toml` table (pkg question 21); default false each. They decide order and
