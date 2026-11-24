@@ -31,6 +31,33 @@ pub struct Built {
 fn quoted(path: &Path) -> String {
     toml::Value::String(path.to_string_lossy().into_owned()).to_string()
 }
+#[cfg(windows)]
+fn msvc_linker() -> Option<&'static find_msvc_tools::Tool> {
+    use find_msvc_tools::{Env, EnvGetter, Tool};
+    use std::sync::OnceLock;
+
+    struct SystemDirectories;
+    impl EnvGetter for SystemDirectories {
+        fn get_env(&self, name: &'static str) -> Option<Env> {
+            match name {
+                "ProgramFiles(x86)" | "ProgramFiles" => crate::env::var_os(name).map(Env::Owned),
+                _ => None,
+            }
+        }
+    }
+
+    static LINKER: OnceLock<Option<Tool>> = OnceLock::new();
+    LINKER
+        .get_or_init(|| {
+            find_msvc_tools::find_tool_with_env(
+                std::env::consts::ARCH,
+                "link.exe",
+                &SystemDirectories,
+            )
+        })
+        .as_ref()
+}
+
 pub fn cargo(ctx: &BuildCtx<'_>, copy: &Path, args: &[&str]) -> Command {
     let mut command = Command::new(&ctx.toolchain.cargo);
     let bin = ctx
@@ -58,11 +85,19 @@ pub fn cargo(ctx: &BuildCtx<'_>, copy: &Path, args: &[&str]) -> Command {
             .env("USERPROFILE", ctx.env.cache.join("cargo-home"))
             .env("TEMP", ctx.env.cache.join("tmp"))
             .env("TMP", ctx.env.cache.join("tmp"));
-        // rustc discovers the native linker for Cargo's host-side proc macros.
-        // Do not pass the caller's PATH, compiler configuration, or credentials.
-        for name in ["SystemRoot", "ProgramFiles(x86)", "ProgramFiles"] {
-            if let Some(value) = crate::env::var_os(name) {
-                command.env(name, value);
+        if let Some(root) = crate::env::var_os("SystemRoot") {
+            command.env("SystemRoot", root);
+        }
+        // Cargo builds host-side proc macros before it builds the Wasm.
+        // Discover the SDK without inheriting the caller's PATH or LIB.
+        if let Some(linker) = msvc_linker() {
+            let paths = std::iter::once(bin).chain(linker.path().parent());
+            let path = std::env::join_paths(paths).expect("valid Windows linker search path");
+            command.env("PATH", path);
+            for (name, value) in linker.env() {
+                if name == "LIB" || name == "LIBPATH" {
+                    command.env(name, value);
+                }
             }
         }
     }
@@ -899,9 +934,9 @@ mod tests {
                 #[cfg(windows)]
                 "SystemRoot",
                 #[cfg(windows)]
-                "ProgramFiles(x86)",
+                "LIB",
                 #[cfg(windows)]
-                "ProgramFiles",
+                "LIBPATH",
             ]
             .contains(k)
         }));
