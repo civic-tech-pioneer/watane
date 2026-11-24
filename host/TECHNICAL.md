@@ -30,7 +30,7 @@ wasmtime-wasi = "48.0.10"
 wasmtime-wasi-http = "48.0.10"
 wit-parser = "0.254.2"                       # doc comments; version already resolved in Cargo.lock
 axum = "0.8.9"
-tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time", "io-util"] }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -39,8 +39,19 @@ redb = "4.5"
 blake3 = "1.8"
 base64 = "0.22"
 getrandom = "0.3"
-# step 11 (19): A2 adds the tokio feature `process` and a process-group crate; A4 adds
-# `sse-stream` and an HTTPS client with no redirects (reqwest, rustls), chosen then.
+# step 11 (19): A2 added the tokio feature `process` and a process-group crate. A4 (19.4) added
+# the HTTPS client of `https-stream`: one HTTP/1.1 connection per stream, made of
+hyper = { version = "1", default-features = false, features = ["client", "http1"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }   # TokioIo
+http-body-util = "0.1"                       # the body's frames, a `Full` request body
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"                           # the roots of every connection (6.8: webpki roots)
+url = "2"                                    # the one parse of a request URL (19.4)
+# and the tokio feature `io-util`. All were in Cargo.lock already. No `reqwest`: it follows
+# redirects unless told, adds headers and retries; hyper's connection does none of them.
+# SSE is split by `Sse` in `https_stream.rs` (a small parser of the WHATWG rules, tested), so no
+# `sse-stream` crate. rustls runs on `ring`, as every other crate of the workspace that uses it.
 
 [features]
 test-net = []                                # step 11 (19.9): test routes for https-stream; tests only
@@ -50,6 +61,8 @@ test-streams = []                            # step 11 (19.9): test source, held
 tempfile = "3"                               # test homes; Harness uses getrandom
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream"] }
 tower = { version = "0.5", features = ["util"] }
+rcgen = "0.14"                               # A4: the certificates of the test server of `https_stream.rs`
+watane-host = { path = ".", features = ["test-streams", "test-net"] }   # host's own tests (19.9)
 ```
 
 Evidence: wasmtime 48 (an LTS line) asks for `wit-parser` ^0.254.1 in its
@@ -88,7 +101,7 @@ target `wasm32-wasip2`.
 | `src/agent/mod.rs` | the host functions of `streams` and `timers` at the call (19.2, 19.6), the effects of a chain and their application after its commit |
 | `src/agent/streams.rs` | H1: stream table, FIFO per consumer, batches, backpressure, ends (19.2) |
 | `src/agent/claude/` (`launch.rs`, `run.rs`, `control.rs`, `init.rs`, `mod.rs`) and `src/agent/accounts.rs` | H2: launch parsing, flags, the process, stdin and stdout, `initialize` and `init` checks (19.3) |
-| planned `src/agent/https_stream.rs` | H3: one request, SSE splitting, idle timeout, account binding (19.4) |
+| `src/agent/https_stream.rs` | H3: `https-stream.start` at the call, one HTTPS connection per stream, SSE splitting, idle timeout, the account `openai` with its consent, the live-stream table for withdrawal, sign-out and a lost grant (19.4) |
 | `src/agent/timers.rs` | H7: timers per mod in host state (19.6); H5 effects are in `src/runtime/call.rs` |
 | `src/agent/consent.rs` | consents per origin client in `installed.json` (19.7) |
 | `src/agent/tools.rs` | H4: the handles, their toolset consents, tokens and jobs (19.5) |
@@ -2027,7 +2040,7 @@ is added.
 | A1 Streams, requests, timers (step 11) | `streams`, `timers`, `caller.identity`, the host-only exports in `wit/host.wit` (19.1); H1 (19.2) with the page connection id (8.2, 8.4, 8.5, 9.3); H5 (19.6, the chain rule of requests and stream effects, 6.6 step 4) and H7 timers with the `timers` table (7); the linker rows and fakes (6.4, 19.1); fixtures `latch`, `relay`, `relay-front`; `Outcome.requests`; the feature `test-streams` (19.9) | stage 5; `pkg` stage 12 (the step 11 rows of 4.5, `World::host_exports`, 4.6) | `RawMod` and the test streams of 19.9 for host streams | agentic-harness cases 7, 20, 21; 36 and 51 (host parts); 58 (host part); S48 to S56 of FUNCTIONAL; the budgets of stage A; V8 recorded (`tests/it/streams.rs`, `requests.rs`, `agent_load.rs`) |
 | A2 Claude Code (step 11) | H2 (19.3): launch, run, control protocol, folders, the `ask-resolved` and `wrapped` items (19.3; Q35, Q36); `host-info` (19.1, Q34 decided: the interface in `wit/host.wit`, its linker row, the `host` table of 7, the fake); the doc comment of `caller` in `wit/host.wit` lists `host` among `who()`'s values (19.1; S96's user-sim; with it every fixture copy of `host.wit` and the plan hashes that include one); the connection-replaced message of `watane.js` (8.5); R7: a stream that ends from the producer side while its consumer holds a deferred batch delivers the held and queued items after `resume`, then `ended` (19.2, Deferred batch; S69); `claude-code`, `claude-code-shell`, `claude-session`; `claude-types`; `AccountSource::claude_binary` (19.4); the grant checks and stubs; dev's `fake-claude`; `set_fake_claude` and `watane --fake-claude` (19.9) | A1; `pkg` stage 12 (`Grant::ClaudeCode`, `ClaudeCodeShell`; the `host-info` row of pkg 4.5, added in the same slice); dev 18 | `Mode::Home` with no app: `no-app` | agentic-harness cases 10 to 18 (host parts) and the host parts of the other stage B cases; no workspace consent yet (scratch workspace only); `host-info` and the restart rule: `generation()` is raised by one at each `Host::open` and is the same between; S63, S64 (`say` part), S67, S69 |
 | A3 Consents and tools (step 11) | 19.7 (`Confirm::consent`, `consents` in `installed.json`, withdrawal); H4 (19.5); `consent-pending` | A2; app 19.2 | a fake `Confirm` | the workspace consent held before `initialized`; withdrawal ends dependent streams and closes handles; case 31 `consent` part at the host; the budgets of stage C; S61, S62, S65, S66, S68 |
-| A4 HTTPS streams, `openai` (step 11) | H3 (19.4) with the account `openai`; `AccountSource::openai_token`, `AccountError::Unavailable`; `Account`, `account_changed(&Account::OpenAi)`; the feature `test-net` and `set_test_net` (19.9); `sse-stream`; dev's `ScriptedResponses` | A3; app 19.1; dev 18 | a fake `AccountSource` | agentic-harness cases 3, 19 (`openai`); the budgets of stage D; S64 (header part) |
+| A4 HTTPS streams, `openai` (step 11) | H3 (19.4) with the account `openai`; `AccountSource::openai_token`, `AccountError::Unavailable`; `Account`, `account_changed(&Account::OpenAi)`; the feature `test-net` and `set_test_net` (19.9); the SSE parser of `https_stream.rs`; dev's `ScriptedResponses` | A3; app 19.1; dev 18 | a fake `AccountSource` | agentic-harness cases 3, 19 (`openai`); the budgets of stage D; S64 (header part) |
 | A5 Judge (step 11) | the account `judge` (19.4): binding, `no-account`, `judge_origin`, `account_changed(&Account::Judge { .. })` | A4; app 19.4; dev 18 judge origin | the same fakes | agentic-harness cases 19 (`judge`), 32, 33 (host parts); the budgets of stage E |
 
 Step 10 is done when J10 passes with `dev` and `app` (app 17).
@@ -2154,6 +2167,32 @@ the run with no write: item delay source to page p95 3.25 ms (budget 50 ms);
 `cancel` to `stream-end` 0.5 ms (budget 250 ms; one measurement, not a
 percentile); writer busy share 0.0% (budget 10%); state bytes written per item
 0, read per item 103 (the routing keys, see above). All within the budgets.
+
+**A4 (S111, s111-2), built.** `https-stream.start` (19.4) in `src/agent/https_stream.rs`: the
+checks at the call, the apply under the catalog lock with the grants and the origin client,
+one HTTPS connection per stream (hyper over rustls, section 1), the first item and the SSE or
+64 KiB items, `idle-s`, the account `openai` with its consent (19.7) and token, and the table of
+live streams that ends them `gone` on a withdrawal, a sign-out (`Host::account_changed`), a
+revoked `Http` grant, a disabled, removed or updated side, and the host closing. The feature
+`test-net` and `Host::set_test_net` (19.9); `Account` and its re-export; the fixture `https`
+(`tests/fixtures/src/https`). Tests: `tests/it/https_stream.rs` with a TLS server of its own
+(rcgen certificates for `api.openai.com` and `second.test`, on 127.0.0.1) and a fake
+`AccountSource` and `Confirm`; the check that no normal build holds `test-net` is its slow test
+`ac8_...` (`cargo tree -e features -i watane-host --workspace --edges normal`). The tests run on
+Windows too, but the `tools/call` half of AC6, which needs the token that only a `claude` process
+reads on fd 3 (19.3), runs on Unix only. dev's `ScriptedResponses` meets the host in s111-3.
+
+**Budget record (stage D).** The stage D budget is decided here: **p95 delay from the server's
+write of an event to the `items` call of the consumer mod at most 50 ms, over 1 000 events**, one
+event every 3 ms of about 200 bytes through the real connection (TLS, hyper, the hub) to the
+`https` fixture, which writes its tally in one state commit per batch (one fsync, 19.6). The slow
+test `https_stream::ac7_stage_d_budget_...` prints the numbers. Run of 2026-11-24 (debug build,
+`cargo test --test it -- --ignored https_stream::ac7 --nocapture`; 4 cores, `Linux 6.18.44-fc-v819`,
+a virtual machine with a real fsync): p50 0.96 ms, p95 39.8 ms, max 198 ms. The p50 is the connection's own cost; the tail waits for the consumer's durable commit (one
+fsync per batch, 19.6), which this run did not separate out.
+Backpressure is not a budget but a rule, tested: a consumer that defers stops the reading (400
+events of 128 KiB: the server's writes block after fewer than 300), and `resume` delivers every
+event once, in order.
 
 **Budgets of stage B, the host part** (deputy's ruling on review r1 of S100,
 2026-11-23, after agentic-harness TECHNICAL 17's stage B row: 8 fake `claude`
@@ -2872,7 +2911,7 @@ A grant revoked or a mod disabled stops the next host import of a running chain
 (Q24) and ends the streams that depended on it (19.2, Ends).
 
 **Harness** (2.6). The new imports are fakes: `streams.open` returns `s1`,
-`s2`, ... in call order (one count for the host), every other function returns ok, `identity` returns
+`s2`, ... in call order (one count for the host), so does a start (`claude-code.start`, `https-stream.start`: a request record with its `launch` or `request` text), every other function returns ok, `identity` returns
 `local/<slug>` of the caller or `page`, and `host-info.generation` returns 1. Each request (19.6) of a succeeded
 call is recorded in `Outcome.requests` as `RequestRecord { function, args }`
 in call order; a failed call records none. A `Fakes` entry under
@@ -3381,28 +3420,91 @@ checks of the table above are made at the call.
 
 `https-stream.start(request)`; a request (19.6). The request is JSON: `url`,
 `method`, `headers`, `body`, `account?`, `idle-s?` (default 90, at most 300).
-(agentic-harness TECHNICAL 5.)
+(agentic-harness TECHNICAL 5.) Stage A4 builds all of it but the account `judge`.
 
+- **The request text** (A4). An object with these fields only; any other field is
+  `bad-launch {field: <it>, reason: "unknown field"}`, as is a wrong type, and text that is
+  no JSON object (`field: "request"`). A field whose value is `null` is as good as missing.
+  `url`: text. `method`: exactly `GET`, `POST`, `PUT`, `PATCH` or `DELETE`. `headers`: an object
+  of text values (default none). `body`: text, sent as its UTF-8 bytes (default empty).
+  `account`: text. `idle-s`: an integer; **0 or over 300 is `bad-launch {field: "idle-s", reason:
+  "an integer from 1 to 300"}`** at the call.
 - **Items.** First `{status, headers}`; then one item per server-sent event,
-  or per 64 KiB chunk of a body that is not SSE.
+  or per 64 KiB chunk of a body that is not SSE. The exact forms (A4):
+  - *First item*: the text `{"status":<n>,"headers":{"<name>":"<value>",...}}`, compact, the
+    status as a number, header names in lower case in the order they were first sent, a header
+    sent more than once as one entry with its values joined by `, `, every value as sent
+    (bytes that are not UTF-8 are replaced). It comes first, before the body is read, so a
+    status of 307, 429 or 500 arrives as the same item and the body follows as below.
+  - *SSE*: the response is SSE when its `content-type` is `text/event-stream` (parameters and
+    case ignored). The item is the event's `data` text: its `data` lines joined by `\n`, one
+    leading space of each removed, the bytes as sent. The parser is the WHATWG one (lines end
+    in LF, CR or CRLF; a line that starts with `:` is a comment; a blank line ends the event;
+    a leading byte-order mark is dropped); an event with no `data` line gives no item, one
+    with an empty `data` line gives an empty item, and an event that the stream cut before its
+    blank line is dropped. An event over 4 MiB ends the stream `failed("a server-sent event
+    is over 4 MiB")`.
+  - *Any other body*: items of exactly 65 536 bytes, the last one shorter, whatever the sizes
+    of the reads (150 KiB is items of 65 536, 65 536 and 22 528). The rest of the last chunk is
+    delivered when the body ends and when the stream ends `idle-timeout` or `failed`.
+  - After the last item the stream ends `closed`; the connection is closed.
 - **Refused at the call, before a byte leaves** (the `start-error`): a URL that
-  is not `https`, or whose host is not exactly one of the mod's granted `Http`
-  hosts (6.8): `destination`; the headers `Authorization`, `Cookie`, `Host`,
+  is not `https`, with userinfo, or whose host is not exactly one of the mod's granted `Http`
+  hosts: `destination`. The host is read as 6.8 reads it (lower case, one trailing dot
+  dropped: `API.OpenAI.com` and `api.openai.com.` are the granted `api.openai.com`;
+  `api.openai.com..` is not), and the port is part of the grant's text: the URL's port
+  `443`, written or not, is the grant `host`; any other port needs the grant `host:port`.
+  One parse (the `url` crate) decides the check and the connection; the request leaves with
+  `Host: <name>` (or `<name>:<port>`) in lower case, the path and query as parsed, and no
+  fragment. The headers `Authorization`, `Cookie`, `Host`,
   `Proxy-*`, `OpenAI-Organization`, `OpenAI-Project`, `ChatGPT-Account-Id`,
   their names compared without case (`host`, `AUTHORIZATION`, `proxy-authorization`),
   and any name that is not an HTTP token (a leading `:` pseudo-header, white
-  space, a control character): `forbidden-header` (S64); a body over 1 MiB: `too-large`; with `account:
-  "openai"`, anything but `POST https://api.openai.com/v1/responses` or `GET
-  https://api.openai.com/v1/models`: `destination`. At apply the host checks
-  again that the mod is enabled and the hosts still granted, else the stream
-  ends `gone`.
+  space, a control character): `forbidden-header(<name as the mod wrote it>)` (S64). A4 adds the
+  names that the host's client sets or frames itself, which a mod could use to smuggle a
+  second request or an encoding it cannot read: `Content-Length`, `Transfer-Encoding`,
+  `Connection`, `Keep-Alive`, `Upgrade`, `TE`, `Trailer` and `Accept-Encoding` (the host sends
+  `Accept-Encoding: identity`, so the items are the bytes the server meant). A header value
+  with a control character is `bad-launch {field: "headers", ..}`. A body over 1 MiB
+  (1 048 576 bytes): `too-large`. With `account: "openai"`, anything but `POST
+  https://api.openai.com/v1/responses` or `GET https://api.openai.com/v1/models` (the path
+  as parsed, no query, no port): `destination`. `account` is `openai` or absent; **any other
+  value, `judge` too, is `destination` in stage A4** (A5 builds `judge`, below). At apply the
+  host checks again that the mod is enabled and the hosts still granted, else the stream
+  ends `gone` (19.6, At apply: the origin client too).
 - No redirects. No retries: a mod decides retries.
-- **Idle.** No bytes for `idle-s` ends the stream `idle-timeout`.
+- **Idle.** No bytes for `idle-s` ends the stream `idle-timeout`: the connect, the TLS
+  handshake, the wait for the response head and each wait for the next bytes of the body each
+  get `idle-s` (a response that sends its head and then nothing is `idle-timeout` after
+  `idle-s`, its first item delivered). The clock does not run while the host waits for room in
+  the stream or for the participant (19.7).
+- **The connection.** One connection per stream, `HTTP/1.1` over TLS 1.2 or 1.3 with the
+  webpki roots and no client certificate (6.8); the name is the URL's host. Certificate and
+  name checks are never off, also under `test-net` (19.9: the test root is an added root).
+  A connect, TLS or HTTP failure ends the stream `failed("<what>")` (a message that holds no
+  token). A connection that the server resets or closes before the response head ends the stream
+  `failed("HTTP: <what>")`. **Reading stops while the stream is full** (19.2, In flight and Deferred batch): the
+  host pushes an item, and when the push fails `full` it tries again every 5 ms without reading
+  the connection, so a consumer that defers makes the server's writes block once the kernel
+  buffers are full. Items counted in the budgets of 19.2 are the 64 KiB chunks and the events.
+- **Ends.** Any end of the stream (a close, `cancel`, `gone`, the idle clock, the host closing)
+  closes the connection at once. A withdrawal of the account consent (19.7) and a sign-out
+  (`account_changed`, below) end the live `openai` streams `gone`, and so does the loss of the
+  stream's `Http` grant (a `revoke`), a disabled, removed or updated consumer or origin client
+  (19.2, Ends), after the catalog write.
 - **Account `openai`.** The app runs Sign in with ChatGPT and keeps the tokens
   (app 19.1). The host asks `AccountSource::openai_token` for a fresh access
   token per request and adds `Authorization: Bearer <token>`. Without an app:
   the stream ends `no-app`; without tokens: `no-account`. The consent of
-  19.7 is held first.
+  19.7 is held first. A4 settles the order, all after the apply and before a byte leaves:
+  a preview ends `no-account` (19.7, Previews); a home with no app, or an app whose
+  `accounts()` is `None`, ends `no-app` and asks nobody; then the consent of 19.7 (the first
+  item `consent-pending`, `consent-refused(what)`); then one call of `openai_token`, whose
+  `NoAccount` is `no-account` and `Unavailable(m)` is `failed("account unavailable: <m>")`;
+  then the request. The token goes into the `Authorization` header (marked sensitive) and
+  nowhere else: not in an item, an outcome or a log, and the mod's headers cannot hold
+  one. A sign-out (`Host::account_changed(&Account::OpenAi)`) ends every live `openai`
+  stream `gone`.
 - **Account `judge`** (N10, the human, 2026-11-20). The host keeps the judge's
   key as an account `judge`, as it keeps the OpenAI tokens. The participant
   enters the key and the judge's origin (`https://host[:port]`) in the app, on
@@ -3472,6 +3574,7 @@ pub fn judge_origin(text: &str) -> Result<String, HostError>;
 //   fn accounts(&self) -> Option<Arc<dyn AccountSource>> { None }
 // Host gains:
 //   pub fn account_changed(&self, account: &Account);   // ends the live streams that used it, outcome `gone`
+//   (A4: `OpenAi` only; `Judge { .. }` ends nothing until A5, its streams do not exist)
 ```
 
 Without an app (`accounts()` is `None`) each use fails `no-app`; an entry that
@@ -3823,10 +3926,17 @@ review r1 of S103 a gate in place of a sleep.
   feature, `Host::set_test_net(TestNet)` makes `https-stream` connect a
   request whose host equals a route's name to the route's local address,
   with TLS for that name, and trust `root_pem` besides the webpki roots.
-  Every check of 19.4 runs on the URL as the mod wrote it, unchanged: the
-  `Http` grants, the `openai` endpoints, the judge binding and its parse.
+  The route changes only where the TCP connection goes: the TLS name, the `Host` header and every
+  check of 19.4 stay those of the URL. Every check of 19.4 runs on the URL as the mod wrote it,
+  unchanged: the `Http` grants, the `openai` endpoints, the judge binding and its parse. With no
+  `set_test_net` (and in a build without the feature) a name connects to the real name, by the
+  system's resolver (a unit test of `https_stream.rs` shows it). `set_test_net` again replaces
+  the routes. A route belongs to the streams that start after it.
   `ScriptedResponses` gives the addresses (`responses_addr`, `judge_addr`)
-  and the root (`ca_pem`). Another crate that tests with it enables the
+  and the root (`ca_pem`). `dev/tests/it/scripted_host.rs` is the example: a home with a `Confirm` whose
+  `accounts()` is a fake `AccountSource`, `set_test_net` with both addresses, and the `https`
+  fixture installed from `host/tests/fixtures/mods/https`; the first account request of an origin
+  client also records a `consent-pending` item (19.7) before the head. Another crate that tests with it enables the
   feature in its `[dev-dependencies]` only, and host's own A4 tests run with
   it (A4's brief names how); the release builds of `watane` and the app
   never hold it (checked in A4: `cargo tree -e features -i watane-host

@@ -9,7 +9,7 @@ publish = false
 [features]
 default = ["fake-host", "fake-claude"]
 fake-host = ["dep:tiny_http"]
-fake-claude = []
+fake-claude = ["dep:rustls", "dep:rcgen", "dep:base64"]
 
 [lib]
 # No doc examples: skip the rustdoc pass of every `cargo test`.
@@ -28,6 +28,9 @@ blake3 = "1.8"
 ureq = { version = "3", default-features = false, features = ["json"] }
 wasmtime = { version = "=48.0.10", default-features = false, features = ["component-model", "cranelift", "runtime", "std"] }
 wasmtime-wasi = { version = "=48.0.10", default-features = false, features = ["p2"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"], optional = true }
+base64 = { version = "0.22", optional = true }
 workspace-hack = { version = "0.1", path = "../workspace-hack" }
 
 [target.'cfg(windows)'.dependencies]
@@ -35,6 +38,11 @@ find-msvc-tools = "0.1.15"
 
 [dev-dependencies]
 tempfile = "3"
+# the https client of the tests of 18.3; the system roots of DEV-S-61
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls-manual-roots"] }
+rustls-native-certs = "0.8"
+watane-host = { path = "../host", features = ["test-net"] }   # scripted_host.rs: a host that routes api.openai.com to ScriptedResponses (host 19.9); a dev-dependency only
+tokio = { version = "1", default-features = false, features = ["rt"] }   # a runtime for Host::install, which is async
 # the oracle of fake-claude's tests: the kernel's own types read every line it writes (18.1)
 claude-codes = { version = "=2.1.330", default-features = false, features = ["types"] }
 
@@ -52,6 +60,11 @@ required-features = ["fake-claude"]
 name = "fake-gh"
 path = "src/bin/fake-gh.rs"
 required-features = ["fake-host"]
+
+[[bin]]
+name = "scripted-responses"
+path = "src/bin/scripted-responses.rs"
+required-features = ["fake-claude"]
 
 [lints]
 workspace = true

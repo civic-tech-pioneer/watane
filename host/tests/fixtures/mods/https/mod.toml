@@ -1,0 +1,5 @@
+name = "https"
+summary = "S111 https-stream fixture."
+
+[http]
+hosts = ["api.openai.com", "second.test"]

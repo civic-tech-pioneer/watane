@@ -64,7 +64,7 @@ publish = false
 [features]
 default = ["fake-host", "fake-claude"]
 fake-host = ["dep:tiny_http"]
-fake-claude = ["dep:rustls", "dep:rcgen"]   # step 11 (18.1): ships in the release; `fake-claude` itself needs no crate
+fake-claude = ["dep:rustls", "dep:rcgen", "dep:base64"]   # step 11 (18.1): ships in the release; `fake-claude` itself needs no crate
 
 [dependencies]
 watane-pkg = { path = "../pkg" }
@@ -80,13 +80,16 @@ wasmtime = { version = "=48.0.10", default-features = false, features = ["compon
 wasmtime-wasi = { version = "=48.0.10", default-features = false, features = ["p2"] }
 tiny_http = { version = "0.12", optional = true }
 # step 11, feature `fake-claude` (18.1); versions are fixed by the stage 14 and 15 briefs
-rustls = { version = "*", optional = true }                       # the TLS server of scripted-responses
-rcgen = { version = "*", optional = true }                        # the test authority and its certificates
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }   # the TLS server of scripted-responses (blocking, one thread per connection: no async runtime)
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"], optional = true }             # the test authority and its certificates
+base64 = { version = "0.22", optional = true }                    # `body_b64` of the request log
 
 [dev-dependencies]
 tempfile = "3.27"
 claude-codes = { version = "=2.1.330", default-features = false, features = ["types"] }   # the kernel's version: the oracle that parses every line of fake-claude (18.1)
 regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls-manual-roots"] }   # the https client of the tests of 18.3 (build it with `.no_proxy()`)
+rustls-native-certs = "0.8"                                       # the system roots a test client trusts alone (DEV-S-61)
 
 [[bin]]
 name = "fake-watane"
@@ -112,8 +115,8 @@ required-features = ["fake-claude"]
 Step 11 adds the feature `fake-claude` (18.1), on by default. Unlike
 `fake-host`, it stays in the distribution build: the programs
 `fake-claude` and `scripted-responses` ship in the release (18.1).
-`[dev-dependencies]` also gain a TLS client (`ureq` with its `rustls`
-feature, or `rustls` itself) for the tests of 15.5.
+`[dev-dependencies]` also gain a TLS client (`reqwest` with rustls, and
+`rustls-native-certs` for the system roots) for the tests of 15.5 and 18.3.
 
 Distribution builds use `cargo build --release --no-default-features
 --features fake-claude` to omit the fake host and keep the agent layer
@@ -2350,14 +2353,14 @@ rules belong to 15.1.
 | DEV-S-55 | `fake_claude::ac3_missing_and_forbidden_arguments_exit_64` | child process |
 | DEV-S-56 | `fake_claude::ac5_lines_no_step_awaits_exit_70`, `fake_claude::ac5_expect_user_contains_mismatch_exits_70` | child process |
 | DEV-S-57 | `fake_claude::ac6_ask_check_cancel_and_answers`, `fake_claude::ac6_sleep_exit_and_crash`, `fake_claude::ac6_hang_ignores_stdin_until_killed` | child process |
-| DEV-S-58 | `scripted::ac1_sse_and_usage`, `scripted::ac4_records_requests` | https client; planned: dev stage 15 |
-| DEV-S-59 | `scripted::ac1_sse_and_usage`, `scripted::ac2_errors_redirect_reset_stall` | https client; planned: dev stage 15 |
-| DEV-S-60 | `scripted::ac3_models_and_token` | https client; planned: dev stage 15 |
-| DEV-S-61 | `scripted::ac5_trust_only_ca` | https client; planned: dev stage 15 |
+| DEV-S-58 | `scripted::ac3_sse_events_each_one_write`, `scripted::ac4_token_and_whole_requests`; `scripted_host::ac1_case_3_a_scripted_turn_streams_into_the_mod_with_the_accounts_token` | https client |
+| DEV-S-59 | `scripted::ac2_script_in_order_last_repeats`, `scripted::ac3_status_usage_limit_redirect_raw`, `scripted::ac3_cut_has_no_completed`, `scripted::ac3_reset_and_stall`; `scripted_host::ac2_case_19_a_redirect_is_an_item_and_is_not_followed`, `ac2_case_19_a_usage_limit_and_a_server_error_arrive_as_items_and_the_stream_closes`, `ac2_case_19_stall_ends_idle_timeout_cut_ends_closed_and_reset_ends_failed`, `ac2_case_19_every_refused_form_reaches_no_server` | https client |
+| DEV-S-60 | `scripted::ac2_default_script_models_and_404`; `scripted_host::ac2_case_19_models_with_the_account_streams_the_models_answer` | https client |
+| DEV-S-61 | `scripted::ac1_two_origins_and_one_authority` | https client |
 | DEV-S-62 | `scripted::ac6_judge_plays`, `scripted::ac7_judge_counts_every_request` | https client; planned: dev stage 16 |
 | DEV-S-63 | `scripted::ac7_judge_counts_every_request`, `scripted::ac8_judge_key` | https client; planned: dev stage 16 |
 | DEV-S-64 | `preview::unix::tests::ac7_link_writes_default_script_once_and_keeps_the_makers`, `preview::unix::tests::ac7_link_is_replaced_and_copied_where_linking_fails`, `preview::unix::tests::ac7_find_fake_claude_reads_the_variable`, `preview::unix::tests::ac7_spawn_arguments_with_and_without_the_fake`, `doctor::tests::ac7_fake_claude_field_and_warning`; `fake_claude::ac7_serve_passes_the_flag_to_the_host` (slow) | unit: temp folder, literal script and argument vector; slow: the full `serve` against `fake-watane` |
-| DEV-S-65 | `scripted::ac9_program_line_and_log` | child process; planned: dev stage 15 |
+| DEV-S-65 | `scripted::ac6_program_default_and_log` | child process |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
 
@@ -2839,6 +2842,7 @@ impl ScriptedResponses {
     pub fn models(&self, slugs: &[&str]);                   // the answer of GET /v1/models
     pub fn requests(&self) -> Vec<Recorded>;                // Responses origin, in arrival order
     pub fn judge(&self) -> &Judge;
+    pub fn log_to(&self, dir: &std::path::Path);           // from now on, each request also as a file (`--log` below)
 }
 pub struct Recorded { pub method: String, pub path: String, pub headers: Vec<(String, String)>, pub body: Vec<u8> }
 pub enum Reply {
@@ -2888,6 +2892,25 @@ writes each request it receives as `<dir>/responses/<n>.json` or
 `<dir>/judge/<n>.json` (`n` from 1: `{"method","path","headers","body_b64"}`),
 so a test reads `requests()` and `count()` as the files of the folder.
 
+**Shapes** (those of OpenAI's Responses API; a test reads them as literals).
+Every response closes its connection (`connection: close`); the body of an
+`Sse` is read to the close. `Reply` and `Play` serialize externally tagged
+with kebab-case variant names and the field names as written above, e.g.
+`{"usage-limit":{"resets_in_s":60}}`, `{"sse":[{"delta":"a"},"cut"]}`,
+`"reset"`, `{"slow":{"ms":5,"then":"down"}}`.
+
+- `GET /v1/models`: `{"object":"list","data":[{"id":"<slug>","object":"model","created":0,"owned_by":"openai"}, ...]}`.
+- `Delta(t)`: `{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":t}`.
+- `ToolCalls(n)`: n events in one write, each `{"type":"response.output_item.done","output_index":i,"item":{"type":"function_call","id":"fc_<k>","call_id":"call_<k>","name":"tool","arguments":"{}","status":"completed"}}`; `k` counts from 1 over the life of the server, so every call id is distinct.
+- `Completed{i,o}`: `{"type":"response.completed","response":{"id":"resp_1","object":"response","status":"completed","usage":{"input_tokens":i,"output_tokens":o,"total_tokens":i+o}}}`.
+- `Failed{code}`: `{"type":"response.failed","response":{"id":"resp_1","object":"response","status":"failed","error":{"code":code,"message":code}}}`.
+- `Raw(line)`: the text as given, nothing added (the test writes its own `\n\n`). `Cut` ends the body there; later events are not sent.
+- `UsageLimit{resets_in_s}`: 429, `{"error":{"type":"usage_limit_reached","code":"usage_limit_reached","message":"The usage limit has been reached","plan_type":"plus","resets_in_seconds":<resets_in_s>}}`.
+- `Status{code,body}`: that status with `body` and `content-type: application/json`. `Raw{..}`: the status line, the headers and the body exactly as given (no length added: the close ends the body).
+- A verdict body is `{"reasons":[...],"verdict":"safe"}` (JSON, keys in this order).
+- The 401 of a wrong token or key, the 404 and a script gone empty are `application/json` texts without further shape.
+- The log of `--log` is `{"method","path","headers":[["name","value"],...],"body_b64"}` in the order received, written when the request is recorded.
+
 **Responses origin.** It answers `POST /v1/responses` with the next `Reply`
 (a text event stream for `Sse`) and `GET /v1/models` with the slugs of
 `models`; any other method or path is 404 and recorded. A request without
@@ -2915,6 +2938,15 @@ the host followed none. A verdict is the body
 It checks `expect_key` as the Responses origin checks its token, answers a
 wrong or missing key 401, and records the request, so a test sees that the
 key was added by the host and that the request holds no key of its own.
+
+**Use with a host** (the example is `tests/it/scripted_host.rs`, host 19.9). `Host::open` of a
+temp home with `Mode::Home { app: Some(<a Confirm whose accounts() is a fake AccountSource>) }`,
+`Host::set_test_net(TestNet { routes: [("api.openai.com", responses_addr), ("judge.test",
+judge_addr)], root_pem: ca_pem })`, `expect_token` set to the fake's token, and host's fixture
+`https` installed. A mod's `https-stream.start` of `POST https://api.openai.com/v1/responses` with
+`account: "openai"` then reaches the fake with `Authorization: Bearer <token>`; every refused
+request leaves `requests()` and `judge().count()` at 0. The crate's `[dev-dependencies]` enable
+`watane-host`'s `test-net` and `tokio` (`rt`, for the async `Host::install`).
 
 ### 18.4 In a preview (W5, F-MAKE-4)
 
