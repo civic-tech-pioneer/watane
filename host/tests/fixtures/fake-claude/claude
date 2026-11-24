@@ -20,6 +20,8 @@
 #   rate     with this file, after the lines: `<deltas> <entries> <bytes> <seconds>`: a perl process
 #            takes over (below) and runs one turn at that rate
 #   spawn    with this file the program starts a `sleep` in its group and logs its pid
+# With the argument `--mcp-config=/dev/fd/3` it copies what it reads on fd 3 to `mcp.json` beside it
+# (the MCP config of an agent handle, 19.3), before it reads stdin.
 # Rate mode (the load of S100): the first `user` line starts a turn of `seconds`; each second it
 # writes `deltas` lines `{"type":"stream_event","n":N,"t":T,..}` and `entries` lines
 # `{"type":"assistant","n":N,"t":T,"message":{"content":[{"type":"text","text":..}]}}` whose text is `bytes` bytes, N counting both from 1 and T the
@@ -40,6 +42,9 @@ fi
 for a in "$@"; do printf 'ARG %s\n' "$a" >> "$log"; done
 env | sort | while IFS= read -r l; do printf 'ENV %s\n' "$l" >> "$log"; done
 printf 'PID %s\n' "$$" >> "$log"
+for a in "$@"; do
+  [ "$a" = "--mcp-config=/dev/fd/3" ] && cat <&3 > "$dir/mcp.json.tmp" && mv "$dir/mcp.json.tmp" "$dir/mcp.json"
+done
 printf 'CWD %s\n' "$(pwd)" >> "$log"
 if [ -f "$dir/spawn" ]; then
   sleep 300 >/dev/null 2>&1 &

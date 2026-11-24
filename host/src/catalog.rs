@@ -116,6 +116,9 @@ pub struct InstalledMod {
     pub error: Option<String>,
     #[serde(default)]
     pub binds: Vec<Bind>,
+    /// The consents the mod holds as an origin client (3.3, 19.7).
+    #[serde(default)]
+    pub consents: Vec<crate::Consent>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -147,6 +150,11 @@ pub(crate) struct Catalog {
     /// call and finds another at apply ran against an install that is gone (19.6, At apply).
     installs: BTreeMap<LocalName, u64>,
     install_counter: u64,
+    /// For each local name, the number of the last drop of its names from the toolset consents
+    /// (a removal, or a mod that gained `Manage`), in memory only. A question that waits compares
+    /// it with the number it noted (19.5, Limits).
+    drops: BTreeMap<LocalName, u64>,
+    drop_counter: u64,
     pub components: BTreeMap<LocalName, std::sync::Arc<crate::runtime::Compiled>>,
     pub mods: Vec<InstalledMod>,
 }
@@ -168,6 +176,8 @@ struct Record {
     links: Vec<LinkView>,
     #[serde(default)]
     binds: Vec<Bind>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    consents: Vec<crate::Consent>,
 }
 
 impl From<&InstalledMod> for Record {
@@ -181,6 +191,7 @@ impl From<&InstalledMod> for Record {
             grants: m.grants.clone(),
             links: m.links.clone(),
             binds: m.binds.clone(),
+            consents: m.consents.clone(),
         }
     }
 }
@@ -223,10 +234,40 @@ fn view(m: &Mod, local: LocalName, package: PackageId) -> InstalledMod {
         links: vec![],
         error: None,
         binds: vec![],
+        consents: vec![],
     }
 }
 
 impl Catalog {
+    /// Drops the names `<local>_…` from the function list of every toolset consent (4.4, 19.5).
+    pub(crate) fn drop_toolset_names(&mut self, local: &LocalName) {
+        self.note_drop(local);
+        for m in &mut self.mods {
+            crate::agent::tools::drop_names(&mut m.consents, local.as_ref());
+        }
+    }
+    fn note_drop(&mut self, local: &LocalName) {
+        self.drop_counter += 1;
+        self.drops.insert(local.clone(), self.drop_counter);
+    }
+    /// The number of the latest drop of names; a later drop has a greater one.
+    pub(crate) fn drop_mark(&self) -> u64 {
+        self.drop_counter
+    }
+    /// `functions` without the names of the mods whose names were dropped after `mark`.
+    pub(crate) fn without_dropped(&self, mark: u64, functions: &[String]) -> Vec<String> {
+        let prefixes: Vec<String> = self
+            .drops
+            .iter()
+            .filter(|(_, n)| **n > mark)
+            .map(|(local, _)| format!("{}_", local.as_ref() as &str))
+            .collect();
+        functions
+            .iter()
+            .filter(|f| !prefixes.iter().any(|p| f.starts_with(p)))
+            .cloned()
+            .collect()
+    }
     /// The install generation of a local name (19.6, At apply).
     pub fn install_of(&self, local: &LocalName) -> Option<u64> {
         self.installs.get(local).copied()
@@ -342,6 +383,7 @@ impl Catalog {
                     grants: vec![],
                     links: vec![],
                     binds: vec![],
+                    consents: vec![],
                     error: Some(match result {
                         Err(e) => e.to_string(),
                         Ok(_) => "installed slug differs from identity".into(),
@@ -355,6 +397,7 @@ impl Catalog {
             installed.grants = r.grants;
             installed.links = r.links;
             installed.binds = r.binds;
+            installed.consents = r.consents;
             mods.push(installed);
         }
         // Keep the committed provider-first order.
@@ -362,6 +405,8 @@ impl Catalog {
             generation: disk.generation,
             installs: BTreeMap::new(),
             install_counter: 0,
+            drops: BTreeMap::new(),
+            drop_counter: 0,
             components,
             mods,
         };
@@ -681,8 +726,11 @@ impl Catalog {
         preview: bool,
     ) -> Result<Vec<InstalledMod>, HostError> {
         self.validate(&plan, home)?;
+        let mut gained_manage: Vec<LocalName> = vec![];
         for Prepared(_, installed, _, _) in &mut plan.prepared {
             let old = self.mods.iter().find(|m| m.identity == installed.identity);
+            // Consents follow the record, like grants: kept across an update (3.3).
+            installed.consents = old.map(|m| m.consents.clone()).unwrap_or_default();
             for state in &mut installed.grants {
                 state.granted = if preview {
                     true
@@ -699,11 +747,27 @@ impl Catalog {
                     }
                 };
             }
+            // A mod that became a manager reaches no agent until a new consent (4.4, S68).
+            let manages = |m: &InstalledMod| {
+                m.grants
+                    .iter()
+                    .any(|g| g.granted && g.grant == Grant::Manage)
+            };
+            let gained = manages(installed) && !old.is_some_and(manages);
             *plan
                 .next
                 .iter_mut()
                 .find(|m| m.local == installed.local)
                 .expect("the plan holds every installed mod") = installed.clone();
+            if gained {
+                gained_manage.push(installed.local.clone());
+            }
+        }
+        for local in &gained_manage {
+            self.note_drop(local);
+            for m in &mut plan.next {
+                crate::agent::tools::drop_names(&mut m.consents, local.as_ref());
+            }
         }
         let prepared = plan.prepared;
         let next = plan.next;

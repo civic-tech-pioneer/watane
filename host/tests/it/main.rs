@@ -3,12 +3,16 @@
 
 mod adv_s96;
 mod agent_load;
+#[cfg(unix)] // Its homes launch the fake Claude, a Unix script made executable by mode bits.
+mod agent_tools;
 mod binds;
 #[cfg(unix)] // Uses the Unix Claude process-group fixtures.
 mod claude;
 #[cfg(unix)] // Uses the Unix Claude process-group fixtures.
 mod claude_launch;
 mod collect;
+#[cfg(unix)] // Uses the Unix Claude rig, Unix symlinks and the fake Claude script.
+mod consent;
 mod harness;
 #[cfg(unix)] // Uses the Unix Claude process-group fixtures.
 mod host_info;

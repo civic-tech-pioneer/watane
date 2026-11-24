@@ -4,6 +4,7 @@
 
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
 /// `bad-launch {field, reason}` (19.8).
 #[derive(Debug, Clone, PartialEq)]
@@ -65,15 +66,32 @@ const FIELDS: [&str; 22] = [
 ];
 const FIELDS_2: [&str; 3] = ["persist", "partial", "profile"];
 
-const STAGE_HANDLE: &str = "an agent handle waits for stage A3";
 const STAGE_SKILLS: &str = "skills wait for a later slice of stage A2";
-const STAGE_PICKED: &str = "picked folders need the workspace consent (stage A3)";
 
-/// A workspace named by the launch: a new scratch one, or one that the origin client holds.
+/// A workspace named by the launch: a new scratch one, one that the origin client holds, or a
+/// picked folder (an absolute path; the call resolves it, `resolve_picked`).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Workspace {
     NewScratch,
     Scratch(String),
+    Picked(String),
+}
+
+/// The `session` of a launch (19.3, Sessions are the origin client's).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum SessionUse {
+    New(String),
+    Resume(String),
+    Fork(String),
+}
+impl SessionUse {
+    /// `(id, must the origin client hold it)`.
+    pub(crate) fn id(&self) -> (&str, bool) {
+        match self {
+            Self::New(id) => (id, false),
+            Self::Resume(id) | Self::Fork(id) => (id, true),
+        }
+    }
 }
 
 /// A parsed launch document (19.3). Its flags are in the order of the argument list.
@@ -82,6 +100,11 @@ pub(crate) struct Launch {
     pub workspace: Workspace,
     /// The scratch ids of `extra-workspaces`.
     pub extra: Vec<String>,
+    /// The picked folders of `extra-workspaces`, in launch order (canonical after the call).
+    pub extra_picked: Vec<String>,
+    /// `profile`: only the words of the workspace consent (19.3).
+    pub profile: Option<String>,
+    pub session: Option<SessionUse>,
     /// `--flag=value` arguments from the launch values, in order, without `--add-dir=`,
     /// `--settings=` and `--plugin-dir=` (the run adds those).
     pub flags: Vec<String>,
@@ -96,6 +119,9 @@ pub(crate) struct Launch {
     pub ask: bool,
     /// `pre-tool-check {timeout-s}`: the hook's timeout in seconds; its callback gives `check` items.
     pub check: Option<u64>,
+    /// `agent-handle`: a handle (19.5) whose MCP server the run hands `claude` on fd 3. Whether
+    /// the origin client holds it is the call's check.
+    pub agent_handle: Option<String>,
 }
 
 fn is_model(s: &str) -> bool {
@@ -172,7 +198,11 @@ fn workspace_id(field: &str, v: &Value, scratch_ok: bool) -> Result<Workspace, B
             field,
             "a scratch id is `scratch:` and 32 lowercase hex characters",
         ),
-        None => bad(field, STAGE_PICKED),
+        None if s.starts_with('/') => Ok(Workspace::Picked(s.to_owned())),
+        None => bad(
+            field,
+            "use an absolute path, `scratch` or `scratch:<id>`: a picked folder is absolute",
+        ),
     }
 }
 
@@ -530,7 +560,7 @@ fn subagents(
     Ok(names)
 }
 
-fn session(v: &Value, flags: &mut Vec<String>) -> Result<(), BadLaunch> {
+fn session(v: &Value, flags: &mut Vec<String>) -> Result<SessionUse, BadLaunch> {
     let Some(o) = v.as_object() else {
         return bad("session", "expected an object");
     };
@@ -562,21 +592,28 @@ fn session(v: &Value, flags: &mut Vec<String>) -> Result<(), BadLaunch> {
         return bad("session", format!("`{k}` does not go with `{kind}`"));
     }
     let main = uuid(kind)?.expect("the key is present");
-    match *kind {
-        "new" => flags.push(format!("--session-id={main}")),
-        "resume" => flags.push(format!("--resume={main}")),
+    let used = match *kind {
+        "new" => {
+            flags.push(format!("--session-id={main}"));
+            SessionUse::New(main)
+        }
+        "resume" => {
+            flags.push(format!("--resume={main}"));
+            SessionUse::Resume(main)
+        }
         _ => {
             flags.push(format!("--resume={main}"));
             flags.push("--fork-session".into());
+            SessionUse::Fork(main)
         }
-    }
+    };
     if let Some(at) = uuid("at")? {
         flags.push(format!("--resume-session-at={at}"));
     }
     if let Some(drops) = uuid("drops-turn")? {
         flags.push(format!("--resume-drops-turn={drops}"));
     }
-    Ok(())
+    Ok(used)
 }
 
 /// A shallow check that a value can be a JSON Schema: a boolean or an object whose `type`
@@ -606,7 +643,107 @@ fn json_schema(v: &Value) -> Result<(), BadLaunch> {
     Ok(())
 }
 
+/// The folders under the participant's home that hold credentials (19.3, Picked workspace).
+const CREDENTIAL_DIRS: [&str; 9] = [
+    ".claude",
+    ".codex",
+    ".ssh",
+    ".aws",
+    ".gnupg",
+    ".config/gh",
+    ".docker",
+    ".kube",
+    "Library/Keychains",
+];
+
+/// Where a picked folder may not be (19.3, Picked workspace): `/`, the participant's home and
+/// the watane home with their ancestors, and any folder inside the folders that hold secrets or
+/// the watane home.
+pub(crate) struct Forbidden {
+    exact: Vec<PathBuf>,
+    inside: Vec<PathBuf>,
+}
+impl Forbidden {
+    pub(crate) fn new(watane_home: &Path, user_home: Option<&Path>) -> Self {
+        let canon = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+        let watane = canon(watane_home);
+        let mut exact = vec![PathBuf::from("/")];
+        exact.extend(watane.ancestors().map(Path::to_path_buf));
+        let mut inside = vec![watane];
+        if let Some(home) = user_home {
+            let home = canon(home);
+            exact.push(home.clone());
+            for dir in CREDENTIAL_DIRS {
+                let named = home.join(dir);
+                // Both spellings: as named under the home, and where a link there leads.
+                inside.push(canon(&named));
+                inside.push(named);
+            }
+        }
+        Self { exact, inside }
+    }
+    fn refuses(&self, folder: &Path) -> bool {
+        // On a case-insensitive file system names are compared without case.
+        let fold = |p: &Path| -> PathBuf {
+            if cfg!(any(target_os = "macos", target_os = "windows")) {
+                PathBuf::from(p.to_string_lossy().to_lowercase())
+            } else {
+                p.to_path_buf()
+            }
+        };
+        let folder = fold(folder);
+        self.exact.iter().any(|p| fold(p) == folder)
+            || self.inside.iter().any(|p| folder.starts_with(fold(p)))
+    }
+}
+
+/// Resolves a picked folder at the call (19.3, Picked folders): absolute, canonical with symlinks
+/// resolved, an existing folder, in Unicode NFC, and not one that `Forbidden` names. The reason
+/// goes to `bad-launch {field}`.
+pub(crate) fn resolve_picked(raw: &str, forbidden: &Forbidden) -> Result<String, String> {
+    let path = Path::new(raw);
+    if !path.is_absolute() {
+        return Err("a picked folder is an absolute path".into());
+    }
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| format!("the folder cannot be resolved: {e}"))?;
+    if !canonical.is_dir() {
+        return Err("the path is not a folder".into());
+    }
+    let Some(text) = canonical.to_str() else {
+        return Err("the folder's name is not UTF-8".into());
+    };
+    if !unicode_normalization::is_nfc(text) {
+        return Err("the folder's canonical name is not in Unicode NFC".into());
+    }
+    if text.chars().any(char::is_control) {
+        return Err("the folder's name holds a control character".into());
+    }
+    if forbidden.refuses(&canonical) {
+        return Err(
+            "this folder holds the watane home, the participant's home or credentials, or lies inside one"
+                .into(),
+        );
+    }
+    Ok(text.to_owned())
+}
+
 impl Launch {
+    /// The picked folders of the launch, in launch order: the working folder, then the extras.
+    pub(crate) fn picked(&self) -> Vec<String> {
+        let mut all = vec![];
+        if let Workspace::Picked(p) = &self.workspace {
+            all.push(p.clone());
+        }
+        for p in &self.extra_picked {
+            if !all.contains(p) {
+                all.push(p.clone());
+            }
+        }
+        all
+    }
+
     /// Parses and checks the document of a start (19.3). Whether a scratch id is held by the
     /// origin client is the caller's check.
     pub(crate) fn parse(text: &str, kind: Kind) -> Result<Self, BadLaunch> {
@@ -631,6 +768,7 @@ impl Launch {
         };
         let workspace = workspace_id("workspace", ws, true)?;
         let mut extra = vec![];
+        let mut extra_picked: Vec<String> = vec![];
         if let Some(v) = doc.get("extra-workspaces") {
             let Some(list) = v.as_array() else {
                 return bad("extra-workspaces", "expected a list");
@@ -638,6 +776,11 @@ impl Launch {
             for item in list {
                 match workspace_id("extra-workspaces", item, false)? {
                     Workspace::Scratch(id) => extra.push(id),
+                    Workspace::Picked(path) => {
+                        if !extra_picked.contains(&path) {
+                            extra_picked.push(path);
+                        }
+                    }
                     Workspace::NewScratch => unreachable!("refused above"),
                 }
             }
@@ -741,9 +884,19 @@ impl Launch {
             flags.push("--permission-prompts=none".into());
         }
         let check = doc.get("pre-tool-check").map(pre_tool_check).transpose()?;
-        if doc.contains_key("agent-handle") {
-            return bad("agent-handle", STAGE_HANDLE);
-        }
+        let agent_handle = match doc.get("agent-handle") {
+            None => None,
+            Some(v) => {
+                let handle = string("agent-handle", v)?;
+                if !is_scratch_id(handle) {
+                    return bad(
+                        "agent-handle",
+                        "a handle is 32 lowercase hexadecimal characters",
+                    );
+                }
+                Some(handle.to_owned())
+            }
+        };
         let agents = match doc.get("subagents") {
             Some(v) => subagents(v, &tools, &mut flags)?,
             None => vec![],
@@ -786,9 +939,10 @@ impl Launch {
                 _ => return bad("max-budget-usd", "use a positive number"),
             }
         }
-        if let Some(v) = doc.get("session") {
-            session(v, &mut flags)?;
-        }
+        let session_use = doc
+            .get("session")
+            .map(|v| session(v, &mut flags))
+            .transpose()?;
         if let Some(v) = doc.get("persist")
             && !boolean("persist", v)?
         {
@@ -799,11 +953,13 @@ impl Launch {
         {
             flags.push("--include-partial-messages".into());
         }
+        let mut profile = None;
         if let Some(v) = doc.get("profile") {
             let s = string("profile", v)?;
             if !is_profile(s) {
                 return bad("profile", "use 1 to 64 of letters, digits, `.`, `_`, `-`");
             }
+            profile = Some(s.to_owned());
         }
         let extra: Vec<String> = extra
             .into_iter()
@@ -813,6 +969,9 @@ impl Launch {
         Ok(Self {
             workspace,
             extra,
+            extra_picked,
+            profile,
+            session: session_use,
             flags,
             tools,
             agents,
@@ -820,6 +979,146 @@ impl Launch {
             depth,
             ask,
             check,
+            agent_handle,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// 19.3: `agent-handle` is 32 lowercase hex characters; nothing else parses.
+    #[test]
+    fn ac5_an_agent_handle_is_32_lowercase_hex_characters() {
+        let parse = |v: Value| {
+            let doc = json!({"version": 1, "workspace": "scratch", "agent-handle": v});
+            Launch::parse(&doc.to_string(), Kind::Code)
+        };
+        let ok = parse(json!("0123456789abcdef0123456789abcdef")).unwrap();
+        assert_eq!(
+            ok.agent_handle.as_deref(),
+            Some("0123456789abcdef0123456789abcdef")
+        );
+        for v in [
+            json!("h"),
+            json!(""),
+            json!("0123456789ABCDEF0123456789abcdef"),
+            json!("0123456789abcdef0123456789abcde"),
+            json!("0123456789abcdef0123456789abcdef0"),
+            json!(7),
+            json!(null),
+        ] {
+            let e = parse(v.clone()).unwrap_err();
+            assert_eq!(e.field, "agent-handle", "{v}");
+            assert!(!e.reason.contains("stage"), "{v}");
+        }
+    }
+
+    /// AC2 (19.3, Picked workspace): the folders that hold credentials, and what lies inside them.
+    #[test]
+    #[cfg(unix)] // Unix paths: `/` as the root and a control character in a folder name.
+    fn ac2_credential_folders_and_the_homes_are_refused_and_ordinary_ones_pass() {
+        let base = tempfile::tempdir().unwrap();
+        let base = base.path().canonicalize().unwrap();
+        let (user, watane) = (base.join("user"), base.join("user/watane-home"));
+        for dir in [
+            ".ssh/keys",
+            ".claude",
+            ".aws",
+            "code/app",
+            "Library/Keychains",
+        ] {
+            std::fs::create_dir_all(user.join(dir)).unwrap();
+        }
+        std::fs::create_dir_all(watane.join("mods")).unwrap();
+        let forbidden = Forbidden::new(&watane, Some(&user));
+        let refused = |p: PathBuf| resolve_picked(p.to_str().unwrap(), &forbidden).is_err();
+        assert!(refused(user.clone()));
+        assert!(refused(base.clone()));
+        assert!(refused(PathBuf::from("/")));
+        assert!(refused(watane.clone()));
+        assert!(refused(watane.join("mods")));
+        for dir in [".ssh", ".ssh/keys", ".claude", ".aws", "Library/Keychains"] {
+            assert!(refused(user.join(dir)), "{dir}");
+        }
+        let ok = resolve_picked(user.join("code/app").to_str().unwrap(), &forbidden).unwrap();
+        assert_eq!(ok, user.join("code/app").to_str().unwrap());
+        resolve_picked("relative", &forbidden).unwrap_err();
+        let control = user.join("code/a\u{7}b");
+        std::fs::create_dir(&control).unwrap();
+        let e = resolve_picked(control.to_str().unwrap(), &forbidden).unwrap_err();
+        assert_eq!(e, "the folder's name holds a control character");
+    }
+
+    /// S103 fix1 AC2 (19.3, Picked workspace): the added credential folders, and a linked one in
+    /// both spellings.
+    #[test]
+    #[cfg(unix)] // Links a folder with a Unix symlink.
+    fn ac2_s103_fix1_more_credential_folders_and_both_spellings_are_refused() {
+        let base = tempfile::tempdir().unwrap();
+        let base = base.path().canonicalize().unwrap();
+        let (user, watane) = (base.join("user"), base.join("user/watane-home"));
+        std::fs::create_dir_all(watane.join("mods")).unwrap();
+        for dir in [
+            ".gnupg/k",
+            ".config/gh/h",
+            ".docker/c",
+            ".kube/c",
+            "dotfiles/claude/sub",
+        ] {
+            std::fs::create_dir_all(user.join(dir)).unwrap();
+        }
+        std::os::unix::fs::symlink(user.join("dotfiles/claude"), user.join(".claude")).unwrap();
+        let forbidden = Forbidden::new(&watane, Some(&user));
+        for dir in [
+            ".gnupg",
+            ".gnupg/k",
+            ".config/gh",
+            ".config/gh/h",
+            ".docker",
+            ".docker/c",
+            ".kube",
+            ".kube/c",
+            ".claude",
+            ".claude/sub",
+            "dotfiles/claude",
+            "dotfiles/claude/sub",
+        ] {
+            let got = resolve_picked(user.join(dir).to_str().unwrap(), &forbidden);
+            assert!(
+                got.as_ref().is_err_and(|e| e.contains("credentials")),
+                "{dir} was not refused as a credential folder: {got:?}"
+            );
+        }
+        // The folder beside them is no credential folder.
+        let dotfiles = user.join("dotfiles");
+        resolve_picked(dotfiles.to_str().unwrap(), &forbidden).unwrap();
+    }
+
+    /// Adversary S103 (19.3, Picked workspace): a credential folder kept elsewhere and linked
+    /// from the participant's home (a dotfiles manager does this) is still `~/.ssh` or
+    /// `~/.claude`. Its canonical path must be refused, and so must any folder inside it; else a
+    /// mod asks the consent for a path that does not look like a credential folder.
+    #[test]
+    #[cfg(unix)] // Links folders with Unix symlinks.
+    fn adv_s103_a_symlinked_credential_folder_is_refused() {
+        let base = tempfile::tempdir().unwrap();
+        let base = base.path().canonicalize().unwrap();
+        let (user, watane) = (base.join("user"), base.join("user/watane-home"));
+        std::fs::create_dir_all(watane.join("mods")).unwrap();
+        let dotfiles = user.join("dotfiles");
+        for dir in ["ssh/keys", "claude", "aws"] {
+            std::fs::create_dir_all(dotfiles.join(dir)).unwrap();
+        }
+        for (link, target) in [(".ssh", "ssh"), (".claude", "claude"), (".aws", "aws")] {
+            std::os::unix::fs::symlink(dotfiles.join(target), user.join(link)).unwrap();
+        }
+        let forbidden = Forbidden::new(&watane, Some(&user));
+        for dir in [".ssh", ".ssh/keys", ".claude", ".aws"] {
+            let got = resolve_picked(user.join(dir).to_str().unwrap(), &forbidden);
+            assert!(got.is_err(), "{dir} was accepted as {got:?}");
+        }
     }
 }

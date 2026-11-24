@@ -521,6 +521,8 @@ impl Hub {
             | Effect::TimerCancel { .. }
             | Effect::ClaudeStart { .. }
             | Effect::ClaudeWrite { .. }
+            | Effect::AgentOpen { .. }
+            | Effect::AgentCall { .. }
             | Effect::Fake { .. } => {}
         }
         drop(inner);

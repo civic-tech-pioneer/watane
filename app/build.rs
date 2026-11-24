@@ -6,6 +6,7 @@ fn main() {
             "chatgpt_sign_out",
             "claude_binary_pick",
             "claude_binary_clear",
+            "consent_withdraw",
             "mods_list",
             "mod_open",
             "mod_disable",

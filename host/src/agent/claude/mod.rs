@@ -79,6 +79,12 @@ struct Running {
 pub(crate) struct Session {
     pub id: String,
     pub origin: String,
+    /// The mod whose request waits, the `via` of a workspace consent (19.7).
+    pub via: Option<ModRef>,
+    /// The install generation of the origin client at the call (19.6, At apply).
+    pub origin_gen: Option<u64>,
+    /// The picked folders of the launch, canonical: what a withdrawal matches (19.7).
+    pub folders: Vec<String>,
     /// The `initialize` request's id: the answer to it is the one the run waits for.
     pub request_id: String,
     /// The group and the stop flag under one lock: `stop` and `started` each read what the
@@ -102,12 +108,27 @@ impl Session {
         Self {
             id,
             origin,
+            via: None,
+            origin_gen: None,
+            folders: vec![],
             request_id,
             state: Mutex::new(Running::default()),
             tx: Mutex::new(Some(tx)),
             rx: Mutex::new(Some(rx)),
             asks: Mutex::default(),
         }
+    }
+    /// Names what the session's consent depends on (19.7).
+    pub(crate) fn scoped(
+        mut self,
+        via: ModRef,
+        origin_gen: Option<u64>,
+        folders: Vec<String>,
+    ) -> Self {
+        self.via = Some(via);
+        self.origin_gen = origin_gen;
+        self.folders = folders;
+        self
     }
     fn running(&self) -> std::sync::MutexGuard<'_, Running> {
         self.state
@@ -212,6 +233,21 @@ impl Sessions {
         }
         live.insert(session.id.clone(), Arc::clone(session));
         Ok(())
+    }
+    /// The ids of the live sessions of `origin` started through `via` whose launch names `folder`
+    /// (19.7, Withdrawal).
+    pub(crate) fn depending(&self, origin: &str, via: &str, folder: &str) -> Vec<String> {
+        self.live
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .values()
+            .filter(|s| {
+                s.origin == origin
+                    && s.via.as_ref().is_some_and(|v| v.identity == via)
+                    && s.folders.iter().any(|f| f == folder)
+            })
+            .map(|s| s.id.clone())
+            .collect()
     }
     pub(crate) fn get(&self, id: &str) -> Option<Arc<Session>> {
         self.live
@@ -326,11 +362,47 @@ pub(crate) fn start(inv: &Invocation, kind: Kind, args: &[Val]) -> Result<Value,
         return Ok(refusal);
     }
     let text = text_arg(args, 0, "start")?;
-    let launch = match Launch::parse(&text, kind) {
+    let mut launch = match Launch::parse(&text, kind) {
         Ok(l) => l,
         Err(b) => return Ok(bad_launch(&b.field, &b.reason)),
     };
     let host = &inv.chain.host;
+    // Picked folders: resolved now; the workspace id is the canonical path (19.3, Folders).
+    let user_home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let forbidden = launch::Forbidden::new(host.home(), user_home.as_deref());
+    if let Workspace::Picked(raw) = &launch.workspace {
+        match launch::resolve_picked(raw, &forbidden) {
+            Ok(path) => launch.workspace = Workspace::Picked(path),
+            Err(reason) => return Ok(bad_launch("workspace", &reason)),
+        }
+    }
+    let mut resolved: Vec<String> = vec![];
+    for raw in &launch.extra_picked {
+        match launch::resolve_picked(raw, &forbidden) {
+            Ok(path) => {
+                if !resolved.contains(&path) {
+                    resolved.push(path);
+                }
+            }
+            Err(reason) => return Ok(bad_launch("extra-workspaces", &reason)),
+        }
+    }
+    launch.extra_picked = resolved;
+    // Sessions are the origin client's (19.3): another identity's id is refused.
+    if let Some(used) = &launch.session {
+        let (id, must_hold) = used.id();
+        let owner = host.state.session_owner(id)?;
+        let ok = match owner.as_deref() {
+            Some(o) => o == inv.origin,
+            None => !must_hold,
+        };
+        if !ok {
+            return Ok(bad_launch(
+                "session",
+                "the session is unknown, or another mod's",
+            ));
+        }
+    }
     let held = |id: &str| -> Result<bool, CallError> {
         Ok(host.state.scratch_owner(id)?.as_deref() == Some(inv.origin.as_str()))
     };
@@ -349,6 +421,15 @@ pub(crate) fn start(inv: &Invocation, kind: Kind, args: &[Val]) -> Result<Value,
                 "the scratch workspace is unknown, or another mod's",
             ));
         }
+    }
+    // A handle is the origin client's (19.5); one opened in this chain is not applied yet.
+    if let Some(handle) = &launch.agent_handle
+        && !host.handles.held_by(handle, &inv.origin)
+    {
+        return Ok(bad_launch(
+            "agent-handle",
+            "the origin client holds no such handle",
+        ));
     }
     let me = inv.me();
     let key = Consumer::Mod(me.clone()).key().unwrap_or_default();
@@ -448,7 +529,13 @@ impl Host {
         shell: bool,
         valid: bool,
     ) -> Option<run::Job> {
-        let session = Arc::new(Session::new(id.clone(), origin.clone(), launch.check));
+        let session = Arc::new(
+            Session::new(id.clone(), origin.clone(), launch.check).scoped(
+                consumer.clone(),
+                origin_gen,
+                launch.picked(),
+            ),
+        );
         let hook = Arc::clone(&session);
         self.hub.open_host(
             id.clone(),

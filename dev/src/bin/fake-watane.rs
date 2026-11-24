@@ -33,6 +33,7 @@ fn installed(folder: &Path, port: u16) -> Result<InstalledMod, Box<dyn std::erro
         local,
         grants: vec![],
         binds: vec![],
+        consents: vec![],
         links: vec![],
         error: None,
     })

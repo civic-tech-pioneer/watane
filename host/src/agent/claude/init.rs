@@ -45,7 +45,10 @@ pub(crate) fn check(launch: &Launch, init: &Value) -> Result<(), &'static str> {
         _ => Err(field),
     };
     extra("tools", &|n| launch.tools.iter().any(|t| t == n))?;
-    extra("mcp_servers", &|_| false)?;
+    // The one MCP server is the host's, with the launch's handle (19.3).
+    extra("mcp_servers", &|n| {
+        launch.agent_handle.is_some() && n == "watane"
+    })?;
     extra("agents", &|n| {
         BUILT_IN_AGENTS.contains(&n) || launch.agents.iter().any(|a| a == n)
     })?;
@@ -56,4 +59,38 @@ pub(crate) fn check(launch: &Launch, init: &Value) -> Result<(), &'static str> {
         n == "watane-run" || n.starts_with("cc-plugin-")
     })?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::claude::launch::Kind;
+    use serde_json::json;
+
+    fn launch(extra: &str) -> Launch {
+        let doc = format!(r#"{{"version":1,"workspace":"scratch"{extra}}}"#);
+        Launch::parse(&doc, Kind::Code).unwrap()
+    }
+    fn line(servers: Value) -> Value {
+        json!({"tools": [], "mcp_servers": servers, "agents": [], "permissionMode": "default",
+               "plugins": [{"name": "watane-run"}]})
+    }
+
+    /// 19.3 step 3: with a handle the host's one MCP server, `watane`, is the launch's; any
+    /// other server, and any server without a handle, is a difference.
+    #[test]
+    fn ac5_only_the_watane_server_of_a_handle_matches() {
+        let handle = launch(&format!(r#","agent-handle":"{}""#, "a".repeat(32)));
+        let plain = launch("");
+        let one = line(json!([{"name": "watane", "status": "connected"}]));
+        assert_eq!(check(&handle, &one), Ok(()));
+        assert_eq!(check(&handle, &line(json!([]))), Ok(()));
+        assert_eq!(check(&handle, &line(json!(["other"]))), Err("mcp_servers"));
+        assert_eq!(
+            check(&handle, &line(json!(["watane", "x"]))),
+            Err("mcp_servers")
+        );
+        assert_eq!(check(&plain, &one), Err("mcp_servers"));
+        assert_eq!(check(&plain, &line(json!([]))), Ok(()));
+    }
 }

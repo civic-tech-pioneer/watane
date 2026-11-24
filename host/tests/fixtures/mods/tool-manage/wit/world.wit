@@ -1,0 +1,15 @@
+package mods:tool@0.1.0;
+interface api {
+  /// Says hello.
+  /// @parallel
+  hello: func(name: string) -> string;
+  /// Doubles a number.
+  /// @idempotent
+  double: func(n: u32) -> u32;
+  who: func() -> string;
+  /// Waits, then answers.
+  slow: func(ms: u32) -> string;
+  refuse: func() -> result<string, string>;
+  boom: func();
+}
+world tool { import watane:host/caller@0.1.0; import watane:host/manage@0.1.0; export api; }

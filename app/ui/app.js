@@ -169,6 +169,15 @@ export function modsView(mods) {
       const text = grant.short || grant.text; element('span', text, row, 'grant-text').title = grant.text;
       makeSwitch(row, text, grant.granted, grant.granted ? 'withdraw' : 'give', () => action(grant.granted ? 'grant_withdraw' : 'grant_give', {local:mod.local,key:grant.key}));
     }
+    if (mod.consents?.length) {
+      const agents = element('div', '', entry, 'grants agents'); element('div', 'Agents', agents, 'label');
+      for (const consent of mod.consents) {
+        const row = element('p', '', agents, 'grant-row consent-row'); row.dataset.key = consent.key;
+        element('span', '', row, 'grant-icon').append(document.createTextNode('→'));
+        element('span', consent.text, row, 'grant-text').title = consent.text;
+        makeSwitch(row, consent.text, true, 'withdraw', () => action('consent_withdraw', {local:mod.local,key:consent.key}));
+      }
+    }
     element('p', 'A change here takes effect now. A mod that asks for more goes through the consent view.', grants, 'hint');
     const links = element('div', '', entry, 'connections'); element('div', 'Connections', links, 'label');
     const connected = connections(mod, mods);

@@ -9,6 +9,7 @@
     "allow-chatgpt-sign-out",
     "allow-claude-binary-pick",
     "allow-claude-binary-clear",
+    "allow-consent-withdraw",
     "allow-mods-list",
     "allow-mod-open",
     "allow-mod-disable",

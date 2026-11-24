@@ -1100,3 +1100,99 @@ fn ac4_time_and_count_words_with_fixed_now() {
         String::from_utf8_lossy(&result.stderr)
     );
 }
+
+#[test]
+#[ignore = "slow: only the real consent window shows the agent words, literal text and no stop button"]
+fn s58_agent_consent_words_literal_text_and_no_stop() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[]);
+    let hostile = "<img src=x onerror=alert(1)>";
+    let origin = json!({"local":"desk","name":hostile,"publisher":null});
+    // The first function name is hostile too; all 14 names show, none folded into `more`.
+    let many: Vec<String> = std::iter::once(hostile.to_owned())
+        .chain((2..=14).map(|i| format!("f{i}")))
+        .collect();
+    let cases = [
+        (
+            json!({"kind":"workspace","folder":hostile,"profile":"coder","provider":"claude (local)"}),
+            "Agents in a folder",
+            format!(
+                "Let {hostile} (local) have agents work in {hostile} (coder, through claude (local))?"
+            ),
+        ),
+        (
+            json!({"kind":"workspace","folder":"/w","profile":null,"provider":"claude (local)"}),
+            "Agents in a folder",
+            format!("Let {hostile} (local) have agents work in /w (through claude (local))?"),
+        ),
+        (
+            json!({"kind":"account"}),
+            "Your ChatGPT plan",
+            format!("Let {hostile} (local) use your ChatGPT plan?"),
+        ),
+        (
+            json!({"kind":"toolset","name":"t","functions":many}),
+            "Tools for agents",
+            format!("Let {hostile} (local)'s agents call: {}?", many.join(", ")),
+        ),
+    ];
+    for (what, title, question) in cases {
+        let ask = app.ask(json!({"kind":"agent","what":what,"origin":origin}));
+        consent(&app);
+        assert_eq!(
+            app.eval("consent", "document.querySelector('h1').textContent"),
+            title
+        );
+        assert_eq!(
+            app.eval(
+                "consent",
+                "[...document.querySelector('main').children].map(e => e.textContent)"
+            ),
+            json!([question])
+        );
+        assert_eq!(
+            app.eval("consent", "document.querySelectorAll('img').length"),
+            0
+        );
+        // A long question wraps or scrolls: it and its ancestors never clip it.
+        assert_eq!(
+            app.eval(
+                "consent",
+                "(() => { const q = document.querySelector('main').firstElementChild; \
+                 const s = getComputedStyle(q); if (s.whiteSpace.includes('nowrap')) return false; \
+                 for (let e = q; e; e = e.parentElement) { const c = getComputedStyle(e); \
+                 if (['hidden','clip'].some(v => c.overflowX === v || c.overflowY === v)) return false; } \
+                 return true; })()"
+            ),
+            true
+        );
+        assert_eq!(
+            app.eval("consent", "document.querySelector('#stop').hidden"),
+            true
+        );
+        app.close("consent");
+        assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
+    }
+    let mut request = install("Weather");
+    request["mods"][0]["agents_via"] = json!(["claude (local)", hostile]);
+    let ask = app.ask(request);
+    consent(&app);
+    assert_eq!(
+        app.eval(
+            "consent",
+            "[...document.querySelectorAll('section p')].map(e => e.textContent).slice(-2)"
+        ),
+        json!([
+            "Uses Claude Code through claude (local).",
+            format!("Uses Claude Code through {hostile}.")
+        ])
+    );
+    assert_eq!(
+        app.eval("consent", "document.querySelectorAll('img').length"),
+        0
+    );
+    app.close("consent");
+    assert_eq!(ask.wait(TIMEOUT), Some(json!({"answer":"deny"})));
+    assert!(app.quit().success());
+}

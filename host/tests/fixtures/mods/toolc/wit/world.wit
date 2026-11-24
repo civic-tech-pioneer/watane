@@ -1,0 +1,26 @@
+package mods:toolc@0.1.0;
+interface api {
+  /// Starts claude with this launch document, as the tool's own request.
+  start: func(launch: string) -> string;
+  /// Counts the call and answers the count; it asks nothing.
+  touch: func() -> u32;
+  /// Waits, then counts the call and answers the count.
+  slow: func(ms: u32) -> u32;
+  /// The calls that `touch`, `slow`, `start`, `open` and `arm` saw, one line each.
+  seen: func() -> list<string>;
+  /// Opens a handle on these toolsets: the handle, or the error's name.
+  open: func(toolsets: list<string>) -> string;
+  /// Arms the timer `id` in a minute: `ok`, or the error's name.
+  arm: func(id: string) -> string;
+}
+world toolc {
+  import watane:host/state@0.1.0;
+  import watane:host/streams@0.1.0;
+  import watane:host/claude-types@0.1.0;
+  import watane:host/claude-code@0.1.0;
+  import watane:host/agent-tools@0.1.0;
+  import watane:host/timers@0.1.0;
+  import watane:host/manage@0.1.0;
+  export api;
+  export watane:host/stream-sink@0.1.0;
+}

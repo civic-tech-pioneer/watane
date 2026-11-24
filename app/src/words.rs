@@ -1,7 +1,7 @@
 //! Grant words (TECHNICAL 4), the parties cache (TECHNICAL 9.2), and account settings words
 //! (TECHNICAL 19).
 
-use crate::consent::{GrantKind, GrantLine, Party};
+use crate::consent::{AgentWhat, Asker, ConsentLine, GrantKind, GrantLine, Party};
 use std::collections::BTreeMap;
 use watane_host::watane_pkg::{Grant, Provider};
 #[derive(Default)]
@@ -204,6 +204,76 @@ pub fn grant_line_bound(
         text,
         granted,
         new,
+    }
+}
+
+/// The title and the question of one agent consent (19.2). `origin` is named as an asker is.
+pub(crate) fn agent_consent(what: &AgentWhat, origin: &Asker) -> (String, String) {
+    agent_words(what, &asker_label(origin))
+}
+/// A provider of an identity `<publisher>/<slug>` or `local/<slug>`, as section 4 writes it.
+fn identity_provider(identity: &str, parties: &Parties) -> String {
+    match identity.split_once('/') {
+        Some(("local", slug)) => format!("{slug} (local)"),
+        Some((publisher, slug)) => format!("{slug} by {}", party_label(&party(publisher, parties))),
+        None => identity.into(),
+    }
+}
+/// One consent a mod holds, in the words of its question for the mod itself (19.2, Shown).
+pub(crate) fn consent_line(
+    consent: &watane_host::Consent,
+    name: &str,
+    parties: &Parties,
+) -> ConsentLine {
+    use watane_host::Consent;
+    let (kind, what) = match consent {
+        Consent::Workspace { via, folder } => (
+            "workspace",
+            AgentWhat::Workspace {
+                folder: folder.clone(),
+                profile: None,
+                provider: identity_provider(via, parties),
+            },
+        ),
+        Consent::Account { .. } => ("account", AgentWhat::Account),
+        Consent::Toolset { toolset, functions } => (
+            "toolset",
+            AgentWhat::Toolset {
+                name: toolset.clone(),
+                functions: functions.clone(),
+            },
+        ),
+    };
+    ConsentLine {
+        key: consent.to_string(),
+        kind: kind.into(),
+        text: agent_words(&what, name).1,
+    }
+}
+fn agent_words(what: &AgentWhat, origin: &str) -> (String, String) {
+    match what {
+        AgentWhat::Workspace {
+            folder,
+            profile,
+            provider,
+        } => {
+            let how = match profile {
+                Some(profile) => format!("{profile}, through {provider}"),
+                None => format!("through {provider}"),
+            };
+            (
+                "Agents in a folder".into(),
+                format!("Let {origin} have agents work in {folder} ({how})?"),
+            )
+        }
+        AgentWhat::Account => (
+            "Your ChatGPT plan".into(),
+            format!("Let {origin} use your ChatGPT plan?"),
+        ),
+        AgentWhat::Toolset { functions, .. } => (
+            "Tools for agents".into(),
+            format!("Let {origin}'s agents call: {}?", functions.join(", ")),
+        ),
     }
 }
 
@@ -422,6 +492,121 @@ mod tests {
                 grant_line(&grant, &parties, true, false).text
             );
         }
+    }
+    #[test]
+    fn ac1_agent_consent_words() {
+        let local = Asker {
+            local: "desk".into(),
+            name: "Desk".into(),
+            publisher: None,
+        };
+        let by = Asker {
+            publisher: Some(Party {
+                you: false,
+                name: Some("Ivy".into()),
+                fingerprint: "abcdefghij".into(),
+            }),
+            ..local.clone()
+        };
+        let workspace = |profile: Option<&str>| AgentWhat::Workspace {
+            folder: "/Users/a/notes".into(),
+            profile: profile.map(Into::into),
+            provider: "claude (local)".into(),
+        };
+        assert_eq!(
+            agent_consent(&workspace(Some("coder")), &local),
+            (
+                "Agents in a folder".into(),
+                "Let Desk (local) have agents work in /Users/a/notes (coder, through claude (local))?".into()
+            )
+        );
+        assert_eq!(
+            agent_consent(&workspace(None), &by).1,
+            "Let Desk by Ivy (abcdefghij) have agents work in /Users/a/notes (through claude (local))?"
+        );
+        assert_eq!(
+            agent_consent(&AgentWhat::Account, &local),
+            (
+                "Your ChatGPT plan".into(),
+                "Let Desk (local) use your ChatGPT plan?".into()
+            )
+        );
+        let toolset = |n: usize| AgentWhat::Toolset {
+            name: "t".into(),
+            functions: (1..=n).map(|i| format!("f{i}")).collect(),
+        };
+        assert_eq!(
+            agent_consent(&toolset(2), &by),
+            (
+                "Tools for agents".into(),
+                "Let Desk by Ivy (abcdefghij)'s agents call: f1, f2?".into()
+            )
+        );
+        assert_eq!(
+            agent_consent(&toolset(12), &local).1,
+            "Let Desk (local)'s agents call: f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12?"
+        );
+        for n in [13, 40] {
+            let names = (1..=n).map(|i| format!("f{i}")).collect::<Vec<_>>();
+            let text = agent_consent(&toolset(n), &local).1;
+            assert_eq!(
+                text,
+                format!("Let Desk (local)'s agents call: {}?", names.join(", "))
+            );
+            assert!(!text.contains("more"));
+        }
+    }
+    #[test]
+    fn ac4_consent_lines_use_the_mods_own_name_and_key() {
+        use watane_host::Consent;
+        let parties = Parties::new();
+        let key = "a".repeat(52);
+        parties.insert(key.clone(), "Ivy".into());
+        let workspace = Consent::Workspace {
+            via: "local/claude".into(),
+            folder: "/w/notes".into(),
+        };
+        let line = consent_line(&workspace, "Desk", &parties);
+        assert_eq!(line.key, "workspace:local/claude:/w/notes");
+        assert_eq!(line.kind, "workspace");
+        assert_eq!(
+            line.text,
+            "Let Desk have agents work in /w/notes (through claude (local))?"
+        );
+        let published = Consent::Workspace {
+            via: format!("{key}/claude"),
+            folder: "/w".into(),
+        };
+        assert_eq!(
+            consent_line(&published, "Desk", &parties).text,
+            "Let Desk have agents work in /w (through claude by Ivy (aaaaaaaaaa))?"
+        );
+        let account = Consent::Account {
+            via: "local/chat".into(),
+            account: "openai".into(),
+        };
+        let line = consent_line(&account, "Desk", &parties);
+        assert_eq!(
+            (line.key.as_str(), line.kind.as_str(), line.text.as_str()),
+            (
+                "account:local/chat:openai",
+                "account",
+                "Let Desk use your ChatGPT plan?"
+            )
+        );
+        let toolset = Consent::Toolset {
+            toolset: "t".into(),
+            functions: vec!["a_b_c".into(), "a_b_d".into()],
+        };
+        let line = consent_line(&toolset, "Desk", &parties);
+        assert_eq!(
+            (line.key.as_str(), line.kind.as_str(), line.text.as_str()),
+            (
+                "toolset:t",
+                "toolset",
+                "Let Desk's agents call: a_b_c, a_b_d?"
+            )
+        );
     }
     #[test]
     fn ac1_manager_words_and_asker_labels() {
