@@ -62,6 +62,8 @@ fn location(text: &str, slug: &str) -> (Option<String>, Option<u32>) {
     let Some(path) = parts.next().filter(|_| line.is_some()) else {
         return (None, None);
     };
+    #[cfg(windows)]
+    let path = &path.replace('\\', "/");
     let remapped = format!("/watane-dev/build/{slug}/");
     let path = path.strip_prefix(&remapped).unwrap_or(path);
     let path = if path.starts_with("src/") {
