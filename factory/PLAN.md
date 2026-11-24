@@ -1393,7 +1393,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   adversary runs on the `log` change. Size: a whole capability (Windows as a checked platform).
   Progress: draft PR #23; BLOCKED at 80ffd54 (20:56 UTC) as briefed: log (native no-follow handles, owner-only ACLs,
   refusal tests), net, pkg, install ported; Windows build now fails only in host/src/agent/ and dist/. Resume after S100
-  and S105 merge: a build brief "continue from branch slice/s110; rebase onto main" into the same Codex task. Resumed ~07:28 UTC 2026-11-24 in the same task (edits in dist/ and host/src/agent/ kept to cfg gates and refusals, since S107 and S103 run there). Windows failures per run: 358, 85, 30, 16, 15, 2, 0; DELIVERED ~11:45 UTC at 68d1dd4 (Windows green on attempts 1-3 of run 45370144960; Linux and macOS suite times within 10% of a parallel main run); r1: Claude review routine `trig_01CRaJJrcV955wX2NNsZP4NR`, fires 11:52 UTC; r1 (12:38): 2/10, changes (2) (validators PASS 1, RETURN 3; adversary HELD; user-sim ACCEPTED; no gate skips a named attacker's check): F1.1 the windows-fs crate's place in the spec, F1.2 two refusal tests; answer r1 dispatched 12:41 UTC into the Codex task.
+  and S105 merge: a build brief "continue from branch slice/s110; rebase onto main" into the same Codex task. Resumed ~07:28 UTC 2026-11-24 in the same task (edits in dist/ and host/src/agent/ kept to cfg gates and refusals, since S107 and S103 run there). Windows failures per run: 358, 85, 30, 16, 15, 2, 0; DELIVERED ~11:45 UTC at 68d1dd4 (Windows green on attempts 1-3 of run 45370144960; Linux and macOS suite times within 10% of a parallel main run); r1: Claude review routine `trig_01CRaJJrcV955wX2NNsZP4NR`, fires 11:52 UTC; r1 (12:38): 2/10, changes (2) (validators PASS 1, RETURN 3; adversary HELD; user-sim ACCEPTED; no gate skips a named attacker's check): F1.1 the windows-fs crate's place in the spec, F1.2 two refusal tests; answer r1 dispatched 12:41 UTC into the Codex task; r1 answered at 3bd1122 (F1.1, F1.2, P1.1, P1.3, P1.5, P1.8, P1.9; the rest to Leftovers); r2: small Claude review routine `trig_01NGu5yhZEMyyvF8HwWxeKwD`, fires 12:49 UTC.
 
 ## Suite time
 
@@ -1558,6 +1558,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
   exists", "No such file or directory").
 
 ### log
+
+- [S110 r1] P1.2 an independent `icacls`/`whoami` oracle in `log/tests/it/identity_windows.rs`; P1.4 move net's Windows storage paragraph into net TECHNICAL 4.5 and name log's `publish(…, replace)` in 4.7; P1.6 one `private_dir` helper in windows-fs for `net/src/blobs.rs` and `key.rs`; P1.7 gate dev's builder tests per test, not the whole module; P1.10 a literal shell-quoting oracle in `dev/tests/it/install.rs`; R3 off-profile home ACL hardening.
 
 
 ### host
