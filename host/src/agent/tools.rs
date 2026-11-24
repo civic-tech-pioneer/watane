@@ -422,6 +422,23 @@ impl Host {
         {
             return Err(Denied::Gone);
         }
+        // A ready handle holds a stored consent for each of its toolsets. One that is gone was
+        // withdrawn: the withdrawal writes the catalog first and closes the handle after, so
+        // the handle is as good as closed and the job ends `gone`, as it would a moment later.
+        let held = catalog
+            .mods
+            .iter()
+            .find(|m| m.identity == origin)
+            .is_some_and(|m| {
+                toolsets.iter().all(|t| {
+                    m.consents
+                        .iter()
+                        .any(|c| matches!(c, Consent::Toolset { toolset, .. } if toolset == t))
+                })
+            });
+        if !held {
+            return Err(Denied::Gone);
+        }
         let tools = self.handle_tools_in(catalog, &toolsets, &origin);
         match tools.get(&run.tool) {
             Some(t) if t.local == *local && t.function == function && t.install == run.install => {
@@ -700,8 +717,13 @@ impl Host {
                 .finish(&id, json!({"failed": "too many streams open"}));
             return;
         }
+        // A withdrawal, a close or a mod's end may have taken the handle since the check above:
+        // then the job is a dependent that nothing else will end, so it ends `gone` here (19.7).
         if let Some(e) = self.handles.lock().get_mut(&handle) {
             e.jobs.insert(key.clone(), id.clone());
+        } else {
+            self.hub.end_gone(&[id]);
+            return;
         }
         let job = Job {
             weak: Weak::<Host>::clone(&self.weak),
@@ -871,6 +893,13 @@ impl Job {
                 );
                 match result {
                     Ok(value) => json!({"ok": value}),
+                    // The handle, its opener or its origin client went before the tool could run:
+                    // the job's stream ends `gone`, as a live job's does (19.5, 19.7), no item.
+                    Err(AgentFailure::Denied(Denied::Gone)) => {
+                        self.handles.job_done(&self.handle, &self.key, &self.id);
+                        self.hub.end_gone(std::slice::from_ref(&self.id));
+                        return;
+                    }
                     Err(AgentFailure::Denied(d)) => {
                         json!({"err": {"code": d.code(), "message": "the tool may not run now"}})
                     }

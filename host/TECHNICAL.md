@@ -3509,11 +3509,13 @@ The toolsets are those of 10.1; `open` with no toolset, or one that
   from `/mcp/agent` `tools/call`, with the handle's origin client as origin client, so
   every request it makes asks and uses that client's consents, never the tool mod's.
   Just before the tool's call starts, under one read of the catalog, the host decides
-  again whether it may run: the handle is live, the tool is in the handle's toolsets
+  again whether it may run: the handle is live and its origin client still holds the
+  consent of each of its toolsets (a withdrawal writes the catalog before it closes the
+  handle, so a missing one counts as a closed handle), the tool is in the handle's toolsets
   and in the stored consent list as it stands then, the origin client is the same
   install (identity and generation), and the tool's mod is the install it resolved to.
   Otherwise the tool does not run: a job's item is `{"err":{"code":"unknown-tool",..}}`
-  (`gone` when the handle or the origin client is gone) and `tools/call` answers
+  (when the handle, its opener or the origin client is gone, no item: the job's stream ends `gone`, as a live job's does at a withdrawal, 19.7) and `tools/call` answers
   `-32602`.
 - **Job.** `call(handle, key, tool, args)` returns a stream at once (its consumer is the
   opening mod, its origin client the handle's); the tool runs later as its own top-level
