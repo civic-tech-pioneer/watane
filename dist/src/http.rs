@@ -1351,8 +1351,8 @@ mod tests {
             let mut records = eve.follows.lock().unwrap();
             let mut next = records.clone();
             next.get_mut(&w.key).unwrap()._last_attempt = 0;
-            eve.save_follows(&mut records, next).unwrap();
-        }
+            eve.save_follows(&mut records, next).unwrap()
+        };
         let before = w.a.count();
 
         // The head read succeeds, but publishing its updated attempt time
