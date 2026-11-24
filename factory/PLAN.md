@@ -1620,7 +1620,6 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 - [S112 R1.1] move the identity and store operations to `openat`/`renameat`/`unlinkat` on the checked folder handle (Unix and Windows); a spec call on refusing parents writable by others.
 
-- [S110 r1] P1.2 an independent `icacls`/`whoami` oracle in `log/tests/it/identity_windows.rs`; P1.4 move net's Windows storage paragraph into net TECHNICAL 4.5 and name log's `publish(…, replace)` in 4.7; P1.6 one `private_dir` helper in windows-fs for `net/src/blobs.rs` and `key.rs`; P1.7 gate dev's builder tests per test, not the whole module; P1.10 a literal shell-quoting oracle in `dev/tests/it/install.rs`; R3 off-profile home ACL hardening.
 
 
 ### host
@@ -1672,9 +1671,7 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 - [S116 r1] P1.1 a mixed-plan consent test (no follow line for an Unchanged release's publisher); P1.2 the needless `#[allow(dead_code)]` on `app_home`; P1.4 the dist redirect test records calls instead of asserting inside the check; P1.5 OS failures in `check_owner_only` map to `Io`; P1.6 the `icacls` oracle on `parent` and `dir`; P1.7 a `#[cfg(test)]` STORE_WAIT of ~200 ms (net unit tests went from 1.1 s to 6.3 s); host TECHNICAL 1833 and 2411 still say a manager install 'always asks'.
 
-- [S113 r3] P3.1 detect a declined install by a typed refusal, not the host's text (`app/src/core.rs:868`); P3.2 the wrong-slug test at Alice's real base from a separate reader; P3.3 tests that the consent's follow line is absent for a followed publisher, the own channel and LocalApi or background installs.
 
-- [S113 R2.1] follow only fetched items whose plan entry is not `Change::Unchanged`, so a no-op managed install re-follows nothing (red test `manage::adv_s113_unchanged_managed_install_refollows_without_install_consent`, held by the S113 r2 review team).
 
 - From S90: "Keep data, then reinstall marks storage `new`" needs a host task (`Host::has_state`,
   or excluding Storage from `new_grants` when the identity has state); the busy-port window keeps
@@ -1684,35 +1681,15 @@ Re-checked and swept by S86 (2026-11-18); these remain.
   channel memo never evicts (bounded by stored channels); on Linux a reused inode with the same
   mtime and length could keep a stale follow or base field; `Core::enable` can return an error
   after it succeeded when a consumer reload fails.
-- [S12a] a disabled provider shows the fixture page's "not granted" and hides the host's message
-  (app/tests/fixtures/recommendations/ui/app.js:5, asserted by app/tests/it/j2.rs:212).
-- [S12a] there is no grant-change message, so the app reloads the whole window
-  (app/src/core.rs:313).
-- [S18] the Linux runner prints versions without names (app/scripts/linux-test.sh:14).
-- [S18] about 17 AT-SPI warnings bury the output; `NO_AT_BRIDGE` is set nowhere.
-- [S27] the busy-port window shows "Install folders" with no working local API; the failure path
-  only disables it (app/ui/index.html:2, app.js:151).
-- [S27] hidden windows poll only on focus (app/ui/app.js:164).
-- [S44] no busy state during a 30 s hanging follow or add-index (app/ui/app.js:262, 273).
 - [S44] `Core::mods()` re-reads every related channel view on each 2 s refresh, with no memoization
   (app/src/core.rs:276, 167, 1490; the poll is app/ui/app.js:156).
-- [S58] Remove has no confirmation, and a token bound to a removed toolset gives no hint that its
-  toolset is gone (app/ui/app.js:122).
-- [S58] installing from an index follows the channel silently, with nothing said about the follow.
 - [S58] reinstalling after "Keep data" marks the storage `new`.
-- [S58] "Deny" reads "statement refused", which says nothing about what was denied.
 - [S58] channel rows still show raw transport text.
-- [S58] `/api/fetch` with `[]` or `{"link":5}` surfaces "untagged enum FetchQuery"
-  (app/src/api.rs:296; the non-JSON and wrong-shape cases now carry the serde cause, this one
-  carries serde's internal wording).
 
 ### dist
 
-- [S112 r2] P2.1 a test that keeps https allowed as a redirect target (`dist/src/http.rs:42`); P2.2 a two-hop redirect test that pins the asked URL in the error (`:44`); P2.3 a stray blank line in `dist/src/lib.rs:303`; P2.4 the `Hop` and `Check` doc comments (`http.rs:10,13`); P2.5 `BadUrl`'s 'invalid URL' prefix reads oddly for a refused redirect.
 - [S112 r2] (guard, a spec call) machine-local host names (`/etc/hosts`, the machine's own hostname, `ip6-localhost`) reach a local port through a redirect, since only literals are checked (TECHNICAL l.1376, DD-26): a check at connect time on the resolved address would close it.
 
-- [S107 P3.1] `dist/TECHNICAL.md:1046` rewrap the `choose_index_derived` line and cite 'Listed records'; ~973 add 'and derived index choices'.
-- [S107 P3.2] `dist/src/follow.rs:201` `derived_base_is_listed` needs a `///` line and a blank line before it.
 - [S107 P3.3] `app/tests/it/find.rs:286` create the home in-process (`build_on.rs:167` `app_home()`) instead of an app launch.
 - [S107 skipped] the Updates card hint for a refused legacy local base: 'open or paste the publisher's link again'.
 
@@ -1753,7 +1730,6 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### net / node
 
-- [S115 r1] P1.1 a test that forces the store shutdown past STORE_WAIT and checks the reopen error reaches the caller (`net/src/lib.rs:458`); P1.2 net TECHNICAL ~940 names the timeout in the close-before-reopen rule.
 
 - [S111 CI] (guard) possible Windows flake: `net/tests/it/reach.rs:193` `reach::s11_machines_on_different_networks_connect_through_the_servers_relay` failed once on windows-latest with `database error: Database already open. Cannot acquire lock.` (net's redb reopen on Windows) at watane 3e8d788 (slice/s111, no net change); green on the head before. Second time on the same head 3e8d788 (attempt 1): a real flake; give it to the next upkeep slice as a guard (Windows is required, so it blocks merges).
 
