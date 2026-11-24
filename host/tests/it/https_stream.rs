@@ -804,6 +804,19 @@ fn ac3_a_mod_disabled_while_the_stream_is_live_ends_it_gone_and_closes_the_conne
     });
 }
 
+#[test]
+fn the_host_closing_closes_the_connection_of_a_live_stream() {
+    let mut rig = Rig::new(None);
+    let server = rig.serve("api.openai.com", hold);
+    let s = rig.start(&get("https://api.openai.com/v1/x"));
+    rig.wait_items(&s, 2);
+    // 19.4, Ends: the host closing closes the connection at once.
+    rig.host = None;
+    wait("the connection closed", Duration::from_secs(10), || {
+        server.closed.load(Ordering::SeqCst) == 1
+    });
+}
+
 // ---- AC4: the account `openai` ---------------------------------------------------------------
 
 fn answer_one(text: &'static str) -> impl Fn(Conn) -> Pin<Box<dyn Future<Output = ()> + Send>> {
