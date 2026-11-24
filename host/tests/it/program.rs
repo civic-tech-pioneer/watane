@@ -485,6 +485,11 @@ async fn ac6_preview_ready_token_is_live_and_never_persisted() {
             if e.file_type().unwrap().is_dir() {
                 check(&e.path(), token)
             } else {
+                #[cfg(windows)]
+                if e.file_name() == "lock" {
+                    assert_eq!(e.metadata().unwrap().len(), 0);
+                    continue;
+                }
                 assert!(
                     !fs::read(e.path())
                         .unwrap()

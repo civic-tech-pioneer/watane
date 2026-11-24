@@ -39,7 +39,15 @@ pub(crate) fn public_dir(path: &Path) -> Result<(), DistError> {
 pub(crate) fn public_dir(path: &Path) -> Result<(), DistError> {
     // Windows serves the site as its owner. A writable destination must already
     // be private, or be created with a private ACL.
-    crate::private_dir(path)
+    crate::private_dir(path).map_err(|error| match error {
+        DistError::Io { path, source } if source.kind() == std::io::ErrorKind::PermissionDenied => {
+            DistError::ExportConflict {
+                path,
+                cause: "requires an owner-only Windows ACL",
+            }
+        }
+        error => error,
+    })
 }
 #[cfg(unix)]
 pub(crate) fn read_plain(path: &Path) -> Result<Option<Vec<u8>>, DistError> {
@@ -122,12 +130,28 @@ pub(crate) fn replace_equal(
     {
         let _ = mode; // Both private state and the owner-served site use a private DACL.
         let tmp = tmp.into_temp_path();
-        if let Err(error) = watane_log_windows_fs::publish(&tmp, path, true) {
-            // A concurrent writer may already have durably installed these bytes.
-            if read_plain(path)?.as_deref() == Some(bytes) {
-                return Ok((false, Ok(())));
+        for delay in [0, 5, 10, 20, 40, 80] {
+            if delay != 0 {
+                std::thread::sleep(std::time::Duration::from_millis(delay));
             }
-            return Err(io(path, error));
+            match watane_log_windows_fs::publish(&tmp, path, true) {
+                Ok(()) => break,
+                Err(error) if matches!(error.raw_os_error(), Some(5 | 32)) => {
+                    // A checked reader pins the name. An identical concurrent
+                    // write also satisfies this operation after its durable rename.
+                    match read_plain(path) {
+                        Ok(Some(current)) if current == bytes => return Ok((false, Ok(()))),
+                        Err(DistError::Io { source, .. })
+                            if matches!(source.raw_os_error(), Some(5 | 32)) => {}
+                        Err(other) => return Err(other),
+                        Ok(_) => {}
+                    }
+                    if delay == 80 {
+                        return Err(io(path, error));
+                    }
+                }
+                Err(error) => return Err(io(path, error)),
+            }
         }
         #[cfg(test)]
         if test_dir_sync_fails() {

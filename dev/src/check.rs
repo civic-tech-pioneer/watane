@@ -1009,7 +1009,7 @@ mod tests {
         fs::create_dir(&root).unwrap();
         fs::create_dir(temp.path().join("outside")).unwrap();
         let output = std::process::Command::new("cmd.exe")
-            .args(["/d", "/c", "mklink", "/J", "alias", "../outside"])
+            .args(["/d", "/c", "mklink", "/J", "alias", r"..\outside"])
             .current_dir(&root)
             .output()
             .unwrap();

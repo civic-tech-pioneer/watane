@@ -311,7 +311,9 @@ pub(crate) fn compile(
     }
     // Cargo's binary dep-info can still consider a build fresh after the text .d
     // is removed. Refresh only the copied crate root so rustc emits new dep-info.
-    fs::File::open(copy.join("logic/src/lib.rs"))
+    fs::OpenOptions::new()
+        .write(true)
+        .open(copy.join("logic/src/lib.rs"))
         .and_then(|file| file.set_modified(SystemTime::now()))
         .map_err(|e| vec![Problem::internal(e)])?;
     if args[0] == "build" {

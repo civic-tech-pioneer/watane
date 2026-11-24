@@ -210,12 +210,13 @@ fn item_bad_copy(dir: &Path, name: &str) -> PathBuf {
         let rel = entry.strip_prefix(fixture("item-bad")).unwrap();
         std::fs::create_dir_all(to.join(rel).parent().unwrap()).unwrap();
         let bytes = std::fs::read(&entry).unwrap();
-        let bytes = match rel.to_str().unwrap() {
-            "mod.toml" | "wit/world.wit" => String::from_utf8(bytes)
+        let bytes = if rel == Path::new("mod.toml") || rel == Path::new("wit/world.wit") {
+            String::from_utf8(bytes)
                 .unwrap()
                 .replace("item-bad", name)
-                .into_bytes(),
-            _ => bytes,
+                .into_bytes()
+        } else {
+            bytes
         };
         std::fs::write(to.join(rel), bytes).unwrap();
     }
