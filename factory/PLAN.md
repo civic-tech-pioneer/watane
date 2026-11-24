@@ -1362,7 +1362,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   cloud, builder codex, reviewer claude; rule 3: last two S40 claude, S113 codex; main line, sketched 2026-11-24 by
   deputy-3: F-MAKE-4 promises a scripted OpenAI stream in a preview from stage D, and dev TECHNICAL question 15 recommends
   option (a); it unblocks agentic-harness S40's run on `serve`. It builds against `scripted-responses` as on `slice/s111`
-  (PR #28, approved) and merges main once that merges; Codex task https://chatgpt.com/local/6b05ef35-5ee4-83ed-b7bb-2b58230a9070, dispatched 20:12 UTC.) Outcomes (user-sim with a maker's mod under `watane-dev serve`):
+  (PR #28, approved) and merges main once that merges; Codex task https://chatgpt.com/local/6b05ef35-5ee4-83ed-b7bb-2b58230a9070, dispatched 20:12 UTC; DELIVERED ~21:02 UTC as PR #30 (+1095/-47, all four CI jobs green; the builder's adversary: real homes refuse the setting, release hosts exclude it); r1: Claude review, fires 21:23 UTC.) Outcomes (user-sim with a maker's mod under `watane-dev serve`):
   1. `watane-dev serve` of a mod that uses `https-stream` with `account: "openai"` starts `scripted-responses` and the
      preview routes `api.openai.com` to it: the mod's stream gets the scripted reply, with no real account and no network.
   2. The preview setting is not `test-net`, is never in a release build of the host or app, and a real home refuses it.
