@@ -973,12 +973,13 @@ indexes in key order), then reordered by the read below. A follow or a choice
 of index replaces a listed-only record's bases with that link's base
 (DD-46). Only an explicit participant link gives the base (4.4, DD-48).
 Reads of a base are listed when the record is listed-only or that base
-lacks explicit permission. This covers initial derived follows and derived
-index choices, refreshes, and package reads. The listed policy checks the first
-address, every redirect target, and the listed entry budget. `fetch` and `read_link` can still return
-a cached package with no link when its base is refused. A listed record is
-created when the walk first reaches the channel and removed when no read set
-or other retention reason holds it.
+lacks explicit permission. The policy applies to the first reads for
+derived follows and derived index choices, and to refreshes and package
+reads. It checks the first address, every redirect target, and the listed
+entry budget. `fetch` and `read_link` can still return a cached package
+with no link when its base is refused. A listed record is created when the
+walk first reaches the channel and removed when no read set or other
+retention reason holds it.
 
 **Learned bases (S79, DD-41).** When `follow`, `follow_derived`, `choose_index` or `open_link`
 gets a link whose channel has a record and whose base is neither the record's
@@ -1053,9 +1054,9 @@ of pending work (4.4) fails, stop before any pass and report that failure
 against the first followed channel or index in key order, if any.
 
 **`choose_index_derived(link)`** uses the same per-base policy as
-`follow_derived` for its first read (see **Listed records**). It grants no
-base permission. The app uses it for channel-row links. The remaining
-index-choice behavior is shared with `choose_index`.
+`follow_derived` for its first read (see **Listed records**, above).
+It grants no base permission. The app uses it for channel-row links.
+The remaining index-choice behavior is shared with `choose_index`.
 
 **`choose_index(link)`**: a link with a slug is `BadLink`; own key is
 `OwnChannel`. `read_channel` as `follow` does (a failed or compromised

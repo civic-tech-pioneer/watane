@@ -7,10 +7,10 @@ use std::time::{Duration, Instant};
 /// The most redirects one read follows (TECHNICAL 4.5).
 pub(crate) const MAX_REDIRECTS: usize = 5;
 
-/// The local-address rule applied to one redirect target.
+/// Checks the resolved URL of a redirect before the next request.
 pub(crate) type Check<'a> = dyn Fn(&str) -> Result<(), DistError> + 'a;
 
-/// What one hop of a listed read answers: the bytes, or the next URL.
+/// The result of one HTTP hop: a completed read or a redirect's Location.
 pub(crate) enum Hop<T> {
     Done(T),
     Redirect(String),
@@ -336,6 +336,30 @@ mod tests {
         );
     }
     #[test]
+    fn s116_http_redirect_to_https_is_allowed() {
+        let first = "http://publisher.example/head";
+        let target = "https://publisher.example/head";
+        let mut requested = Vec::new();
+        let result = follow_hops(
+            first,
+            &|url| {
+                assert_eq!(url, target);
+                Ok(())
+            },
+            |url| {
+                requested.push(url.to_owned());
+                Ok(if url == first {
+                    Hop::Redirect(target.into())
+                } else {
+                    Hop::Done("head")
+                })
+            },
+        );
+
+        assert_eq!(result.unwrap(), "head");
+        assert_eq!(requested, [first, target]);
+    }
+    #[test]
     fn ac3_five_hops_followed_sixth_is_an_error() {
         let hops = |redirects: usize| {
             let n = RefCell::new(0);
@@ -578,6 +602,28 @@ mod tests {
             "{got:?}"
         );
         assert_eq!(*seen.lock().unwrap(), ["/a"]);
+    }
+    #[test]
+    fn s116_second_redirect_refusal_names_the_asked_url() {
+        let dir = tempfile::tempdir().unwrap();
+        let allowed = Host::serve(dir.path());
+        let refused = Host::serve(dir.path());
+        allowed.redirect("/asked", "/intermediate");
+        allowed.redirect("/intermediate", &format!("{}secret", refused.url));
+        let (_home, dist) = home("Eve", false);
+        exempt(&dist, &[&allowed]);
+        let asked = format!("{}asked", allowed.url);
+
+        let error = dist
+            .get(&asked, 100, Duration::from_secs(5), false, true)
+            .unwrap_err();
+
+        assert_redirect_refused(Some(error), &asked);
+        assert_eq!(
+            *allowed.requests.lock().unwrap(),
+            ["/asked", "/intermediate"]
+        );
+        assert_eq!(refused.count(), 0);
     }
     #[test]
     fn ac3_unlisted_get_follows_a_local_redirect() {
