@@ -1372,7 +1372,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Words in app TECHNICAL first. Touches: `app/` (ui, src, scripts, tests), `app/TECHNICAL.md`. No boundary moves (the
   consent texts are words of existing grants): no adversary unless the build changes what a consent covers. Size: an upkeep
   slice. Protects: *polish*.
-- [~] **S111 A mod streams from OpenAI on Alice's ChatGPT plan (stage D, the watane half: host A4, dev 18).** (in flight, cloud, builder claude, reviewer codex; rule 3: last two S39 codex, S38 codex; handed out 2026-11-24 ~15:20 UTC beside S103 (the human asked for more concurrency): S111's work is mostly new files (`host/src/agent/https_stream.rs`, dev's `ScriptedResponses`); it builds against S103's branch for `consent` and borrowed authority, and merges main once S103 merges; it must not edit S103's files beyond the wiring line; routine `trig_01F4feSQK4npLjE7VcKYS2pd`, fires 15:16 UTC; DELIVERED ~17:30 UTC as PR #28 (S111's own diff over slice/s103: +5755/-48; user-sim ACCEPTED, adversary HELD with open questions R2 account-identifying response headers to the mod, R3 extra request headers); r1: Codex review https://chatgpt.com/local/6b05cb69-1fc4-83eb-8ef6-624f3ebf9050, dispatched 17:40 UTC, weighs R2 and R3; withheld by Codex's cyber filter; r1 runs on Claude (routine, fires 18:43 UTC): a Claude review of a Claude build, because the other side is down for this content.) agentic-harness stage D needs
+- [~] **S111 A mod streams from OpenAI on Alice's ChatGPT plan (stage D, the watane half: host A4, dev 18).** (in flight, cloud, builder claude, reviewer codex; rule 3: last two S39 codex, S38 codex; handed out 2026-11-24 ~15:20 UTC beside S103 (the human asked for more concurrency): S111's work is mostly new files (`host/src/agent/https_stream.rs`, dev's `ScriptedResponses`); it builds against S103's branch for `consent` and borrowed authority, and merges main once S103 merges; it must not edit S103's files beyond the wiring line; routine `trig_01F4feSQK4npLjE7VcKYS2pd`, fires 15:16 UTC; DELIVERED ~17:30 UTC as PR #28 (S111's own diff over slice/s103: +5755/-48; user-sim ACCEPTED, adversary HELD with open questions R2 account-identifying response headers to the mod, R3 extra request headers); r1: Codex review https://chatgpt.com/local/6b05cb69-1fc4-83eb-8ef6-624f3ebf9050, dispatched 17:40 UTC, weighs R2 and R3; withheld by Codex's cyber filter; r1 runs on Claude (routine, fires 18:43 UTC): a Claude review of a Claude build, because the other side is down for this content; r1 (19:15): 0/14, VERDICT approve (validators PASS x2, RETURN x1 regraded polish, adversary HELD, user-sim ACCEPTED, stage D p95 7.4 ms), reviewed at c7a4e885; head 3e8d788 merges main with S111's own files unchanged; merge once the Windows job (a net flake) re-runs green.) agentic-harness stage D needs
   H3 (host 19.4) with the account `openai`, and dev's scripted Responses server, before its OpenAI loop can run.
   Outcomes (user-sim on `watane-dev serve` with a test mod and dev's `ScriptedResponses`, `test-net`):
   1. A mod with an `Http` grant for a host streams an SSE response: `{status, headers}`, then one item per event; a
@@ -1592,6 +1592,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### host
 
+- [S111 r1] P1.1 connect and TLS handshake each get their own `idle-s` (`host/src/agent/https_stream.rs:580-595`); P1.2 to P1.5, P1.11, P1.14: stronger and more host tests, a reset-before-head message; one sentence each in 19.4 for the accepted R2 and R5.
+
 - From S91: an over-declared Content-Length whose body never arrives waits instead of a 413 at once.
 - [S12a] `ac4_program_defaults_to_environment_home_and_port` probes port 47341 and then binds it
   (host/tests/it/program.rs:567); the probe-to-bind window stands.
@@ -1603,6 +1605,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 - [S44] an unknown `/api` route answers 404 `bad_request` (host/src/server.rs:107, 245).
 
 ### dev
+
+- [S111 r1] P1.6 to P1.10, P1.12, P1.13: `scripted-responses` refuses unknown script fields, JSON error bodies, chunked-body and drop tests, key order, and dev TECHNICAL's stale test names and dependency block.
 
 - From S93: search's no-result template next; local_dependency's fix has no command; text-mode
   fixes say --json; a publish --push success rerun gives version_exists; the preview host's error
@@ -1884,6 +1888,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - 2026-11-24 host 18 **Q38: (b)**, the human ("b is fine for q38"). A workspace or account consent is kept per (origin client, `via` = the provider's identity, folder or account); a new provider asks again. S103 built (b); its next answer round writes host 18 Q38 as decided by the human, 2026-11-24, and the 19.7 rows to match. agentic-harness TECHNICAL 8 already cites 19.7.
 
 ## Deputy decisions
+
+- 2026-11-24 (S111 r1) accepted: R2 api.openai.com response headers (openai-organization, openai-project, set-cookie) reach the mod: account identifiers, not credentials, and a mod cannot send Authorization or Cookie (one sentence in 19.4; the fix, if ever: drop them in `head_item`); R3 extra request headers on POST /v1/responses (the host sends only the checked route; the fix, if ever: an allow list); R5 the request body can start OpenAI work that outlives the stream (plan usage, section 6 Not protected); R6 underscore header names (no proxy in the host's client).
 
 - 2026-11-24 (S112 r1) accepted: R1.1 a log folder swapped after its owner check (root over a home under another user's folder plus an active race; openat later, Leftovers); R1.2 embedded IPv4 forms needing a translator or tunnel on the participant's network; R1.3 the participant's own proxy variables (spec 6). P1.6: no compatibility owed before 1.0, a package with a device-name path no longer decodes.
 
