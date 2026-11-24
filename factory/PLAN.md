@@ -1360,7 +1360,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   agentic-harness half (console consent activity and plan line) follows S35/S36. Builder by rule 3.
 - [~] **S116 (upkeep) leftovers in app, dist, log and net.** (in flight, cloud, builder codex, reviewer claude; rule 3:
   last two S115 claude, S114 codex; the upkeep lane, sketched 2026-11-24 by deputy-3 from Leftovers; beside S114, which holds
-  `host/` and `dev/`: the host flakes and host polish wait for it.) Outcomes, each item's check:
+  `host/` and `dev/`: the host flakes and host polish wait for it; Codex task https://chatgpt.com/local/6b061040-9cc4-83ed-a17a-39e655fd4057, dispatched 22:35 UTC.) Outcomes, each item's check:
   1. (guard, S113 R2.1) a no-op managed install (every plan entry `Unchanged`) follows nothing; the held red test
      `manage::adv_s113_unchanged_managed_install_refollows_without_install_consent` passes.
   2. (app, S113 r3) a declined install is detected by a typed refusal, not the host's text; the wrong-slug test at Alice's
