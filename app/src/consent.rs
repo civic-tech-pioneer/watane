@@ -1052,7 +1052,7 @@ mod tests {
         let value = json!({"kind":"install","by_program":false,"mods":[{
             "local":"reading-list","name":"Reading list","slug":"reading-list","version":"0.1.0",
             "becomes_main":false,"release":null,"publisher":null,"replaces":null,"grants":[{"key":"storage","kind":"storage",
-            "text":"Keep its own data on this device","granted":true,"new":true}],"uses":[],"origin":null,"binds":[]}]});
+            "text":"Keep its own data on this device","granted":true,"new":true}],"uses":[],"origin":null,"binds":[],"agents_via":[]}]});
         assert_eq!(serde_json::to_value(install()).unwrap(), value);
         let sign = json!({"kind":"sign","statement":"release","signer":{"name":"Alice","fingerprint":"abc","you":false},
             "details":[{"label":"Package","value":"123"}]});
