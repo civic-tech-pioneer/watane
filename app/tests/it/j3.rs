@@ -419,7 +419,7 @@ fn ac3_j3_real_github() {
     );
     // S54 AC4: only Ivy is chosen; Alice is neither chosen nor followed.
     let ivy_home = root.join("ivy");
-    let ivy = dist(&ivy_home);
+    let ivy = listing_dist(&ivy_home);
     ivy.set_name("Ivy").unwrap();
     ivy.list(&alice_link, "Books from Alice").unwrap();
     let ivy_site = Site::serve(ivy.site_dir());

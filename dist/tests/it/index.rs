@@ -26,7 +26,12 @@ fn s107_list_and_include_use_the_listed_entry_budget_before_confirmation() {
         let mut options = fast_options();
         options.listed_local = true;
         options.max_listed_entries = 0;
-        let dist = Dist::open(home.path(), confirm.clone(), options).unwrap();
+        let dist = Dist::open(
+            home.path(),
+            Arc::<RecordingConfirm>::clone(&confirm),
+            options,
+        )
+        .unwrap();
         let slug = (!include).then_some(&published.info.reference.slug);
         let link = Link::new(publisher.identity().unwrap(), &host.url, slug).unwrap();
         let result = if include {
@@ -59,7 +64,10 @@ fn ac4_own_listing_refuse_and_requests() {
     let ivy = Dist::open(
         i.path(),
         Arc::<RecordingConfirm>::clone(&confirm),
-        fast_options(),
+        Options {
+            listed_local: true,
+            ..fast_options()
+        },
     )
     .unwrap();
     assert!(matches!(ivy.list(&link, "books"), Err(DistError::Refused)));
@@ -115,7 +123,15 @@ fn ac4_own_listing_refuse_and_requests() {
     assert!(ivy.followed().unwrap().is_empty());
     // Include also reads an unstored channel without making a follow record.
     let j = tempfile::tempdir().unwrap();
-    let jay = open(j.path());
+    let jay = Dist::open(
+        j.path(),
+        Arc::new(RecordingConfirm::new([Decision::Approve])),
+        Options {
+            listed_local: true,
+            ..fast_options()
+        },
+    )
+    .unwrap();
     host.requests.lock().unwrap().clear();
     jay.include(&channel, "").unwrap();
     assert!(host.count() > 0);
@@ -138,7 +154,10 @@ fn ac4_own_listing_invalid_before_confirm() {
     let ivy = Dist::open(
         i.path(),
         Arc::<RecordingConfirm>::clone(&confirm),
-        fast_options(),
+        Options {
+            listed_local: true,
+            ..fast_options()
+        },
     )
     .unwrap();
     let slug = "reading-list".parse().unwrap();
@@ -235,7 +254,10 @@ fn ac4_own_listing_invalid_before_confirm() {
     let other = Dist::open(
         k.path(),
         Arc::<RecordingConfirm>::clone(&no),
-        fast_options(),
+        Options {
+            listed_local: true,
+            ..fast_options()
+        },
     )
     .unwrap();
     assert!(matches!(
@@ -260,7 +282,18 @@ fn ac5_read_listing_changes_in_seq_order() {
     )
     .unwrap();
     let channel = Link::new(alice.identity().unwrap(), &ah.url, None).unwrap();
-    let ivy = open(i.path());
+    let ivy = Dist::open(
+        i.path(),
+        Arc::new(RecordingConfirm::new(std::iter::repeat_n(
+            Decision::Approve,
+            5,
+        ))),
+        Options {
+            listed_local: true,
+            ..fast_options()
+        },
+    )
+    .unwrap();
     ivy.set_name("Ivy").unwrap();
     let ih = TestHost::serve(&ivy.site_dir());
     let carol = open(c.path());
@@ -1095,8 +1128,7 @@ fn ac8_index_local_check_after_reopen() {
     assert_eq!(alice.host.count(), 0);
 }
 
-/// An explicit link at a base no listing gave reads under the regular cap; a link at the
-/// base the listing gave is seen and never given, so its first read is listed (4.4, DD-48).
+/// Participant links use the regular cap for both new and already listed bases.
 #[test]
 fn ac6_explicit_links_use_regular_entry_cap() {
     for (choose, at_listed) in [(false, false), (true, false), (false, true), (true, true)] {
@@ -1125,16 +1157,8 @@ fn ac6_explicit_links_use_regular_entry_cap() {
         } else {
             carol.dist.follow(&alice.link()).map(|_| ())
         };
-        if at_listed {
-            assert!(
-                matches!(got, Err(DistError::TooManyEntries { .. })),
-                "the listed cap applies to a link at the listed base"
-            );
-            assert_eq!(carol.dist.channel(&key).unwrap().head, None);
-        } else {
-            got.unwrap();
-            assert_eq!(carol.dist.channel(&key).unwrap().head, Some(2));
-        }
+        got.unwrap();
+        assert_eq!(carol.dist.channel(&key).unwrap().head, Some(2));
     }
 }
 

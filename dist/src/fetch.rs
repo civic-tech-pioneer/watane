@@ -173,11 +173,6 @@ impl Dist {
         let mut package_failure = None;
         let mut answered = 0;
         for base in bases {
-            // A base dist reads is a base the record (or tombstone) saw (4.4, DD-48).
-            if let Err(cause) = self.note_provider_base(key, base) {
-                channel_failure.get_or_insert(cause);
-                continue;
-            }
             match self.read_channel_entries(key, base, true) {
                 Ok(RefreshReport {
                     outcome: Outcome::Compromised { seq },
@@ -434,11 +429,6 @@ impl Dist {
         // The gate before any record is read (4.4).
         self.settle(true)?;
         Self::check_channel(&self.channel(&key)?)?;
-        if Some(key) != self.identity() {
-            // A link a mod hands over is derived, not given: its base is seen before any
-            // request, so `Fetched.link` gives nothing later (4.4, DD-48).
-            self.note_provider_base(key, link.base())?;
-        }
         let record = self
             .follows
             .lock()

@@ -31,7 +31,7 @@ impl Fixture {
         let alice_site = Site::serve(alice.site_dir());
         alice.set_site_url(&alice_site.base).unwrap();
         let published = alice.publish(update_package("0.1.0", false)).unwrap();
-        let ivy = dist(ivy_home.path());
+        let ivy = listing_dist(ivy_home.path());
         ivy.set_name("Ivy").unwrap();
         ivy.list(published.link.as_ref().unwrap(), NOTE).unwrap();
         let ivy_site = Site::serve(ivy.site_dir());

@@ -3,7 +3,7 @@
 
 use crate::{
     Change, ChannelView, Dist, DistError, Follow, Follows, Link, Outcome, Profile, PublicKey,
-    RefreshReport, Tombs, Tombstone, http, site, view,
+    RefreshReport, http, site, view,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -28,8 +28,7 @@ pub(crate) fn now() -> u64 {
         .unwrap_or_default()
         .as_millis() as u64
 }
-const MAX_SEEN: usize = 16;
-const MAX_TOMBS: usize = 1024;
+const MAX_GIVEN: usize = 16;
 /// Remembers `base` in `given`: at most 16, the oldest goes first (4.4). Dropping a given
 /// base only makes its reads stricter.
 pub(crate) fn note_given(list: &mut Vec<String>, base: &str) {
@@ -37,121 +36,13 @@ pub(crate) fn note_given(list: &mut Vec<String>, base: &str) {
         return;
     }
     list.push(base.into());
-    if list.len() > MAX_SEEN {
+    if list.len() > MAX_GIVEN {
         list.remove(0);
     }
 }
-/// Remembers `base` in `seen`: at most 16 and none dropped. A 17th is not added and
-/// `full` is set, so a link gives no new base from then on (4.4, DD-48).
-pub(crate) fn note_seen(list: &mut Vec<String>, full: &mut bool, base: &str) {
-    if base.is_empty() || list.iter().any(|b| b == base) {
-        return;
-    }
-    if list.len() >= MAX_SEEN {
-        *full = true;
-        return;
-    }
-    list.push(base.into());
-}
-/// Whether a link at `base` gives it: the participant gave it once, or the record never
-/// saw it and its `seen` is not full (4.4, DD-48). A seen base never given may be a hit's
-/// link built from the record.
-pub(crate) fn link_gives(seen: &[String], seen_full: bool, given: &[String], base: &str) -> bool {
-    given.iter().any(|b| b == base) || (!seen_full && !seen.iter().any(|b| b == base))
-}
-/// Keeps a removed record's `seen` and `given`: at most 1024, the oldest `at` goes first.
-/// An evicted channel goes into the `gone` filter (4.4, DD-48).
-pub(crate) fn add_tombstone(tombs: &mut Tombs, key: String, tomb: Tombstone) {
-    tombs.map.insert(key, tomb);
-    while tombs.map.len() > MAX_TOMBS {
-        let oldest = tombs
-            .map
-            .iter()
-            .min_by_key(|(_, t)| t.at)
-            .map(|(k, _)| k.clone())
-            .expect("not empty");
-        tombs.map.remove(&oldest);
-        tombs.gone.add(&key_bytes(&oldest));
-    }
-}
-/// The 32 bytes of a channel text. A text that is no key (never stored by dist) hashes
-/// as its own bytes.
-fn key_bytes(text: &str) -> Vec<u8> {
-    text.parse::<PublicKey>()
-        .map_or_else(|_| text.as_bytes().to_vec(), |k| k.as_bytes().to_vec())
-}
-const GONE_BYTES: usize = 4096;
-const GONE_BITS: usize = GONE_BYTES * 8;
-/// A fixed-size filter of the channels whose tombstone was evicted (4.4, DD-48, S105-CHURN
-/// "(a) fail closed"). `None`: nothing was ever evicted. A key sets 3 bits; a false
-/// positive only makes a channel fail closed.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct Gone(Option<Vec<u8>>);
-impl Gone {
-    /// The 3 bits of a key: u16 little-endian of bytes 0..2, 2..4, 4..6 of its BLAKE3.
-    fn bits(key: &[u8]) -> [usize; 3] {
-        let hash = blake3::hash(key);
-        let h = hash.as_bytes();
-        [0, 2, 4].map(|i| u16::from_le_bytes([h[i], h[i + 1]]) as usize % GONE_BITS)
-    }
-    pub(crate) fn add(&mut self, key: &[u8]) {
-        let bytes = self.0.get_or_insert_with(|| vec![0; GONE_BYTES]);
-        for bit in Self::bits(key) {
-            bytes[bit / 8] |= 1 << (bit % 8);
-        }
-    }
-    /// All 3 bits of the key are set.
-    pub(crate) fn may_be_gone(&self, key: &PublicKey) -> bool {
-        self.0.as_ref().is_some_and(|bytes| {
-            Self::bits(key.as_bytes())
-                .iter()
-                .all(|bit| bytes[bit / 8] & (1 << (bit % 8)) != 0)
-        })
-    }
-    pub(crate) fn to_text(&self) -> Option<String> {
-        self.0.as_ref().map(|bytes| {
-            bytes
-                .iter()
-                .flat_map(|b| [b >> 4, b & 15])
-                .map(|n| char::from_digit(u32::from(n), 16).expect("a nibble"))
-                .collect()
-        })
-    }
-    /// A malformed text, or one of the wrong length, reads as all bits set: fail closed.
-    pub(crate) fn from_text(text: Option<&str>) -> Self {
-        let Some(text) = text else {
-            return Self(None);
-        };
-        let digits: Option<Vec<u8>> = text
-            .chars()
-            .map(|c| {
-                c.is_ascii_digit()
-                    .then_some(c)
-                    .or(('a'..='f').contains(&c).then_some(c))
-                    .and_then(|c| c.to_digit(16))
-                    .map(|n| n as u8)
-            })
-            .collect();
-        match digits {
-            Some(d) if d.len() == GONE_BYTES * 2 => {
-                Self(Some(d.chunks(2).map(|p| p[0] << 4 | p[1]).collect()))
-            }
-            _ => Self(Some(vec![0xff; GONE_BYTES])),
-        }
-    }
-}
-/// Adds a base a link names to a record: given when the link gives it, appended after the
-/// known ones, at most 4 (the oldest learned base after the front one goes). True when the
-/// record changed its set of bases, so the caller reads them all (5.9).
-pub(crate) fn learn_base(record: &mut Follow, base: &str) -> bool {
-    if link_gives(&record.seen, record.seen_full, &record.given, base) {
-        note_given(&mut record.given, base);
-    }
-    let learned = add_base(record, base);
-    note_seen(&mut record.seen, &mut record.seen_full, base);
-    learned
-}
-fn add_base(record: &mut Follow, base: &str) -> bool {
+/// Holds at most four bases, preserving the first. True when the caller should
+/// re-read the bases to put the highest head first.
+pub(crate) fn add_base(record: &mut Follow, base: &str) -> bool {
     if record.base.is_empty() {
         record.base = base.into();
         return false;
@@ -173,87 +64,15 @@ fn add_base(record: &mut Follow, base: &str) -> bool {
 pub(crate) fn listed_read(record: &Follow, base: &str) -> bool {
     (!record.followed && !record.index) || !record.given.iter().any(|b| b == base)
 }
-/// A listed-only record that turns followed or chosen holds only the base the participant
-/// gave (5.9): the listing's bases are dropped.
-pub(crate) fn adopt_given_base(record: &mut Follow, base: &str) {
+/// A listed-only record becoming followed or chosen drops its listing's bases.
+pub(crate) fn adopt_base(record: &mut Follow, base: &str) {
     if !record.followed && !record.index {
-        if link_gives(&record.seen, record.seen_full, &record.given, base) {
-            note_given(&mut record.given, base);
-        }
-        note_seen(&mut record.seen, &mut record.seen_full, base);
         record.base = base.into();
         record.bases.clear();
     }
 }
-/// A link's base the record does not hold: the only kind a link can newly give (5.9).
-fn follow_unseen(record: &Follow, base: &str) -> bool {
-    record.base != base && !record.bases.iter().any(|b| b == base)
-}
-#[cfg(test)]
 impl Dist {
-    /// Tests only: adds a tombstone as `prune` does.
-    pub(crate) fn test_add_tombstone(&self, key: &str, tomb: Tombstone) {
-        let mut tombs = self.tombs.lock().expect("test tombs");
-        add_tombstone(&mut tombs, key.into(), tomb);
-    }
-    /// Tests only: the channel texts that hold a tombstone.
-    pub(crate) fn test_tomb_keys(&self) -> Vec<String> {
-        self.tombs
-            .lock()
-            .expect("test tombs")
-            .map
-            .keys()
-            .cloned()
-            .collect()
-    }
-}
-impl Dist {
-    /// A link's base the record (or a tombstone) saw but the participant has not given: its
-    /// first read is a listed one, also when it turns a listed-only record followed or
-    /// chosen, for the link may be built from the record (4.4, 5.9, DD-48).
-    pub(crate) fn held_ungiven(&self, key: PublicKey, base: &str) -> Result<bool, DistError> {
-        self.settle(true)?;
-        // One snapshot: the `follows` lock is held through the tombstone lookup, so a
-        // `keep` or a follow cannot move a tombstone into a record between the two. The
-        // order is `follows`, then `tombs`, as `save_follows` takes them.
-        let records = self
-            .follows
-            .lock()
-            .expect("lock poisoned: another thread panicked while holding it");
-        if let Some(r) = records.get(&key) {
-            return Ok(!link_gives(&r.seen, r.seen_full, &r.given, base));
-        }
-        #[cfg(test)]
-        if let Some(hook) = self.test_held_gap.lock().expect("test hook").as_ref() {
-            hook();
-        }
-        let tombs = self
-            .tombs
-            .lock()
-            .expect("lock poisoned: another thread panicked while holding it");
-        Ok(match tombs.map.get(&key.to_string()) {
-            Some(t) => !link_gives(&t.seen, t.seen_full, &t.given, base),
-            // No record, no tombstone: a channel whose tombstone was evicted fails closed.
-            None => tombs.gone.may_be_gone(&key),
-        })
-    }
-    /// A record with no base yet, starting from its channel's tombstone (4.4, DD-48).
-    pub(crate) fn new_record(
-        &self,
-        key: PublicKey,
-        followed: bool,
-        index: bool,
-        kept: bool,
-    ) -> Follow {
-        let (tomb, gone) = {
-            let tombs = self
-                .tombs
-                .lock()
-                .expect("lock poisoned: another thread panicked while holding it");
-            let tomb = tombs.map.get(&key.to_string()).cloned();
-            let gone = tomb.is_none() && tombs.gone.may_be_gone(&key);
-            (tomb, gone)
-        };
+    pub(crate) fn new_record(followed: bool, index: bool, kept: bool) -> Follow {
         let time = now();
         Follow {
             base: String::new(),
@@ -261,75 +80,21 @@ impl Dist {
             index,
             kept,
             bases: Vec::new(),
-            given: tomb.as_ref().map(|t| t.given.clone()).unwrap_or_default(),
-            seen_full: gone || tomb.as_ref().is_some_and(|t| t.seen_full),
-            seen: tomb.map(|t| t.seen).unwrap_or_default(),
+            given: Vec::new(),
             _followed_at: time,
             _last_attempt: if kept { 0 } else { time },
             last_success: None,
         }
     }
-    /// Notes a 5.11 provider `base` of `key` as seen before dist reads it: in the channel's
-    /// record, or else in its tombstone (created when it has none), saved before the read.
-    /// A later link at that base is then a listed first read and gives nothing (4.4, DD-48).
-    pub(crate) fn note_provider_base(&self, key: PublicKey, base: &str) -> Result<(), DistError> {
-        self.settle(true)?;
-        let mut records = self
-            .follows
-            .lock()
-            .expect("lock poisoned: another thread panicked while holding it");
-        if let Some(record) = records.get(&key) {
-            let mut next = record.clone();
-            note_seen(&mut next.seen, &mut next.seen_full, base);
-            if next.seen == record.seen && next.seen_full == record.seen_full {
-                return Ok(());
-            }
-            let mut all = records.clone();
-            all.insert(key, next);
-            return self.save_staged(&mut records, all, None);
-        }
-        let mut tombs = self
-            .tombs
-            .lock()
-            .expect("lock poisoned: another thread panicked while holding it")
-            .clone();
-        let name = key.to_string();
-        let mut tomb = tombs.map.get(&name).cloned().unwrap_or_else(|| Tombstone {
-            seen: Vec::new(),
-            given: Vec::new(),
-            // A channel whose tombstone was evicted fails closed (4.4, DD-48).
-            seen_full: tombs.gone.may_be_gone(&key),
-            at: now(),
-        });
-        let before = (tomb.seen.len(), tomb.seen_full);
-        note_seen(&mut tomb.seen, &mut tomb.seen_full, base);
-        if tombs.map.contains_key(&name) && before == (tomb.seen.len(), tomb.seen_full) {
-            return Ok(());
-        }
-        add_tombstone(&mut tombs, name, tomb);
-        let same = records.clone();
-        self.save_staged(&mut records, same, Some(tombs))
-    }
-    /// Saves `next` and makes it the records in `live`; a channel with a record has no
-    /// tombstone (4.4).
+    /// The one write path of `follows.json`. Memory changes when the file is
+    /// replaced. A save that fails before the rename leaves records as they
+    /// were. A directory sync failure after the rename leaves the store unsynced
+    /// and is returned to the caller. An unsynced
+    /// store first retries that sync and writes nothing while it fails (4.4).
     pub(crate) fn save_follows(
         &self,
         live: &mut BTreeMap<PublicKey, Follow>,
-        next: BTreeMap<PublicKey, Follow>,
-    ) -> Result<(), DistError> {
-        self.save_staged(live, next, None)
-    }
-    /// The one write path of `follows.json`. `next` are the records and `staged` the
-    /// tombstone map a caller built on a copy. Memory changes exactly when the file is
-    /// replaced: a save that fails before the rename leaves records and tombstones as they
-    /// were; once the rename installed the file, both become what it holds, and a failed
-    /// directory sync after it is still returned and leaves the store unsynced. An unsynced
-    /// store first retries that sync and writes nothing while it fails (4.4).
-    pub(crate) fn save_staged(
-        &self,
-        live: &mut BTreeMap<PublicKey, Follow>,
         records: BTreeMap<PublicKey, Follow>,
-        staged: Option<Tombs>,
     ) -> Result<(), DistError> {
         #[cfg(test)]
         {
@@ -346,29 +111,18 @@ impl Dist {
             }
         }
         self.sync_pending()?;
-        let mut tombs = self
-            .tombs
-            .lock()
-            .expect("lock poisoned: another thread panicked while holding it");
-        let mut next = staged.unwrap_or_else(|| tombs.clone());
-        for key in records.keys() {
-            next.map.remove(&key.to_string());
-        }
         let file = Follows {
             version: 1,
             channels: records
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.clone()))
                 .collect(),
-            seen: next.map.clone(),
-            gone: next.gone.to_text(),
         };
         let (_, synced) = site::replace_equal(
             &self.home.join("dist/follows.json"),
             &serde_json::to_vec(&file).expect("follows JSON"),
             0o600,
         )?;
-        *tombs = next;
         *live = records;
         if synced.is_err() {
             self.unsynced_state().dirty = true;
@@ -444,7 +198,17 @@ impl Dist {
         state.drop_done.append(&mut done.dropped);
         Ok(())
     }
+    /// Follows a link explicitly supplied by the participant.
     pub fn follow(&self, link: &Link) -> Result<RefreshReport, DistError> {
+        self.follow_link(link, true)
+    }
+
+    /// Follows a result from discovery or a fetched release without giving its base.
+    pub fn follow_derived(&self, link: &Link) -> Result<RefreshReport, DistError> {
+        self.follow_link(link, false)
+    }
+
+    fn follow_link(&self, link: &Link, given: bool) -> Result<RefreshReport, DistError> {
         if Some(link.channel()) == self.identity() {
             return Err(DistError::OwnChannel);
         }
@@ -452,7 +216,14 @@ impl Dist {
             .read_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        let listed = self.held_ungiven(link.channel(), link.base())?;
+        self.settle(true)?;
+        let listed = !given
+            && self
+                .follows
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .get(&link.channel())
+                .is_none_or(|record| listed_read(record, link.base()));
         let report = self.read_channel_mode(link.channel(), link.base(), listed)?;
         match report.outcome {
             Outcome::Failed { cause } => return Err(cause),
@@ -472,10 +243,13 @@ impl Dist {
         let time = now();
         let record = next
             .entry(link.channel())
-            .or_insert_with(|| self.new_record(link.channel(), true, false, false));
-        adopt_given_base(record, link.base());
+            .or_insert_with(|| Self::new_record(true, false, false));
+        adopt_base(record, link.base());
         record.followed = true;
-        let learned = learn_base(record, link.base());
+        if given {
+            note_given(&mut record.given, link.base());
+        }
+        let learned = add_base(record, link.base());
         record._last_attempt = time;
         if matches!(report.outcome, Outcome::Current { .. }) {
             record.last_success = Some(time);
@@ -484,9 +258,8 @@ impl Dist {
         drop(records);
         self.after_learning(link.channel(), report, learned)
     }
-    /// `open_link` of a link to a known channel: a base the record does not have is read
-    /// first, and learned only when it serves the channel. True when the channel was
-    /// read again from all its bases.
+    /// Gives or learns an explicitly opened base after it serves the channel.
+    /// True when the channel was read again from all its bases.
     pub(crate) fn learn_link_base(&self, link: &Link) -> Result<bool, DistError> {
         let _guard = self
             .read_mutex
@@ -494,17 +267,20 @@ impl Dist {
             .expect("lock poisoned: another thread panicked while holding it");
         self.settle(true)?;
         let key = link.channel();
-        let unknown = self
+        let needs_read = self
             .follows
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
             .get(&key)
-            .is_some_and(|r| !r.base.is_empty() && follow_unseen(r, link.base()));
-        if !unknown {
+            .is_some_and(|r| {
+                !r.base.is_empty()
+                    && (listed_read(r, link.base())
+                        || (r.base != link.base() && !r.bases.iter().any(|b| b == link.base())))
+            });
+        if !needs_read {
             return Ok(false);
         }
-        let listed = self.held_ungiven(key, link.base())?;
-        let Ok(report) = self.read_channel_mode(key, link.base(), listed) else {
+        let Ok(report) = self.read_channel(key, link.base()) else {
             return Ok(false);
         };
         if !matches!(
@@ -519,7 +295,12 @@ impl Dist {
             .expect("lock poisoned: another thread panicked while holding it");
         let mut next = records.clone();
         if let Some(record) = next.get_mut(&key) {
-            learn_base(record, link.base());
+            if !record.followed && !record.index {
+                adopt_base(record, link.base());
+                record.followed = true;
+            }
+            note_given(&mut record.given, link.base());
+            add_base(record, link.base());
         }
         self.save_follows(&mut records, next)?;
         drop(records);
@@ -826,69 +607,6 @@ mod tests {
         assert_eq!(list[0], "http://h4/");
         assert_eq!(list[15], "http://h19/");
     }
-    /// AC2 (DD-48 r5): a full `seen` drops nothing; the 17th base is not noted, `seen_full` is set.
-    #[test]
-    fn ac2_a_full_seen_keeps_its_sixteen_and_sets_seen_full() {
-        let mut list = Vec::new();
-        let mut full = false;
-        for n in 0..16 {
-            note_seen(&mut list, &mut full, &format!("http://h{n}/"));
-        }
-        assert!(!full, "sixteen fit");
-        note_seen(&mut list, &mut full, "http://h0/");
-        assert!(!full, "a known base is not a 17th");
-        note_seen(&mut list, &mut full, "http://h16/");
-        assert!(full);
-        assert_eq!(list.len(), 16);
-        assert_eq!(list[0], "http://h0/");
-        assert_eq!(list[15], "http://h15/");
-        assert!(!list.contains(&"http://h16/".to_owned()));
-    }
-    #[test]
-    fn ac2_a_link_at_an_unseen_base_of_a_seen_full_record_gives_nothing() {
-        let mut r = record_at("http://a/");
-        for n in 0..16 {
-            note_seen(&mut r.seen, &mut r.seen_full, &format!("http://h{n}/"));
-        }
-        r.seen_full = true;
-        assert!(!link_gives(&r.seen, r.seen_full, &r.given, "http://new/"));
-        learn_base(&mut r, "http://new/");
-        assert!(r.given.is_empty(), "the link gave nothing");
-        assert!(
-            r.bases.contains(&"http://new/".to_owned()),
-            "it is still held"
-        );
-        // Held, not given: its first read is listed.
-        assert!(listed_read(&r, "http://new/"));
-    }
-    #[test]
-    fn ac2_a_link_at_a_given_base_of_a_seen_full_record_still_gives_it() {
-        let mut r = record_at("http://a/");
-        r.given.push("http://g/".into());
-        r.seen_full = true;
-        assert!(link_gives(&r.seen, r.seen_full, &r.given, "http://g/"));
-        learn_base(&mut r, "http://g/");
-        assert_eq!(r.given, ["http://g/"]);
-        // A not-full record still gives an unseen base.
-        r.seen_full = false;
-        assert!(link_gives(&r.seen, r.seen_full, &r.given, "http://u/"));
-    }
-    /// AC3: `seen_full` defaults to false, is not written when false, on records and tombstones.
-    #[test]
-    fn ac3_seen_full_defaults_false_and_is_skipped_when_false() {
-        let text = r#"{"version":1,"channels":{"k":{"base":"","kept":true,"followed_at":1,"last_attempt":0}},"seen":{"k":{"seen":[],"given":[],"at":1}}}"#;
-        let file: Follows = serde_json::from_str(text).unwrap();
-        assert!(!file.channels["k"].seen_full && !file.seen["k"].seen_full);
-        let out = serde_json::to_value(&file).unwrap();
-        assert!(out["channels"]["k"].get("seen_full").is_none());
-        assert!(out["seen"]["k"].get("seen_full").is_none());
-        let mut file = file;
-        file.channels.get_mut("k").unwrap().seen_full = true;
-        file.seen.get_mut("k").unwrap().seen_full = true;
-        let out = serde_json::to_value(&file).unwrap();
-        assert_eq!(out["channels"]["k"]["seen_full"], true);
-        assert_eq!(out["seen"]["k"]["seen_full"], true);
-    }
     fn record_at(base: &str) -> Follow {
         Follow {
             base: base.into(),
@@ -897,42 +615,10 @@ mod tests {
             kept: false,
             bases: Vec::new(),
             given: Vec::new(),
-            seen: Vec::new(),
-            seen_full: false,
             _followed_at: 0,
             _last_attempt: 0,
             last_success: None,
         }
-    }
-    #[test]
-    fn ac5_a_thousand_and_twenty_four_tombstones_oldest_at_out() {
-        let mut tombs = Tombs::default();
-        for n in 0..1025u64 {
-            let tomb = Tombstone {
-                seen: Vec::new(),
-                given: Vec::new(),
-                seen_full: false,
-                at: 1000 - n % 1000 + n / 1000 * 5000,
-            };
-            add_tombstone(&mut tombs, format!("k{n}"), tomb);
-        }
-        assert_eq!(tombs.map.len(), 1024);
-        let oldest = (0..1025u64)
-            .min_by_key(|n| 1000 - n % 1000 + n / 1000 * 5000)
-            .unwrap();
-        assert!(!tombs.map.contains_key(&format!("k{oldest}")));
-    }
-    /// AC6: empty `seen` and `given` (record and top level) are not written, and a file
-    /// without them reads.
-    #[test]
-    fn ac6_empty_seen_and_given_are_not_written() {
-        let text = r#"{"version":1,"channels":{"k":{"base":"","kept":true,"followed_at":1,"last_attempt":0}}}"#;
-        let file: Follows = serde_json::from_str(text).unwrap();
-        assert!(file.seen.is_empty() && file.channels["k"].seen.is_empty());
-        let out = serde_json::to_value(&file).unwrap();
-        assert!(out.get("seen").is_none());
-        let r = &out["channels"]["k"];
-        assert!(r.get("seen").is_none() && r.get("given").is_none());
     }
     #[test]
     fn ac3_a_given_base_evicted_by_the_cap_is_given_again() {
@@ -944,130 +630,14 @@ mod tests {
             "http://d/",
             "http://e/",
         ] {
-            learn_base(&mut r, b);
+            note_given(&mut r.given, b);
+            add_base(&mut r, b);
         }
         assert!(!r.bases.contains(&"http://b/".to_owned()), "b was evicted");
         assert_eq!(r.given.len(), 5);
-        learn_base(&mut r, "http://b/");
+        note_given(&mut r.given, "http://b/");
+        add_base(&mut r, "http://b/");
         assert!(r.bases.contains(&"http://b/".to_owned()));
         assert!(r.given.contains(&"http://b/".to_owned()));
-        // A seen base never given gives nothing, held or evicted.
-        r.seen.push("http://x/".into());
-        learn_base(&mut r, "http://x/");
-        assert!(!r.given.contains(&"http://x/".to_owned()));
-    }
-    /// The `n`-th valid key of a deterministic stream of hashes.
-    fn key_of(n: u8) -> PublicKey {
-        (0u32..)
-            .map(|i| *blake3::hash(&[&[n][..], &i.to_le_bytes()].concat()).as_bytes())
-            .find_map(|bytes| PublicKey::from_bytes(&bytes).ok())
-            .unwrap()
-    }
-    /// S105-CHURN (a): a key sets 3 bits, read from its BLAKE3 as three little-endian u16.
-    #[test]
-    fn churn_a_key_sets_three_bits_of_its_blake3() {
-        let key = key_of(1);
-        let hash = blake3::hash(key.as_bytes());
-        let h = hash.as_bytes();
-        let mut gone = Gone::default();
-        assert!(!gone.may_be_gone(&key));
-        gone.add(key.as_bytes());
-        let bytes = gone.0.as_ref().unwrap();
-        assert_eq!(bytes.len(), 4096);
-        let set: usize = bytes.iter().map(|b| b.count_ones() as usize).sum();
-        let mut want: Vec<usize> = [0, 2, 4]
-            .iter()
-            .map(|i| u16::from_le_bytes([h[*i], h[i + 1]]) as usize % 32768)
-            .collect();
-        want.sort_unstable();
-        want.dedup();
-        assert_eq!(set, want.len());
-        for bit in want {
-            assert!(bytes[bit / 8] & (1 << (bit % 8)) != 0);
-        }
-        assert!(gone.may_be_gone(&key));
-    }
-    #[test]
-    fn churn_membership_needs_all_three_bits() {
-        let mut gone = Gone::default();
-        for n in 0..50 {
-            gone.add(key_of(n).as_bytes());
-        }
-        assert!((0..50).all(|n| gone.may_be_gone(&key_of(n))));
-        let hits = (100..200).filter(|n| gone.may_be_gone(&key_of(*n))).count();
-        assert!(hits < 3, "{hits} false positives of 100");
-    }
-    #[test]
-    fn churn_hex_round_trip_and_default_absent() {
-        assert_eq!(Gone::default().to_text(), None);
-        assert_eq!(Gone::from_text(None), Gone::default());
-        let mut gone = Gone::default();
-        gone.add(key_of(2).as_bytes());
-        let text = gone.to_text().unwrap();
-        assert_eq!(text.len(), 8192);
-        assert!(text.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')));
-        assert_eq!(Gone::from_text(Some(&text)), gone);
-    }
-    #[test]
-    fn churn_a_malformed_filter_reads_as_full() {
-        let good = {
-            let mut g = Gone::default();
-            g.add(key_of(3).as_bytes());
-            g.to_text().unwrap()
-        };
-        let upper = format!("A{}", &good[1..]);
-        for bad in ["", "zz", "ab", &good[1..], &upper, &format!("{good}00")] {
-            let gone = Gone::from_text(Some(bad));
-            assert!(
-                (0..20).all(|n| gone.may_be_gone(&key_of(n))),
-                "{bad:.8} reads as full"
-            );
-        }
-    }
-    /// F3.1 (Codex r3): a present `gone` that is no string (null, a number, an object)
-    /// loads as all bits set, as a malformed text does; only an absent one is empty.
-    #[test]
-    fn churn_a_present_gone_that_is_no_string_reads_as_full() {
-        let load = |gone: &str| {
-            let text = format!(r#"{{"version":1,"channels":{{}}{gone}}}"#);
-            let file: Follows = serde_json::from_str(&text).expect(&text);
-            Gone::from_text(file.gone.as_deref())
-        };
-        assert_eq!(load(""), Gone::default(), "absent is empty");
-        for bad in ["null", "5", "true", "{}", "[]", r#"["00"]"#] {
-            let gone = load(&format!(r#","gone":{bad}"#));
-            assert!(
-                (0..20).all(|n| gone.may_be_gone(&key_of(n))),
-                "gone: {bad} reads as full"
-            );
-        }
-    }
-    #[test]
-    fn churn_an_eviction_adds_the_key_and_the_file_keeps_it() {
-        let mut tombs = Tombs::default();
-        let victim = key_of(9);
-        let tomb = |at| Tombstone {
-            seen: Vec::new(),
-            given: Vec::new(),
-            seen_full: false,
-            at,
-        };
-        add_tombstone(&mut tombs, victim.to_string(), tomb(1));
-        assert!(tombs.gone.to_text().is_none(), "nothing evicted yet");
-        for n in 0..1024u64 {
-            add_tombstone(&mut tombs, format!("k{n}"), tomb(10 + n));
-        }
-        assert!(!tombs.map.contains_key(&victim.to_string()));
-        assert!(tombs.gone.may_be_gone(&victim));
-        let file = Follows {
-            version: 1,
-            channels: BTreeMap::new(),
-            seen: BTreeMap::new(),
-            gone: tombs.gone.to_text(),
-        };
-        let back: Follows = serde_json::from_slice(&serde_json::to_vec(&file).unwrap()).unwrap();
-        assert!(Gone::from_text(back.gone.as_deref()).may_be_gone(&victim));
-        let none = Follows { gone: None, ..file };
-        assert!(serde_json::to_value(&none).unwrap().get("gone").is_none());
     }
 }

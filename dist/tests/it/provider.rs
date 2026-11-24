@@ -219,19 +219,7 @@ fn ac4_provider_trust_order() {
         0
     );
     let after = records(&eve)["channels"][carol.dist.identity().unwrap().to_string()].clone();
-    // The provider base that served is now seen (4.4, DD-48 r7); nothing else changed.
-    let (mut before, mut after) = (before, after);
-    let seen_after = after.as_object_mut().unwrap().remove("seen").unwrap();
-    let seen_before = before.as_object_mut().unwrap().remove("seen").unwrap();
-    assert_eq!(before, after);
-    assert!(
-        seen_after
-            .as_array()
-            .unwrap()
-            .starts_with(seen_before.as_array().unwrap())
-    );
-    let served = carol.host.as_ref().unwrap().url.clone();
-    assert!(seen_after.as_array().unwrap().contains(&served.into()));
+    assert_eq!(after, before);
     let nested = eve
         .dist
         .fetch_for(
@@ -293,12 +281,7 @@ fn ac6_read_link_no_follow() {
     let got = eve.dist.read_link(&link).unwrap();
     assert_eq!(got.package.id(), id);
     assert_eq!(got.link, Some(link.clone()));
-    // No record; only a tombstone that saw the base and gave none (S105 r8, DD-48).
-    let file = records(&eve);
-    assert!(file["channels"].as_object().unwrap().is_empty(), "{file}");
-    let tomb = &file["seen"][link.channel().to_string()];
-    assert_eq!(tomb["seen"], serde_json::json!([link.base()]), "{file}");
-    assert_eq!(tomb["given"], serde_json::json!([]), "{file}");
+    assert!(!eve.dir.path().join("dist/follows.json").exists());
     assert!(matches!(
         eve.dist.read_link(&carol.link(None)),
         Err(DistError::BadLink { .. })
@@ -913,7 +896,6 @@ fn ac5_listed_record_dead_base_falls_to_provider_bases() {
     let reference = reference(&carol, "ratings");
     let live = carol.host.as_ref().unwrap();
     let before = live.count();
-    let live_base = live.url.clone();
     let mirror_before = mirror.count();
     let got = eve.dist.fetch(&reference).unwrap();
     assert_eq!(got.package.id(), id);
@@ -924,19 +906,7 @@ fn ac5_listed_record_dead_base_falls_to_provider_bases() {
         "the record base is tried first, once"
     );
     assert!(live.count() > before);
-    // The live base that served is now seen (4.4, DD-48 r7); nothing else changed.
-    let mut after = records(&eve)["channels"][&carol_key].clone();
-    let mut record = record;
-    let seen_after = after.as_object_mut().unwrap().remove("seen").unwrap();
-    let seen_before = record.as_object_mut().unwrap().remove("seen").unwrap();
-    assert_eq!(after, record);
-    assert!(
-        seen_after
-            .as_array()
-            .unwrap()
-            .starts_with(seen_before.as_array().unwrap())
-    );
-    assert!(seen_after.as_array().unwrap().contains(&live_base.into()));
+    assert_eq!(records(&eve)["channels"][&carol_key], record);
 }
 
 /// S105 AC5: the record's base and then the 5.11 bases, at most 4 in all; when every

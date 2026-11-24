@@ -386,8 +386,9 @@ impl Dist {
                 .read_mutex
                 .lock()
                 .expect("lock poisoned: another thread panicked while holding it");
+            self.settle(true)?;
             if self.log.head(&key)?.is_none() {
-                match self.read_channel(key, link.base())?.outcome {
+                match self.read_channel_mode(key, link.base(), true)?.outcome {
                     Outcome::Current { .. } | Outcome::Behind { .. } => {}
                     Outcome::Failed { cause } => return Err(cause),
                     Outcome::Compromised { seq } => {
