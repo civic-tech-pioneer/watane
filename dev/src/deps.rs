@@ -164,7 +164,8 @@ fn relative(dir: &Path, provider: &Path) -> String {
     for part in &target[shared..] {
         path.push(part);
     }
-    path.to_string_lossy().into_owned()
+    path.to_string_lossy()
+        .replace(std::path::MAIN_SEPARATOR, "/")
 }
 pub fn add_local(dir: &Path, provider: &Path) -> Result<AddReport, Vec<Problem>> {
     if !dir.join("mod.toml").is_file() {

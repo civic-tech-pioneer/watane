@@ -717,8 +717,17 @@ fn ac3_rules_wit_message_is_first_2000_bytes() {
     );
     let expected = parser_message(dir.path());
     assert!(expected.len() < 2000);
-    let arrow = format!(" --> {}:2:26", dir.path().join("wit/world.wit").display());
-    assert!(expected.contains(&arrow), "{expected}");
+    let path = dir
+        .path()
+        .join("wit/world.wit")
+        .to_string_lossy()
+        .replace(std::path::MAIN_SEPARATOR, "/");
+    assert!(
+        expected
+            .replace(std::path::MAIN_SEPARATOR, "/")
+            .contains(&format!(" --> {path}:2:26")),
+        "{expected}"
+    );
     assert_eq!(wit_message(dir.path()), expected);
 
     let name = "a".repeat(3000);

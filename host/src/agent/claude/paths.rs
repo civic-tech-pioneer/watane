@@ -218,7 +218,8 @@ fn reaches(input: &Value, cwd: &Path, run: &Path) -> bool {
         })
 }
 
-#[cfg(all(test, unix))] // Fixtures use Unix symlinks or permission bits.
+#[cfg(test)]
+#[cfg(unix)] // Fixtures use Unix symlinks or permission bits.
 mod tests {
     use super::*;
     use serde_json::json;
@@ -451,7 +452,8 @@ mod tests {
 
 /// Adversary step of S100 (red): allows that pass the third rule but that `claude` reads
 /// outside the workspaces.
-#[cfg(all(test, unix))] // Fixtures use Unix symlinks or permission bits.
+#[cfg(test)]
+#[cfg(unix)] // Fixtures use Unix symlinks or permission bits.
 mod adv_s100 {
     use super::*;
     use serde_json::json;
@@ -537,7 +539,8 @@ mod adv_s100 {
     }
 }
 
-#[cfg(all(test, unix))] // Fixtures use Unix symlinks or permission bits.
+#[cfg(test)]
+#[cfg(unix)] // Fixtures use Unix symlinks or permission bits.
 mod resolved_tests {
     use super::*;
     use serde_json::json;
@@ -564,7 +567,8 @@ mod resolved_tests {
     }
 }
 
-#[cfg(all(test, unix))] // The Unix Claude runner interprets these tool paths.
+#[cfg(test)]
+#[cfg(unix)] // The Unix Claude runner interprets these tool paths.
 mod ac2_own_key {
     use super::*;
     use serde_json::json;
@@ -633,7 +637,8 @@ mod ac2_own_key {
 /// tool, so a Grep or Glob ask that also carries a `file_path`, or a NotebookEdit ask that
 /// carries one beside its `notebook_path`, shows the kernel another path than the one the
 /// tool reaches, and the kernel scopes a session allow on it.
-#[cfg(all(test, unix))] // The Unix Claude runner interprets these tool paths.
+#[cfg(test)]
+#[cfg(unix)] // The Unix Claude runner interprets these tool paths.
 mod adv_s100_path_key {
     use super::*;
     use serde_json::json;
@@ -678,7 +683,8 @@ mod adv_s100_path_key {
 
 /// Review r2 of S100, F2.1: only a missing component lets a path resolve through; any other
 /// error of the filesystem makes it unresolvable (TECHNICAL 19.3, the resolve rule).
-#[cfg(all(test, unix))] // Fixtures use Unix symlinks or permission bits.
+#[cfg(test)]
+#[cfg(unix)] // Fixtures use Unix symlinks or permission bits.
 mod fix9_resolve_errors {
     use super::*;
     use serde_json::json;

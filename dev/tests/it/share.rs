@@ -161,6 +161,8 @@ impl Fixture {
             for (path, name) in &names {
                 command = command.replace(path, name);
             }
+            #[cfg(windows)]
+            let command = command.replace("<root>\\", "<root>/");
             if let ["-C", dir, "init", ..] = args.iter().map(String::as_str).collect::<Vec<_>>()[..]
             {
                 fs::create_dir_all(Path::new(dir).join(".git/info")).unwrap();

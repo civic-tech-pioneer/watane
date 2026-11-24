@@ -119,7 +119,11 @@ fn wit_location(message: &str) -> Option<(String, u32, u32)> {
         let mut parts = location.rsplitn(3, ':');
         let column = parts.next()?.parse().ok()?;
         let line = parts.next()?.parse().ok()?;
-        Some((parts.next()?.into(), line, column))
+        Some((
+            parts.next()?.replace(std::path::MAIN_SEPARATOR, "/"),
+            line,
+            column,
+        ))
     })
 }
 /// Map pkg violations, preserving locations supplied in parser diagnostics.
@@ -159,7 +163,7 @@ fn mod_problems_for_slug(
                             } else {
                                 base
                             };
-                            base.join(file).to_string_lossy().into_owned()
+                            base.join(file).to_string_lossy().replace(std::path::MAIN_SEPARATOR, "/")
                         } else {
                             file
                         };
