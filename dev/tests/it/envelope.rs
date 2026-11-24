@@ -530,10 +530,11 @@ fn ac2_test_next_carries_dir_and_home_only_when_given() {
     let temp = tempfile::tempdir().unwrap();
     let dir = page(temp.path());
     let cwd = crate::support::shell_path(&dir);
+    let dir_arg = dir.to_str().unwrap();
     let (code, value) = run(&dir, &["test", "--json"]);
     assert_eq!(code, 0, "{value}");
     assert_eq!(value["next"], "watane-dev serve --json");
-    let (code, value) = run(temp.path(), &["test", "--json", "--dir", &cwd]);
+    let (code, value) = run(temp.path(), &["test", "--json", "--dir", dir_arg]);
     assert_eq!(code, 0, "{value}");
     assert_eq!(
         value["next"],
@@ -545,7 +546,7 @@ fn ac2_test_next_carries_dir_and_home_only_when_given() {
             "test",
             "--json",
             "--dir",
-            &cwd,
+            dir_arg,
             "--home",
             &format!("{}/.", temp.path().display()),
         ],

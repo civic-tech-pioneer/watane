@@ -58,8 +58,12 @@ pub fn cargo(ctx: &BuildCtx<'_>, copy: &Path, args: &[&str]) -> Command {
             .env("USERPROFILE", ctx.env.cache.join("cargo-home"))
             .env("TEMP", ctx.env.cache.join("tmp"))
             .env("TMP", ctx.env.cache.join("tmp"));
-        if let Some(root) = crate::env::var_os("SystemRoot") {
-            command.env("SystemRoot", root);
+        // rustc discovers the native linker for Cargo's host-side proc macros.
+        // Do not pass the caller's PATH, compiler configuration, or credentials.
+        for name in ["SystemRoot", "ProgramFiles(x86)", "ProgramFiles"] {
+            if let Some(value) = crate::env::var_os(name) {
+                command.env(name, value);
+            }
         }
     }
     for key in ["SDKROOT", "DEVELOPER_DIR"] {
@@ -325,6 +329,7 @@ pub(crate) fn compile(
     let mut errors = Vec::new();
     let mut siblings = BTreeSet::new();
     let mut artifacts = Vec::new();
+    let manifest = normalized(&copy.join("logic/Cargo.toml"));
     for line in output.stdout.split(|b| *b == b'\n') {
         let Ok(value) = serde_json::from_slice::<Value>(line) else {
             continue;
@@ -347,7 +352,7 @@ pub(crate) fn compile(
             }
             && value["manifest_path"]
                 .as_str()
-                .is_some_and(|p| Path::new(p) == copy.join("logic/Cargo.toml"))
+                .is_some_and(|p| normalized(Path::new(p)) == manifest)
         {
             let artifact = if args[0] == "test" {
                 value["executable"].as_str()

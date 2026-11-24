@@ -1272,7 +1272,7 @@ mod machines_pairing_tests {
                     break current;
                 }
                 assert!(Instant::now() < end, "join never reached broker");
-                std::thread::yield_now();
+                std::thread::sleep(Duration::from_millis(10));
             };
             let Request::Join { node, role, text } = request else {
                 panic!("join request");

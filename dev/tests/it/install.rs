@@ -298,8 +298,9 @@ mod fake {
                 .build()
                 .into()
         };
+        let wait = if cfg!(windows) { 10 } else { 4 };
         let parked = std::thread::spawn(move || {
-            agent(4)
+            agent(wait)
                 .post(format!("http://localhost:{port}/api/install"))
                 .send(r#"{"folders":[]}"#)
                 .is_err()
@@ -314,7 +315,7 @@ mod fake {
             let status: Value = status.body_mut().read_json().unwrap();
             assert_eq!(status["watane"], 1, "{status}");
         }
-        assert!(started.elapsed().as_secs() < 2);
+        assert!(started.elapsed().as_secs() < wait / 2);
         assert!(parked.join().unwrap(), "the parked install got no answer");
     }
     #[test]

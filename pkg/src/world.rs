@@ -736,7 +736,7 @@ mod tests {
         let v = violations.iter().find(|v| v.rule == Rule::Wit).unwrap();
         v.message
             .replace(&dir.path().to_string_lossy().to_string(), "<dir>")
-            .replace(std::path::MAIN_SEPARATOR, "/")
+            .replace(r"<dir>\wit", "<dir>/wit")
     }
 
     #[test]

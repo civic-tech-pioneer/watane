@@ -702,7 +702,11 @@ fn wit_message(dir: &Path) -> String {
 fn parser_message(dir: &Path) -> String {
     let mut resolve = wit_parser::Resolve::default();
     let error = resolve.push_dir(dir.join("wit")).unwrap_err();
-    resolve.render_error(&error)
+    let native = dir.join("wit").join("world.wit");
+    let packaged = dir.join("wit/world.wit");
+    resolve
+        .render_error(&error)
+        .replace(native.to_str().unwrap(), packaged.to_str().unwrap())
 }
 
 #[test]

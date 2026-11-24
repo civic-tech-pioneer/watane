@@ -479,28 +479,38 @@ async fn ac6_preview_ready_token_is_live_and_never_persisted() {
             .status(),
         403
     );
-    fn check(path: &Path, token: &str) {
+    fn check(path: &Path, token: &str, locked: &mut Vec<std::path::PathBuf>) {
         for e in fs::read_dir(path).unwrap() {
             let e = e.unwrap();
+            let path = e.path();
             if e.file_type().unwrap().is_dir() {
-                check(&e.path(), token)
+                check(&path, token, locked);
             } else {
-                #[cfg(windows)]
-                if e.file_name() == "lock" {
-                    assert_eq!(e.metadata().unwrap().len(), 0);
-                    continue;
+                match fs::read(&path) {
+                    Ok(bytes) => {
+                        assert!(!bytes.windows(token.len()).any(|w| w == token.as_bytes()))
+                    }
+                    // Windows mandatory file locks can prevent reading live state.
+                    #[cfg(windows)]
+                    Err(error) if error.raw_os_error() == Some(33) => locked.push(path),
+                    Err(error) => panic!("{}: {error}", path.display()),
                 }
-                assert!(
-                    !fs::read(e.path())
-                        .unwrap()
-                        .windows(token.len())
-                        .any(|w| w == token.as_bytes())
-                );
             }
         }
     }
-    check(home.path(), token);
+    let mut locked = Vec::new();
+    check(home.path(), token, &mut locked);
+    assert!(!locked.contains(&home.path().join("run.json")));
+    let token = token.clone();
     preview.stop();
+    for path in locked {
+        assert!(
+            !fs::read(path)
+                .unwrap()
+                .windows(token.len())
+                .any(|w| w == token.as_bytes())
+        );
+    }
 }
 
 #[test]

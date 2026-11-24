@@ -71,6 +71,7 @@ jobs:
           WATANE_BIN="$PWD/target/debug/watane"
           if [ "$RUNNER_OS" = "Windows" ]; then
             WATANE_BIN="$WATANE_BIN.exe"
+            export WATANE_TEST_BASH="$(cygpath -m "$(command -v bash)")"
             export CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER="pwsh -NoProfile -File $(cygpath -m "$PWD/.github/scripts/windows-test.ps1")"
           fi
           export WATANE_BIN

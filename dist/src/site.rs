@@ -64,7 +64,7 @@ pub(crate) fn read_plain(path: &Path) -> Result<Option<Vec<u8>>, DistError> {
 #[cfg(windows)]
 pub(crate) fn read_plain(path: &Path) -> Result<Option<Vec<u8>>, DistError> {
     use std::io::Read;
-    match watane_log_windows_fs::open_private_file(path, false) {
+    match retry_sharing(|| watane_log_windows_fs::open_private_file(path, false)) {
         Ok(mut file) => {
             let mut bytes = Vec::new();
             file.read_to_end(&mut bytes).map_err(|e| io(path, e))?;
@@ -78,6 +78,21 @@ pub(crate) fn read_plain(path: &Path) -> Result<Option<Vec<u8>>, DistError> {
         Err(e) => Err(io(path, e)),
     }
 }
+#[cfg(windows)]
+pub(crate) fn retry_sharing<T>(
+    mut operation: impl FnMut() -> std::io::Result<T>,
+) -> std::io::Result<T> {
+    for delay in [5, 10, 20, 40, 80] {
+        match operation() {
+            Err(error) if error.raw_os_error() == Some(32) => {
+                std::thread::sleep(std::time::Duration::from_millis(delay));
+            }
+            result => return result,
+        }
+    }
+    operation()
+}
+
 #[cfg(test)]
 thread_local! {
     /// Test seam: the next `n` directory syncs of `follows.json` on this thread fail with EIO.
