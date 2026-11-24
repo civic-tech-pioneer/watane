@@ -436,92 +436,108 @@ fn kill_held(_held: &()) {}
 /// The most entries that one open removes from the `runs.*.gone` folders (3.1 step 3).
 const WALK_BUDGET: usize = 10_000;
 
-/// One folder of the walk: its name in its parent, and the subfolders still to do.
+/// The deepest folder that the walk opens below a `runs.*.gone` (3.1 step 3): one descriptor is
+/// open per level, so this stays well under the open-file limit.
+const WALK_DEPTH: usize = 256;
+
+/// One open folder of the walk: its descriptor, its name in its parent, and the subfolders still
+/// to do.
 struct Level {
+    fd: rustix::fd::OwnedFd,
     name: std::ffi::OsString,
     pending: Vec<std::ffi::OsString>,
-    listed: bool,
+}
+
+/// Lists the folder `fd`: removes what is not a folder, and returns the subfolders. `None` when
+/// the budget runs out or the folder cannot be read; `clean` is cleared when an entry stays.
+fn list_level(
+    fd: &rustix::fd::OwnedFd,
+    budget: &mut usize,
+    clean: &mut bool,
+) -> Option<Vec<std::ffi::OsString>> {
+    use rustix::fs::{AtFlags, Dir, FileType, statat, unlinkat};
+    use std::os::unix::ffi::OsStrExt;
+    let mut dirs = vec![];
+    for entry in Dir::read_from(fd).ok()? {
+        let Ok(entry) = entry else {
+            *clean = false;
+            break;
+        };
+        let name = entry.file_name();
+        if name == c"." || name == c".." {
+            continue;
+        }
+        if *budget == 0 {
+            return None;
+        }
+        *budget -= 1;
+        let kind = match entry.file_type() {
+            FileType::Unknown => statat(fd, name, AtFlags::SYMLINK_NOFOLLOW)
+                .map_or(FileType::Unknown, |st| FileType::from_raw_mode(st.st_mode)),
+            kind => kind,
+        };
+        if kind == FileType::Directory {
+            dirs.push(std::ffi::OsStr::from_bytes(name.to_bytes()).to_owned());
+        } else if unlinkat(fd, name, AtFlags::empty()).is_err() {
+            *clean = false;
+        }
+    }
+    Some(dirs)
 }
 
 /// Removes the folder `name` of `home` with what it holds, without recursion and without
-/// following a link, spending at most `budget` entries. One folder descriptor is open at a time
-/// (the way up is `..`), so neither depth nor path length limits it. False when something is left.
+/// following a link, spending at most `budget` entries. The walk keeps a stack of the open
+/// folders from `name` down and never climbs by `..`, so a folder moved out during the walk
+/// takes nothing outside with it; below `WALK_DEPTH` levels a folder is left. False when
+/// something is left.
 fn remove_tree(home: &std::fs::File, name: &std::ffi::OsStr, budget: &mut usize) -> bool {
-    use rustix::fs::{AtFlags, Dir, FileType, Mode, OFlags, openat, statat, unlinkat};
+    use rustix::fs::{AtFlags, Mode, OFlags, openat, unlinkat};
     let flags = OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK;
-    let Ok(mut cur) = openat(home, name, flags, Mode::empty()) else {
+    let Ok(fd) = openat(home, name, flags, Mode::empty()) else {
         // Not a folder (or gone): a link or file is removed itself.
         return unlinkat(home, name, AtFlags::empty()).is_ok();
     };
     let mut clean = true;
+    let Some(pending) = list_level(&fd, budget, &mut clean) else {
+        return false;
+    };
     let mut levels = vec![Level {
+        fd,
         name: name.to_owned(),
-        pending: vec![],
-        listed: false,
+        pending,
     }];
     loop {
-        let level = levels.last_mut().expect("one level at least");
-        if !level.listed {
-            level.listed = true;
-            let Ok(dir) = Dir::read_from(&cur) else {
-                return false;
-            };
-            for entry in dir {
-                let Ok(entry) = entry else {
-                    clean = false;
-                    break;
-                };
-                let entry_name = entry.file_name();
-                if entry_name == c"." || entry_name == c".." {
-                    continue;
-                }
-                if *budget == 0 {
-                    return false;
-                }
-                *budget -= 1;
-                let kind = match entry.file_type() {
-                    FileType::Unknown => statat(&cur, entry_name, AtFlags::SYMLINK_NOFOLLOW)
-                        .map_or(FileType::Unknown, |st| FileType::from_raw_mode(st.st_mode)),
-                    kind => kind,
-                };
-                if kind == FileType::Directory {
-                    level.pending.push(
-                        <std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(
-                            entry_name.to_bytes(),
-                        )
-                        .to_owned(),
-                    );
-                } else if unlinkat(&cur, entry_name, AtFlags::empty()).is_err() {
-                    clean = false;
-                }
+        let depth = levels.len();
+        let Some(top) = levels.last_mut() else {
+            return clean;
+        };
+        if let Some(child) = top.pending.pop() {
+            if depth >= WALK_DEPTH {
+                clean = false;
+                continue;
             }
-        }
-        if let Some(child) = levels.last_mut().and_then(|l| l.pending.pop()) {
-            match openat(&cur, &child, flags, Mode::empty()) {
+            match openat(&top.fd, &child, flags, Mode::empty()) {
                 Ok(fd) => {
-                    cur = fd;
+                    let Some(pending) = list_level(&fd, budget, &mut clean) else {
+                        return false;
+                    };
                     levels.push(Level {
+                        fd,
                         name: child,
-                        pending: vec![],
-                        listed: false,
+                        pending,
                     });
                 }
                 Err(_) => clean = false,
             }
             continue;
         }
-        let done = levels.pop().expect("one level at least");
-        let removed =
-            |parent: &std::fs::File| unlinkat(parent, &done.name, AtFlags::REMOVEDIR).is_ok();
-        if levels.is_empty() {
-            return clean && removed(home);
-        }
-        let Ok(parent) = openat(&cur, "..", flags, Mode::empty()) else {
-            return false;
+        let done = levels.pop().expect("a top level");
+        drop(done.fd);
+        let removed = match levels.last() {
+            Some(parent) => unlinkat(&parent.fd, &done.name, AtFlags::REMOVEDIR),
+            None => unlinkat(home, &done.name, AtFlags::REMOVEDIR),
         };
-        let parent = std::fs::File::from(parent);
-        clean &= removed(&parent);
-        cur = parent.into();
+        clean &= removed.is_ok();
     }
 }
 
@@ -2389,5 +2405,35 @@ mod walk_budget {
         assert_eq!(gone(home.path()), 0, "{:?}", log.lines);
         assert!(log.lines.is_empty(), "{:?}", log.lines);
         assert!(target.path().join("keep").exists());
+    }
+
+    /// A home with a `runs` chain of `depth` folders, cleaned once: the names starting with
+    /// `runs.` that are left, and the log.
+    fn clean_chain(depth: usize) -> (usize, Vec<String>) {
+        let home = tempfile::tempdir().unwrap();
+        let chain: std::path::PathBuf = std::iter::once("runs")
+            .chain(std::iter::repeat_n("d", depth))
+            .collect();
+        std::fs::create_dir_all(home.path().join(chain)).unwrap();
+        let mut log = CleanupLog::default();
+        clean_runs_logged(home.path(), &mut log);
+        assert!(!home.path().join("runs").exists());
+        let left = std::fs::read_dir(home.path())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("runs."))
+            .count();
+        (left, log.lines)
+    }
+
+    /// The walk opens at most `WALK_DEPTH` folders: a chain one level deeper is left with one
+    /// log line and no crash; one level less is removed (3.1 step 3).
+    #[test]
+    fn a_tree_deeper_than_the_cap_is_left_and_logged_once() {
+        let (left, lines) = clean_chain(256);
+        assert_eq!(left, 1, "{lines:?}");
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(lines[0].contains("too deep"), "{lines:?}");
+        assert_eq!(clean_chain(255), (0, vec![]));
     }
 }

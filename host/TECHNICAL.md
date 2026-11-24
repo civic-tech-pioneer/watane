@@ -491,7 +491,8 @@ which `Host::open` creates (3.1 step 6).
    folder (adversary S100 pass 14). A `runs` directory is first renamed to
    `runs.<random>.gone`, so `runs/` is free at once whatever it holds, and each
    `runs.*.gone` is then removed by a walk without recursion, which never follows a
-   link and stops at 10 000 entries; what is left (too deep, too many, not
+   link, never climbs by `..` (it keeps the open folders from the root down),
+   opens at most 256 levels and stops at 10 000 entries; what is left (too deep, too many, not
    removable) is logged once and tried again at the next open (adversary S100
    pass 15). A leader is
    verified as a leader: on Linux, with the pidfd open, field 5 (`pgrp`) of
