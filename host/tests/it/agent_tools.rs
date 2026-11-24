@@ -1055,3 +1055,39 @@ fn limits_a_question_lives_while_one_waiter_does_and_is_dropped_with_the_last() 
     home.answer(1, ConsentAnswer::Granted);
     home.wait_ready(&c);
 }
+
+// ---- Adversary S103 ------------------------------------------------------------------------
+
+/// 19.5 (Manager functions), 4.4: a grant of `Manage` drops the mod's names from every stored
+/// list, because the name alone does not show that its mod changed. A grant that lands while
+/// the toolset question waits must not let the answer store those names again: the participant
+/// was shown them as the functions of a mod that was no manager.
+#[test]
+fn adv_s103_a_manage_grant_while_the_question_waits_is_not_undone_by_the_answer() {
+    let home = Home::new();
+    let manage = watane_host::watane_pkg::Grant::Manage;
+    home.host.revoke(&local("manager"), &manage).unwrap();
+    let h = home.open(&["m"]).unwrap();
+    home.wait_asked(1);
+    assert!(
+        home.asked()[0]
+            .functions
+            .contains(&"manager_api_disable".to_owned())
+    );
+    // While the question waits, `manager` becomes a manager.
+    home.host.grant(&local("manager"), &manage).unwrap();
+    home.answer(0, ConsentAnswer::Granted);
+    wait("the handle leaves pending", Duration::from_secs(20), || {
+        !home
+            .describe(&h)
+            .is_err_and(|e| e.starts_with("consent-pending"))
+    });
+    let listed = home.describe(&h).map(|_| names(home.describe(&h)));
+    assert!(
+        !listed
+            .as_ref()
+            .is_ok_and(|l| l.contains(&"manager_api_disable".to_owned())),
+        "a handle reaches a manager's function that no consent named as one: {listed:?}; stored {}",
+        home.consents_of("toolbox")
+    );
+}
