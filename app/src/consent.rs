@@ -729,9 +729,13 @@ mod tests {
         let ask = broker.ask(request);
         let mut ask = std::pin::pin!(ask);
         queue(ask.as_mut()).await;
-        let (id, _) = broker.current().unwrap();
-        // A refused Deny payload never reaches the broker: the head stays open.
-        assert!(broker.current().is_some_and(|(head, _)| head == id));
+        let (id, head) = broker.current().unwrap();
+        for (choice, withheld) in [(Some("x".to_owned()), vec![]), (None, withheld())] {
+            assert!(matches!(
+                head.answer(false, choice, withheld),
+                Err(ConsentError::WrongAnswer)
+            ));
+        }
         for answer in [
             Answer::Approve {
                 withheld: withheld(),
@@ -743,6 +747,8 @@ mod tests {
                 Err(ConsentError::WrongAnswer | ConsentError::UnknownGrant(_))
             ));
         }
+        // Refused answers, a Deny with a payload among them, leave the question open.
+        assert!(broker.current().is_some_and(|(head, _)| head == id));
         broker
             .answer(&id, Answer::Approve { withheld: vec![] })
             .unwrap();

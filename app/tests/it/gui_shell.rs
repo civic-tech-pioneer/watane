@@ -1155,6 +1155,18 @@ fn s58_agent_consent_words_literal_text_and_no_stop() {
             app.eval("consent", "document.querySelectorAll('img').length"),
             0
         );
+        // A long question wraps or scrolls: it and its ancestors never clip it.
+        assert_eq!(
+            app.eval(
+                "consent",
+                "(() => { const q = document.querySelector('main').firstElementChild; \
+                 const s = getComputedStyle(q); if (s.whiteSpace.includes('nowrap')) return false; \
+                 for (let e = q; e; e = e.parentElement) { const c = getComputedStyle(e); \
+                 if (['hidden','clip'].some(v => c.overflowX === v || c.overflowY === v)) return false; } \
+                 return true; })()"
+            ),
+            true
+        );
         assert_eq!(
             app.eval("consent", "document.querySelector('#stop').hidden"),
             true
