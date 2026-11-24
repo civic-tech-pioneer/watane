@@ -3520,6 +3520,20 @@ The toolsets are those of 10.1; `open` with no toolset, or one that
   Otherwise the tool does not run: a job's item is `{"err":{"code":"unknown-tool",..}}`
   (when the handle, its opener or the origin client is gone, no item: the job's stream ends `gone`, as a live job's does at a withdrawal, 19.7) and `tools/call` answers
   `-32602`.
+  The decision comes before the tool's export is resolved and its arguments are decoded,
+  so a tool whose mod changed its export or signature since the lookup is `unknown-tool`
+  (`-32602`), never another call error, and its mod sees no call (review r2 of S103, F2.3).
+- **Borrowed authority** (review r2 of S103, F2.1, F2.2; fail-closed). The chain of an
+  agent's tool call, the tool's call and every call nested in it, runs on authority
+  borrowed from the handle's origin client. In it: `agent-tools.open` fails
+  `not-granted`, so a tool never opens a handle of its own on the client's other toolset
+  consents; a timer armed in it (`timers.after`) is armed for the arming mod with that
+  mod's own identity as origin client, never the borrowed one; and every stream opened
+  in it (`streams.open`, a `claude-code` or `claude-code-shell` start, an
+  `https-stream.start`) depends on the handle: it ends `gone` when the handle closes (a
+  `close`, a withdrawn toolset consent, the end of either mod), like the handle's jobs. A
+  call already running when the handle closes finishes; nothing it deferred outlives the
+  handle with the client's authority.
 - **Job.** `call(handle, key, tool, args)` returns a stream at once (its consumer is the
   opening mod, its origin client the handle's); the tool runs later as its own top-level
   call with its own budget and the caller of the previous bullet; its result is the stream's
