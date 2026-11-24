@@ -119,11 +119,17 @@ impl Rig {
     /// The items the mod recorded, without the `consent-pending` item that the first account
     /// request of an origin client gets before the participant's answer (host 19.7).
     fn items(&self, s: &str) -> Vec<String> {
-        let all: Vec<String> =
+        let mut all: Vec<String> =
             serde_json::from_value(self.call("api.items", json!({"s": s}))).unwrap();
-        all.into_iter()
-            .filter(|i| !i.starts_with(r#"{"type":"consent-pending""#))
-            .collect()
+        let pending = |i: &String| i.starts_with(r#"{"type":"consent-pending""#);
+        if all.first().is_some_and(pending) {
+            all.remove(0);
+        }
+        assert!(
+            !all.iter().any(pending),
+            "consent-pending after the first item: {all:?}"
+        );
+        all
     }
     fn ended(&self) -> Vec<String> {
         serde_json::from_value(self.call("api.ended", Value::Null)).unwrap()
