@@ -518,10 +518,9 @@ fn ac3_failed_kept_ingest_leaves_earlier_record_as_it_was() {
     }
 }
 
-/// DD-48: a failed kept ingest of a channel with a tombstone takes its record back but
-/// leaves the tombstone, so a pruned channel's seen bases are not lost.
+/// A legacy tombstone is discarded on the next save. Failed ingests still roll back.
 #[test]
-fn a_failed_kept_ingest_keeps_the_tombstone() {
+fn s107_a_failed_kept_ingest_discards_legacy_provenance() {
     let a = tempfile::tempdir().unwrap();
     let alice = open(a.path());
     alice.set_name("A").unwrap();
@@ -553,9 +552,5 @@ fn a_failed_kept_ingest_keeps_the_tombstone() {
         serde_json::from_slice(&std::fs::read(h.path().join("dist/follows.json")).unwrap())
             .unwrap();
     assert!(saved["channels"].get(key.to_string()).is_none());
-    assert_eq!(
-        saved["seen"][key.to_string()]["seen"],
-        serde_json::json!(["http://127.0.0.1:9/"])
-    );
-    assert_eq!(saved["seen"][key.to_string()]["seen_full"], true);
+    assert!(saved.get("seen").is_none());
 }

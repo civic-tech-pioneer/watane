@@ -203,6 +203,12 @@ impl Node {
         self.reading(|| self.dist.follow(link))
             .map_err(|e| cause_or(cause, e))
     }
+    /// Follows a link produced by discovery or a fetched release.
+    pub fn follow_derived(&self, link: &Link) -> Result<RefreshReport, DistError> {
+        let cause = self.need_channel(&link.channel());
+        self.reading(|| self.dist.follow_derived(link))
+            .map_err(|e| cause_or(cause, e))
+    }
     pub fn refresh(&self) -> Vec<RefreshReport> {
         self.reading(|| self.dist.refresh())
     }

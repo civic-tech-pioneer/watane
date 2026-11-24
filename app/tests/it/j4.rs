@@ -59,7 +59,7 @@ fn ac8_journey_j4_updates_withdrawal_and_compromise() {
     invoke(&alice, "site_set_url", json!({"url":site.base}));
     let first = publish_version(&alice, "0.1.0", false);
     let ivy_home = tempfile::tempdir().unwrap();
-    let ivy = dist(ivy_home.path());
+    let ivy = listing_dist(ivy_home.path());
     ivy.set_name("Ivy").unwrap();
     ivy.list(
         &first["link"].as_str().unwrap().parse().unwrap(),

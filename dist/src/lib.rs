@@ -115,8 +115,6 @@ pub struct Dist {
     base: Mutex<Option<String>>,
     options: Options,
     follows: Mutex<std::collections::BTreeMap<PublicKey, Follow>>,
-    /// `seen` and `given` of removed records, by channel text (4.4, DD-48). Lock after `follows`.
-    tombs: Mutex<Tombs>,
     /// Set when a rename installed `follows.json` but its directory sync failed, with the
     /// work the failed call left (4.4, `follow::Unsynced`). Never held while taking `follows`.
     unsynced: Mutex<follow::Unsynced>,
@@ -128,9 +126,6 @@ pub struct Dist {
     /// hop can be local-free while its redirect targets are still checked.
     #[cfg(test)]
     test_local_ok: Mutex<Vec<String>>,
-    /// Tests only: called by `held_ungiven` between its record and tombstone lookups.
-    #[cfg(test)]
-    test_held_gap: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
     /// Tests only: `Some(n)` lets `n` saves of `follows.json` pass, then fails every one.
     #[cfg(test)]
     test_fail_saves: Mutex<Option<usize>>,
@@ -206,7 +201,6 @@ impl Dist {
             watane_log::Log::open(&home.join("log"))?
         };
         let mut follows = std::collections::BTreeMap::new();
-        let mut tombs = Tombs::default();
         if let Some(file) = read_json::<Follows>(&dir.join("follows.json"))? {
             let path = dir.join("follows.json");
             if file.version != 1 {
@@ -252,7 +246,7 @@ impl Dist {
                         .base()
                         .into();
                 }
-                for base in record.given.iter_mut().chain(&mut record.seen) {
+                for base in &mut record.given {
                     *base = Link::new(channel, base, None)
                         .map_err(|e| DistError::Corrupt {
                             path: path.clone(),
@@ -260,9 +254,6 @@ impl Dist {
                         })?
                         .base()
                         .into();
-                }
-                for base in record.bases.clone().iter().chain([&record.base]) {
-                    follow::note_seen(&mut record.seen, &mut record.seen_full, base);
                 }
                 if !record.followed && !record.index && !record.base.is_empty() {
                     if record.bases.is_empty() {
@@ -271,25 +262,6 @@ impl Dist {
                     record.base = record.bases[0].clone();
                 }
                 follows.insert(channel, record);
-            }
-            tombs = Tombs {
-                map: file.seen,
-                gone: follow::Gone::from_text(file.gone.as_deref()),
-            };
-            for (key, tomb) in &mut tombs.map {
-                let channel = key.parse().map_err(|e: KeyTextError| DistError::Corrupt {
-                    path: path.clone(),
-                    cause: e.to_string(),
-                })?;
-                for base in tomb.given.iter_mut().chain(&mut tomb.seen) {
-                    *base = Link::new(channel, base, None)
-                        .map_err(|e| DistError::Corrupt {
-                            path: path.clone(),
-                            cause: e.to_string(),
-                        })?
-                        .base()
-                        .into();
-                }
             }
         }
         let base = match read_json::<Site>(&dir.join("site.json"))? {
@@ -334,8 +306,6 @@ impl Dist {
             #[cfg(test)]
             test_local_ok: Mutex::new(Vec::new()),
             #[cfg(test)]
-            test_held_gap: Mutex::new(None),
-            #[cfg(test)]
             test_fail_saves: Mutex::new(None),
             listed_agent: ureq::Agent::config_builder()
                 .http_status_as_error(false)
@@ -347,7 +317,6 @@ impl Dist {
                 .into(),
             options,
             follows: Mutex::new(follows),
-            tombs: Mutex::new(tombs),
             unsynced: Mutex::new(follow::Unsynced::default()),
             read_mutex: Mutex::new(()),
         })
@@ -378,15 +347,13 @@ struct Follow {
     kept: bool,
     #[serde(default)]
     bases: Vec<String>,
-    /// The bases the participant named by a link (5.9, DD-47); any other is read as listed.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    /// Explicit S107 provenance. Legacy `given` could include derived links.
+    #[serde(
+        default,
+        rename = "explicit_given",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     given: Vec<String>,
-    /// Every base the record ever held, at most 16 (4.4, DD-48).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    seen: Vec<String>,
-    /// `seen` was full and refused a base: a link then gives no new base (4.4, DD-48).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    seen_full: bool,
     #[serde(rename = "followed_at")]
     _followed_at: u64,
     #[serde(rename = "last_attempt")]
@@ -400,40 +367,6 @@ fn default_followed() -> bool {
 struct Follows {
     version: u64,
     channels: std::collections::BTreeMap<String, Follow>,
-    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    seen: std::collections::BTreeMap<String, Tombstone>,
-    /// Filter of the channels whose tombstone was evicted: lower-case hex of 4096 bytes
-    /// (4.4, DD-48). Absent while none was; present but no string reads as malformed.
-    #[serde(
-        default,
-        deserialize_with = "present_gone",
-        skip_serializing_if = "Option::is_none"
-    )]
-    gone: Option<String>,
-}
-/// A present `gone` is kept, a value that is no string as the empty text, which
-/// `Gone::from_text` reads as all bits set; only an absent one is `None` (4.4, F3.1).
-fn present_gone<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
-    use serde::Deserialize;
-    Ok(Some(match serde_json::Value::deserialize(d)? {
-        serde_json::Value::String(text) => text,
-        _ => String::new(),
-    }))
-}
-/// The tombstones with the filter of the evicted ones; one lock covers both.
-#[derive(Clone, Default)]
-struct Tombs {
-    map: std::collections::BTreeMap<String, Tombstone>,
-    gone: follow::Gone,
-}
-/// What a removed record leaves: its `seen` and `given`, at most 1024 of them (4.4, DD-48).
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-struct Tombstone {
-    seen: Vec<String>,
-    given: Vec<String>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    seen_full: bool,
-    at: u64,
 }
 #[derive(serde::Deserialize)]
 struct Site {

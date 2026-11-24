@@ -1223,6 +1223,8 @@ the release whose key is not the own key, in grant order:
 3. Else `listed: false`.
 
 A header link whose key and slug match no such provider is ignored.
+Provider listing preflight uses the listed-read policy (dist 5.9), including
+when the provider link comes from a mod request header.
 
 A `false` never fails the publish: the release is signed. It means that a
 person who installs it needs a followed channel or an index that names the
@@ -1414,7 +1416,7 @@ text as the Updates failed-channel card. The base URL may be the row's
 4. `host.install(plan, Requester::App).await` (the consent view through
    HostConfirm).
 5. Step 5: for each `Fetched` of this install (the hit of a pick too) whose `link` is set and whose
-   channel is not followed, `dist.follow(&link)` (dist 5.11, DD-29), so
+   channel is not followed, `node.follow_derived(&link)` (dist 5.11, DD-29), so
    that a provider's updates and withdrawals keep coming. A failed follow
    does not undo the install; it shows as that channel's failure
    (APP-F-37).
@@ -1531,7 +1533,7 @@ sign-title wording functions, shared by the pages and their wording tests.
   `uncheckedSince` as `not read since <ago>`, as in 5.3.5. A compromised
   hit shows the compromised tag and explanation, with no install button.
 - `install_release(release, link)`: `ReleaseRef::from_str`,
-  `Link::from_str`; then dist 5.10 "Install a hit" (follow the link when
+  `Link::from_str`; then dist 5.10 "Install a hit" (follow the derived link when
   it is set, `dist.fetch(&release)`); then steps 3 and 4 of 9.4 with the
   fetched release as the first source. The consent view shows the plan as
   for a link. Return the same `installed` and newly `followed` labels as 9.4,

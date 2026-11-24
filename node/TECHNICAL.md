@@ -117,6 +117,7 @@ impl Node {
 
     // Reads (5.2, 5.3): `need` first on a light machine, `told` for each raised head.
     pub fn follow(&self, link: &Link) -> Result<RefreshReport, DistError>;
+    pub fn follow_derived(&self, link: &Link) -> Result<RefreshReport, DistError>;
     pub fn refresh(&self) -> Vec<RefreshReport>;
     pub fn refresh_channel(&self, channel: &PublicKey) -> Result<RefreshReport, DistError>;
     pub fn choose_index(&self, link: &Link) -> Result<Vec<RefreshReport>, DistError>;
@@ -242,7 +243,7 @@ stored. With `net` off, `told` does nothing (net 3).
 
 ### 5.2 Reads and `told`
 
-Each read wrapper (`follow`, `refresh`, `refresh_channel`,
+Each read wrapper (`follow`, `follow_derived`, `refresh`, `refresh_channel`,
 `choose_index`, `fetch`, `fetch_for`, `open_link`, `read_link`) takes
 `dist.heads(None)` before and after dist's call, and calls `told` for each
 channel whose head rose, in key order (NODE-F-8). node calls `told` after
@@ -269,7 +270,7 @@ comes before the channel's. Any other dist error (`Compromised`, `Withdrawn`,
 
 | Wrapper | Before dist's call |
 |---|---|
-| `follow(link)`, `choose_index(link)` | `net.need(link.channel())` |
+| `follow(link)`, `follow_derived(link)`, `choose_index(link)` | `net.need(link.channel())` |
 | `refresh_channel(c)` | `net.need(c)` |
 | `fetch(r)`, `fetch_for(r, _)` | if the stored view of `r.publisher` lacks `r`: `net.need(channel)`. Then, if the release is stored and `dist.package_file(release.package)` is `None`: `net.need_blob(id, release.size)` |
 | `open_link(link)`, `read_link(link)` | `net.need(link.channel())`; then the package of `dist.latest(channel, slug)` as for `fetch` |

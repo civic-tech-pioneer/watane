@@ -124,6 +124,7 @@ impl Dist {
 
     // Other channels.
     pub fn follow(&self, link: &Link) -> Result<RefreshReport, DistError>;
+    pub fn follow_derived(&self, link: &Link) -> Result<RefreshReport, DistError>;
     pub fn unfollow(&self, channel: &PublicKey) -> Result<(), DistError>;
     pub fn refresh(&self) -> Vec<RefreshReport>;               // one per channel read: followed and chosen, then listed (5.9)
     pub fn refresh_channel(&self, channel: &PublicKey) -> Result<RefreshReport, DistError>;
@@ -616,47 +617,20 @@ more. A listed record also has `"bases": [text]`: all distinct bases that
 listings give (5.9), at most 4, default `[]`; its `base` equals the first
 element. The base that serves the highest head moves to the front.
 A followed or chosen record has `bases` too, default `[]` (a step 3 or 4
-file reads unchanged, from `base` alone): it holds the bases the participant
-gave by links, learned as in 5.9, at most 4, and `base` equals the first
-element when `bases` is not empty. Every record has `"given": [text]` (S105,
-DD-47; default `[]`, omitted when empty, so the version stays 1): the bases
-the participant named by a link (`follow`, `choose_index`, or `open_link`
-of a link at a base). It keeps a base no longer held (the 4-base cap or a
-listing change dropped it), so it is not a subset of `base` and `bases`. A link
-marks a base given only when the base is not in `seen` and `seen_full` is false
-(below), or is already in `given`. A base the record already saw stays as it is:
-a link at it, such as a hit's link, gives nothing, since dist cannot tell it
-from a link built out of the record. A file saved before S105 has none, and
-then every base in it is unknown. Only a base not in `seen`, or in `given`, can
-be given by a link (the rule below); a seen base that was never given stays
-read as listed, until S107.
+file reads from `base` alone). It holds at most four bases, and `base`
+equals the first element when `bases` is nonempty. The optional
+`"explicit_given": [text]` field holds up to 16 bases verified after a
+participant supplied a link to `follow`, `choose_index`, or `open_link`.
+It can retain permission for bases evicted from the four-base list. A
+derived follow adds no permissions. A pruned record leaves no permissions.
+Records written before S107 lack explicit provenance and their bases are
+read as listed until given again. S107 readers ignore legacy
+`given`, `seen`, `seen_full`, and `gone` on load. New saves omit them.
 
-Every record also has `"seen": [text]` (S105, DD-48; default `[]`, omitted
-when empty, so the version stays 1): every base the record ever held, as
-`base`, in `bases` or from a listing, also one that the 4-base cap or a
-listing change dropped; at most 16. A full `seen` drops nothing: a base
-that would be the 17th is not added, and the record gets `"seen_full":
-true` (default `false`, omitted when `false`; S105 r5), after which a link
-gives no base that is not in `given`. A record read
-from a file adds its held bases to `seen`, so in a file saved before S105
-every held base is seen and none given. `given` then keeps every base the
-participant ever gave, also one no longer held, at most 16. A link gives
-its base only when the base is in `given`, or is not in `seen` and `seen_full`
-is false: a link at a seen base that was never given (by `follow`, `choose_index` or `open_link`,
-also when a listed-only record turns followed or chosen, DD-46) gives
-nothing, and its first read is a listed one. When `prune_listed` removes a
-record, its `seen` and `given` stay as a tombstone in the top-level
-`"seen": {channel: {"seen": [text], "given": [text], "seen_full": bool, "at": ms}}` of
-`follows.json` (default `{}`, omitted when empty), at most 1024 tombstones,
-the oldest `at` goes first; a new record of that channel starts from its
-tombstone, which is then removed. Tombstone bases are normalised on read
-as record bases are. A tombstone is staged with the records and published
-once the rename has installed the file, so a save that fails before the
-rename changes neither. When only the directory sync after the rename fails,
-the records and tombstones in memory become the ones in the installed file
-and the call still returns that `Io` error (Codex S105 r3 F3.2).
+When only the directory sync after the rename fails, records in memory
+match the installed file and the call returns that `Io` error.
 The store is then *unsynced* (S105 r4, deputy ruling): every later call that
-reads provenance (`follow`, `choose_index`, `open_link`, `fetch`, `read_link`,
+reads provenance (`follow`, `follow_derived`, `choose_index`, `open_link`, `fetch`, `read_link`,
 a channel read, `refresh`) or changes `follows.json` (each save, `unfollow`,
 `drop_index`, `keep`, a kept `ingest`) first retries that directory sync. While it
 fails the call returns its `Io` error and reads, fetches and writes nothing.
@@ -666,7 +640,8 @@ taken back, and the prune of an `unfollow` or `drop_index` runs, so a retry of
 that call returns `Ok` instead of `NothingToUnfollow` or `NotIndex`, also when
 another call finished that prune first (once per channel).
 These steps are one gate, `settle` (S105 r5, deputy ruling): each path that can
-make a request (`read_link`, `fetch`, `follow`, `choose_index`,
+make a request (`read_link`, `fetch`, `follow`, `follow_derived`, `list`,
+`include`, `choose_index`,
 `refresh_channel`, `refresh`, `open_link` and so `learn_link_base`) passes it
 before it reads a record. When the gate's own work fails, also when a take-back
 or prune save leaves the store unsynced again, the gate returns that error and
@@ -678,28 +653,6 @@ sync first, and a channel read returns that error rather than folding it into
 methods take no read lock (5.12), so `keep` and `ingest` leave a recorded prune
 to the next call that does. The unsynced state lives in memory: a restart reads
 the installed file.
-
-Each 5.11 provider base dist reads, and the base of a `read_link` link (S105 r8), is also noted in `seen` before its first
-request (S105 r7): in the channel's record, or, for a channel with no record, in
-its tombstone, created when it has none (`given` empty, `seen_full` set when the
-channel may be gone). It is saved first, staged with the tombstones; when the
-save fails the base is not read and the read fails with the save's error. A
-later link at that base, as `Fetched.link` built from it, is then a listed first
-read and gives nothing.
-
-The oldest tombstone evicted at 1024 goes into a fixed filter of gone
-channels (S105-CHURN "(a) fail closed"): the top-level `"gone": text` of
-`follows.json`, lower-case hex of 4096 bytes (32768 bits), default absent and
-omitted while no tombstone was ever evicted, so the version stays 1. A key
-sets 3 bits: bytes 0..2, 2..4 and 4..6 of the BLAKE3 of the key's 32 bytes,
-each a little-endian u16, modulo 32768; it "may be gone" when all 3 are set (a
-false positive only makes a channel fail closed). For a channel with no record
-and no tombstone that may be gone, the first read of a link is listed and the
-new record starts with `"seen_full": true` and empty `given`, so no link gives
-its base: until S107 the participant cannot give a base of a gone channel. A
-channel dist never knew is unchanged: a link gives its base. A present `gone` that is malformed, of the wrong length, or no
-string at all (`null`, a number) reads as all bits set; only an absent one
-is empty.
 
 Step 8 adds `"kept": bool` (default `false`), so the version stays 1: a
 **kept** record is a channel that an own machine holds (5.12). A record
@@ -775,7 +728,7 @@ cause: "local address" }`; at most 5 redirects are followed, the 6th gives
 `Network { cause: "too many redirects" }`; the one deadline of the read
 covers every hop. A redirect without a `Location` is `Http`. A followed or
 chosen channel's base the participant gave (`given`, 4.4) uses the first agent,
-which follows redirects anywhere, as before; a base not in `given` is a listed
+which follows redirects anywhere, as before; a base absent from `explicit_given` is a listed
 read (DD-47). The body limit applies to the final response after any redirect. The 5xx retry above repeats the whole
 chain.
 
@@ -1011,12 +964,18 @@ either.
 nor chosen has a listed record (`followed: false`, `index: false`). Its
 `bases` are the distinct bases of the listings that name it, at most 4:
 first learned in the order of the walk (own channel first, then chosen
-indexes in key order), then reordered by the read below. A listing never changes the `bases` or `base` of a followed or chosen
-channel; only a link the participant gives does (below). A listed-only record that `follow` or `choose_index` turns followed or chosen drops the listing's `bases` and takes the link's base as `base` (DD-46); the link gives that base only when it is in `given`, or not in `seen` and `seen_full` is false (4.4, DD-48). The decision "listed read" is per base: a read of a base is listed when the record is listed-only or the base is not in `given` (DD-47, DD-48). It covers the channel read, `refresh`, and the package GET of `fetch` and `read_link`: the base is skipped or refused when local (unless `listed_local`), and every redirect target is checked. A listed read of a channel by `follow`, `choose_index` or `open_link` checks its first base too, before any request (F2.1). As for a listed record, `fetch` and `read_link` still give a cached package when the base is refused, with no link and no request, and refuse only on a cache miss (F2.3). dist creates a listed record when the walk first
-reaches the channel, before it reads it, and removes it after a refresh in
-which no read set holds it.
+indexes in key order), then reordered by the read below. A follow or a choice
+of index replaces a listed-only record's bases with that link's base
+(DD-46). Only an explicit participant link gives the base (4.4, DD-48).
+Reads of a base are listed when the record is listed-only or that base
+lacks explicit permission. This covers initial derived follows, refreshes,
+and package reads. The listed policy checks the first address, every redirect
+target, and the listed entry budget. `fetch` and `read_link` can still return
+a cached package with no link when its base is refused. A listed record is
+created when the walk first reaches the channel and removed when no read set
+or other retention reason holds it.
 
-**Learned bases (S79, DD-41).** When `follow`, `choose_index` or `open_link`
+**Learned bases (S79, DD-41).** When `follow`, `follow_derived`, `choose_index` or `open_link`
 gets a link whose channel has a record and whose base is neither the record's
 `base` nor in its `bases`, and a read from that base succeeds (`Current` or
 `Behind`; for `follow` and `choose_index` as before, a failed read is the
@@ -1024,10 +983,11 @@ gets a link whose channel has a record and whose base is neither the record's
 empty it first becomes `[base]`), the record keeps at most 4 (the oldest
 learned base after the front one goes), and the channel is read from every
 base as below, so the base with the highest head leads and `base` equals it.
-A base the record already has changes nothing (`open_link` does not even
-read it). A record with no base (kept only) takes the link's base as `base`
-on `follow` and `choose_index`; `open_link` of such a record reads it locally (5.12).
-`read_link` learns nothing but the link's base in `seen` (5.11).
+An explicitly opened base can be given after a successful read even when
+the record already holds it. Opening a listed-only channel with a verified
+base follows it. A kept-only record with no base takes the link's base
+on a follow or a choice of index. `open_link` of a kept-only record reads
+it locally (5.12). `read_link` changes no base permissions (5.11).
 
 **Read of a followed, chosen or listed channel.** `read_channel` (5.4) from every base in
 `bases` (or from `base` when `bases` is empty), in order, on each read (at most 4 reads per listed channel per
@@ -1099,8 +1059,9 @@ holds it; remove the listed records that only it held.
 (`BadNote`); link shape (`BadLink`); own key (`OwnListing`); a live
 listing of the same mod or index in the own channel (`AlreadyListed`).
 For `list`, the channel must be stored with a release of that slug that is
-not withdrawn: if it is not stored, read it once from the link's base as
-`read_channel` does, with no record; then `NoRelease` when there is none.
+not withdrawn. If the channel is absent from the log, read the link's base
+using the listed address, redirect and entry limits, without making a follow
+record. Return `NoRelease` when the release is absent.
 For `include`, the channel must be readable the same way. All of this
 happens before `confirm`. Then lock, `sign_and_append("list" | "include",
 body)`.
@@ -1162,7 +1123,7 @@ so it works offline (F-QUAL-1). It derives each view once.
 **Install a hit** (the one definition; app 9.6 cites it). `hit.link` names
 the publisher's channel, the front base of its record, and the mod; it is
 `None` for the own channel. The caller follows `hit.link` when it is set
-(`follow`, so that updates and withdrawals keep coming after the index
+(`follow_derived`, so that updates and withdrawals keep coming after the index
 drops the mod) and then fetches `hit.info.reference` (5.7). A search never
 installs and never follows.
 
@@ -1182,9 +1143,7 @@ already holds (W25, DD-28):
    (4.1) of a hint channel whose link key is the wanted key, in seq order;
    distinct, at most 4. A base on a local address (5.9) is skipped unless
    `listed_local` is set, also when the own channel gives it (one rule).
-3. **Read**: Note each base in `seen` (4.4: the record's, or the channel's
-   tombstone) and save before its first request, so a link built from it gives
-   nothing (DD-48); a failed save fails that base's read. Read each base in order with the listed-channel limits
+3. **Read**: Read each base in order with the listed-channel limits
    (5.9, 4.5). A failed channel read or a read (`Current` or `Behind`)
    after which the stored view lacks the release moves to the next base.
    After a successful read with the release in the stored view, try
@@ -1213,11 +1172,7 @@ record: as `open_link`, but never `follow`. Else: one `read_channel` from
 the link's base with no record (as 5.9 before a `list`), skipped like a
 listed base when its host is a local address (`BadUrl` with cause `local
 address`, unless `listed_local`); then `latest(slug)` (`NoRelease`) and the
-package from that base as 5.7 steps 3 to 8. `Fetched.link` is the link. Before its
-first request (not for the own key) `read_link` notes the link's base in `seen` as a
-provider base (the record's, else the channel's tombstone, 4.4, DD-48), saved first: a
-link a mod hands over is derived, not given, so a later link at that base gives nothing;
-a failed save fails the call with no request. Never a record.
+package from that base as 5.7 steps 3 to 8. `Fetched.link` is derived. The read leaves no authorization or follow record.
 
 **Publish side.** So that a consumer's own channel names the base of its
 providers, the app asks the publisher to `list` each provider of another
@@ -1226,7 +1181,7 @@ publisher after the release (app 8.1, W25). That is an ordinary `list`
 its link follows the consumer's channel first (5.7 `open_link`), so its
 listings are hints for the providers.
 
-**After an install** the caller follows `Fetched.link` of each installed
+**After an install** the caller uses `follow_derived` on `Fetched.link` of each installed
 release whose channel is not followed (DD-29; app 9.4), so that updates and
 withdrawals of a provider keep coming, as for a hit (5.10). On a cache
 miss, the link uses the first base, in trust order, that served the
@@ -1637,7 +1592,7 @@ are `list` and `include` statements of 4.1.
 | DD-26 | A listed base on `localhost` or a local IP literal is skipped; followed and chosen links may use any base. | A third party's listing must not make the participant's device probe its own network; the participant's own links keep DD-6. Undo: cheap (one check); DNS names that resolve locally stay open. |
 | DD-27 | Caps: 512 listed channels, 128 per chosen index, 1000 entry files per read of a listed channel. | Bounded refresh even with hostile indexes; one index cannot starve the others. Undo: cheap (Options). |
 | DD-28 | A provider's base comes from live `list` and `include` statements in the channels already read, not from a link in `deps.json` or the release body. | No new format in published bytes; the consumer's publisher states it with a statement it can end (`unlist`) or repeat with a new base. Undo: cheap, reader-only; a field in a later body version (a new kind) can add a base hint later. |
-| DD-29 | A channel read through a provider base or `read_link` gets no record; the caller follows `Fetched.link` after an install. | A failed or declined install leaves no follow behind; an installed provider gets updates like a hit (DD-24). Undo: cheap (app). |
+| DD-29 | A channel read through a provider base or `read_link` gets no record; the caller uses `follow_derived` on `Fetched.link` after an install. | A failed or declined install leaves no follow behind; an installed provider gets updates like a hit (DD-24). Undo: cheap (app). |
 | DD-30 | The derived mods of F-BUILD-4 are a search filter on `Release.origin` (publisher and slug, any version) over the channels already read. | Offline and bounded like search (DD-23); "as far as the chosen indexes list them". Undo: cheap, reader-only. |
 | DD-31 | `NotFollowed { channel, local_only }`: `local_only` is true only in 5.11 step 4 when a live listing named a base for the channel and every such base was skipped as a local address (5.9); every other construction sets it false. The text is "channel K is not followed; no followed channel, chosen index or listing names a base for it; follow the publisher's link to settle it", or, when `local_only`, "...; the listings that name a base for it point at a local address; follow the publisher's link to settle it". | Eve must learn which mods are involved and which step settles it; "no listing" was false when listings were skipped. Undo: cheap (one field, one message). |
 | DD-32 | Read provider hint bases in trust order (5.11 step 3). After a successful channel read, a missing release or an unavailable package falls through. A verified package ends the reads. Later bases receive no request. | A mirror can serve the signed channel and lack the package. The next eligible base can supply it. Undo: cheap. |
@@ -1655,5 +1610,5 @@ are `list` and `include` statements of 4.1.
 | DD-44 | `local_base` ignores trailing dots of a host name; an IPv4 literal with a trailing dot is read as the literal. | `localhost.` is the same host as `localhost`; the rule must not be bypassed by spelling. Undo: cheap (one check). |
 | DD-45 | A listed record on a cache miss tries the record's base first, then the provider bases of 5.11 (at most 4 in all). The record's active bases and timestamps stay unchanged; only its `seen` may grow, as each provider base is noted before its read (4.4, DD-48). | A dead record base must not end a fetch that another listing of the channel can serve, as for a channel with no record (S104). Undo: cheap (fetch.rs). |
 | DD-46 | A listed-only record that becomes followed or chosen by `follow` or `choose_index` holds only the base the link gave: `base` is the link's base, `bases` is empty. Foreman decision S105. | The listing's bases were read as the participant's own, which skipped the redirect check of DD-43 (A35). The alternative, a per-base origin in `follows.json`, is a format change. Undo: cheap (follow.rs). |
-| DD-47 | A base of a followed or chosen record that the participant did not give by a link (not in `given`, 4.4) is read as listed (a repeated link at a held base gives nothing, S105 r3; the first read of such a link is listed too). Unfollowing (or dropping a chosen index) does not reset this: the record's `seen` and `given` stay as its tombstone (4.4, DD-48), so a later follow or choose by a link gives its base only when the base is in `given`, or is unseen and `seen_full` is false; until S107 a seen base that was never given stays listed. Listed means: the local-address rule, redirect targets included, and the limits of a listed read (5.9: `max_listed_entries`, `TooManyEntries`); a cached package is still given. Every base in a record saved before S105 is unknown. `given` is an additive serde-default field. Deputy decision S105 r1, tightened S105 r3. | An old home could hold a listing-learned base as a followed one and follow its redirects unchecked (A35). The alternative, trusting old records, leaves that hole open for every existing home. Undo: cheap (follow.rs, index.rs, fetch.rs). |
-| DD-48 | Every record keeps `seen`, each base it ever held (at most 16), across the 4-base cap and a listing change, and as a tombstone in `follows.json` after `prune_listed` removes the record (at most 1024). A link at a seen base that was never given gives nothing (4.4); a record whose `seen` would pass 16 keeps the first 16 and gives no new base by a link (`seen_full`, S105 r5), so listing churn cannot push a base out of `seen`. So a base of unknown origin, from a listing or a file saved before S105, is never given by a link, while a base the participant gave once is given again. Interim, deputy decision S105 (option B of the BLOCKED question). An evicted tombstone leaves its channel in the `gone` filter (4.4, S105-CHURN "(a) fail closed"): a link for such a channel gives nothing, its record starting with `seen_full`. Also each 5.11 provider base dist reads is noted in `seen` (a channel with no record gets a tombstone for it) before the first request, so `Fetched.link` built from a hint base gives nothing (S105 r7); `read_link` notes its link's base the same way (S105 r8). Accepted limit: until the root fix (S107), a participant cannot give a seen base that was never given at all, so a pre-S105 follow of a local base stays a listed read, nor a base of a gone channel. The root fix (option A, its own slice after S102): a follow from a derived link (a search hit's install, `Fetched.link`, DD-29) never gives its base and only a link the participant opens or pastes does, a dist<->app interface change. | dist cannot tell a link the participant gave from a link built out of a record's own base: the 4-base cap (S105 r4) and `prune_listed` made such a base look new, and a hit's install then gave it, so its redirects into the local network were followed (A35). Undo: cheap (follow.rs, index.rs, lib.rs, fetch.rs); option A replaces it. |
+| DD-47 | A base of a followed or chosen record without explicit provenance is read as listed. The initial base and every redirect target use the local-address rule, and the listed entry limit applies. A cached package is still usable. | Records written before S107 can hold bases learned from discovery. Treating those permissions as unknown lets participants reauthorize a LAN mirror by opening or pasting its link. |
+| DD-48 | S107 replaces the S105 seen history with an explicit follow interface. A base can be given by a participant's `follow`, `choose_index`, or `open_link`. Discovery and fetched-release links use `follow_derived`. The latter cannot give a base, even after pruning or mirror churn. Listing preflight is always listed. | Permission comes from the entry point that receives the link. Record history no longer has to stand in for its origin. |

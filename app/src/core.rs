@@ -840,7 +840,7 @@ impl Core {
                     read_managed_release(&planner.node, &target, link)?
                 } else {
                     if let Some(link) = &link {
-                        planner.node.follow(link)?;
+                        planner.node.follow_derived(link)?;
                     }
                     planner.node.fetch(&target)?
                 };
@@ -1108,7 +1108,12 @@ impl Core {
             );
             crate::build_on::follow_all(
                 links,
-                |link| self.node.follow(link).map(|_| ()).map_err(CmdError::from),
+                |link| {
+                    self.node
+                        .follow_derived(link)
+                        .map(|_| ())
+                        .map_err(CmdError::from)
+                },
                 &mut self
                     .failures
                     .lock()
@@ -2800,7 +2805,8 @@ mod find_integration_tests {
         assert_eq!(error.message, expected);
         assert_eq!(error.code, "dist");
         assert!(carol.followed().unwrap().is_empty());
-        node.follow(published.link.as_ref().unwrap()).unwrap();
+        node.follow_derived(published.link.as_ref().unwrap())
+            .unwrap();
         let fetched = node.fetch(reference).unwrap();
         assert_eq!(
             carol.followed().unwrap()[0].channel,

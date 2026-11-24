@@ -183,7 +183,7 @@ fn ac1_journey_j8() {
     assert!(!light_home.path().join("log/identity.key").exists());
 
     let ivy_home = tempfile::tempdir().unwrap();
-    let ivy = dist(ivy_home.path());
+    let ivy = listing_dist(ivy_home.path());
     ivy.set_name("Ivy").unwrap();
     let reference = &published["release"];
     let publisher = reference
