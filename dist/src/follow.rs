@@ -806,6 +806,16 @@ impl Dist {
 mod tests {
     use super::*;
     #[test]
+    fn s107_legacy_provenance_is_not_authority() {
+        let text = r#"{"base":"https://example.invalid/","followed_at":1,"last_attempt":0,"given":["https://example.invalid/"],"seen":["https://example.invalid/"],"seen_full":true}"#;
+        let record: Follow = serde_json::from_str(text).unwrap();
+        assert!(listed_read(&record, &record.base));
+        let saved = serde_json::to_value(record).unwrap();
+        assert!(saved.get("seen").is_none());
+        assert!(saved.get("seen_full").is_none());
+    }
+
+    #[test]
     fn ac5_given_holds_sixteen_oldest_first_out() {
         let mut list = Vec::new();
         for n in 0..20 {
