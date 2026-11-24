@@ -1,7 +1,6 @@
 #![allow(clippy::unwrap_used, reason = "tests may panic")]
 
 use super::*;
-#[cfg(unix)]
 use std::io::Write;
 
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; form-action 'self'; base-uri 'none'; frame-src 'none'; frame-ancestors 'none'; object-src 'none'";
@@ -259,7 +258,6 @@ async fn ac1_watane_js_is_the_host_library_with_page_headers() {
     assert_eq!(response.headers()["content-type"], "text/event-stream");
 }
 
-#[cfg(unix)] // Uses a Unix symlink fixture.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ac4_page_bytes_headers_paths_and_both_loopbacks() {
     let home = tempfile::tempdir().unwrap();
@@ -353,14 +351,18 @@ async fn ac4_page_bytes_headers_paths_and_both_loopbacks() {
         response.headers()["content-type"],
         "text/plain; charset=utf-8"
     );
-    std::os::unix::fs::symlink("/etc/passwd", home.path().join("mods/hello/ui/leak.txt")).unwrap();
-    let response = preview
-        .client("hello.localhost", "127.0.0.1")
-        .get(format!("{url}leak.txt"))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), 404);
+    #[cfg(unix)] // Uses a Unix symlink fixture.
+    {
+        std::os::unix::fs::symlink("/etc/passwd", home.path().join("mods/hello/ui/leak.txt"))
+            .unwrap();
+        let response = preview
+            .client("hello.localhost", "127.0.0.1")
+            .get(format!("{url}leak.txt"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 404)
+    };
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

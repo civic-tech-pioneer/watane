@@ -198,7 +198,6 @@ async fn ac3_install_page_folder_and_reject_invalid_inputs() {
     );
 }
 
-#[cfg(unix)] // Creates a Unix symlink to /etc/passwd.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ac3_install_transport_and_symlink_guards() {
     let home = tempfile::tempdir().unwrap();
@@ -239,11 +238,14 @@ async fn ac3_install_transport_and_symlink_guards() {
     assert_eq!(response.status(), 403);
     assert!(!home.path().join("mods/hello").exists());
 
-    let folder = copy_hello();
-    std::os::unix::fs::symlink("/etc/passwd", folder.path().join("ui/leak.txt")).unwrap();
-    let response = preview.install(folder.path()).await;
-    assert_eq!(response.status(), 422);
-    assert!(!home.path().join("mods/hello").exists());
+    #[cfg(unix)] // Uses a Unix symlink fixture.
+    {
+        let folder = copy_hello();
+        std::os::unix::fs::symlink("/etc/passwd", folder.path().join("ui/leak.txt")).unwrap();
+        let response = preview.install(folder.path()).await;
+        assert_eq!(response.status(), 422);
+        assert!(!home.path().join("mods/hello").exists())
+    };
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
