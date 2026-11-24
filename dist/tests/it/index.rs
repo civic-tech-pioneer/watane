@@ -45,6 +45,44 @@ fn s107_list_and_include_use_the_listed_entry_budget_before_confirmation() {
 }
 
 #[test]
+fn s107_list_and_include_refuse_a_local_base_before_any_request_or_confirmation() {
+    let publisher_home = tempfile::tempdir().unwrap();
+    let publisher = open(publisher_home.path());
+    let published = publisher.publish(fixture("1.0.0", false)).unwrap();
+    let host = TestHost::serve(&publisher.site_dir());
+    for include in [false, true] {
+        let home = tempfile::tempdir().unwrap();
+        let confirm = Arc::new(RecordingConfirm::new([Decision::Approve]));
+        let dist = Dist::open(
+            home.path(),
+            Arc::<RecordingConfirm>::clone(&confirm),
+            fast_options(),
+        )
+        .unwrap();
+        let slug = (!include).then_some(&published.info.reference.slug);
+        let link = Link::new(publisher.identity().unwrap(), &host.url, slug).unwrap();
+        let before = host.count();
+        let result = if include {
+            dist.include(&link, "")
+        } else {
+            dist.list(&link, "")
+        };
+        assert!(
+            matches!(
+                result,
+                Err(DistError::BadUrl {
+                    cause: "local address",
+                    ..
+                })
+            ),
+            "{result:?}"
+        );
+        assert_eq!(host.count(), before, "a request to the local base");
+        assert!(confirm.requests.lock().unwrap().is_empty());
+    }
+}
+
+#[test]
 fn ac4_own_listing_refuse_and_requests() {
     let a = tempfile::tempdir().unwrap();
     let i = tempfile::tempdir().unwrap();

@@ -1808,3 +1808,6 @@ S98-fix1: `gui_shell::ac5_install_and_each_*` enabled `#approve` and clicked it 
 A fetch link leaves no follows file behind. Direct test publishers that build
 listings from fixture sites opt in to local listed reads. Tests for refusal
 keep the production address policy.
+
+The channel-row index action uses a derived link. Its fixture checks that
+choosing the index leaves the base without explicit permission.

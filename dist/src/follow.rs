@@ -594,6 +594,15 @@ mod tests {
         let saved = serde_json::to_value(record).unwrap();
         assert!(saved.get("seen").is_none());
         assert!(saved.get("seen_full").is_none());
+        assert!(saved.get("given").is_none() && saved.get("explicit_given").is_none());
+        let file =
+            r#"{"version":1,"channels":{},"seen":{"k":{"seen":[],"given":[],"at":1}},"gone":"ff"}"#;
+        let file: Follows = serde_json::from_str(file).unwrap();
+        let out = serde_json::to_value(&file).unwrap();
+        assert!(
+            out.get("seen").is_none() && out.get("gone").is_none(),
+            "{out}"
+        );
     }
 
     #[test]

@@ -283,12 +283,10 @@ fn ac2_find_skipped_channel_and_cause() {
 fn ac1_find_list_in_my_index() {
     let f = Fixture::new();
     let home = tempfile::tempdir().unwrap();
-    let app = App::start(home.path(), &[]);
-    invoke(
-        &app,
-        "channel_follow",
-        json!({"link":f.alice_link.to_string()}),
-    );
+    listing_dist(home.path())
+        .follow_derived(&f.alice_link)
+        .unwrap();
+    let app = App::start(home.path(), &[("WATANE_DRIVER_LISTED_LOCAL", "1")]);
     app.eval("main", "window.dispatchEvent(new Event('focus')); null");
     until(
         &app,
@@ -383,6 +381,12 @@ fn ac1_find_list_in_my_index() {
         &format!("#indexes [data-index='{}']", f.alice.identity().unwrap()),
         "Alice",
     );
+    let file: Value =
+        serde_json::from_slice(&std::fs::read(home.path().join("dist/follows.json")).unwrap())
+            .unwrap();
+    let record = &file["channels"][f.alice_link.channel().to_string()];
+    assert_eq!(record["index"], true, "{record}");
+    assert!(record.get("explicit_given").is_none(), "{record}");
     assert!(app.quit().success());
 }
 
