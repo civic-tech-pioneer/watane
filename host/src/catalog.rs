@@ -723,7 +723,7 @@ impl Catalog {
                     .iter()
                     .any(|g| g.granted && g.grant == Grant::Manage)
             };
-            let gained = manages(&installed) && !old.is_some_and(manages);
+            let gained = manages(installed) && !old.is_some_and(manages);
             *plan
                 .next
                 .iter_mut()
