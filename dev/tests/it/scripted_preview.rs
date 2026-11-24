@@ -28,7 +28,7 @@ impl Preview {
         fs::create_dir(&tests).unwrap();
         fs::write(
             tests.join("initial-state.json"),
-            br#"{"steps":[{"call":"api.ended","expect":{"returns":[]}}]}"#,
+            br#"{"steps":[{"call":"api.ended","returns":[]}]}"#,
         )
         .unwrap();
         Self(temp)
