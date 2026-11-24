@@ -1,0 +1,13 @@
+package mods:toolbox@0.1.0;
+interface api {
+  open: func(toolsets: list<string>) -> result<string, string>;
+  describe: func(handle: string) -> result<list<string>, string>;
+  call: func(handle: string, key: string, tool: string, args: string) -> result<string, string>;
+  call-twice: func(handle: string, key: string, tool: string, args: string) -> list<string>;
+  open-describe: func(toolsets: list<string>) -> string;
+  close: func(handle: string);
+  items: func(s: string) -> list<string>;
+  ended: func() -> list<string>;
+  who: func() -> string;
+}
+world toolbox { import watane:host/state@0.1.0; export api; }
