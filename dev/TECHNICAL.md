@@ -1435,8 +1435,9 @@ when no preview folder matches.
 1. `RunInfo::read(P/home)`; if none, or the host does not answer with
    `home` = `P/home` in `/api/status`, go to step 4 with `stopped` false.
 2. Run `kill -TERM <pid>`.
-3. Wait up to 10 s, polling every 100 ms, until `kill -0 <pid>` fails or
-   `run.json` is gone.
+3. Poll every 100 ms until `kill -0 <pid>` fails or `run.json` is gone.
+   Then wait for the host to release the home lock before deleting the
+   folder or restarting the preview. The two waits share a 10 s limit.
 4. Delete `P`.
 
 ### 9.5 `add <mod folder>` (step 2)

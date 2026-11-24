@@ -305,15 +305,38 @@ fn stop_home(home: &Path) -> Result<bool, Problem> {
         if !alive.success() {
             break;
         }
-        if Instant::now() >= deadline {
-            return Err(
-                Problem::new(Code::EnvPreviewStart, "preview did not stop in 10 seconds")
-                    .fix("Read the preview watane.log and stop the host before trying again"),
-            );
-        }
-        std::thread::sleep(Duration::from_millis(100));
+        wait_for_shutdown(deadline)?;
+    }
+    // The server removes its marker before the host drops the home lock.
+    while !home_unlocked(home)? {
+        wait_for_shutdown(deadline)?;
     }
     Ok(true)
+}
+
+fn wait_for_shutdown(deadline: Instant) -> Result<(), Problem> {
+    let now = Instant::now();
+    if now >= deadline {
+        return Err(
+            Problem::new(Code::EnvPreviewStart, "preview did not stop in 10 seconds")
+                .fix("Read the preview watane.log and stop the host before trying again"),
+        );
+    }
+    std::thread::sleep((deadline - now).min(Duration::from_millis(100)));
+    Ok(())
+}
+
+fn home_unlocked(home: &Path) -> Result<bool, Problem> {
+    let lock = match fs::File::open(home.join("lock")) {
+        Ok(lock) => lock,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+        Err(err) => return Err(Problem::internal(err)),
+    };
+    match lock.try_lock() {
+        Ok(()) => Ok(true),
+        Err(fs::TryLockError::WouldBlock) => Ok(false),
+        Err(err) => Err(Problem::internal(err)),
+    }
 }
 fn preview_folders(dir: &Path, env: &Env) -> Result<Vec<PathBuf>, Problem> {
     let hash = blake3::hash(dir.as_os_str().as_encoded_bytes()).to_hex();
@@ -362,6 +385,16 @@ pub fn stop(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn s114_restart_waits_for_the_home_lock_without_a_run_marker() {
+        let home = tempfile::tempdir().expect("temporary home");
+        let lock = fs::File::create(home.path().join("lock")).expect("create lock");
+        lock.try_lock().expect("take lock");
+        assert!(!home_unlocked(home.path()).expect("check lock while held"));
+        drop(lock);
+        assert!(home_unlocked(home.path()).expect("check released lock"));
+    }
 
     #[test]
     fn ac6_serve_posts_all_folders_once_in_provider_order() {
