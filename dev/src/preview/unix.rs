@@ -197,7 +197,7 @@ pub(crate) fn previous_warning(dir: &Path, env: &Env, args: &str) -> Option<Prob
     })
 }
 
-pub fn serve(
+pub(crate) fn serve_with_script(
     dir: &Path,
     env: &Env,
     rerun: &str,
@@ -444,7 +444,7 @@ mod tests {
                 write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
             }
         });
-        let result = serve(&dir, &env, "watane-dev serve --json", None).unwrap();
+        let result = crate::preview::serve(&dir, &env, "watane-dev serve --json").unwrap();
         assert_eq!(result["reused"], true);
         assert_eq!(
             result["pages"],

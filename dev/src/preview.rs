@@ -9,7 +9,9 @@ mod unix;
 #[cfg(unix)]
 pub(crate) use unix::previous_warning;
 #[cfg(unix)]
-pub use unix::{serve, stop};
+pub(crate) use unix::serve_with_script;
+#[cfg(unix)]
+pub use unix::stop;
 
 #[cfg(unix)]
 pub(crate) fn require_available() -> Result<(), Problem> {
@@ -30,8 +32,16 @@ fn unavailable() -> Problem {
     .fix("Run watane-dev serve on Linux or macOS; on Windows, watane-dev test still builds and tests the mod")
 }
 
-#[cfg(windows)]
 pub fn serve(
+    dir: &std::path::Path,
+    env: &crate::env::Env,
+    rerun: &str,
+) -> Result<serde_json::Value, Vec<Problem>> {
+    serve_with_script(dir, env, rerun, None)
+}
+
+#[cfg(windows)]
+pub(crate) fn serve_with_script(
     _: &std::path::Path,
     _: &crate::env::Env,
     _: &str,

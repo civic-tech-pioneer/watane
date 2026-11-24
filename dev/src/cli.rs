@@ -494,7 +494,7 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
                     if let Err(warning) = preview::find_fake_claude() {
                         outcome.warnings.push(warning);
                     }
-                    preview::serve(&dir, &env, &format!("watane-dev serve --json{args}"), script.as_deref())
+                    preview::serve_with_script(&dir, &env, &format!("watane-dev serve --json{args}"), script.as_deref())
                 }
             }),
     };
