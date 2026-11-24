@@ -1855,6 +1855,25 @@ mod fix21_tests {
         assert!(target.exists());
     }
 
+    /// A FIFO is opened without blocking but not read; a file of exactly 64 KiB is not over.
+    #[test]
+    fn s100_fix21_ac2_only_a_regular_file_is_read_and_64_kib_is_not_over() {
+        let home = tempfile::tempdir().unwrap();
+        let fifo = home.path().join("fifo");
+        rustix::fs::mknodat(
+            rustix::fs::CWD,
+            &fifo,
+            rustix::fs::FileType::Fifo,
+            rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+            0,
+        )
+        .unwrap();
+        assert_eq!(read_pids(&fifo), None);
+        let full = home.path().join("full");
+        std::fs::write(&full, vec![b'\n'; 64 * 1024]).unwrap();
+        assert_eq!(read_pids(&full), Some((vec![b'\n'; 64 * 1024], false)));
+    }
+
     #[test]
     fn s100_fix21_ac2_a_file_over_64_kib_is_read_to_the_cap_and_logged_once() {
         let home = tempfile::tempdir().unwrap();
