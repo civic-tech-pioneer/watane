@@ -694,6 +694,71 @@ mod tests {
     }
 
     #[test]
+    fn ac3_each_event_is_one_write_and_cut_ends_it() {
+        let ids = AtomicU64::new(0);
+        let reply = Reply::Sse(vec![
+            SseEvent::Delta("a".into()),
+            SseEvent::ToolCalls(2),
+            SseEvent::Raw("x".into()),
+            SseEvent::Cut,
+            SseEvent::Delta("never".into()),
+        ]);
+        let Out::Write(chunks) = reply_out(&reply, &ids) else {
+            panic!("an Sse reply writes")
+        };
+        // the head, then one write per event up to the cut
+        assert_eq!(chunks.len(), 1 + 3);
+        assert_eq!(chunks[2].iter().filter(|&&b| b == b'\n').count(), 4);
+        assert_eq!(chunks[3], b"x");
+    }
+
+    #[test]
+    fn ac_serde_forms() {
+        let r: Vec<Reply> = serde_json::from_str(
+            r#"[{"sse":[{"delta":"a"},{"tool-calls":2},{"completed":{"input_tokens":1,"output_tokens":2}},{"failed":{"code":"c"}},{"raw":"x"},"cut"]},"reset","stall",{"redirect":"u"},{"usage-limit":{"resets_in_s":60}}]"#,
+        )
+        .unwrap();
+        assert_eq!(
+            r,
+            [
+                Reply::Sse(vec![
+                    SseEvent::Delta("a".into()),
+                    SseEvent::ToolCalls(2),
+                    SseEvent::Completed {
+                        input_tokens: 1,
+                        output_tokens: 2
+                    },
+                    SseEvent::Failed { code: "c".into() },
+                    SseEvent::Raw("x".into()),
+                    SseEvent::Cut,
+                ]),
+                Reply::Reset,
+                Reply::Stall,
+                Reply::Redirect("u".into()),
+                Reply::UsageLimit { resets_in_s: 60 },
+            ]
+        );
+        assert_eq!(
+            serde_json::to_string(&Play::Slow {
+                ms: 1,
+                then: Box::new(Play::Down)
+            })
+            .unwrap(),
+            r#"{"slow":{"ms":1,"then":"down"}}"#
+        );
+    }
+
+    #[test]
+    fn public_types_are_send_and_sync() {
+        fn both<T: Send + Sync>() {}
+        both::<ScriptedResponses>();
+        both::<Judge>();
+        both::<Recorded>();
+        both::<Reply>();
+        both::<Play>();
+    }
+
+    #[test]
     fn side_script_repeats_last() {
         let s = Side::new(1, "x");
         s.set_script(vec![1, 2]);

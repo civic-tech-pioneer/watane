@@ -43,13 +43,30 @@ fn ac1_two_origins_and_one_authority() {
     let c = client(&s);
     assert_eq!(post(&c, "{}").status(), 200);
     assert_eq!(c.get("https://judge.test/x").send().unwrap().status(), 200);
-    // no added root: the handshake is refused
-    let bare = reqwest::blocking::Client::builder()
-        .no_proxy()
-        .resolve("api.openai.com", s.responses_addr())
-        .build()
-        .unwrap();
-    bare.post(R).body("{}").send().unwrap_err();
+    // DEV-S-61: a client that trusts only the system roots is refused at the handshake
+    let mut roots = rustls::RootCertStore::empty();
+    for cert in rustls_native_certs::load_native_certs().certs {
+        let _ = roots.add(cert);
+    }
+    assert!(!roots.is_empty(), "this machine has system roots");
+    let cfg = rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .with_root_certificates(roots)
+    .with_no_client_auth();
+    let conn = rustls::ClientConnection::new(
+        std::sync::Arc::new(cfg),
+        "api.openai.com".try_into().unwrap(),
+    )
+    .unwrap();
+    let tcp = std::net::TcpStream::connect(s.responses_addr()).unwrap();
+    let mut tls = rustls::StreamOwned::new(conn, tcp);
+    let err = std::io::Write::write_all(&mut tls, b"GET /v1/models HTTP/1.1\r\n\r\n")
+        .and_then(|()| std::io::Write::flush(&mut tls))
+        .unwrap_err();
+    assert!(err.to_string().contains("UnknownIssuer"), "{err}");
 }
 
 #[test]
@@ -230,6 +247,7 @@ fn ac3_reset_and_stall() {
         .unwrap();
     let err = short.post(R).body("{}").send().unwrap_err();
     assert!(err.is_timeout(), "{err}");
+    assert_eq!(s.requests().len(), 2);
 }
 
 #[test]
@@ -460,21 +478,4 @@ fn ac6_program_script_file() {
         .send()
         .unwrap();
     assert_eq!(r.text().unwrap(), r#"{"reasons":["r"],"verdict":"unsure"}"#);
-}
-
-#[test]
-fn ac_serde_forms() {
-    let r: Vec<Reply> = serde_json::from_str(
-        r#"[{"sse":[{"delta":"a"},{"tool-calls":2},{"completed":{"input_tokens":1,"output_tokens":2}},{"failed":{"code":"c"}},{"raw":"x"},"cut"]},"reset","stall",{"redirect":"u"}]"#,
-    )
-    .unwrap();
-    assert_eq!(r.len(), 4);
-    assert_eq!(
-        serde_json::to_string(&Play::Slow {
-            ms: 1,
-            then: Box::new(Play::Down)
-        })
-        .unwrap(),
-        r#"{"slow":{"ms":1,"then":"down"}}"#
-    );
 }

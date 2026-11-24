@@ -89,6 +89,7 @@ tempfile = "3.27"
 claude-codes = { version = "=2.1.330", default-features = false, features = ["types"] }   # the kernel's version: the oracle that parses every line of fake-claude (18.1)
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls-manual-roots"] }   # the https client of the tests of 18.3 (build it with `.no_proxy()`)
+rustls-native-certs = "0.8"                                       # the system roots a test client trusts alone (DEV-S-61)
 
 [[bin]]
 name = "fake-watane"
@@ -2841,6 +2842,7 @@ impl ScriptedResponses {
     pub fn models(&self, slugs: &[&str]);                   // the answer of GET /v1/models
     pub fn requests(&self) -> Vec<Recorded>;                // Responses origin, in arrival order
     pub fn judge(&self) -> &Judge;
+    pub fn log_to(&self, dir: &std::path::Path);           // from now on, each request also as a file (`--log` below)
 }
 pub struct Recorded { pub method: String, pub path: String, pub headers: Vec<(String, String)>, pub body: Vec<u8> }
 pub enum Reply {
@@ -2908,7 +2910,6 @@ with kebab-case variant names and the field names as written above, e.g.
 - A verdict body is `{"reasons":[...],"verdict":"safe"}` (JSON, keys in this order).
 - The 401 of a wrong token or key, the 404 and a script gone empty are `application/json` texts without further shape.
 - The log of `--log` is `{"method","path","headers":[["name","value"],...],"body_b64"}` in the order received, written when the request is recorded.
-- The program offers one method beyond the list above, `log_to(dir)`, which `--log` uses.
 
 **Responses origin.** It answers `POST /v1/responses` with the next `Reply`
 (a text event stream for `Sse`) and `GET /v1/models` with the slugs of

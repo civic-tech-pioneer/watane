@@ -248,6 +248,7 @@ objc2 = { version = "0.6", features = ["disable-encoding-assertions", "exception
 objc2-core-foundation = { version = "0.3", features = ["CFBase"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["NSAffineTransform", "NSArray", "NSAttributedString", "NSAutoreleasePool", "NSBundle", "NSCharacterSet", "NSCoder", "NSData", "NSDate", "NSDictionary", "NSDistributedNotificationCenter", "NSEnumerator", "NSError", "NSException", "NSFileWrapper", "NSFormatter", "NSGeometry", "NSHTTPCookie", "NSItemProvider", "NSJSONSerialization", "NSKeyValueCoding", "NSKeyValueObserving", "NSLocale", "NSNotification", "NSNull", "NSObjCRuntime", "NSObject", "NSOrthography", "NSPathUtilities", "NSProcessInfo", "NSProgress", "NSRange", "NSRunLoop", "NSScriptCommand", "NSScriptStandardSuiteCommands", "NSSet", "NSStream", "NSString", "NSTextCheckingResult", "NSThread", "NSURL", "NSURLAuthenticationChallenge", "NSURLCredential", "NSURLRequest", "NSURLResponse", "NSURLSession", "NSUUID", "NSUndoManager", "NSUserActivity", "NSValue", "NSZone", "block2", "objc2-core-foundation", "std"] }
 rustix = { version = "1", default-features = false, features = ["mm", "net", "param", "termios", "thread", "time"] }
+security-framework-sys = { version = "2" }
 simdutf8 = { version = "0.1", features = ["aarch64_neon", "public_imp"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "ring", "tls12"] }
 tower = { version = "0.5", default-features = false, features = ["log", "make", "retry", "timeout"] }
@@ -267,6 +268,7 @@ objc2 = { version = "0.6", features = ["disable-encoding-assertions", "exception
 objc2-core-foundation = { version = "0.3", features = ["CFBase"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["NSAffineTransform", "NSArray", "NSAttributedString", "NSAutoreleasePool", "NSBundle", "NSCharacterSet", "NSCoder", "NSData", "NSDate", "NSDictionary", "NSDistributedNotificationCenter", "NSEnumerator", "NSError", "NSException", "NSFileWrapper", "NSFormatter", "NSGeometry", "NSHTTPCookie", "NSItemProvider", "NSJSONSerialization", "NSKeyValueCoding", "NSKeyValueObserving", "NSLocale", "NSNotification", "NSNull", "NSObjCRuntime", "NSObject", "NSOrthography", "NSPathUtilities", "NSProcessInfo", "NSProgress", "NSRange", "NSRunLoop", "NSScriptCommand", "NSScriptStandardSuiteCommands", "NSSet", "NSStream", "NSString", "NSTextCheckingResult", "NSThread", "NSURL", "NSURLAuthenticationChallenge", "NSURLCredential", "NSURLRequest", "NSURLResponse", "NSURLSession", "NSUUID", "NSUndoManager", "NSUserActivity", "NSValue", "NSZone", "block2", "objc2-core-foundation", "std"] }
 rustix = { version = "1", default-features = false, features = ["mm", "net", "param", "termios", "thread", "time"] }
+security-framework-sys = { version = "2" }
 simdutf8 = { version = "0.1", features = ["aarch64_neon", "public_imp"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["logging", "ring", "tls12"] }
 tower = { version = "0.5", default-features = false, features = ["log", "make", "retry", "timeout"] }
