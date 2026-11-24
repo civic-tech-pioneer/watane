@@ -5,6 +5,10 @@ interface api {
   say: func(s: string, text: string) -> string;
   say-then-fail: func(s: string, text: string);
   answer: func(s: string, ask: string) -> string;
+  decide: func(s: string, ask: string, decision: string) -> string;
+  decide-then-fail: func(s: string, ask: string, decision: string);
+  quiet: func();
+  tally: func(s: string) -> string;
   interrupt: func(s: string) -> string;
   compact: func(s: string) -> string;
   cancel: func(s: string);

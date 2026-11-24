@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, reason = "tests may panic")]
 //! The launch grammar at the call (TECHNICAL 19.3): `bad-launch {field, reason}`, no stream and
-//! no process. Asks, checks and handles name the stage that builds them.
+//! no process. Handles, skills and the sandbox name the stage that builds them.
 
 use crate::claude::Rig;
 use serde_json::{Value, json};
@@ -90,9 +90,18 @@ fn ac4_each_field_outside_its_grammar_is_bad_launch_with_no_stream_and_no_proces
             "json-schema",
         ),
         // What later stages build (15, "A2 in two slices"): each names its stage.
-        (launch(json!({"ask":true})), "ask"),
+        (launch(json!({"ask":"yes"})), "ask"),
         (
-            launch(json!({"pre-tool-check":{"timeout-s":5}})),
+            launch(json!({"pre-tool-check":{"timeout-s":4}})),
+            "pre-tool-check",
+        ),
+        (
+            launch(json!({"pre-tool-check":{"timeout-s":121}})),
+            "pre-tool-check",
+        ),
+        (launch(json!({"pre-tool-check":{}})), "pre-tool-check"),
+        (
+            launch(json!({"pre-tool-check":{"timeout-s":5,"x":1}})),
             "pre-tool-check",
         ),
         (launch(json!({"agent-handle":"h"})), "agent-handle"),
@@ -119,7 +128,7 @@ fn ac4_each_field_outside_its_grammar_is_bad_launch_with_no_stream_and_no_proces
     for (text, field) in &cases {
         bad(&rig, "api.start", text, field);
     }
-    let stages = ["ask", "pre-tool-check", "agent-handle", "skills", "sandbox"];
+    let stages = ["agent-handle", "skills", "sandbox"];
     for (text, field) in cases.iter().filter(|(_, f)| stages.contains(f)) {
         let r = rig.call("api.start", json!({"launch": text}));
         assert!(
@@ -251,3 +260,75 @@ fn ac1_s99_a_file_allow_with_a_relative_pattern_that_holds_a_star_is_kept() {
         assert_eq!(r.as_str().unwrap().len(), 32, "{rule} gave {r}");
     }
 }
+
+// ---- S100 AC1: ask and pre-tool-check ----------------------------------------------------
+
+#[test]
+fn s100_ac1_ask_true_gives_the_host_prompt_flags_in_the_place_of_none() {
+    let rig = Rig::new(&[]);
+    let s = rig.start_ok(&launch(json!({"ask":true,"mode":"manual"})));
+    rig.wait_items(&s, 2);
+    let args = rig.entries("ARG");
+    let at = |a: &str| {
+        args.iter()
+            .position(|x| x == a)
+            .unwrap_or_else(|| panic!("{a}"))
+    };
+    assert_eq!(
+        at("--permission-prompts=host"),
+        at("--permission-mode=default") + 1
+    );
+    assert_eq!(
+        at("--permission-prompt-tool=stdio"),
+        at("--permission-prompts=host") + 1
+    );
+    assert!(!args.contains(&"--permission-prompts=none".to_owned()));
+}
+
+#[test]
+fn s100_ac1_pre_tool_check_puts_the_hook_in_initialize_for_5_to_120_seconds() {
+    let rig = Rig::new(&[]);
+    for t in [5, 120] {
+        let s = rig.start_ok(&launch(json!({"pre-tool-check":{"timeout-s":t}})));
+        rig.wait_items(&s, 2);
+    }
+    let inits: Vec<Value> = rig
+        .entries("IN")
+        .iter()
+        .filter(|l| l.contains(r#""subtype":"initialize""#))
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(inits.len(), 2);
+    let mut timeouts: Vec<u64> = vec![];
+    for init in &inits {
+        let hook = &init["request"]["hooks"]["PreToolUse"];
+        assert_eq!(hook.as_array().unwrap().len(), 1);
+        assert_eq!(hook[0]["matcher"], "*");
+        assert_eq!(hook[0]["onFailure"], "block");
+        assert_eq!(hook[0]["hookCallbackIds"].as_array().unwrap().len(), 1);
+        timeouts.push(hook[0]["timeout"].as_u64().unwrap());
+    }
+    timeouts.sort_unstable();
+    assert_eq!(timeouts, [5, 120]);
+}
+
+#[test]
+fn s100_ac1_a_callback_needs_hook_support_in_the_answer_to_initialize() {
+    for reply in [
+        r#"{"hooks_applied":true}"#,
+        r#"{"hook_on_failure_supported":true,"hooks_applied":false}"#,
+        r#"{"hook_on_failure_supported":false}"#,
+    ] {
+        let rig = Rig::new(&[("reply", reply.as_bytes())]);
+        let s = rig.start_ok(&launch(json!({"pre-tool-check":{"timeout-s":5}})));
+        let ended = rig.wait_ended(1);
+        assert_eq!(ended, [format!("{s} mismatch(hooks)")], "{reply}");
+        assert!(rig.items(&s).is_empty(), "{reply}");
+    }
+    // Without a callback the answer is not read for it.
+    let rig = Rig::new(&[("reply", br#"{}"#)]);
+    let s = rig.start_ok(LAUNCH_PLAIN);
+    rig.wait_items(&s, 2);
+}
+
+const LAUNCH_PLAIN: &str = r#"{"version":1,"workspace":"scratch"}"#;

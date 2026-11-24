@@ -58,6 +58,15 @@ fn die(code: i32, message: &str) -> ! {
 fn emit(value: &Value) {
     emit_bytes(value.to_string().as_bytes());
 }
+fn emit_bytes_raw(bytes: &[u8]) {
+    if bytes.is_empty() {
+        return;
+    }
+    let mut out = std::io::stdout().lock();
+    if out.write_all(bytes).and_then(|()| out.flush()).is_err() {
+        std::process::exit(0);
+    }
+}
 fn emit_bytes(bytes: &[u8]) {
     let mut out = std::io::stdout().lock();
     if out
@@ -111,13 +120,231 @@ struct Fake {
     counter: u64,
     requests: HashMap<String, String>,
     callback: String,
+    /// The turn ended (a deny or an interrupt): steps are skipped up to the next turn step.
+    skip: bool,
+}
+fn is_interrupt(line: &Value) -> bool {
+    line["type"] == "control_request" && line["request"]["subtype"] == "interrupt"
+}
+fn said(line: &Value) -> String {
+    let content = &line["message"]["content"];
+    content.as_str().map_or_else(
+        || {
+            content
+                .as_array()
+                .map(|blocks| {
+                    blocks
+                        .iter()
+                        .filter_map(|b| b["text"].as_str())
+                        .collect::<String>()
+                })
+                .unwrap_or_default()
+        },
+        str::to_owned,
+    )
+}
+fn answer_interrupt(line: &Value) {
+    emit(
+        &json!({"type":"control_response","response":{"subtype":"success",
+        "request_id":line["request_id"],"response":{}}}),
+    );
+}
+fn assistant(content: &[Value]) {
+    emit(&assistant_line(content));
+}
+fn assistant_line(content: &[Value]) -> Value {
+    json!({"type":"assistant","session_id":SESSION,"message":{
+        "id":"msg_fake","type":"message","role":"assistant","model":"fake-claude",
+        "content":content,"stop_reason":"end_turn","stop_sequence":null,
+        "usage":{"input_tokens":1,"output_tokens":1}}})
+}
+fn result_line(subtype: &str, text: &str, usage: &Value) -> Value {
+    json!({"type":"result","subtype":subtype,"is_error":subtype != "success",
+        "duration_ms":1,"duration_api_ms":1,"num_turns":1,"result":text,
+        "session_id":SESSION,"total_cost_usd":0,"usage":usage})
+}
+fn idle_line() -> Value {
+    json!({"type":"system","subtype":"session_state_changed","state":"idle"})
 }
 impl Fake {
+    /// The next line, whatever it is; `None` when standard input is closed.
+    fn next_any(&mut self) -> Option<Value> {
+        self.queue.pop_front().or_else(|| self.rx.recv().ok())
+    }
+    /// The next line that is not an `interrupt` or an answer no step awaits: an `interrupt` is
+    /// answered (host 19.3 step 5), an answer to a written ask or check is consumed.
+    fn next_unawaited(&mut self) -> Option<Value> {
+        loop {
+            let line = self.next_any()?;
+            if is_interrupt(&line) {
+                answer_interrupt(&line);
+            } else if !self.consumed_answer(&line) {
+                return Some(line);
+            }
+        }
+    }
+    /// A `control_response` that no step awaits is consumed when it answers a request the fake
+    /// wrote; one that names none is fatal (TECHNICAL 18.2).
+    fn consumed_answer(&self, line: &Value) -> bool {
+        if line["type"] != "control_response" {
+            return false;
+        }
+        let id = line["response"]["request_id"].as_str().unwrap_or("");
+        if !self.requests.values().any(|r| r == id) {
+            die(70, &format!("a line that no step awaits: {line}"));
+        }
+        true
+    }
+    /// The next line for an awaiting step: an answer to an earlier ask or check is consumed
+    /// first (fatal when it names none), except one with `own` as its `request_id`.
+    fn next_wait(&mut self, own: &str) -> Option<Value> {
+        loop {
+            let line = self.next_any()?;
+            if line["response"]["request_id"].as_str() == Some(own) || !self.consumed_answer(&line)
+            {
+                return Some(line);
+            }
+        }
+    }
     fn await_line(&mut self, what: &str) -> Value {
-        self.queue
-            .pop_front()
-            .or_else(|| self.rx.recv().ok())
+        self.next_unawaited()
             .unwrap_or_else(|| die(70, &format!("stdin closed while waiting for {what}")))
+    }
+    /// Lines that arrive for `wait` (none: only those already there); a `user` message or an
+    /// answer is kept for the next step, an `interrupt` is answered and reported.
+    fn poll(&mut self, wait: Duration) -> bool {
+        let deadline = std::time::Instant::now() + wait;
+        loop {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            let line = if left.is_zero() {
+                self.rx.try_recv().ok()
+            } else {
+                self.rx.recv_timeout(left).ok()
+            };
+            match line {
+                Some(line) if is_interrupt(&line) => {
+                    answer_interrupt(&line);
+                    return true;
+                }
+                Some(line) => self.queue.push_back(line),
+                None => return false,
+            }
+        }
+    }
+    fn end_turn(&mut self, subtype: &str) {
+        emit(&result_line(
+            subtype,
+            "",
+            &json!({"input_tokens":1,"output_tokens":1}),
+        ));
+        emit(&idle_line());
+    }
+    /// `load` with `rate`: each second `deltas` text deltas and `entries` finished entries,
+    /// spread evenly; an `interrupt` ends it (TECHNICAL 18.2).
+    fn rate_load(&mut self, rate: &Value) {
+        let deltas = rate["deltas"].as_u64().unwrap_or(50);
+        let entries = rate["entries"].as_u64().unwrap_or(5);
+        let bytes = usize::try_from(rate["bytes"].as_u64().unwrap_or(4096)).unwrap_or(4096);
+        let seconds = rate["seconds"].as_u64().unwrap_or(10);
+        // One tick per second-fraction of the larger count; a delta or an entry is written on
+        // the ticks where its running total steps up, so each gets exactly its count.
+        let ticks = deltas.max(entries).max(1);
+        let start = std::time::Instant::now();
+        let mut interrupted = false;
+        let (mut sent_deltas, mut sent_entries) = (0, 0);
+        for i in 0..ticks * seconds {
+            let due = start + Duration::from_secs(1).mul_f64(i as f64 / ticks as f64);
+            if self.poll(due.saturating_duration_since(std::time::Instant::now())) {
+                interrupted = true;
+                break;
+            }
+            let at = i % ticks + 1;
+            if at * deltas / ticks > (at - 1) * deltas / ticks {
+                let text = format!("delta {sent_deltas} ");
+                sent_deltas += 1;
+                emit(
+                    &json!({"type":"stream_event","session_id":SESSION,"uuid":"fake-uuid",
+                    "event":{"type":"content_block_delta","index":0,
+                        "delta":{"type":"text_delta","text":text}}}),
+                );
+            }
+            if at * entries / ticks > (at - 1) * entries / ticks {
+                sent_entries += 1;
+                let mut text = format!("entry {sent_entries} ");
+                while text.len() < bytes {
+                    text.push('x');
+                }
+                assistant(&[json!({"type":"text","text":text})]);
+            }
+        }
+        self.end_turn(if interrupted {
+            "error_during_execution"
+        } else {
+            "success"
+        });
+    }
+    /// `long-turn` and `load` (TECHNICAL 18.2).
+    fn long_turn(&mut self, step: &Value, bytes: u64, burst: bool) {
+        let entries = step["entries"].as_u64().unwrap_or(100);
+        let bytes = usize::try_from(step["bytes"].as_u64().unwrap_or(bytes)).unwrap_or(32);
+        let every = Duration::from_millis(step["every-ms"].as_u64().unwrap_or(0));
+        let mut pending: Vec<u8> = vec![];
+        let mut lines = 0;
+        let mut interrupted = false;
+        for i in 1..=entries {
+            if self.poll(if i == 1 { Duration::ZERO } else { every }) {
+                interrupted = true;
+                break;
+            }
+            let mut text = format!("entry {i} ");
+            while text.len() < bytes {
+                text.push('x');
+            }
+            let line = assistant_line(&[json!({"type":"text","text":text})]);
+            if burst {
+                pending.extend_from_slice(line.to_string().as_bytes());
+                pending.push(b'\n');
+                lines += 1;
+                if lines == 64 {
+                    emit_bytes_raw(&pending);
+                    pending.clear();
+                    lines = 0;
+                }
+            } else {
+                emit(&line);
+            }
+        }
+        emit_bytes_raw(&pending);
+        self.end_turn(if interrupted {
+            "error_during_execution"
+        } else {
+            "success"
+        });
+    }
+    fn reply_per_say(&mut self, step: &Value) {
+        let prefix = step["text"].as_str().unwrap_or("you said: ");
+        let turns = step["turns"].as_u64();
+        let mut done = 0;
+        while turns.is_none_or(|n| done < n) {
+            let Some(line) = self.next_unawaited() else {
+                if turns.is_none() {
+                    std::process::exit(0);
+                }
+                die(70, "stdin closed while waiting for a user message");
+            };
+            if line["type"] != "user" {
+                die(70, &format!("expected a user message, got {line}"));
+            }
+            let reply = format!("{prefix}{}", said(&line));
+            emit(
+                &json!({"type":"stream_event","session_id":SESSION,"uuid":"fake-uuid",
+                "event":{"type":"content_block_delta","index":0,
+                    "delta":{"type":"text_delta","text":reply}}}),
+            );
+            assistant(&[json!({"type":"text","text":reply})]);
+            self.end_turn("success");
+            done += 1;
+        }
     }
     fn control(&mut self, step: &Value, mut request: Value, kind: &str) {
         self.counter += 1;
@@ -127,7 +354,8 @@ impl Fake {
         let request_id = format!("fake-req-{}", self.counter);
         request["tool_use_id"] = json!(tool_use_id);
         emit(&json!({"type":"control_request","request_id":request_id,"request":request}));
-        self.requests.insert(tool_use_id.clone(), request_id);
+        self.requests
+            .insert(tool_use_id.clone(), request_id.clone());
         if kind == "check" && step["error"] == true {
             emit(
                 &json!({"type":"system","subtype":"hook_response","hook_event":"PreToolUse",
@@ -135,9 +363,24 @@ impl Fake {
             );
         }
         if step["await"] == true {
-            let line = self.await_line("a control_response");
+            let Some(line) = self.next_wait(&request_id) else {
+                die(70, "stdin closed while waiting for a control_response");
+            };
+            if kind == "ask" && is_interrupt(&line) {
+                answer_interrupt(&line);
+                self.end_turn("error_during_execution");
+                self.skip = true;
+                return;
+            }
             if line["type"] != "control_response" {
                 die(70, &format!("expected a control_response, got {line}"));
+            }
+            let answer = &line["response"]["response"];
+            if kind == "ask" && answer["behavior"] == "deny" {
+                let why = answer["message"].as_str().unwrap_or("");
+                assistant(&[json!({"type":"text","text":format!("denied: {why}")})]);
+                self.end_turn("success");
+                self.skip = true;
             }
         }
     }
@@ -151,21 +394,7 @@ impl Fake {
                 if line["type"] != "user" {
                     die(70, &format!("expected a user message, got {line}"));
                 }
-                let content = &line["message"]["content"];
-                let said = content.as_str().map_or_else(
-                    || {
-                        content
-                            .as_array()
-                            .map(|blocks| {
-                                blocks
-                                    .iter()
-                                    .filter_map(|b| b["text"].as_str())
-                                    .collect::<String>()
-                            })
-                            .unwrap_or_default()
-                    },
-                    str::to_owned,
-                );
+                let said = said(&line);
                 if let Some(want) = step["contains"].as_str()
                     && !said.contains(want)
                 {
@@ -201,10 +430,7 @@ impl Fake {
                     block["type"] = json!("tool_use");
                     content.push(block);
                 }
-                emit(&json!({"type":"assistant","session_id":SESSION,"message":{
-                    "id":"msg_fake","type":"message","role":"assistant","model":"fake-claude",
-                    "content":content,"stop_reason":"end_turn","stop_sequence":null,
-                    "usage":{"input_tokens":1,"output_tokens":1}}}));
+                assistant(&content);
             }
             "result" => {
                 let subtype = step["subtype"].as_str().unwrap_or("success");
@@ -212,14 +438,10 @@ impl Fake {
                     .get("usage")
                     .cloned()
                     .unwrap_or(json!({"input_tokens":1,"output_tokens":1}));
-                emit(
-                    &json!({"type":"result","subtype":subtype,"is_error":subtype != "success",
-                    "duration_ms":1,"duration_api_ms":1,"num_turns":1,"result":text,
-                    "session_id":SESSION,"total_cost_usd":0,"usage":usage}),
-                );
+                emit(&result_line(subtype, text, &usage));
             }
             "idle" => {
-                emit(&json!({"type":"system","subtype":"session_state_changed","state":"idle"}));
+                emit(&idle_line());
             }
             "ask" => {
                 let request =
@@ -247,15 +469,18 @@ impl Fake {
                 }
             }
             "expect-interrupt" => {
-                let line = self.await_line("an interrupt");
-                if line["request"]["subtype"] != "interrupt" {
+                let Some(line) = self.next_wait("") else {
+                    die(70, "stdin closed while waiting for an interrupt");
+                };
+                if !is_interrupt(&line) {
                     die(70, &format!("expected an interrupt, got {line}"));
                 }
-                emit(
-                    &json!({"type":"control_response","response":{"subtype":"success",
-                    "request_id":line["request_id"],"response":{}}}),
-                );
+                answer_interrupt(&line);
             }
+            "long-turn" => self.long_turn(step, 32, false),
+            "load" if step["rate"].is_object() => self.rate_load(&step["rate"]),
+            "load" => self.long_turn(step, 1024, true),
+            "reply-per-say" => self.reply_per_say(step),
             "sleep" => {
                 // A line that arrives meanwhile is kept for the next step.
                 let deadline = std::time::Instant::now()
@@ -465,10 +690,20 @@ fn main() {
         counter: 0,
         requests: HashMap::new(),
         callback,
+        skip: false,
     };
-    for step in script["steps"].as_array().into_iter().flatten() {
+    let steps = script["steps"].as_array().cloned().unwrap_or_default();
+    let is_turn =
+        |s: &Value| ["expect-user", "reply-per-say"].contains(&s["do"].as_str().unwrap_or(""));
+    for step in &steps {
+        if fake.skip {
+            if !is_turn(step) {
+                continue;
+            }
+            fake.skip = false;
+        }
         fake.run(step);
     }
     // Steps over: read on until the host closes stdin, so that a stray line is caught.
-    while fake.rx.recv().is_ok() {}
+    while fake.next_unawaited().is_some() {}
 }

@@ -25,6 +25,9 @@ const BATCH_ITEMS: usize = 256;
 const BATCH_BYTES: usize = 1 << 20;
 const ORIGIN_BUDGET: usize = 128 << 20;
 const HOST_BUDGET: usize = 512 << 20;
+/// The most a close item (`ask-resolved`) can take: a decimal `u64` id, `by` and `outcome` from
+/// fixed sets.
+pub(crate) const CLOSE_RESERVE: usize = 128;
 const CONN_BUDGET: usize = 16 << 20;
 pub(crate) const MAX_OPEN: usize = 32;
 const LAG: Duration = Duration::from_secs(10);
@@ -91,12 +94,6 @@ enum State {
     Queued,
     Running,
 }
-#[derive(Clone, Copy, Debug)]
-enum Refused {
-    Stream,
-    Origin(usize),
-    Host(usize),
-}
 #[derive(Debug)]
 struct Stream {
     consumer: Consumer,
@@ -107,12 +104,15 @@ struct Stream {
     next_seq: u64,
     queue: VecDeque<Item>,
     bytes: usize,
+    /// Bytes held in the budgets for the closes of the asks and checks that are open (19.2).
+    reserved: usize,
     state: State,
     retry_len: Option<usize>,
     failed_once: bool,
     deferred: Option<Instant>,
     full_since: Option<Instant>,
-    needs_ready: Option<Refused>,
+    /// The refused push or open: its item bytes, and the reserve it asked for (19.2, In flight).
+    needs_ready: Option<(usize, usize)>,
     closing: Option<Value>,
     producer_told: bool,
     handed_off: bool,
@@ -139,6 +139,7 @@ impl Stream {
             next_seq: 1,
             queue: VecDeque::new(),
             bytes: 0,
+            reserved: 0,
             state: State::Idle,
             retry_len: None,
             failed_once: false,
@@ -268,9 +269,13 @@ struct Inner {
     tasks: BTreeMap<LocalName, VecDeque<Task>>,
     busy: HashSet<LocalName>,
     waiting: BTreeSet<String>,
+    /// A ready scan found the chains gate or a log busy: the worker owes it (19.2, In flight).
+    scan_owed: bool,
     clock: Clock,
     ended_host: HashMap<String, Value>,
     deliveries: HashMap<String, Vec<Delivery>>,
+    /// The host, once `start` ran: the chains in flight whose pending bytes a ready scan counts.
+    host: Option<Weak<Host>>,
     /// Run when a host stream ends: the claude session kills its process group (19.3).
     on_end: HashMap<String, Box<dyn FnOnce() + Send>>,
 }
@@ -278,6 +283,8 @@ struct Inner {
 pub(crate) struct Hub {
     inner: Mutex<Inner>,
     cv: Condvar,
+    /// The host, once `start` ran: the chains in flight whose pending bytes an ask counts.
+    host: std::sync::OnceLock<Weak<Host>>,
 }
 impl std::fmt::Debug for Hub {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -316,6 +323,7 @@ impl Hub {
         Arc::new(Self {
             inner: Mutex::new(Inner::default()),
             cv: Condvar::new(),
+            host: std::sync::OnceLock::new(),
         })
     }
     fn lock(&self) -> MutexGuard<'_, Inner> {
@@ -328,6 +336,8 @@ impl Hub {
     pub fn start(self: &Arc<Self>, host: &Arc<Host>) -> std::io::Result<()> {
         let hub = Arc::clone(self);
         let weak = Arc::downgrade(host);
+        let _ = self.host.set(Weak::clone(&weak));
+        self.lock().host = Some(Weak::clone(&weak));
         std::thread::Builder::new()
             .name("watane-streams".into())
             .spawn(move || hub.run(&weak))
@@ -340,6 +350,14 @@ impl Hub {
                 return;
             }
             inner.check_clocks();
+            if inner.scan_owed {
+                drop(inner);
+                if let Some(host) = weak.upgrade() {
+                    host.chain_ended();
+                }
+                inner = self.lock();
+                continue;
+            }
             let next = inner.next_task();
             let Some((local, task)) = next else {
                 inner = self
@@ -410,36 +428,11 @@ impl Hub {
         id: &str,
         len: usize,
         chain: (usize, usize),
-        origin: &str,
         origin_pending: usize,
         host_pending: usize,
     ) -> Result<(), StreamError> {
-        let mut inner = self.lock();
-        let now = inner.clock.now();
-        let origin_now = inner.origin_bytes.get(origin).copied().unwrap_or(0);
-        let host_now = inner.host_bytes;
-        let Some(s) = inner.streams.get_mut(id) else {
-            return Ok(());
-        };
-        let refused =
-            if s.queue.len() + chain.0 + 1 > MAX_ITEMS || s.bytes + chain.1 + len > MAX_BYTES {
-                Some(Refused::Stream)
-            } else if origin_now + origin_pending + len > ORIGIN_BUDGET {
-                Some(Refused::Origin(len))
-            } else if host_now + host_pending + len > HOST_BUDGET {
-                Some(Refused::Host(len))
-            } else {
-                None
-            };
-        let Some(refused) = refused else {
-            return Ok(());
-        };
-        if s.deferred.is_none() && s.full_since.is_none() {
-            s.full_since = Some(now);
-        }
-        s.needs_ready = Some(refused);
-        inner.waiting.insert(id.to_owned());
-        Err(StreamError::Full)
+        self.lock()
+            .check_in(id, len, chain, (origin_pending, host_pending), 0)
     }
 
     // ---- applying effects (after the chain's commit) ------------------------------------
@@ -477,7 +470,7 @@ impl Hub {
                     .get(&id)
                     .is_some_and(|s| s.producer == Producer::Mod(by.clone()))
                 {
-                    inner.enqueue(&id, body, hop);
+                    inner.commit_push(&id, body, hop);
                 }
             }
             Effect::Close { id, outcome, by } => {
@@ -869,21 +862,164 @@ impl Hub {
         );
         inner.on_end.insert(id, on_end);
     }
+    /// The hub's clock: real, or the one a test moves (19.9).
+    pub(crate) fn now(&self) -> Instant {
+        self.lock().clock.now()
+    }
     /// A push by the host as producer (19.2): `full` when the stream, the origin client or the
     /// host is at its limit, so that the source waits.
     pub fn host_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
+        self.push_as_host(id, body, 0, false)
+    }
+    /// A push of the item that opens an ask or check (19.3, step 5): the budgets must hold the
+    /// item, `CLOSE_RESERVE` bytes and the `retained` input of the ask, which stay reserved
+    /// until its close is pushed or the stream ends. The check, the enqueue and the reserve
+    /// are one step under one lock.
+    #[cfg(test)]
+    pub fn host_open_keeping(
+        &self,
+        id: &str,
+        body: &[u8],
+        retained: usize,
+    ) -> Result<(), StreamError> {
+        self.push_as_host(id, body, CLOSE_RESERVE + retained, false)
+    }
+    /// `host_open_keeping` for an ask that keeps no input.
+    #[cfg(test)]
+    pub fn host_open_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
+        self.host_open_keeping(id, body, 0)
+    }
+    /// A push of an item that closes an ask or check: it takes the bytes reserved when the ask
+    /// opened (`CLOSE_RESERVE` and its `retained` input) and goes past the stream's in-flight
+    /// limit, so it waits on neither the stream nor a budget and the end of a run never waits
+    /// on a consumer (19.2, In flight).
+    pub fn host_close_keeping(
+        &self,
+        id: &str,
+        body: &[u8],
+        retained: usize,
+    ) -> Result<(), StreamError> {
+        self.push_as_host(id, body, CLOSE_RESERVE + retained, true)
+    }
+    /// `host_close_keeping` for an ask that kept no input.
+    #[cfg(test)]
+    pub fn host_close_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
+        self.host_close_keeping(id, body, 0)
+    }
+    /// `reserve` is what an open adds to the budgets, or what a `close` takes back.
+    fn push_as_host(
+        &self,
+        id: &str,
+        body: &[u8],
+        reserve: usize,
+        close: bool,
+    ) -> Result<(), StreamError> {
         if body.len() > MAX_ITEM {
             return Err(StreamError::TooLarge);
         }
-        let origin = {
-            let inner = self.lock();
-            match inner.streams.get(id) {
-                Some(s) if s.closing.is_none() && s.producer == Producer::Host => s.origin.clone(),
-                _ => return Err(StreamError::UnknownStream),
-            }
+        if close {
+            return self.push_as_host_in(id, body, reserve, close, (0, 0));
+        }
+        self.with_pending(id, |pending| {
+            self.push_as_host_in(id, body, reserve, close, pending)
+        })
+    }
+    /// Runs `f` with the bytes that chains in flight have queued for the stream's origin and in
+    /// all, holding their gate (19.2, Commit): a host admission counts them as a mod's push does.
+    /// The gate comes before any lock of a session, as at an apply: take it here first, then
+    /// admit with `host_push_in` or `host_open_keeping_in`.
+    pub fn with_pending<R>(&self, id: &str, f: impl FnOnce((usize, usize)) -> R) -> R {
+        let origin = self.lock().streams.get(id).map(|s| s.origin.clone());
+        match (origin, self.host.get().and_then(Weak::upgrade)) {
+            (Some(origin), Some(host)) => host.with_pending(&origin, f),
+            _ => f((0, 0)),
+        }
+    }
+    /// `host_push` under a `with_pending` of the caller.
+    pub fn host_push_in(
+        &self,
+        id: &str,
+        body: &[u8],
+        pending: (usize, usize),
+    ) -> Result<(), StreamError> {
+        if body.len() > MAX_ITEM {
+            return Err(StreamError::TooLarge);
+        }
+        self.push_as_host_in(id, body, 0, false, pending)
+    }
+    /// `host_open_keeping` under a `with_pending` of the caller.
+    pub fn host_open_keeping_in(
+        &self,
+        id: &str,
+        body: &[u8],
+        retained: usize,
+        pending: (usize, usize),
+    ) -> Result<(), StreamError> {
+        if body.len() > MAX_ITEM {
+            return Err(StreamError::TooLarge);
+        }
+        self.push_as_host_in(id, body, CLOSE_RESERVE + retained, false, pending)
+    }
+    /// The ready scan with the pending bytes counted under the chains gate, which the caller holds
+    /// (19.2, In flight).
+    pub(crate) fn scan_ready_with(&self, pending: crate::agent::Pending) {
+        let mut inner = self.lock();
+        inner.scan_ready_in(&pending);
+        drop(inner);
+        self.cv.notify_all();
+    }
+    /// `push_as_host` with the bytes (`origin`, `host`) that chains in flight have queued.
+    fn push_as_host_in(
+        &self,
+        id: &str,
+        body: &[u8],
+        reserve: usize,
+        close: bool,
+        (origin_pending, host_pending): (usize, usize),
+    ) -> Result<(), StreamError> {
+        let mut inner = self.lock();
+        let origin = match inner.streams.get(id) {
+            Some(s) if s.closing.is_none() && s.producer == Producer::Host => s.origin.clone(),
+            _ => return Err(StreamError::UnknownStream),
         };
-        self.check_push(id, body.len(), (0, 0), &origin, 0, 0)?;
-        self.lock().enqueue(id, body.to_vec(), 0);
+        if close {
+            let taken = inner
+                .streams
+                .get_mut(id)
+                .filter(|s| s.reserved >= reserve)
+                .map(|s| s.reserved -= reserve);
+            if taken.is_some() {
+                inner.free(&origin, reserve);
+                inner.enqueue(id, body.to_vec(), 0);
+                // The close turned its reserve into one item: the net charge went down.
+                inner.scan_ready();
+                drop(inner);
+                self.cv.notify_all();
+                return Ok(());
+            }
+        }
+        let reserve = if close { 0 } else { reserve };
+        inner.check_in(
+            id,
+            body.len(),
+            (0, 0),
+            (origin_pending, host_pending),
+            reserve,
+        )?;
+        if close {
+            // A close item is no producer push: the refusal and the lag clock stay (19.3 step 5).
+            inner.enqueue(id, body.to_vec(), 0);
+        } else {
+            inner.commit_push(id, body.to_vec(), 0);
+        }
+        if reserve > 0 {
+            if let Some(s) = inner.streams.get_mut(id) {
+                s.reserved += reserve;
+            }
+            *inner.origin_bytes.entry(origin).or_default() += reserve;
+            inner.host_bytes += reserve;
+        }
+        drop(inner);
         self.cv.notify_all();
         Ok(())
     }
@@ -929,6 +1065,26 @@ impl Hub {
     /// A push by the host as producer, applied at once.
     pub fn test_push(&self, id: &str, body: &[u8]) -> Result<(), StreamError> {
         self.host_push(id, body)
+    }
+    /// Puts the host budget at its limit (19.2), for the tests of the close reserve.
+    #[cfg(test)]
+    pub(crate) fn test_fill_host_budget(&self) {
+        self.lock().host_bytes = HOST_BUDGET;
+    }
+    /// Fills the host's budget but for `room` bytes.
+    #[cfg(test)]
+    pub(crate) fn test_fill_host_budget_but(&self, room: usize) {
+        self.lock().host_bytes = HOST_BUDGET - room;
+    }
+    /// The host and origin bytes held now for the stream's origin client.
+    #[cfg(test)]
+    pub(crate) fn test_budget(&self, id: &str) -> (usize, usize) {
+        let inner = self.lock();
+        let origin = inner.streams.get(id).map(|s| s.origin.clone());
+        (
+            inner.host_bytes,
+            origin.map_or(0, |o| inner.origin_bytes.get(&o).copied().unwrap_or(0)),
+        )
     }
     pub fn test_paused(&self, id: &str) -> bool {
         self.lock().streams.get(id).is_some_and(|s| {
@@ -1060,6 +1216,59 @@ impl Inner {
             Consumer::Held { .. } => {}
         }
     }
+    /// The one admission check, on the stream `s`: `len` item bytes and `reserve` more must fit
+    /// the stream's limits beside what `chain` has queued in it, and the origin's and host's
+    /// budgets beside `pending` (origin, host), the bytes of the chains in flight (19.2).
+    fn admits(
+        &self,
+        s: &Stream,
+        (len, reserve): (usize, usize),
+        chain: (usize, usize),
+        pending: (usize, usize),
+    ) -> bool {
+        let origin_now = self.origin_bytes.get(&s.origin).copied().unwrap_or(0);
+        s.queue.len() + chain.0 < MAX_ITEMS
+            && s.bytes + chain.1 + len <= MAX_BYTES
+            && origin_now + pending.0 + len + reserve <= ORIGIN_BUDGET
+            && self.host_bytes + pending.1 + len + reserve <= HOST_BUDGET
+    }
+    /// The push check under the caller's lock; `reserve` more bytes must fit the origin and host
+    /// budgets (not the stream's limit), for what an ask that this push opens keeps (19.3). An
+    /// admission changes nothing: the refusal ends when the push commits (`enqueue`). A refusal is
+    /// remembered for the lag clock and `ready`.
+    fn check_in(
+        &mut self,
+        id: &str,
+        len: usize,
+        chain: (usize, usize),
+        (origin_pending, host_pending): (usize, usize),
+        reserve: usize,
+    ) -> Result<(), StreamError> {
+        let now = self.clock.now();
+        let Some(s) = self.streams.get(id) else {
+            return Ok(());
+        };
+        if self.admits(s, (len, reserve), chain, (origin_pending, host_pending)) {
+            return Ok(());
+        }
+        let s = self.streams.get_mut(id).expect("checked above");
+        if s.deferred.is_none() && s.full_since.is_none() {
+            s.full_since = Some(now);
+        }
+        s.needs_ready = Some((len, reserve));
+        self.waiting.insert(id.to_owned());
+        Err(StreamError::Full)
+    }
+    /// A producer's push committed: the refusal before it ends, and its lag timer (19.2, Lag
+    /// clock). A close item and a rollback end nothing.
+    fn commit_push(&mut self, id: &str, body: Vec<u8>, hop: u8) {
+        self.enqueue(id, body, hop);
+        if let Some(s) = self.streams.get_mut(id) {
+            s.needs_ready = None;
+            s.full_since = None;
+        }
+        self.waiting.remove(id);
+    }
     fn enqueue(&mut self, id: &str, body: Vec<u8>, hop: u8) {
         let Some(s) = self.streams.get_mut(id) else {
             return;
@@ -1136,29 +1345,55 @@ impl Inner {
         }
         self.host_bytes = self.host_bytes.saturating_sub(bytes);
     }
-    /// `ready` for each producer whose refused push would now fit (19.2, In flight).
+    /// `ready` for each producer whose refused push the admission check now admits, on the
+    /// current pending bytes of the chains in flight (19.2, In flight).
     fn scan_ready(&mut self) {
+        if self.waiting.is_empty() {
+            return;
+        }
+        // The hub lock is held, so the chains gate is only tried: a gate that is busy wakes no
+        // one now; the holder scans again when it lets go (19.2, In flight).
+        let pending = match self.host.as_ref().and_then(Weak::upgrade) {
+            Some(host) => host.try_pending(),
+            None => Some(Default::default()),
+        };
+        match pending {
+            Some(pending) => self.scan_ready_in(&pending),
+            // The worker takes the gate and the logs without the hub lock, and scans.
+            None => self.scan_owed = true,
+        }
+    }
+    /// The admission that a retry of the refused push `need` on stream `id` gets: `admits` with the
+    /// arguments a retry's `check_in` passes (the mod push path, agent/mod.rs), taken from the
+    /// pending of the chains in flight (19.3 step 5, review r7, F7.1).
+    fn ready_admits(
+        &self,
+        id: &str,
+        s: &Stream,
+        need: (usize, usize),
+        pending: &crate::agent::Pending,
+    ) -> bool {
+        let held = (pending.0.get(&s.origin).copied().unwrap_or(0), pending.1);
+        let chain = pending.2.get(id).copied().unwrap_or((0, 0));
+        self.admits(s, need, chain, held)
+    }
+    /// `scan_ready` with the pending bytes of the chains in flight.
+    fn scan_ready_in(&mut self, pending: &crate::agent::Pending) {
+        self.scan_owed = false;
         let waiting: Vec<String> = self.waiting.iter().cloned().collect();
         for id in waiting {
             let Some(s) = self.streams.get(&id) else {
                 self.waiting.remove(&id);
                 continue;
             };
-            let Some(refused) = s.needs_ready else {
+            let Some(need) = s.needs_ready else {
                 self.waiting.remove(&id);
                 continue;
             };
             if s.deferred.is_some() || s.queue.len() * 2 >= MAX_ITEMS || s.bytes * 2 >= MAX_BYTES {
                 continue;
             }
-            let room = match refused {
-                Refused::Stream => true,
-                Refused::Origin(n) => {
-                    self.origin_bytes.get(&s.origin).copied().unwrap_or(0) + n <= ORIGIN_BUDGET
-                }
-                Refused::Host(n) => self.host_bytes + n <= HOST_BUDGET,
-            };
-            if !room {
+            if !self.ready_admits(&id, s, need, pending) {
                 continue;
             }
             let (origin, origin_gen, producer) =
@@ -1255,7 +1490,7 @@ impl Inner {
             return;
         };
         let outcome = s.closing.clone().unwrap_or(Value::Null);
-        self.free(&s.origin, s.bytes);
+        self.free(&s.origin, s.bytes + s.reserved);
         self.waiting.remove(id);
         if let Some(key) = s.consumer.key() {
             self.dec_open(&key);
@@ -1326,6 +1561,664 @@ mod tests {
         }
     }
 
+    fn budgets(hub: &Hub) -> (usize, Option<usize>) {
+        let inner = hub.lock();
+        (inner.host_bytes, inner.origin_bytes.get("o").copied())
+    }
+
+    /// 19.2 (In flight): a close that turns its ask's reserve into one queued item frees bytes,
+    /// so a producer refused `full` that now fits is told `ready`.
+    #[test]
+    fn s100_fix15_ac2_a_close_that_frees_budget_wakes_a_waiting_producer() {
+        let hub = Hub::new();
+        let ask = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let other = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        hub.host_open_keeping(&ask, b"ask", 1000).unwrap();
+        hub.lock()
+            .origin_bytes
+            .insert("o".into(), ORIGIN_BUDGET - 100);
+        assert_eq!(hub.host_push(&other, &[0; 512]), Err(StreamError::Full));
+        assert!(hub.lock().streams[&other].needs_ready.is_some());
+        hub.host_close_keeping(&ask, b"close", 1000).unwrap();
+        assert!(hub.lock().streams[&other].needs_ready.is_none());
+    }
+
+    fn pending_push(len: usize) -> Effect {
+        Effect::Push {
+            id: "mod-stream".into(),
+            body: vec![0; len],
+            hop: 0,
+            by: modref("m"),
+            origin: "o".into(),
+        }
+    }
+
+    /// 19.3 step 5 (review r5, F5.1): a close wakes a waiting producer only when its refused push
+    /// fits with the pending bytes of the chains in flight counted.
+    #[test]
+    fn s100_fix16_ac1_a_close_wakes_a_producer_only_when_its_push_fits_with_pending_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let hub = &host.hub;
+        let open = || {
+            hub.test_open(Consumer::Held { origin: "o".into() }, "o".into())
+                .unwrap()
+        };
+        let (ask1, ask2, other) = (open(), open(), open());
+        hub.host_open_keeping(&ask1, b"ask", 1000).unwrap();
+        hub.host_open_keeping(&ask2, b"ask", 1000).unwrap();
+        let chain =
+            crate::runtime::call::test_chain(&host, vec![pending_push(ORIGIN_BUDGET - 100)]);
+        assert_eq!(hub.host_push(&other, &[0; 512]), Err(StreamError::Full));
+        // The close frees bytes, but the push still does not fit beside the pending chain.
+        hub.host_close_keeping(&ask1, b"close", 1000).unwrap();
+        assert!(hub.lock().streams[&other].needs_ready.is_some());
+        assert_eq!(hub.host_push(&other, &[0; 512]), Err(StreamError::Full));
+        // The chain rolls back: the next close that frees bytes finds the room there.
+        drop(chain);
+        hub.host_close_keeping(&ask2, b"close", 1000).unwrap();
+        assert!(hub.lock().streams[&other].needs_ready.is_none());
+        hub.host_push(&other, &[0; 512]).unwrap();
+    }
+
+    /// 19.3 step 5 (review r5, F5.1): a chain that rolls back frees the room it held, and the
+    /// producer it kept waiting gets `ready` with no close after it.
+    #[test]
+    fn s100_fix16_ac1_a_rolled_back_chain_wakes_the_producer_it_kept_waiting() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let hub = &host.hub;
+        let other = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let chain =
+            crate::runtime::call::test_chain(&host, vec![pending_push(ORIGIN_BUDGET - 100)]);
+        assert_eq!(hub.host_push(&other, &[0; 512]), Err(StreamError::Full));
+        assert!(hub.lock().streams[&other].needs_ready.is_some());
+        crate::runtime::call::test_rollback(&host, &chain);
+        assert!(hub.lock().streams[&other].needs_ready.is_none());
+        assert!(hub.lock().streams[&other].full_since.is_none());
+    }
+
+    /// 19.3 step 5 (review r5, F5.1): a scan wakes a producer only when its whole refused push
+    /// fits beside the pending bytes, in the origin budget and in the host budget.
+    #[test]
+    fn s100_fix16_ac1_a_scan_counts_the_refused_push_and_the_pending_bytes_of_both_budgets() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let hub = &host.hub;
+        for (origin, pending) in [("o", ORIGIN_BUDGET - 300), ("p", HOST_BUDGET - 300)] {
+            let s = hub
+                .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+                .unwrap();
+            let mut push = pending_push(pending);
+            if let Effect::Push { origin: o, .. } = &mut push {
+                *o = origin.into();
+            }
+            let chain = crate::runtime::call::test_chain(&host, vec![push]);
+            assert_eq!(hub.host_push(&s, &[0; 512]), Err(StreamError::Full));
+            // A scan with nothing freed: 300 bytes are not room for 512.
+            let idle = crate::runtime::call::test_chain(&host, vec![]);
+            crate::runtime::call::test_rollback(&host, &idle);
+            assert!(hub.lock().streams[&s].needs_ready.is_some(), "{origin}");
+            crate::runtime::call::test_rollback(&host, &chain);
+            assert!(hub.lock().streams[&s].needs_ready.is_none(), "{origin}");
+            hub.host_push(&s, &[0; 512]).unwrap();
+            hub.test_take(&s);
+        }
+    }
+
+    /// 19.3 step 5 (review r5, F5.1): a push that fills a budget to the byte does not fit beside
+    /// one pending byte, in the origin budget and in the host budget.
+    #[test]
+    fn s100_fix16_ac1_one_pending_byte_keeps_a_push_that_fills_the_budget_waiting() {
+        for host_budget in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+            let hub = &host.hub;
+            let open = |origin: &str| {
+                hub.test_open(
+                    Consumer::Held {
+                        origin: origin.into(),
+                    },
+                    origin.into(),
+                )
+                .unwrap()
+            };
+            // Open asks keep all but about 2 MiB of the budget.
+            let origins: &[&str] = if host_budget {
+                &["q1", "q2", "q3", "q4"]
+            } else {
+                &["o"]
+            };
+            let keep = if host_budget {
+                ORIGIN_BUDGET - (512 << 10)
+            } else {
+                ORIGIN_BUDGET - (2 << 20)
+            };
+            for o in origins {
+                hub.host_open_keeping(&open(o), b"ask", keep).unwrap();
+            }
+            let s = open("o");
+            let (host_now, origin_now) = hub.test_budget(&s);
+            let n = if host_budget {
+                HOST_BUDGET - host_now
+            } else {
+                ORIGIN_BUDGET - origin_now
+            };
+            let _chain = crate::runtime::call::test_chain(&host, vec![pending_push(1)]);
+            assert_eq!(hub.host_push(&s, &vec![0; n]), Err(StreamError::Full));
+            let idle = crate::runtime::call::test_chain(&host, vec![]);
+            crate::runtime::call::test_rollback(&host, &idle);
+            assert!(
+                hub.lock().streams[&s].needs_ready.is_some(),
+                "{host_budget}"
+            );
+        }
+    }
+
+    /// 19.3 step 5 (review r5, F5.2): an admission after a refusal clears the refusal and its lag
+    /// timer, so the stream does not end `lagging`.
+    #[test]
+    fn s100_fix16_ac2_a_successful_admission_clears_the_refusal_and_its_lag_timer() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let clock = TestClock::new();
+        host.hub.set_clock(&clock);
+        let s = host
+            .hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let chain = crate::runtime::call::test_chain(&host, vec![pending_push(ORIGIN_BUDGET - 10)]);
+        assert_eq!(
+            host.hub.host_open_keeping(&s, b"ask", 1000),
+            Err(StreamError::Full)
+        );
+        assert!(host.hub.lock().streams[&s].full_since.is_some());
+        drop(chain);
+        host.hub.host_open_keeping(&s, b"ask", 1000).unwrap();
+        assert!(host.hub.lock().streams[&s].needs_ready.is_none());
+        assert!(host.hub.lock().streams[&s].full_since.is_none());
+        clock.advance(LAG + Duration::from_secs(1));
+        assert_eq!(host.hub.test_ended(&s), None);
+    }
+
+    /// 19.3 step 5 (review r6, F6.1a): a close does not wake a producer while the chains gate is
+    /// held, even though the pending bytes seen at its refusal would leave room: a chain admitted
+    /// a new reservation since, and the retry would return `full`.
+    #[test]
+    fn s100_fix18_ac1_a_close_does_not_wake_with_the_gate_held_after_a_new_reservation() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let hub = &host.hub;
+        let open = || {
+            hub.test_open(Consumer::Held { origin: "o".into() }, "o".into())
+                .unwrap()
+        };
+        let (ask, other) = (open(), open());
+        hub.host_open_keeping(&ask, b"ask", 1000).unwrap();
+        hub.lock()
+            .origin_bytes
+            .insert("o".into(), ORIGIN_BUDGET - 100);
+        assert_eq!(hub.host_push(&other, &[0; 512]), Err(StreamError::Full));
+        // A chain admits a new reservation after the refusal and keeps the gate.
+        let _chain = crate::runtime::call::test_chain(&host, vec![pending_push(ORIGIN_BUDGET)]);
+        let _gate = host.chains.lock().unwrap();
+        hub.host_close_keeping(&ask, b"close", 1000).unwrap();
+        assert!(hub.lock().streams[&other].needs_ready.is_some());
+    }
+
+    /// 19.3 step 5 (review r7, F7.1): the reviewer's case. A valid pending push of `MAX_ITEM - 512`
+    /// bytes and a refused 1 024-byte push share a stream: the scan keeps the waiter, as retry
+    /// is `full` still.
+    #[test]
+    fn s100_fix19_ac1_a_scan_counts_the_streams_own_pending_bytes() {
+        let hub = Hub::new();
+        let id = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let pend = |n: usize| {
+            let mut by_stream = std::collections::HashMap::new();
+            by_stream.insert(id.clone(), (1, n));
+            (
+                std::collections::HashMap::from([("o".to_owned(), n)]),
+                n,
+                by_stream,
+            )
+        };
+        hub.lock().streams.get_mut(&id).unwrap().bytes = MAX_BYTES - MAX_ITEM;
+        let n = MAX_ITEM - 512;
+        assert_eq!(
+            hub.check_push(&id, 1024, (1, n), n, n),
+            Err(StreamError::Full)
+        );
+        assert!(hub.lock().streams[&id].needs_ready.is_some());
+        hub.scan_ready_with(pend(n));
+        assert!(hub.lock().streams[&id].needs_ready.is_some());
+        assert_eq!(
+            hub.check_push(&id, 1024, (1, n), n, n),
+            Err(StreamError::Full)
+        );
+        // With the pending push gone, the scan wakes it and retry admits.
+        hub.scan_ready_with(Default::default());
+        assert!(hub.lock().streams[&id].needs_ready.is_none());
+        hub.check_push(&id, 1024, (0, 0), 0, 0).unwrap();
+    }
+
+    /// 19.3 step 5 (review r7, F7.1): for every state of a seeded table, the scan's admission
+    /// answer equals retry's `check_in` answer, and the scan wakes the waiter exactly when that
+    /// answer admits and the stream is below half and not deferred (19.2, In flight).
+    #[test]
+    fn s100_fix19_ac1_the_scan_wakes_exactly_when_retry_admits() {
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move |n: usize| {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            usize::try_from(seed >> 33).unwrap() % n
+        };
+        let near = |limit: usize, r: usize| match r % 8 {
+            0..=2 => 0,
+            3 => limit / 2,
+            4 => limit.saturating_sub(1500),
+            5 => limit.saturating_sub(1024),
+            6 => limit,
+            _ => limit + 1,
+        };
+        let (mut woke, mut refused, mut held_by_half) = (0, 0, 0);
+        for _ in 0..1000 {
+            let len = [1usize, 512, 1024, MAX_ITEM / 4][next(4)];
+            let reserve = [0usize, 1000][next(2)];
+            let chain = (next(3) * (MAX_ITEMS / 2), near(MAX_BYTES, next(8)));
+            let origin_pending = near(ORIGIN_BUDGET, next(8));
+            let host_pending = near(HOST_BUDGET, next(8)).max(origin_pending);
+            let (origin_now, host_now) = (
+                near(ORIGIN_BUDGET, next(8)) / 2,
+                near(HOST_BUDGET, next(8)) / 2,
+            );
+            let items = [0, 0, 1, MAX_ITEMS / 2 - 1, MAX_ITEMS / 2, MAX_ITEMS - 1][next(6)];
+            let bytes = [0, 0, 1, MAX_BYTES / 2 - 1, MAX_BYTES / 2, MAX_BYTES - 1024][next(6)];
+            let deferred = next(8) == 0;
+            let below_half = !deferred && items < MAX_ITEMS / 2 && bytes < MAX_BYTES / 2;
+            let make = || {
+                let hub = Hub::new();
+                let id = hub
+                    .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+                    .unwrap();
+                let mut inner = hub.lock();
+                let s = inner.streams.get_mut(&id).unwrap();
+                for seq in 0..items {
+                    s.queue.push_back(Item {
+                        seq: seq as u64,
+                        body: vec![],
+                        hop: 0,
+                    });
+                }
+                s.bytes = bytes;
+                s.deferred = deferred.then(Instant::now);
+                inner.origin_bytes.insert("o".into(), origin_now);
+                inner.host_bytes = host_now;
+                drop(inner);
+                (hub, id)
+            };
+            let (hub, id) = make();
+            let admitted = hub
+                .lock()
+                .check_in(&id, len, chain, (origin_pending, host_pending), reserve)
+                .is_ok();
+            let (hub, id) = make();
+            let mut inner = hub.lock();
+            inner.streams.get_mut(&id).unwrap().needs_ready = Some((len, reserve));
+            inner.waiting.insert(id.clone());
+            let pending = (
+                std::collections::HashMap::from([("o".to_owned(), origin_pending)]),
+                host_pending,
+                std::collections::HashMap::from([(id.clone(), chain)]),
+            );
+            let state = format!(
+                "len {len} reserve {reserve} chain {chain:?} pending {origin_pending}/{host_pending} now {origin_now}/{host_now} queue {items}/{bytes} deferred {deferred}"
+            );
+            let answer = inner.ready_admits(&id, &inner.streams[&id], (len, reserve), &pending);
+            assert_eq!(answer, admitted, "{state}");
+            drop(inner);
+            hub.scan_ready_with(pending);
+            let cleared = hub.lock().streams[&id].needs_ready.is_none();
+            assert_eq!(cleared, below_half && admitted, "{state}");
+            match (below_half, admitted) {
+                (true, true) => woke += 1,
+                (true, false) => refused += 1,
+                (false, true) => held_by_half += 1,
+                (false, false) => {}
+            }
+        }
+        assert!(
+            woke > 20 && refused > 20 && held_by_half > 20,
+            "{woke} woke, {refused} refused, {held_by_half} held by the half rule"
+        );
+    }
+
+    /// 19.3 step 5 (review r6, F6.1b): the origin has room but the host budget is still full: a
+    /// scan does not wake the producer the origin budget refused, as its retry would be `full`.
+    #[test]
+    fn s100_fix18_ac1_a_scan_checks_both_budgets_for_a_push_the_origin_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let hub = &host.hub;
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        hub.lock()
+            .origin_bytes
+            .insert("o".into(), ORIGIN_BUDGET - 100);
+        assert_eq!(hub.host_push(&s, &[0; 512]), Err(StreamError::Full));
+        {
+            let mut inner = hub.lock();
+            inner.origin_bytes.clear();
+            inner.host_bytes = HOST_BUDGET - 100
+        };
+        let idle = crate::runtime::call::test_chain(&host, vec![]);
+        crate::runtime::call::test_rollback(&host, &idle);
+        assert!(hub.lock().streams[&s].needs_ready.is_some());
+        assert_eq!(hub.host_push(&s, &[0; 512]), Err(StreamError::Full));
+    }
+
+    /// 19.3 step 5 (review r6 round 1): a close item that an ask turns its reserve into is not a
+    /// producer's push: the refusal and the lag clock stay, and the stream ends `lagging`.
+    #[test]
+    fn s100_fix18_ac6_a_close_item_clears_no_refusal_and_no_lag_clock() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let clock = TestClock::new();
+        host.hub.set_clock(&clock);
+        let hub = &host.hub;
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        hub.host_open_keeping(&s, b"ask", 1000).unwrap();
+        hub.lock()
+            .origin_bytes
+            .insert("o".into(), ORIGIN_BUDGET - 100);
+        assert_eq!(hub.host_push(&s, &[0; 100_000]), Err(StreamError::Full));
+        let refused_at = hub.lock().streams[&s].full_since;
+        hub.host_close_keeping(&s, b"close", 1000).unwrap();
+        assert!(hub.lock().streams[&s].needs_ready.is_some());
+        assert_eq!(hub.lock().streams[&s].full_since, refused_at);
+        // A close whose reserve is not held is admitted as an item: still no producer push.
+        hub.host_close_keeping(&s, b"close", 0).unwrap();
+        assert!(hub.lock().streams[&s].needs_ready.is_some());
+        assert_eq!(hub.lock().streams[&s].full_since, refused_at);
+        clock.advance(LAG + Duration::from_secs(1));
+        hub.lock().check_clocks();
+        assert_eq!(hub.test_ended(&s), Some(json!("lagging")));
+    }
+
+    /// 19.2 (In flight, review r6 round 1): a close that finds the chains gate or a chain's log
+    /// busy owes the wake: the hub's worker runs it once the holder lets go, long before the
+    /// chain ends.
+    #[test]
+    fn s100_fix18_ac7_an_owed_wake_runs_when_the_gate_or_a_log_is_let_go() {
+        for log_only in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+            let hub = &host.hub;
+            let open = || {
+                hub.test_open(Consumer::Held { origin: "o".into() }, "o".into())
+                    .unwrap()
+            };
+            let (ask, other) = (open(), open());
+            hub.host_open_keeping(&ask, b"ask", 1000).unwrap();
+            hub.lock()
+                .origin_bytes
+                .insert("o".into(), ORIGIN_BUDGET - 100);
+            assert_eq!(hub.host_push(&other, &[0; 512]), Err(StreamError::Full));
+            let chain = crate::runtime::call::test_chain(&host, vec![]);
+            let gate = host.chains.lock().unwrap();
+            let log = if log_only {
+                drop(gate);
+                (None, Some(chain.log.lock().unwrap()))
+            } else {
+                (Some(gate), None)
+            };
+            hub.host_close_keeping(&ask, b"close", 1000).unwrap();
+            assert!(hub.lock().streams[&other].needs_ready.is_some());
+            drop(log);
+            let released = Instant::now();
+            while hub.lock().streams[&other].needs_ready.is_some() {
+                assert!(
+                    released.elapsed() < Duration::from_millis(200),
+                    "no wake after the release (log only: {log_only})"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            drop(chain);
+        }
+    }
+
+    /// 19.3 step 5 (review r6, F6.2): a refusal and its lag timer survive a smaller tentative push
+    /// that was admitted in a chain that rolled back.
+    #[test]
+    fn s100_fix18_ac2_a_rolled_back_tentative_push_leaves_the_refusal_and_the_lag_timer() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let clock = TestClock::new();
+        host.hub.set_clock(&clock);
+        let hub = &host.hub;
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        hub.lock()
+            .origin_bytes
+            .insert("o".into(), ORIGIN_BUDGET - 100);
+        assert_eq!(hub.host_push(&s, &[0; 512]), Err(StreamError::Full));
+        let refused_at = hub.lock().streams[&s].full_since;
+        assert!(refused_at.is_some());
+        // The smaller push is admitted tentatively; its chain rolls back.
+        hub.check_push(&s, 10, (0, 0), 0, 0).unwrap();
+        let chain = crate::runtime::call::test_chain(&host, vec![pending_push(10)]);
+        crate::runtime::call::test_rollback(&host, &chain);
+        assert!(hub.lock().streams[&s].needs_ready.is_some());
+        assert_eq!(hub.lock().streams[&s].full_since, refused_at);
+        clock.advance(LAG + Duration::from_secs(1));
+        hub.lock().check_clocks();
+        assert_eq!(hub.test_ended(&s), Some(json!("lagging")));
+    }
+
+    /// 19.2 (Commit, Byte budgets): a host ask counts the bytes that admitted mod pushes still
+    /// have queued in their chains, so it cannot take capacity promised to one of them.
+    #[test]
+    fn s100_fix15_ac3_a_host_ask_counts_the_pending_bytes_of_mod_pushes() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let s = host
+            .hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let by = ModRef {
+            local: LocalName::parse("m").unwrap(),
+            identity: "local/m".into(),
+        };
+        let push = |len| Effect::Push {
+            id: "mod-stream".into(),
+            body: vec![0; len],
+            hop: 0,
+            by: by.clone(),
+            origin: "o".into(),
+        };
+        host.hub.lock().create(
+            "mod-stream".into(),
+            Consumer::Held { origin: "o".into() },
+            (Producer::Mod(by.clone()), ("o".into(), None), None),
+            false,
+        );
+        let chain = crate::runtime::call::test_chain(&host, vec![push(ORIGIN_BUDGET - 10)]);
+        assert_eq!(
+            host.hub.host_open_keeping(&s, b"ask", 1000),
+            Err(StreamError::Full)
+        );
+        assert_eq!(budgets(&host.hub), (0, None));
+        // The chain commits, as `take_and_apply` does: its push lands within the budget.
+        {
+            let _gate = host.chains.lock().unwrap();
+            host.apply_effects(std::mem::take(&mut *chain.log.lock().unwrap()))
+        };
+        assert_eq!(budgets(&host.hub).1, Some(ORIGIN_BUDGET - 10));
+        drop(chain);
+        assert_eq!(
+            host.hub.host_open_keeping(&s, b"ask", 1000),
+            Err(StreamError::Full)
+        );
+        assert!(budgets(&host.hub).1.unwrap() <= ORIGIN_BUDGET);
+    }
+
+    /// 19.2 (Commit, Byte budgets): the bytes a chain has queued for another origin count in
+    /// the host budget of an ask.
+    #[test]
+    fn s100_fix15_ac3_a_host_ask_counts_pending_bytes_of_other_origins_in_the_host_budget() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let s = host
+            .hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        let push = Effect::Push {
+            id: "mod-stream".into(),
+            body: vec![0; HOST_BUDGET - 10],
+            hop: 0,
+            by: modref("m"),
+            origin: "p".into(),
+        };
+        let chain = crate::runtime::call::test_chain(&host, vec![push]);
+        assert_eq!(
+            host.hub.host_open_keeping(&s, b"ask", 1000),
+            Err(StreamError::Full)
+        );
+        drop(chain);
+        host.hub.host_open_keeping(&s, b"ask", 1000).unwrap();
+    }
+
+    /// 19.2 (Byte budgets): a host push or ask admitted under the gate is `too-large` past one
+    /// item's limit, and an item at the limit is not.
+    #[test]
+    fn s100_fix15_a_host_push_or_ask_under_the_gate_is_too_large_past_max_item() {
+        let hub = Hub::new();
+        let open = || {
+            hub.test_open(Consumer::Held { origin: "o".into() }, "o".into())
+                .unwrap()
+        };
+        let (s, t) = (open(), open());
+        let big = vec![0; MAX_ITEM + 1];
+        assert_eq!(
+            hub.host_push_in(&s, &big, (0, 0)),
+            Err(StreamError::TooLarge)
+        );
+        assert_eq!(
+            hub.host_open_keeping_in(&s, &big, 0, (0, 0)),
+            Err(StreamError::TooLarge)
+        );
+        assert_ne!(
+            hub.host_open_keeping_in(&t, &vec![0; MAX_ITEM], 0, (0, 0)),
+            Err(StreamError::TooLarge)
+        );
+        hub.host_push_in(&s, &vec![0; MAX_ITEM], (0, 0)).unwrap();
+    }
+
+    /// 19.2 (In flight): a close takes its ask's reserve once; the stream's end frees the rest.
+    #[test]
+    fn s100_fix12_a_close_reserve_is_freed_once_by_its_close_or_the_end() {
+        let hub = Hub::new();
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        for _ in 0..3 {
+            hub.host_open_push(&s, b"ask").unwrap();
+        }
+        hub.test_take(&s);
+        assert_eq!(budgets(&hub), (3 * CLOSE_RESERVE, Some(3 * CLOSE_RESERVE)));
+        hub.host_close_push(&s, b"close").unwrap();
+        assert_eq!(
+            budgets(&hub),
+            (2 * CLOSE_RESERVE + 5, Some(2 * CLOSE_RESERVE + 5))
+        );
+        hub.test_take(&s);
+        assert_eq!(budgets(&hub), (2 * CLOSE_RESERVE, Some(2 * CLOSE_RESERVE)));
+        // A second stream of the origin keeps its reserve when the first one ends.
+        let other = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        hub.host_open_push(&other, b"ask").unwrap();
+        hub.test_take(&other);
+        hub.test_close(&s, json!("cancelled"));
+        hub.test_take(&s);
+        assert_eq!(budgets(&hub), (CLOSE_RESERVE, Some(CLOSE_RESERVE)));
+        hub.test_close(&other, json!("cancelled"));
+        hub.test_take(&other);
+        assert_eq!(budgets(&hub), (0, None));
+    }
+
+    /// 19.3 step 5: an open that finds its stream gone changes no budget; the input an ask
+    /// keeps counts while it is open and is freed once, by its close or the end.
+    #[test]
+    fn s100_fix14_kept_input_counts_while_open_and_is_freed_once() {
+        let hub = Hub::new();
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        hub.host_open_keeping(&s, b"ask", 1000).unwrap();
+        let b = 3 + CLOSE_RESERVE + 1000;
+        assert_eq!(budgets(&hub), (b, Some(b)));
+        hub.host_close_keeping(&s, b"close", 1000).unwrap();
+        assert_eq!(budgets(&hub), (8, Some(8)));
+        hub.test_close(&s, serde_json::json!("cancelled"));
+        hub.test_take(&s);
+        assert_eq!(budgets(&hub), (0, None));
+        // The stream is gone: nothing is charged.
+        assert_eq!(
+            hub.host_open_keeping(&s, b"ask", 1000),
+            Err(StreamError::UnknownStream)
+        );
+        assert_eq!(budgets(&hub), (0, None));
+        // An ask whose kept input would pass the origin budget is refused, with no item.
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        assert_eq!(
+            hub.host_open_keeping(&s, b"ask", ORIGIN_BUDGET),
+            Err(StreamError::Full)
+        );
+        assert_eq!(budgets(&hub), (0, None));
+        assert!(hub.test_take(&s).is_empty());
+    }
+
+    /// 19.3 step 5: an ask opens only when its item and its close's reserve fit the budget.
+    #[test]
+    fn s100_fix12_the_open_check_counts_the_item_and_the_reserve() {
+        let hub = Hub::new();
+        let s = hub
+            .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+            .unwrap();
+        hub.lock().host_bytes = HOST_BUDGET - 3 - CLOSE_RESERVE + 1;
+        assert_eq!(hub.host_open_push(&s, b"ask"), Err(StreamError::Full));
+        hub.lock().host_bytes -= 1;
+        hub.host_open_push(&s, b"ask").unwrap();
+        assert_eq!(hub.lock().host_bytes, HOST_BUDGET);
+        // The same for the origin client's budget.
+        let s = hub
+            .test_open(Consumer::Held { origin: "p".into() }, "p".into())
+            .unwrap();
+        hub.lock().host_bytes = 0;
+        hub.lock()
+            .origin_bytes
+            .insert("p".into(), ORIGIN_BUDGET - 3 - CLOSE_RESERVE + 1);
+        assert_eq!(hub.host_open_push(&s, b"ask"), Err(StreamError::Full));
+        *hub.lock().origin_bytes.get_mut("p").unwrap() -= 1;
+        hub.host_open_push(&s, b"ask").unwrap();
+        assert_eq!(hub.lock().origin_bytes["p"], ORIGIN_BUDGET);
+    }
+
     /// 19.6 (At apply): a stream handed from A to X and back to A is A's again, but a `cancel`
     /// (or `resume`) that A's call recorded before the hand-offs is stale and does nothing.
     #[test]
@@ -1379,5 +2272,41 @@ mod tests {
         assert!(!deferred(), "a current resume did nothing");
         host.hub.apply(&host, cancel(2), true);
         assert!(host.hub.info(&id).is_none(), "a current cancel did nothing");
+    }
+}
+
+/// Adversary step of S100, sixth pass (red): `push_as_host` checks the budgets under one lock
+/// and adds the close reserve under a second. When the stream ends and is removed between the
+/// two, the reserve is added to the origin and host budgets but to no stream, so nothing frees
+/// it: each such race leaks `CLOSE_RESERVE` bytes of the owner's and the host's budget for
+/// good. A `claude` that floods asks while its stream ends wins the race now and then.
+#[cfg(test)]
+mod adv_s100_reserve {
+    use super::*;
+
+    #[test]
+    fn adv_s100_reserve_leaks_when_the_stream_ends_between_check_and_reserve() {
+        let hub = Hub::new();
+        for _ in 0..20_000 {
+            let s = hub
+                .test_open(Consumer::Held { origin: "o".into() }, "o".into())
+                .unwrap();
+            let pusher = {
+                let (hub, s) = (Arc::clone(&hub), s.clone());
+                std::thread::spawn(move || while hub.host_open_push(&s, b"a").is_ok() {})
+            };
+            std::thread::yield_now();
+            hub.test_close(&s, serde_json::json!("cancelled"));
+            hub.test_take(&s);
+            pusher.join().unwrap();
+            hub.test_take(&s);
+        }
+        let inner = hub.lock();
+        assert!(inner.streams.is_empty());
+        assert_eq!(
+            (inner.host_bytes, inner.origin_bytes.get("o").copied()),
+            (0, None),
+            "reserves left in the budgets after every stream ended"
+        );
     }
 }

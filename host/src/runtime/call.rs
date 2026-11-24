@@ -244,21 +244,62 @@ fn register(host: &Host, chain: &Arc<Chain>) {
 /// chain succeeded; else they are given back (a harness) or dropped. Either way the chain's
 /// reservation ends.
 fn take_and_apply(host: &Host, chain: &Chain, apply: bool) -> Vec<Effect> {
-    let _gate = host
-        .chains
-        .lock()
-        .expect("lock poisoned: another thread panicked while holding it");
-    let log = std::mem::take(
-        &mut *chain
-            .log
+    let log = {
+        let _gate = host
+            .chains
             .lock()
-            .expect("lock poisoned: another thread panicked while holding it"),
-    );
-    if apply {
-        host.apply_effects(log);
-        return Vec::new();
-    }
+            .expect("lock poisoned: another thread panicked while holding it");
+        let log = std::mem::take(
+            &mut *chain
+                .log
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it"),
+        );
+        if apply {
+            host.apply_effects(log);
+            Vec::new()
+        } else {
+            log
+        }
+    };
+    // Its pending bytes are no longer held: a producer refused for them may fit now.
+    host.chain_ended();
     log
+}
+
+/// Ends a chain of `test_chain` as a failed call does: its effects are dropped.
+#[cfg(test)]
+pub(crate) fn test_rollback(host: &Host, chain: &Chain) {
+    take_and_apply(host, chain, false);
+}
+
+/// A chain in flight that holds `effects` and commits nothing, for the tests of the budgets.
+#[cfg(test)]
+pub(crate) fn test_chain(host: &Host, effects: Vec<Effect>) -> Arc<Chain> {
+    let chain = Arc::new(Chain {
+        host: host.weak.upgrade().expect("host open"),
+        snapshot: Arc::new(
+            host.catalog
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .clone(),
+        ),
+        fakes: None,
+        deadline: Instant::now() + std::time::Duration::from_secs(60),
+        effects: Mutex::new(Effects::default()),
+        publish: false,
+        ready: AtomicBool::new(false),
+        job: Arc::new(Job::new()),
+        failed_fuel: AtomicU64::new(0),
+        log: Mutex::new(effects),
+        connection: None,
+        defers: false,
+        deferred: AtomicBool::new(false),
+        timer: None,
+        unavailable: AtomicBool::new(false),
+    });
+    register(host, &chain);
+    chain
 }
 
 pub(crate) fn run_start(host: &Host, start: Start) -> Done {

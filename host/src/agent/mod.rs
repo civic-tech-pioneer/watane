@@ -418,14 +418,10 @@ pub(crate) fn push(inv: &Invocation, id: &str, body: Vec<u8>) -> Result<(), Stre
     };
     gate.each(&mut queued);
     log.iter().for_each(&mut queued);
-    inv.chain.host.hub.check_push(
-        id,
-        body.len(),
-        (count, bytes),
-        &view.origin,
-        origin_pending,
-        host_pending,
-    )?;
+    inv.chain
+        .host
+        .hub
+        .check_push(id, body.len(), (count, bytes), origin_pending, host_pending)?;
     if view.in_chain && (count + 1 > streams::MAX_ITEMS || bytes + body.len() > streams::MAX_BYTES)
     {
         return Err(StreamError::Full);
@@ -821,6 +817,37 @@ impl Host {
         };
         self.hub.end_gone(&lost);
     }
+    /// Runs `f` with the bytes that the chains in flight have queued for `origin` and in all,
+    /// holding their gate (19.2, Commit): host admission counts them as a mod's push does.
+    pub(crate) fn with_pending<R>(&self, origin: &str, f: impl FnOnce((usize, usize)) -> R) -> R {
+        let chains = self
+            .chains
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
+        let pending = pending_in_flight(&chains);
+        f((pending.0.get(origin).copied().unwrap_or(0), pending.1))
+    }
+    /// The pending bytes of the chains in flight, by origin and in all, without waiting for their
+    /// gate: `None` when the gate or a chain's log is busy. The hub lock is held by the caller,
+    /// which is after the gate in the lock order, so it may only try (19.2, Commit).
+    pub(crate) fn try_pending(&self) -> Option<Pending> {
+        let chains = self.chains.try_lock().ok()?;
+        let logs: Option<Vec<_>> = chains
+            .iter()
+            .filter_map(std::sync::Weak::upgrade)
+            .map(|c| c.log.try_lock().ok().map(|log| pending_of(&log)))
+            .collect();
+        Some(sum_pending(logs?))
+    }
+    /// A chain ended, committed or rolled back: its pending bytes are no longer held, so the
+    /// producers refused for them are scanned again, with the gate held (19.2, In flight).
+    pub(crate) fn chain_ended(&self) {
+        let chains = self
+            .chains
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
+        self.hub.scan_ready_with(pending_in_flight(&chains));
+    }
     /// Applies the effects of a succeeded chain, in call order (19.6, At apply).
     pub(crate) fn apply_effects(&self, effects: Vec<Effect>) {
         // A `claude` process starts after the whole chain is applied, so that a `cancel` of the
@@ -927,6 +954,70 @@ impl Host {
     }
 }
 
+/// The bytes that chains in flight have queued, by origin and in all (19.2, Commit).
+/// The third part is each stream's own pending items and bytes, as a push counts them.
+pub(crate) type Pending = (
+    std::collections::HashMap<String, usize>,
+    usize,
+    std::collections::HashMap<String, (usize, usize)>,
+);
+
+fn pending_of(log: &[Effect]) -> Pending {
+    let (mut by_origin, mut all, mut by_stream) = (
+        std::collections::HashMap::new(),
+        0,
+        std::collections::HashMap::new(),
+    );
+    for e in log {
+        if let Effect::Push {
+            body, origin, id, ..
+        } = e
+        {
+            *by_origin.entry(origin.clone()).or_insert(0) += body.len();
+            all += body.len();
+            let c: &mut (usize, usize) = by_stream.entry(id.clone()).or_insert((0, 0));
+            c.0 += 1;
+            c.1 += body.len();
+        }
+    }
+    (by_origin, all, by_stream)
+}
+/// The pending bytes of the chains in flight, under their gate.
+fn pending_in_flight(chains: &[std::sync::Weak<Chain>]) -> Pending {
+    sum_pending(
+        chains
+            .iter()
+            .filter_map(std::sync::Weak::upgrade)
+            .map(|c| {
+                pending_of(
+                    &c.log
+                        .lock()
+                        .expect("lock poisoned: another thread panicked while holding it"),
+                )
+            })
+            .collect(),
+    )
+}
+fn sum_pending(logs: Vec<Pending>) -> Pending {
+    let (mut by_origin, mut all, mut by_stream) = (
+        std::collections::HashMap::new(),
+        0,
+        std::collections::HashMap::new(),
+    );
+    for (o, a, st) in logs {
+        for (k, v) in o {
+            *by_origin.entry(k).or_insert(0) += v;
+        }
+        for (k, v) in st {
+            let c: &mut (usize, usize) = by_stream.entry(k).or_insert((0, 0));
+            c.0 += v.0;
+            c.1 += v.1;
+        }
+        all += a;
+    }
+    (by_origin, all, by_stream)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -998,6 +1089,34 @@ mod tests {
             assert!(start.elapsed() < Duration::from_secs(10), "no gone on both");
             std::thread::sleep(Duration::from_millis(20));
         }
+    }
+
+    /// 19.3 step 5 (review r7, F7.1): the pending of the chains in flight counts each stream's
+    /// own items and bytes, summed over the chains, beside the origin's and host's bytes.
+    #[test]
+    fn s100_fix19_pending_counts_each_streams_items_and_bytes_over_the_chains() {
+        let push = |id: &str, n: usize, origin: &str| Effect::Push {
+            id: id.into(),
+            body: vec![0; n],
+            hop: 0,
+            by: ModRef {
+                local: LocalName::parse("m").unwrap(),
+                identity: "i".into(),
+            },
+            origin: origin.into(),
+        };
+        let one = pending_of(&[push("a", 3, "o"), push("a", 5, "o"), push("b", 7, "p")]);
+        let two = pending_of(&[push("a", 11, "o")]);
+        let (by_origin, all, by_stream) = sum_pending(vec![one, two]);
+        assert_eq!(
+            by_origin,
+            std::collections::HashMap::from([("o".into(), 19), ("p".into(), 7)])
+        );
+        assert_eq!(all, 26);
+        assert_eq!(
+            by_stream,
+            std::collections::HashMap::from([("a".into(), (3, 19)), ("b".into(), (1, 7))])
+        );
     }
 
     #[test]

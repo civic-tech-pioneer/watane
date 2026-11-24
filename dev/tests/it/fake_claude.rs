@@ -413,10 +413,11 @@ fn ac6_ask_check_cancel_and_answers() {
     assert_eq!(ask["request"]["tool_use_id"], "t1");
     // Nothing more until the host answers.
     s.rx.recv_timeout(Duration::from_millis(200)).unwrap_err();
-    let deny = json!({"type":"control_response","response":{"subtype":"success",
-        "request_id":ask["request_id"],"response":{"behavior":"deny","message":"no"}}});
-    let denied = deny.to_string();
-    s.send(&deny);
+    // An allow: the turn goes on (a deny ends it, see `ac3_deny_ends_the_turn_...`).
+    let allow = json!({"type":"control_response","response":{"subtype":"success",
+        "request_id":ask["request_id"],"response":{"behavior":"allow","updatedInput":{}}}});
+    let allowed = allow.to_string();
+    s.send(&allow);
     let check = s.line();
     assert_eq!(check["request"]["subtype"], "hook_callback");
     assert_eq!(check["request"]["callback_id"], "cb1");
@@ -440,9 +441,92 @@ fn ac6_ask_check_cancel_and_answers() {
     assert!(
         f.log()
             .iter()
-            .any(|l| l["stdin"].as_str() == Some(denied.as_str())),
+            .any(|l| l["stdin"].as_str() == Some(allowed.as_str())),
         "the answer is logged"
     );
+}
+
+#[test]
+fn ac1_expect_interrupt_consumes_earlier_answer() {
+    let f = Folder::new(
+        r#"{"steps":[{"do":"ask","tool":"Edit","tool_use_id":"a"},{"do":"expect-interrupt"},{"do":"idle"}]}"#,
+    );
+    let mut s = f.start(&[]);
+    s.initialize(true);
+    let ask = s.line();
+    let reply = answer(
+        &ask["request_id"],
+        &json!({"behavior":"allow","updatedInput":{}}),
+    );
+    s.send(&reply);
+    s.send(&json!({"type":"control_request","request_id":"x9","request":{"subtype":"interrupt"}}));
+    assert_eq!(s.line()["response"]["request_id"], "x9");
+    assert_eq!(s.line()["state"], "idle");
+    let log = f.log();
+    assert!(
+        log.iter()
+            .any(|l| l["stdin"].as_str() == Some(reply.to_string().as_str()))
+    );
+    assert!(log.iter().all(|l| l.get("error").is_none()));
+}
+
+#[test]
+fn ac2_awaited_ask_takes_only_its_own_answer() {
+    let f = Folder::new(
+        r#"{"steps":[{"do":"ask","tool":"Edit","tool_use_id":"a"},
+        {"do":"ask","tool":"Edit","tool_use_id":"b","await":true},{"do":"idle"}]}"#,
+    );
+    let mut s = f.start(&[]);
+    s.initialize(true);
+    let a = s.line();
+    let b = s.line();
+    let allow = json!({"behavior":"allow","updatedInput":{}});
+    let first = answer(&a["request_id"], &allow);
+    s.send(&first);
+    s.rx.recv_timeout(Duration::from_millis(300)).unwrap_err();
+    s.send(&answer(&b["request_id"], &allow));
+    assert_eq!(s.line()["state"], "idle");
+    assert!(
+        f.log()
+            .iter()
+            .any(|l| l["stdin"].as_str() == Some(first.to_string().as_str()))
+    );
+}
+
+#[test]
+fn ac2_answer_naming_no_ask_exits_70() {
+    let f = Folder::new(
+        r#"{"steps":[{"do":"ask","tool":"Edit","tool_use_id":"b","await":true},{"do":"idle"}]}"#,
+    );
+    let mut s = f.start(&[]);
+    s.initialize(true);
+    let _ = s.line();
+    s.send(&answer(
+        &json!("nope"),
+        &json!({"behavior":"allow","updatedInput":{}}),
+    ));
+    assert_eq!(s.child.wait().unwrap().code(), Some(70));
+}
+
+#[test]
+fn ac3_deny_ends_the_turn_at_the_end_of_the_script() {
+    let f = Folder::new(
+        r#"{"steps":[{"do":"ask","tool":"Edit","await":true},{"do":"message","text":"after"}]}"#,
+    );
+    let mut s = f.start(&[]);
+    s.initialize(true);
+    let ask = s.line();
+    s.send(&answer(
+        &ask["request_id"],
+        &json!({"behavior":"deny","message":"no"}),
+    ));
+    assert_eq!(s.line()["message"]["content"][0]["text"], "denied: no");
+    assert_eq!(s.line()["type"], "result");
+    assert_eq!(s.line()["state"], "idle");
+    s.rx.recv_timeout(Duration::from_millis(300)).unwrap_err();
+    s.stdin.take();
+    assert_eq!(s.child.wait().unwrap().code(), Some(0));
+    assert!(!f.log().iter().any(|l| l.to_string().contains("after")));
 }
 
 #[test]
@@ -635,4 +719,368 @@ fn ac9_real_preview_runs_a_conversation_on_the_fake() {
             .any(|l| l.contains(r#"\"type\":\"user\""#) && l.contains(r#"\"content\":\"hi\""#)),
         "{written}"
     );
+}
+
+fn parsed(s: &Session) -> Value {
+    let v = s.line();
+    claude_codes::ClaudeOutput::parse_json(&v.to_string()).unwrap();
+    v
+}
+fn text_of(v: &Value) -> &str {
+    v["message"]["content"][0]["text"].as_str().unwrap()
+}
+fn interrupt(s: &mut Session, id: &str) {
+    s.send(&json!({"type":"control_request","request_id":id,"request":{"subtype":"interrupt"}}));
+}
+fn interrupt_answer(id: &str) -> Value {
+    json!({"type":"control_response","response":{"subtype":"success","request_id":id,"response":{}}})
+}
+
+#[test]
+fn s100_ac1_long_turn_entries_result_idle() {
+    let f = Folder::new(r#"{"steps":[{"do":"long-turn","entries":3,"bytes":16}]}"#);
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    for want in ["entry 1 xxxxxxxx", "entry 2 xxxxxxxx", "entry 3 xxxxxxxx"] {
+        let v = parsed(&s);
+        assert_eq!(v["type"], "assistant");
+        assert_eq!(text_of(&v), want);
+    }
+    let result = parsed(&s);
+    assert_eq!(result["type"], "result");
+    assert_eq!(result["subtype"], "success");
+    assert_eq!(s.line()["state"], "idle");
+}
+
+#[test]
+fn s100_ac1_long_turn_defaults() {
+    let f = Folder::new(r#"{"steps":[{"do":"long-turn"}]}"#);
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    for i in 1..=100 {
+        let v = s.line();
+        let text = text_of(&v);
+        assert_eq!(text.len(), 32);
+        assert!(text.starts_with(&format!("entry {i} x")));
+    }
+    assert_eq!(s.line()["type"], "result");
+}
+
+#[test]
+fn s100_ac2_long_turn_interrupted_session_goes_on() {
+    let f = Folder::new(
+        r#"{"steps":[{"do":"long-turn","entries":1000,"every-ms":5},{"do":"expect-user","contains":"next"},{"do":"message","text":"ok"}]}"#,
+    );
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    assert_eq!(text_of(&parsed(&s)), format!("entry 1 {}", "x".repeat(24)));
+    interrupt(&mut s, "x1");
+    let mut entries = 1;
+    loop {
+        let v = parsed(&s);
+        if v["type"] == "assistant" {
+            entries += 1;
+        } else {
+            assert_eq!(v, interrupt_answer("x1"));
+            break;
+        }
+    }
+    assert!(entries < 1000);
+    let result = parsed(&s);
+    assert_eq!(result["type"], "result");
+    assert_eq!(result["subtype"], "error_during_execution");
+    assert_eq!(s.line()["state"], "idle");
+    s.user("next please");
+    assert_eq!(text_of(&parsed(&s)), "ok");
+}
+
+#[test]
+fn s100_ac3_reply_per_say() {
+    let f = Folder::new(r#"{"steps":[{"do":"reply-per-say","turns":2}]}"#);
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    for said in ["a", "b"] {
+        s.user(said);
+        let d = parsed(&s);
+        assert_eq!(d["event"]["delta"]["text"], format!("you said: {said}"));
+        assert_eq!(text_of(&parsed(&s)), format!("you said: {said}"));
+        assert_eq!(parsed(&s)["type"], "result");
+        assert_eq!(s.line()["state"], "idle");
+    }
+    // `turns` bounds it: a third message gets no reply and the program ends cleanly.
+    s.user("c");
+    assert_eq!(s.status(), 0);
+    s.rx.recv_timeout(Duration::from_secs(1)).unwrap_err();
+}
+
+#[test]
+fn s100_ac3_reply_per_say_text_until_stdin_closes_and_interrupt() {
+    let f = Folder::new(r#"{"steps":[{"do":"reply-per-say","text":"echo "}]}"#);
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    interrupt(&mut s, "q");
+    assert_eq!(s.line(), interrupt_answer("q"));
+    s.user("hi");
+    assert_eq!(s.line()["event"]["delta"]["text"], "echo hi");
+    assert_eq!(text_of(&s.line()), "echo hi");
+    s.line();
+    s.line();
+    assert_eq!(s.status(), 0);
+}
+
+fn ask_script() -> Folder {
+    Folder::new(
+        r#"{"steps":[{"do":"ask","tool":"Edit","tool_use_id":"t1","await":true},
+        {"do":"message","text":"after"},{"do":"result"},{"do":"idle"},
+        {"do":"expect-user"},{"do":"message","text":"next"}]}"#,
+    )
+}
+fn answer(id: &Value, response: &Value) -> Value {
+    json!({"type":"control_response","response":{"subtype":"success",
+        "request_id":id,"response":response}})
+}
+
+#[test]
+fn s100_ac4_ask_allow_goes_on() {
+    let f = ask_script();
+    let mut s = f.start(&[]);
+    s.initialize(true);
+    let ask = parsed(&s);
+    let allow = answer(
+        &ask["request_id"],
+        &json!({"behavior":"allow","updatedInput":{}}),
+    );
+    s.send(&allow);
+    assert_eq!(text_of(&parsed(&s)), "after");
+    assert_eq!(parsed(&s)["type"], "result");
+    let text = allow.to_string();
+    assert!(f.log().iter().any(|l| l["stdin"] == text.as_str()));
+}
+
+#[test]
+fn s100_ac4_ask_deny_ends_the_turn() {
+    let f = ask_script();
+    let mut s = f.start(&[]);
+    s.initialize(true);
+    let ask = parsed(&s);
+    s.send(&answer(
+        &ask["request_id"],
+        &json!({"behavior":"deny","message":"no"}),
+    ));
+    assert_eq!(text_of(&parsed(&s)), "denied: no");
+    assert_eq!(parsed(&s)["type"], "result");
+    assert_eq!(s.line()["state"], "idle");
+    s.user("go");
+    assert_eq!(text_of(&parsed(&s)), "next");
+}
+
+#[test]
+fn s100_ac4_ask_deny_interrupted_then_interrupt() {
+    let f = ask_script();
+    let mut s = f.start(&[]);
+    s.initialize(true);
+    let ask = parsed(&s);
+    s.send(&answer(
+        &ask["request_id"],
+        &json!({"behavior":"deny","message":"interrupted"}),
+    ));
+    interrupt(&mut s, "i1");
+    assert_eq!(text_of(&parsed(&s)), "denied: interrupted");
+    assert_eq!(parsed(&s)["type"], "result");
+    assert_eq!(s.line()["state"], "idle");
+    s.user("go");
+    assert_eq!(s.line(), interrupt_answer("i1"));
+    assert_eq!(text_of(&parsed(&s)), "next");
+}
+
+#[test]
+fn s100_ac4_interrupt_in_place_of_the_answer() {
+    let f = ask_script();
+    let mut s = f.start(&[]);
+    s.initialize(true);
+    parsed(&s);
+    interrupt(&mut s, "i2");
+    assert_eq!(s.line(), interrupt_answer("i2"));
+    let result = parsed(&s);
+    assert_eq!(result["type"], "result");
+    assert_eq!(result["subtype"], "error_during_execution");
+    assert_eq!(s.line()["state"], "idle");
+    s.user("go");
+    assert_eq!(text_of(&parsed(&s)), "next");
+}
+
+#[test]
+fn s100_ac5_load_writes_ten_thousand_entries() {
+    let f = Folder::new(r#"{"steps":[{"do":"load","entries":10000}]}"#);
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    let start = std::time::Instant::now();
+    for i in 1..=10_000 {
+        let bytes = s.bytes();
+        let v: Value = serde_json::from_slice(&bytes).unwrap();
+        let text = text_of(&v);
+        assert_eq!(text.len(), 1024);
+        assert!(text.starts_with(&format!("entry {i} x")));
+    }
+    assert_eq!(s.line()["type"], "result");
+    assert_eq!(s.line()["state"], "idle");
+    let took = start.elapsed();
+    println!("load of 10000 entries took {took:?}");
+    assert!(took < Duration::from_secs(5), "{took:?}");
+}
+
+#[test]
+fn s100_fix11_ac1_load_rate_writes_every_entry_at_any_ratio() {
+    for (d, e) in [(2, 5), (0, 3), (4, 0)] {
+        let f = Folder::new(&format!(
+            r#"{{"steps":[{{"do":"load","rate":{{"deltas":{d},"entries":{e},"bytes":64,"seconds":1}}}}]}}"#
+        ));
+        let mut s = f.start(&[]);
+        s.initialize(false);
+        let (mut deltas, mut entries) = (0, 0);
+        loop {
+            let v: Value = s.line();
+            match v["type"].as_str().unwrap() {
+                "stream_event" => deltas += 1,
+                "assistant" => {
+                    entries += 1;
+                    assert!(text_of(&v).starts_with(&format!("entry {entries} ")));
+                }
+                "result" => break,
+                other => panic!("{other}"),
+            }
+        }
+        assert_eq!((deltas, entries), (d, e));
+        assert_eq!(s.line()["state"], "idle");
+    }
+}
+
+#[test]
+fn s100_fix5_ac5_load_rate_counts_and_interrupt() {
+    let f = Folder::new(
+        r#"{"steps":[{"do":"load","rate":{"deltas":50,"entries":5,"bytes":4096,"seconds":2}}]}"#,
+    );
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    let start = std::time::Instant::now();
+    let (mut deltas, mut entries) = (0, 0);
+    loop {
+        let v: Value = s.line();
+        match v["type"].as_str().unwrap() {
+            "stream_event" => deltas += 1,
+            "assistant" => {
+                assert_eq!(text_of(&v).len(), 4096);
+                assert!(text_of(&v).starts_with(&format!("entry {} x", entries + 1)));
+                assert_eq!(
+                    deltas,
+                    entries * 10 + 10,
+                    "entries follow every tenth delta"
+                );
+                entries += 1;
+            }
+            "result" => {
+                assert_eq!(v["subtype"], "success");
+                break;
+            }
+            other => panic!("{other}"),
+        }
+    }
+    assert_eq!((deltas, entries), (100, 10));
+    assert_eq!(s.line()["state"], "idle");
+    let took = start.elapsed();
+    assert!(
+        took > Duration::from_millis(1500) && took < Duration::from_millis(2500),
+        "{took:?}"
+    );
+
+    let f = Folder::new(r#"{"steps":[{"do":"load","rate":{"seconds":10}}]}"#);
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    std::thread::sleep(Duration::from_secs(1));
+    interrupt(&mut s, "i1");
+    let (mut deltas, mut answered) = (0, false);
+    loop {
+        let v = s.line();
+        if v == interrupt_answer("i1") {
+            answered = true;
+        } else if v["type"] == "stream_event" {
+            deltas += 1;
+        } else if v["type"] == "result" {
+            assert_eq!(v["subtype"], "error_during_execution");
+            break;
+        }
+    }
+    assert!(answered && deltas < 100, "{deltas}");
+    assert_eq!(s.line()["state"], "idle");
+}
+
+#[test]
+fn s100_ac6_host_permission_arguments_and_unawaited_interrupt() {
+    let f = Folder::new(r#"{"steps":[{"do":"sleep","ms":300},{"do":"expect-user"}]}"#);
+    let mut s = f.start(&[
+        "--permission-prompts=host",
+        "--permission-prompt-tool=stdio",
+    ]);
+    s.initialize(false);
+    interrupt(&mut s, "u1");
+    s.user("x");
+    assert_eq!(s.line(), interrupt_answer("u1"));
+    assert_eq!(s.status(), 0);
+    let log = f.log();
+    assert!(
+        log.iter()
+            .any(|l| l["stdin"].as_str().is_some_and(|t| t.contains("\"u1\"")))
+    );
+    assert!(log.iter().all(|l| l.get("error").is_none()));
+}
+
+/// S100 acceptance, outcome 3: the host interrupts a long turn while an ask the script did not
+/// await is open, so it writes the ask's deny (`interrupted`) and then the `interrupt` (host 19.3
+/// step 5). The deny is a `control_response`, one of the host's writes (18.2): the fake must not
+/// keep it for the next turn step, where it exits 70 ("expected a user message").
+#[test]
+fn regress_s100_unawaited_ask_deny_during_long_turn_keeps_the_session() {
+    let f = Folder::new(
+        r#"{"steps":[{"do":"ask","tool":"Read","input":{"file_path":"a.txt"},"tool_use_id":"t1"},
+        {"do":"long-turn","entries":1000,"every-ms":5},
+        {"do":"expect-user"},{"do":"message","text":"next"}]}"#,
+    );
+    let mut s = f.start(&[
+        "--permission-prompts=host",
+        "--permission-prompt-tool=stdio",
+    ]);
+    s.initialize(false);
+    let ask = parsed(&s);
+    assert_eq!(ask["request"]["subtype"], "can_use_tool");
+    assert_eq!(parsed(&s)["type"], "assistant");
+    s.send(&answer(
+        &ask["request_id"],
+        &json!({"behavior":"deny","message":"interrupted"}),
+    ));
+    interrupt(&mut s, "i3");
+    loop {
+        let v = parsed(&s);
+        if v["type"] != "assistant" {
+            assert_eq!(v, interrupt_answer("i3"));
+            break;
+        }
+    }
+    assert_eq!(parsed(&s)["subtype"], "error_during_execution");
+    assert_eq!(s.line()["state"], "idle");
+    s.user("go");
+    assert_eq!(text_of(&parsed(&s)), "next");
+}
+
+/// S100 fix 2: an answer whose `request_id` names no ask or check the fake wrote is a line no
+/// step awaits (TECHNICAL 18.2).
+#[test]
+fn regress_s100_answer_to_no_written_request_exits_70() {
+    let f = Folder::new(r#"{"steps":[{"do":"expect-user"},{"do":"idle"}]}"#);
+    let mut s = f.start(&[]);
+    s.initialize(false);
+    let bad = answer(&json!("nobody"), &json!({"behavior":"deny","message":"x"}));
+    s.send(&bad);
+    s.user("hello");
+    assert_eq!(s.child.wait().unwrap().code(), Some(70));
+    assert!(f.log().last().unwrap()["error"].is_string());
 }

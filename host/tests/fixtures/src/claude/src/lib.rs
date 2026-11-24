@@ -44,6 +44,16 @@ fn session_error(e: SessionError) -> String {
     }
     .into()
 }
+/// `none`, `allow`, `allow:<json>`, or `deny:<message>`.
+fn decision_of(text: &str) -> watane::host::claude_types::Decision {
+    use watane::host::claude_types::Decision;
+    match text.split_once(':') {
+        None if text == "allow" => Decision::Allow(None),
+        None => Decision::None,
+        Some(("allow", json)) => Decision::Allow(Some(json.to_owned())),
+        Some((_, message)) => Decision::Deny(message.to_owned()),
+    }
+}
 fn session(r: Result<(), SessionError>) -> String {
     r.map_or_else(session_error, |()| "ok".into())
 }
@@ -66,7 +76,100 @@ fn outcome(o: &Outcome) -> String {
     }
 }
 
+fn micros() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_micros()
+}
+/// The load test's quiet sink: one small state write per batch. The tally of a stream is
+/// `key=value` lines: `next` (the next `n` of a stamped line), `bad` (lines out of order),
+/// `last` (when the latest one came, in microseconds), `h<ms>` (how many stamped lines took that
+/// many milliseconds from the stamp `"t"` to the sink, 101 for 101 or more), `batches` (the
+/// writes), `ask<id>` and `res<id>` (when that `ask` or `ask-resolved` came), `tu<id>` (the
+/// ask's tool use id), `result` (when the turn's `result` came) and `rsub` (its subtype), `ended`, and per kind `d` (stream_event) and `e` (assistant): `n<k>` the count, `<k>first` and `<k>last` the first and last stamp, `<k>min` and `<k>max` the smallest and largest body in bytes (for an entry, the length of its `message.content[0].text`), `init` (when `initialized` came).
+fn tally_read(s: &str) -> std::collections::BTreeMap<String, String> {
+    get(&format!("tally/{s}"))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.split_once('=').map(|(k, v)| (k.to_owned(), v.to_owned())))
+        .collect()
+}
+fn tally_write(s: &str, map: &std::collections::BTreeMap<String, String>) {
+    let text: Vec<String> = map.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    put(&format!("tally/{s}"), &text.join("\n"));
+}
+fn tally_items(s: &str, items: &[Item]) {
+    let mut map = tally_read(s);
+    let num = |map: &std::collections::BTreeMap<String, String>, k: &str, d: u64| {
+        map.get(k).and_then(|v| v.parse().ok()).unwrap_or(d)
+    };
+    let (mut next, mut bad) = (num(&map, "next", 1), num(&map, "bad", 0));
+    let now = micros();
+    for item in items {
+        let body = String::from_utf8_lossy(&item.body);
+        if let Some(rest) = body.strip_prefix(r#"{"type":"ask","id":""#) {
+            let id = rest.split('"').next().unwrap_or("");
+            map.insert(format!("ask{id}"), now.to_string());
+            let tuid = body.split(r#""tool_use_id":""#).nth(1).and_then(|r| r.split('"').next());
+            map.insert(format!("tu{id}"), tuid.unwrap_or("").to_owned());
+        } else if let Some(rest) = body.strip_prefix(r#"{"type":"ask-resolved","id":""#) {
+            let id = rest.split('"').next().unwrap_or("");
+            map.insert(format!("res{id}"), now.to_string());
+        } else if body.starts_with(r#"{"type":"initialized""#) {
+            map.insert("init".into(), now.to_string());
+        } else if body.starts_with(r#"{"type":"result""#) {
+            map.insert("result".into(), now.to_string());
+            let sub = body.split(r#""subtype":""#).nth(1).and_then(|r| r.split('"').next());
+            map.insert("rsub".into(), sub.unwrap_or("").to_owned());
+        } else if let Some(rest) = body
+            .strip_prefix(r#"{"type":"assistant","n":"#)
+            .or_else(|| body.strip_prefix(r#"{"type":"stream_event","n":"#))
+        {
+            let n: u64 = rest.split(',').next().and_then(|v| v.parse().ok()).unwrap_or(0);
+            if n != next {
+                bad += 1;
+            }
+            next = n + 1;
+            map.insert("last".into(), now.to_string());
+            // Per kind (`d` deltas, `e` entries): the count, the first and last stamp, and the
+            // smallest and largest line.
+            let k = if body.starts_with(r#"{"type":"assistant""#) { "e" } else { "d" };
+            map.insert(format!("n{k}"), (num(&map, &format!("n{k}"), 0) + 1).to_string());
+            if let Some(t) = rest.split(r#""t":"#).nth(1).and_then(|r| r.split(',').next()) {
+                map.entry(format!("{k}first")).or_insert_with(|| t.to_owned());
+                map.insert(format!("{k}last"), t.to_owned());
+            }
+            // An entry's size is its text (`message.content[0].text`), not its line.
+            let len = if k == "e" {
+                body.split(r#""text":""#).nth(1).and_then(|r| r.split('"').next()).map_or(0, str::len) as u64
+            } else {
+                item.body.len() as u64
+            };
+            let (lo, hi) = (num(&map, &format!("{k}min"), u64::MAX), num(&map, &format!("{k}max"), 0));
+            map.insert(format!("{k}min"), lo.min(len).to_string());
+            map.insert(format!("{k}max"), hi.max(len).to_string());
+            if let Some(t) = rest.split(r#""t":"#).nth(1).and_then(|r| r.split(',').next()) {
+                let t: u128 = t.parse().unwrap_or(0);
+                let ms = (now.saturating_sub(t) / 1000).min(101);
+                let key = format!("h{ms}");
+                map.insert(key.clone(), (num(&map, &key, 0) + 1).to_string());
+            }
+        }
+    }
+    map.insert("next".into(), next.to_string());
+    map.insert("bad".into(), bad.to_string());
+    map.insert("batches".into(), (num(&map, "batches", 0) + 1).to_string());
+    tally_write(s, &map);
+}
+
 impl exports::mods::claude::api::Guest for Guest {
+    fn quiet() {
+        put("quiet", "1");
+    }
+    fn tally(s: String) -> String {
+        get(&format!("tally/{s}")).unwrap_or_default()
+    }
     fn start(launch: String) -> String {
         claude_code::start(&launch).unwrap_or_else(start_error)
     }
@@ -82,6 +185,13 @@ impl exports::mods::claude::api::Guest for Guest {
     }
     fn answer(s: String, ask: String) -> String {
         session(claude_session::answer(&s, &ask, &watane::host::claude_types::Decision::None))
+    }
+    fn decide(s: String, ask: String, decision: String) -> String {
+        session(claude_session::answer(&s, &ask, &decision_of(&decision)))
+    }
+    fn decide_then_fail(s: String, ask: String, decision: String) {
+        let _ = claude_session::answer(&s, &ask, &decision_of(&decision));
+        panic!("failed after answer");
     }
     fn interrupt(s: String) -> String {
         session(claude_session::interrupt(&s))
@@ -145,12 +255,21 @@ impl exports::mods::claude::api::Guest for Guest {
 }
 impl exports::watane::host::stream_sink::Guest for Guest {
     fn items(s: String, items: Vec<Item>) -> SinkOutcome {
+        if get("quiet").is_some() {
+            tally_items(&s, &items);
+            return SinkOutcome::Taken;
+        }
         for item in &items {
             add_line(&format!("items/{s}"), String::from_utf8_lossy(&item.body).into_owned());
         }
         SinkOutcome::Taken
     }
     fn ended(s: String, o: Outcome) {
+        if get("quiet").is_some() {
+            let mut map = tally_read(&s);
+            map.insert("ended".into(), micros().to_string());
+            tally_write(&s, &map);
+        }
         add_line("ended", format!("{s} {}", outcome(&o)));
     }
 }

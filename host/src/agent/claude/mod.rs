@@ -2,15 +2,18 @@
 //! functions of `claude-session` at the call, the table of live sessions, and the start that
 //! a committed chain applies.
 
+mod asks;
 pub(crate) mod control;
 mod init;
 pub(crate) mod launch;
+mod paths;
 pub(crate) mod run;
 
 use super::streams::{Consumer, MAX_OPEN};
 use super::{Effect, ModRef};
 use crate::runtime::call::Invocation;
 use crate::{CallError, Host};
+use asks::{Asks, Decision};
 use launch::{Kind, Launch, Workspace};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -29,11 +32,20 @@ pub(crate) enum Write {
     Say(String),
     Compact,
     Interrupt,
+    Answer { ask: String, decision: Decision },
+}
+
+/// One line for `claude`'s stdin. `answered` is `(ask id, outcome)` when the line is the
+/// answer to an ask or check: the writer reports it after the line is written (19.3, step 5).
+#[derive(Debug)]
+pub(crate) struct Out {
+    pub line: Vec<u8>,
+    pub answered: Option<(String, &'static str)>,
 }
 
 #[derive(Debug, Default)]
 struct Running {
-    pgid: i32,
+    pgid: Option<i32>,
     stopped: bool,
 }
 
@@ -47,15 +59,21 @@ pub(crate) struct Session {
     /// The group and the stop flag under one lock: `stop` and `started` each read what the
     /// other wrote, so one of them always kills the group.
     state: Mutex<Running>,
-    tx: Mutex<Option<Sender<Vec<u8>>>>,
-    rx: Mutex<Option<Receiver<Vec<u8>>>>,
+    tx: Mutex<Option<Sender<Out>>>,
+    rx: Mutex<Option<Receiver<Out>>>,
+    /// The open asks and checks (19.3, steps 4 and 5).
+    asks: Mutex<Asks>,
 }
 impl Session {
-    pub(crate) fn new(id: String, origin: String) -> Self {
+    /// `hook_timeout`: the `pre-tool-check`'s `timeout-s`, for the hook of `initialize`.
+    pub(crate) fn new(id: String, origin: String, hook_timeout: Option<u64>) -> Self {
         let (tx, rx) = channel();
         let request_id = super::streams::random_id();
         // `initialize` is the first line, whatever else is queued while the process starts.
-        let _ = tx.send(control::initialize(&request_id));
+        let _ = tx.send(Out {
+            line: control::initialize(&request_id, hook_timeout),
+            answered: None,
+        });
         Self {
             id,
             origin,
@@ -63,6 +81,7 @@ impl Session {
             state: Mutex::new(Running::default()),
             tx: Mutex::new(Some(tx)),
             rx: Mutex::new(Some(rx)),
+            asks: Mutex::default(),
         }
     }
     fn running(&self) -> std::sync::MutexGuard<'_, Running> {
@@ -75,22 +94,39 @@ impl Session {
     }
     /// Kills the group and closes the queue. Safe to call again.
     pub(crate) fn stop(&self) {
-        let pgid = {
+        {
             let mut state = self.running();
             state.stopped = true;
-            state.pgid
+            Self::kill_in(&state)
         };
-        run::kill_group(pgid);
         self.tx
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
             .take();
     }
+    /// Kills the recorded group, if any. The lock is held across the signal, and `exited` clears
+    /// the group under it before `claude` is reaped, so no kill reaches a pid reused since.
+    fn kill_in(state: &Running) {
+        if let Some(pgid) = state.pgid {
+            run::kill_group(pgid);
+        }
+    }
+    /// Kills the recorded group, if `claude` is not reaped yet.
+    pub(crate) fn kill_group(&self) {
+        Self::kill_in(&self.running());
+    }
+    /// `claude` has exited and is not reaped yet (its pid is still held): kills what is left of
+    /// its group, and clears the group, so no later kill signals one (19.3 step 5, S100-CAP).
+    pub(crate) fn exited(&self) {
+        let mut state = self.running();
+        Self::kill_in(&state);
+        state.pgid = None;
+    }
     /// The process started: its group, and the queue of its stdin.
-    pub(crate) fn started(&self, pgid: i32) -> Receiver<Vec<u8>> {
+    pub(crate) fn started(&self, pgid: i32) -> Receiver<Out> {
         let stopped = {
             let mut state = self.running();
-            state.pgid = pgid;
+            state.pgid = Some(pgid);
             state.stopped
         };
         if stopped {
@@ -102,16 +138,33 @@ impl Session {
             .take()
             .unwrap_or_else(|| channel().1)
     }
-    /// Queues one line for stdin (the writer adds the newline).
-    pub(crate) fn write(&self, line: Vec<u8>) {
-        if let Some(tx) = self
+    /// Queues one line for stdin (the writer adds the newline). `false` when it could not be
+    /// queued (the stream is stopped, or the writer has gone because stdin failed): the session
+    /// is then stopped, so the stream ends as the process does (19.3, step 5).
+    pub(crate) fn write(&self, line: Vec<u8>) -> bool {
+        self.enqueue(Out {
+            line,
+            answered: None,
+        })
+    }
+    /// Closes the queue: the writer ends after the lines already in it.
+    pub(crate) fn close_queue(&self) {
+        self.tx
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .take();
+    }
+    fn enqueue(&self, out: Out) -> bool {
+        let sent = self
             .tx
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
             .as_ref()
-        {
-            let _ = tx.send(line);
+            .is_some_and(|tx| tx.send(out).is_ok());
+        if !sent {
+            self.stop();
         }
+        sent
     }
 }
 
@@ -161,18 +214,24 @@ impl Sessions {
             session.stop();
         }
     }
-    /// Adds a process group to `<home>/runs/pids` (19.3, The run).
-    pub(crate) fn record_pid(&self, home: &Path, pgid: i32) {
+    /// Adds a process group to `<home>/runs/pids` as `pgid boot-id start-time` (19.3, The run),
+    /// and gives the line, for `forget_pid`. `None` when the leader is gone: nothing is recorded.
+    pub(crate) fn record_pid(&self, home: &Path, pgid: i32) -> Option<String> {
         let _guard = self
             .pids
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         let file = home.join("runs/pids");
+        // No record when the leader is gone: there is no run to find again.
+        let record = run::pid_record(pgid)?;
         let mut text = std::fs::read_to_string(&file).unwrap_or_default();
-        text.push_str(&format!("{pgid}\n"));
+        text.push_str(&format!("{record}\n"));
         let _ = std::fs::write(file, text);
+        Some(record)
     }
-    pub(crate) fn forget_pid(&self, home: &Path, pgid: i32) {
+    /// Removes the lines of `runs/pids` that are `record`, the whole line (pgid, boot id, start
+    /// time): a newer run that reused the pgid keeps its own (19.3 step 5, review r6, F6.4).
+    pub(crate) fn forget_pid(&self, home: &Path, record: &str) {
         let _guard = self
             .pids
             .lock()
@@ -181,7 +240,7 @@ impl Sessions {
         if let Ok(text) = std::fs::read_to_string(&file) {
             let kept: String = text
                 .lines()
-                .filter(|l| l.trim() != pgid.to_string())
+                .filter(|l| *l != record)
                 .map(|l| format!("{l}\n"))
                 .collect();
             let _ = std::fs::write(file, kept);
@@ -197,6 +256,24 @@ fn text_arg(args: &[Val], i: usize, what: &str) -> Result<String, CallError> {
 }
 fn bad_launch(field: &str, reason: &str) -> Value {
     json!({"err": {"bad-launch": {"field": field, "reason": reason}}})
+}
+
+/// The WIT `decision`: `allow(option<string>)`, `deny(string)` or `none`.
+fn decision_arg(v: Option<&Val>) -> Result<Decision, CallError> {
+    let bad = || CallError::internal("answer: bad decision");
+    match v {
+        Some(Val::Variant(case, payload)) => match (case.as_str(), payload.as_deref()) {
+            ("none", None) => Ok(Decision::None),
+            ("deny", Some(Val::String(why))) => Ok(Decision::Deny(why.clone())),
+            ("allow", Some(Val::Option(None))) => Ok(Decision::Allow(None)),
+            ("allow", Some(Val::Option(Some(inner)))) => match &**inner {
+                Val::String(json) => Ok(Decision::Allow(Some(json.clone()))),
+                _ => Err(bad()),
+            },
+            _ => Err(bad()),
+        },
+        _ => Err(bad()),
+    }
 }
 
 /// `claude-code.start` and `claude-code-shell.start` at the call (19.3): the checks that
@@ -288,7 +365,17 @@ pub(crate) fn session_call(
             }
             Write::Say(content)
         }
-        "answer" => return err("unknown-ask"),
+        "answer" => {
+            let ask = text_arg(args, 1, function)?;
+            let decision = decision_arg(args.get(2))?;
+            // A stream started in this chain has no ask open yet.
+            let live = (!view.in_chain).then(|| host.sessions.get(&id)).flatten();
+            match live.map(|s| s.check_answer(&host.hub, &ask, &decision)) {
+                Some(Ok(())) => Write::Answer { ask, decision },
+                Some(Err(refused)) => return err(refused.case()),
+                None => return err("unknown-ask"),
+            }
+        }
         "interrupt" => Write::Interrupt,
         "compact" => Write::Compact,
         other => {
@@ -315,7 +402,7 @@ impl Host {
         shell: bool,
         valid: bool,
     ) -> Option<run::Job> {
-        let session = Arc::new(Session::new(id.clone(), origin.clone()));
+        let session = Arc::new(Session::new(id.clone(), origin.clone(), launch.check));
         let hook = Arc::clone(&session);
         self.hub.open_host(
             id.clone(),
@@ -381,10 +468,70 @@ impl Host {
         {
             return;
         }
-        session.write(match what {
-            Write::Say(text) => control::user(&text),
-            Write::Compact => control::user("/compact"),
-            Write::Interrupt => control::interrupt(&super::streams::random_id()),
-        });
+        match what {
+            Write::Say(text) => {
+                session.write(control::user(&text));
+            }
+            Write::Compact => {
+                session.write(control::user("/compact"));
+            }
+            Write::Interrupt => {
+                session.interrupt(&self.hub, control::interrupt(&super::streams::random_id()));
+            }
+            Write::Answer { ask, decision } => session.apply_answer(&self.hub, &ask, &decision),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// 3.1 step 3, 19.3 step 5 (review r6, F6.4): a run removes only its own line of `runs/pids`.
+    #[test]
+    fn s100_fix18_ac4_a_run_removes_its_own_record_and_not_a_newer_one_of_the_same_pgid() {
+        let home = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join("runs")).unwrap();
+        let (old, new) = ("4242 boot-a 100", "4242 boot-a 200");
+        std::fs::write(home.path().join("runs/pids"), format!("{old}\n{new}\n")).unwrap();
+        Sessions::default().forget_pid(home.path(), old);
+        assert_eq!(
+            std::fs::read_to_string(home.path().join("runs/pids")).unwrap(),
+            format!("{new}\n")
+        );
+    }
+    use super::*;
+    use std::os::unix::process::{CommandExt, ExitStatusExt};
+    use std::time::Duration;
+
+    /// 19.3 step 5 (S100-CAP): when `claude` has exited, its group is killed while its pid is
+    /// still held, then cleared, so a later `stop()` signals no group.
+    #[test]
+    fn s100_fix16_ac3_exited_kills_the_group_then_clears_it() {
+        let group = || {
+            std::process::Command::new("sleep")
+                .arg("30")
+                .process_group(0)
+                .spawn()
+                .unwrap()
+        };
+        let mut left = group();
+        let session = Session::new("s".into(), "o".into(), None);
+        let _rx = session.started(i32::try_from(left.id()).unwrap());
+        session.exited();
+        assert_eq!(session.running().pgid, None);
+        let status = left.wait().unwrap();
+        assert_eq!(
+            status.signal(),
+            Some(9),
+            "the group left by claude is killed"
+        );
+        // A later `stop()` (and the run's cleanup) signals nothing.
+        let mut other = group();
+        session.stop();
+        session.kill_group();
+        std::thread::sleep(Duration::from_millis(200));
+        let alive = other.try_wait().unwrap().is_none();
+        let _ = other.kill();
+        let _ = other.wait();
+        assert!(alive);
     }
 }

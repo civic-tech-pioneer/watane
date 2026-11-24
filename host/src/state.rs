@@ -28,6 +28,9 @@ const SCRATCH: TableDefinition<&str, &str> = TableDefinition::new("scratch");
 pub(crate) struct Stats {
     pub commits: AtomicU64,
     pub commit_nanos: AtomicU64,
+    /// The commits of the host's own writes (timers, scratch rows, the generation, a removed mod's state), and their time (part of the two above).
+    pub host_commits: AtomicU64,
+    pub host_commit_nanos: AtomicU64,
     pub bytes_read: AtomicU64,
     pub bytes_written: AtomicU64,
 }
@@ -117,7 +120,7 @@ impl State {
             table.insert("generation", next).map_err(|e| internal(&e))?;
             next
         };
-        txn.commit().map_err(|e| internal(&e))?;
+        self.commit_host(txn).map_err(|e| internal(&e))?;
         Ok(next)
     }
     /// The owner identity of a scratch workspace (19.3, Folders).
@@ -144,7 +147,7 @@ impl State {
             .map_err(CallError::internal)?
             .insert(id, owner)
             .map_err(CallError::internal)?;
-        txn.commit().map_err(CallError::internal)?;
+        self.commit_host(txn).map_err(CallError::internal)?;
         Ok(())
     }
     /// Deletes the row of one scratch workspace (19.3, Folders, Lifetime).
@@ -157,7 +160,7 @@ impl State {
             .map_err(CallError::internal)?
             .remove(id)
             .map_err(CallError::internal)?;
-        txn.commit().map_err(CallError::internal)?;
+        self.commit_host(txn).map_err(CallError::internal)?;
         Ok(())
     }
     /// Deletes the rows of the scratch workspaces that `identity` owns and returns their ids
@@ -180,7 +183,7 @@ impl State {
                 table.remove(id.as_str()).map_err(CallError::internal)?;
             }
         }
-        txn.commit().map_err(CallError::internal)?;
+        self.commit_host(txn).map_err(CallError::internal)?;
         Ok(ids)
     }
     /// The ids of the live timers of one mod (19.6).
@@ -243,6 +246,13 @@ impl State {
             .map_err(CallError::internal)?
             .and_then(|v| parse_row(v.value())))
     }
+    /// Commits a transaction of the host's own, counted apart as well (19.9).
+    fn commit_host(&self, txn: redb::WriteTransaction) -> Result<(), redb::CommitError> {
+        let started = Instant::now();
+        txn.commit()?;
+        self.stats.record_host(started);
+        Ok(())
+    }
     /// A write transaction that holds only timer operations.
     pub fn timer_write(&self, ops: &[TimerOp]) -> Result<(), CallError> {
         let Some(db) = self.database(true)? else {
@@ -250,9 +260,7 @@ impl State {
         };
         let txn = db.begin_write().map_err(CallError::internal)?;
         apply_timer_ops(&txn, ops)?;
-        let started = Instant::now();
-        txn.commit().map_err(CallError::internal)?;
-        self.stats.record(started);
+        self.commit_host(txn).map_err(CallError::internal)?;
         Ok(())
     }
     /// Like `timer_write`, with the operations chosen inside the write transaction, after
@@ -263,9 +271,7 @@ impl State {
         };
         let txn = db.begin_write().map_err(CallError::internal)?;
         apply_timer_ops(&txn, &ops())?;
-        let started = Instant::now();
-        txn.commit().map_err(CallError::internal)?;
-        self.stats.record(started);
+        self.commit_host(txn).map_err(CallError::internal)?;
         Ok(())
     }
     /// Removal of a mod (4.4, 19.6): deletes its timers; every other timer that carries it as
@@ -306,7 +312,7 @@ impl State {
                     .map_err(CallError::internal)?;
             }
         }
-        txn.commit().map_err(CallError::internal)?;
+        self.commit_host(txn).map_err(CallError::internal)?;
         Ok(())
     }
     /// Holds no lock across `begin_write`: a depth-0 commit takes the catalog lock inside its
@@ -336,7 +342,7 @@ impl State {
                 .remove(id.as_str())
                 .map_err(|e| HostError::Internal(e.to_string()))?;
         }
-        txn.commit()
+        self.commit_host(txn)
             .map_err(|e| HostError::Internal(e.to_string()))?;
         Ok(())
     }
@@ -354,6 +360,15 @@ impl State {
     }
 }
 impl Stats {
+    /// A commit of the host's own, counted apart as well.
+    fn record_host(&self, started: Instant) {
+        self.host_commits.fetch_add(1, Ordering::Relaxed);
+        self.host_commit_nanos.fetch_add(
+            u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX),
+            Ordering::Relaxed,
+        );
+        self.record(started);
+    }
     fn record(&self, started: Instant) {
         self.commits.fetch_add(1, Ordering::Relaxed);
         self.commit_nanos.fetch_add(
@@ -512,5 +527,63 @@ impl Transaction {
         txn.commit().map_err(CallError::internal)?;
         self.stats.record(started);
         Ok(changed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{State, TimerOp};
+    use crate::Limits;
+    use std::sync::atomic::Ordering::Relaxed;
+
+    /// The writer's counters tell the host's own commits (timer writes) from the mods'
+    /// transactions: both count in `commits`, only the host's in `host_commits` (19.9).
+    #[test]
+    fn host_commits_count_timer_writes_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = State::open(dir.path()).unwrap();
+        let mut txn = state.transaction("m", &Limits::default()).unwrap();
+        txn.put("k".into(), b"v".to_vec()).unwrap();
+        assert!(txn.commit(&Vec::new, false).unwrap());
+        let after = |due| TimerOp::After {
+            key: "m/t".into(),
+            due,
+            origin: "m".into(),
+        };
+        state.timer_write(&[after(1)]).unwrap();
+        state.timer_write_with(&|| vec![after(2)]).unwrap();
+        let s = &state.stats;
+        assert_eq!(s.commits.load(Relaxed), 3);
+        assert_eq!(s.host_commits.load(Relaxed), 2);
+        let (all, host) = (
+            s.commit_nanos.load(Relaxed),
+            s.host_commit_nanos.load(Relaxed),
+        );
+        assert!(0 < host && host < all, "{host} {all}");
+    }
+
+    /// Every commit of the host's own counts as the host's: scratch rows and the generation
+    /// as well as timer writes (19.9, F3.5).
+    #[test]
+    fn host_commits_count_scratch_and_generation_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = State::open(dir.path()).unwrap();
+        let host = || state.stats.host_commits.load(Relaxed);
+        assert_eq!(host(), 0);
+        state.next_generation().unwrap();
+        assert_eq!(host(), 1);
+        state.scratch_add("s", "o").unwrap();
+        assert_eq!(host(), 2);
+        state.scratch_delete("s").unwrap();
+        assert_eq!(host(), 3);
+        state.scratch_removed("o").unwrap();
+        assert_eq!(host(), 4);
+        state
+            .timers_removed("o", &std::collections::BTreeMap::new())
+            .unwrap();
+        assert_eq!(host(), 5);
+        state.delete("o").unwrap();
+        assert_eq!(host(), 6);
+        assert_eq!(state.stats.commits.load(Relaxed), 6);
     }
 }

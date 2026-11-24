@@ -398,6 +398,17 @@ otherwise `relay` holds no grant beyond storage and its call of `latch`.
   (dev 18), `say` of `"/compact"` fails `slash-command`; an `answer` `allow` to
   a check fails `not-allowed-here`; `fake-claude`'s recorded stdin holds no
   other line than the ones written for each accepted call.
+  A launch with `"ask":true` gives `--permission-prompts=host
+  --permission-prompt-tool=stdio`; a `pre-tool-check` of 4 or 121 seconds fails
+  `bad-launch {field: "pre-tool-check"}`, and one of 5 to 120 puts the PreToolUse hook in
+  `initialize`. A `can_use_tool` for `Read` with `{"file_path":"a.txt"}` and `tool_use_id`
+  `t1` becomes the item
+  `{"type":"ask","id":"1","tool_use_id":"t1","tool":"Read","input":{"file_path":"a.txt"},"path":"<workspace>/a.txt","expires-at":<ms>}`
+  (a file tool's ask or check carries the path it reaches, symlinks resolved: `link.txt`, a link to
+  `real.txt`, gives `<workspace>/real.txt`; a refused path gives no `path`);
+  `answer` `allow(none)` writes the `control_response` with `updatedInput` and the stream
+  gets `{"type":"ask-resolved","id":"1","by":"answered","outcome":"allow"}`; a second
+  `answer` fails `unknown-ask`; no written line holds `updatedPermissions`.
 - **S58 Consent** (HOST-F-68). Given a launch with `"profile":"coder"` and a
   workspace new for the origin client, and a fake app that holds the answer,
   the fake app's `ConsentRequest` names the origin client, `via` the provider,
@@ -448,6 +459,22 @@ otherwise `relay` holds no grant beyond storage and its call of `latch`.
   then `answer` `allow(none)` fails `not-allowed-here` and the recorded stdin
   holds no `control_response` for it; the same ask with `file_path`
   `<workspace>/a.txt` is answered.
+  The same refusal holds for a `Glob` with `pattern` `/etc/*` or `../x`, for `Read` of
+  `<workspace>/link` where `link` is a symlink to a file outside the workspace, for a path
+  through a symlinked folder, and for a path to a file that does not exist yet under such a
+  folder; the ask stays open and is denied at its `expires-at`.
+- **S100 Asks that end** (HOST-F-67). With a test clock: an unanswered ask at its
+  `expires-at` gets the deny written to `fake-claude`'s stdin and the item
+  `{"type":"ask-resolved","id":"1","by":"expired"}`; an unanswered check at its
+  `expires-at` gets the same item and nothing on stdin; an `answer` after either is
+  `unknown-ask`. A `control_cancel_request` for an open ask gives
+  `ask-resolved {by: "cancelled"}`, is never pushed, and a later `answer` is
+  `unknown-ask`; one for an unknown request id pushes nothing. With an ask and a check
+  open, `interrupt` writes the deny (`message` `interrupted`) for the ask and nothing for
+  the check, then the `interrupt`; the stream gets `ask-resolved {by: "cancelled"}` for
+  both in the order they were pushed; a later `say` is written and the stream is not
+  ended. A `claude` line typed `ask`, `check` or `ask-resolved` is `wrapped` and opens or
+  closes nothing.
 - **S64 Lookalike bytes** (HOST-F-67, 69). `say` of `"\u{FEFF}/skill"`,
   `"\u{200B}/skill"` and `"\u{00A0}/skill"` each fail `slash-command`, and
   the recorded stdin holds no `user` line for them. An `https-stream.start`

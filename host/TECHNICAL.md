@@ -438,6 +438,7 @@ in `Outcome.value`.
   state/state.redb the private state of every mod (section 7)
   staging/         plan scratch; emptied at open
   runs/            step 11 (A2): one folder per `claude` run and `runs/pids`; emptied at open (19.3)
+  runs.*.gone/     a former `runs/` moved aside at open, then removed (3.1 step 3)
   scratch/         step 11 (A2): scratch workspaces of sessions (19.3)
   log/ dist/ app/  reserved for `log` (opened only by `dist`), `dist` and `app`
   net/             reserved for `net` (step 8, ../net/TECHNICAL.md 4.5)
@@ -460,7 +461,56 @@ which `Host::open` creates (3.1 step 6).
    package and `mods/<local>` does not. Delete each `mods/<x>` that
    `installed.json` does not name, and each remaining `mods/*.new` and
    `mods/*.old`. Step 11 (A2): kill the process groups recorded in
-   `runs/pids`, then delete `runs/` (19.3).
+   `runs/pids` that are still this home's runs, then delete `runs/` (19.3).
+   A record is a pgid with the boot id and the process's start time (Linux:
+   `/proc/sys/kernel/random/boot_id` and field 22 of `/proc/<pid>/stat`;
+   macOS: `sysctl -n kern.boottime` and `ps -o lstart= -p <pid>`, both run in
+   the C locale, since `kp_proc.p_starttime` needs `unsafe`; `lstart` has a
+   one-second resolution, so a pid reused within the same second as the
+   recorded start is the limit of the check there).
+   A group is killed only when the boot id matches and its leader still has
+   that start time; a record without them, or with no live leader, is
+   dropped unkilled (S100-CAP, item 5). A record is validated before any process
+   handle is opened: a pgid of at least 2 and a start time and boot id that parse
+   (Linux: a boot id of the form of `/proc/sys/kernel/random/boot_id`, a UUID;
+   macOS: a non-empty token); anything else is discarded and logged, and the
+   cleanup goes on (review r7, F7.2). `runs/pids` is read as bytes and split
+   into lines; each line is parsed into a full record on its own, so a line that
+   is not UTF-8 or fails to parse is logged and skipped and the next line is
+   still handled; `runs/` is removed only after every line was handled (review
+   r8, F8.1 and F8.2; the deputy's ruling). `runs` is opened as a directory
+   without following a link (`O_DIRECTORY|O_NOFOLLOW`), and `pids` is opened
+   through `openat` on that descriptor, without following a link and without
+   blocking (`O_NOFOLLOW|O_NONBLOCK`); a `runs` that is a link, or not a
+   directory, is moved aside unread (review r9, F9.1). `pids` is read only
+   when it is a regular file, at most 64 KiB; anything else, or the part past
+   64 KiB, is dropped with one log line. A bad line is logged as at most its
+   first 64 bytes, and at most 16 bad lines are logged at one open; one more
+   line gives the count of the rest (adversary S100 pass 13). The 16 lines are
+   shared by every log line of the cleanup (bad lines, leftovers, a read error),
+   and a repeated record (the same parsed pgid, boot id and start time) is
+   handled once. After the records, `runs` (whatever it is) is renamed to
+   `runs.<random>.gone`, so `runs/` is free at once whatever it holds, and each
+   `runs.*.gone` in the home is removed: a directory with
+   `std::fs::remove_dir_all`, which does not follow a link inside the tree,
+   anything else with `remove_file`. The time this takes is in step with what the
+   same user put in the private home (accepted by the deputy, review r9, F9.2); a
+   removal that fails is logged once and tried again at the next open
+   (adversary S100 passes 14 and 15). A leader is
+   verified as a leader: on Linux, with the pidfd open, field 5 (`pgrp`) of
+   `/proc/<pid>/stat` must equal the pid, read with the start time. The check and the signal are one step
+   (review r6, F6.3; the deputy's ruling): on Linux the host opens a pidfd of
+   the leader, checks the start time and boot id with it open, and sends
+   SIGKILL to that exact process through the pidfd (`pidfd_send_signal`), so
+   the signal can reach no other process. An open pidfd does not keep the pid
+   number from being reused once the process is reaped, so the host does not
+   signal the group by its number at open: other members of a crashed run's
+   group are left and logged. Where no pidfd exists (macOS, where `lstart`
+   also resolves to a second), nothing is signalled at open: the record is
+   dropped and the leftover is logged. A leftover process is a lesser harm than
+   a signal to an unrelated group. A record is
+   identified by its whole line (pgid, boot id, start time); a run removes
+   only its own line (review r6, F6.4).
 4. Read each installed mod with `Mod::read`, compile its `logic.wasm` when
    `logic()` is `Some`, and build the registry (section 6.4). A mod that fails to
    load keeps its record and gets `error`; the host still opens.
@@ -1777,7 +1827,12 @@ run on the preview install path.
 | A rolled-back call has no outside effect | requests and stream effects ride up the chain and apply only after its durable commit; a deferred or failed call drops its own and those of the calls nested in it (19.6). File: `src/runtime/call.rs` | A1: cases 21, 36; S53 |
 
 Not protected (spec §6): another program of the same user, which can read
-the home and call `/call` or `/events` with a forged `Origin`; a
+the home and call `/call` or `/events` with a forged `Origin`, and can write
+`runs/pids` naming a live group leader of that user with its true start time
+and boot id, which the host then kills at open, or plant `runs/` as a link to a
+folder it controls after the cleanup, or mount a file system under `runs/`
+that the cleanup walks or that stalls it (3.1 step 3; adversary S100 passes 13,
+14 and 16); a
 compromised OS; a fault in Wasmtime; a privileged network change that adds
 `::1` after a host started without it (8.1): `[::1]:<port>` is then free for
 another program until the host restarts. Step 11 (agentic-harness TECHNICAL
@@ -1787,7 +1842,24 @@ package-runner word that runs the project's own scripts, inside the shell
 grant's sandbox only (whether that sandbox blocks loopback is not yet
 probed); the judge account reaches any `POST` path of the origin the
 participant entered; plan usage; a launch is as safe as the grant, and the
-grants are the participant's (W38, W39).
+grants are the participant's (W38, W39). The protected-reads answer rule
+(19.3) checks a file tool's path when `answer` is called; a link swapped
+between that check and the moment `claude` opens the file (by a sandboxed
+`Bash` under the shell grant, or another program) is not caught there, and
+the deny rules of the host's `--settings=` are the limit (S100's adversary;
+accepted by the product owner, S100-CAP). Resource use under a compromised
+`claude` (S100's fifth adversary pass): a process that keeps `claude`'s
+stdout open and never ends it (a `setsid` grandchild) keeps that run's reader
+thread, pipes and run folder until it exits; the stream itself still ends at a
+cancel, disable or app quit (accepted by the product owner, S100-CAP). One
+stream's kept ask input (up to 64 asks of up to 4 MiB) can hold its origin
+client's whole 128 MiB budget, so the owner's other streams get `full` and end
+`lagging` (S100's seventh pass; accepted by the product owner, S100-CAP). And
+(S100's eighth pass): each `claude` stdout line takes the host's chains gate
+and sums the pending pushes of every chain in flight, so a mod that keeps many
+chains with many queued pushes makes every line slower, and an apply that holds
+the gate delays them; a running per-origin total of pending push bytes would
+make it constant time. A cost, not a wrong decision; not built.
 
 ## 15. Build plan
 
@@ -1984,14 +2056,27 @@ steps 1 to 4 of the control protocol for lines (`initialize`, the `init`
 match, `initialized`, `wrapped`, lines unchanged); `say`, `interrupt` and
 `compact`; `AccountSource` (19.4, `claude_binary` the only method the host
 calls yet), `Confirm::accounts`, `set_fake_claude` and `watane --fake-claude`;
-dev's `fake-claude`. Until S100 (agentic-harness S36) builds the asks and
-checks, a launch with `ask: true`, a `pre-tool-check`, an `agent-handle`
-(A3) or a non-empty `skills` is `bad-launch {field, reason}` naming the
-stage; `ask: false` gives `--permission-prompts=none`; a `can_use_tool` or
-`hook_callback` request that arrives anyway is answered deny at once and
-pushes nothing; `answer` is `unknown-ask`. `claude-code-shell.start` checks
-its grant and its launch, then its stream ends `failed("the shell grant waits
+dev's `fake-claude`. S99 left the asks and checks cut: `ask: true`, a
+`pre-tool-check`, an `agent-handle` (A3) and a non-empty `skills` were
+`bad-launch {field, reason}` naming the stage, `answer` was `unknown-ask`, and a
+`can_use_tool` or `hook_callback` was answered deny at once. `claude-code-shell.start`
+checks its grant and its launch, then its stream ends `failed("the shell grant waits
 on section 18, Q39 and Q42")`.
+**S100 (agentic-harness S36, 2026-11-22) lifts that cut for asks and checks.** It
+builds: `ask: true` (`--permission-prompts=host --permission-prompt-tool=stdio`) and
+`pre-tool-check {timeout-s: 5..120}` (the PreToolUse hook of `initialize`, and the
+step 2 check of its answer: otherwise the stream ends `mismatch(hooks)`); the `ask` and
+`check` items, their `expires-at` on the host clock and the one `ask-resolved` that
+closes each (`answered`, `expired`, `cancelled`); `claude-session.answer` with the
+checks of 19.3 step 5 made at the call, the third rule of the protected reads (a path
+resolved with symlinks, `src/agent/claude/paths.rs`), `control_cancel_request`, and
+`interrupt` closing the open asks and checks. A request that the launch did not ask for
+(a `can_use_tool` without `ask`, a `hook_callback` without `pre-tool-check`) or that
+is malformed is still answered deny at once and pushes nothing; `answer` to an id that
+is not open is `unknown-ask`. Still cut: `agent-handle` (A3), a non-empty `skills`,
+the shell grant's sandbox; each still names its stage. A `hook_callback` is taken
+for the host's whatever its `callback_id`: the host registers one callback.
+
 **Budgets of stage A** (the "Load" kind; all p95; a slow test on a stage's
 fakes, recorded with the date and the machine below; a stage is done only
 within them). Load: 8 host streams × 100 items/s of 1 KiB from a test source
@@ -2037,6 +2122,55 @@ the run with no write: item delay source to page p95 3.25 ms (budget 50 ms);
 `cancel` to `stream-end` 0.5 ms (budget 250 ms; one measurement, not a
 percentile); writer busy share 0.0% (budget 10%); state bytes written per item
 0, read per item 103 (the routing keys, see above). All within the budgets.
+
+**Budgets of stage B, the host part** (deputy's ruling on review r1 of S100,
+2026-11-23, after agentic-harness TECHNICAL 17's stage B row: 8 fake `claude`
+sessions, 2 owners, each 50 deltas/s and 5 finished entries/s of 4 KiB; item delay
+source to page at most 100 ms, `interrupt` to `idle {interrupted}` at the page at most
+1 s, writer busy share at most 50%, state bytes per finished entry at most 2 MiB within
+10% between transcripts of 10 and 10 000 entries). That row is a kernel-plus-host
+budget, measured end to end in agentic-harness S36; source to page, interrupt to idle
+at the page and the state bytes per entry are S36's. The host's share, a slow test
+`tests/it/agent_load.rs::stage_b`, at that load (8 streams on host's fixture fake, 4
+started and consumed by each of 2 consumer mods, each line stamped with its write time
+on the host's clock): item delay host to consumer at most 100 ms; an `ask` taken at
+most 100 ms; `answer` to the `control_response` on stdin at most 50 ms; `interrupt` to
+its `ask-resolved` and to the turn's `result` taken at most 1 s; `cancel` to `ended` at
+most 250 ms; writer busy share at most 50% (the host's own share recorded apart from
+the consumers'). Every line arrives once and in order. dev's `fake-claude` `load` step
+produces the same load for S36 (dev 18.2).
+
+**Stage B host record** (S100, 2026-11-23; `Linux vm 6.18.44-fc-v726 #1 SMP PREEMPT_DYNAMIC
+x86_64`, `nproc` 4, a virtual machine with a real fsync; nothing else running, load average
+0.5 to 0.7; `cd host && cargo test --test it agent_load::stage_b:: -- --include-ignored` three
+passes in a row, every budget met in each; re-run by the foreman 2026-11-23 after review r3
+and s100-fix14, nothing else running, load average 0.8 to 0.9). The load of
+`tests/it/agent_load.rs::stage_b::ac1_stage_b_load`: 8 sessions, 4 on each of the consumer mods
+`claude` and `claude-b`, on the fixture fake `claude` in its rate mode (50 deltas and 5 entries
+of 4 096 bytes a second, each line stamped with its write time; 10.6 s before the interrupt,
+about 4 660 lines, none out of order or missing, every one once). The test asserts, per stream,
+the delta rate and the entry rate (counts of each kind over one window, the turn's first to last item of either kind on
+the fake's clock, within 10% of 50 and 5 a second; measured 50.1 and 5.00 over 10.6 s), the size of every entry (the
+length of its `message.content[0].text`, which the fake pads to 4 096 bytes, read by the consumer), that the turn's
+`result` is the interrupted one (subtype `error_during_execution`, written by the fake after it
+read the interrupt) and that `ended` came after the `cancel` that it times; the workload
+`55 0 4096 10.2` fails it, and so does one whose first entry comes late. The counters (`before`) are read
+only after every stream's `initialized` reached its consumer, so the scratch row commits of the starts
+are outside the window; the host counter counts every host-owned commit (scratch add, delete,
+remove, the generation, timers), and the figures cover the window from that reading to the last `cancel`. One `ask` answered and one left open for the `interrupt`; the turn's
+`result`, then `cancel`. Figures, pass 1 / 2 / 3 (the p95 over the 8 sessions is the worst,
+one value per kind): item delay host to consumer, the worst session's p95, 3 / 6 / 4 ms (budget
+100; the histogram's ms upper edge, each session's p95 over its own 580 lines); `ask` taken 3.8 /
+2.6 / 3.3 ms (100); `answer` to the fake's stdin 13.9 / 5.0 / 7.4 ms (50); `interrupt` to
+`ask-resolved` 10.7 / 18.3 / 14.9 ms and to the turn's `result` 14.6 / 18.3 / 15.8 ms (1 000);
+`cancel` to `ended` 9.0 / 8.3 / 7.9 ms (250); writer busy 20.2 / 20.3 / 19.1% (50), measured by
+owner on the commit path (`TestStats.host_commits`, `host_commit_time`): the host's own commits
+(timer and scratch writes) 0 of about 4 240, so 0.0% of the share, and the mods' (the consumers' one small
+tally write per batch, mean commit 0.48 to 0.51 ms) all of it. Three busy loops beside it (load
+average 2) left every figure within budget (interrupt and cancel up to 24 ms). With another build
+running (load average 5 to 9 on the 4 cores) the same load took the writer to 53 to 59% (a commit
+took 1.4 ms, not 0.6), and a build beside it once took the first `ask` to 260 ms: the budgets need
+a quiet machine.
 
 Step 2 is done when J2 passes with `app`. Steps 4 and 5 need only
 HOST-F-42 and HOST-F-43, which stages 5 and 8 meet.
@@ -2401,6 +2535,27 @@ Raised by S95's adversary step (none blocks A1):
   first A2 slice and write each deny rule in both spellings if `claude`
   matches the path as given; (b) accept it under Not protected (spec §6).
   Recommended: (a). Cost to undo: deny lines only. Blocks A2.
+  S100 (2026-11-22): the third rule of 19.3 (an `allow` to an ask of a file tool) resolves
+  symlinks itself, also in a path that does not exist yet under a linked folder and in the
+  working folder's own path, and refuses a link that cannot be followed; a path with `..`
+  must stay inside both as the kernel reads it (from the link's target) and as Node's
+  `path.resolve` reads it (the name before `..` dropped); so an ask for `F/k` is refused
+  whatever `claude` matches. What stays open: a `Read` that `claude` makes without asking
+  (an `allow` rule such as `Read(**)`) and the sandbox are held only by the deny rules,
+  which is probe V29 (the two spellings); and a `Grep` or `Glob` of a folder inside, whose
+  tree holds a link out, is allowed: whether `claude`'s search follows links is not
+  probed (validator of S100).
+  S100-fix1 closes the adversary's lookalike paths: the rule refuses a path with white space at an
+  end or not in NFC, a `Glob` or `Grep` pattern with `{`, `}`, `,` or white space, and an
+  `Edit`, `Write` or `NotebookEdit` into the run folder (19.3, "Read as `claude` reads it").
+  Still open after S100's second adversary pass (for V29 or A3): a `Glob` pattern with `\`, `[`
+  or `]` (`\.\./x`, `[/]etc/*`) passes the rule; whether Claude Code's glob engine reads such a
+  pattern as leaving its base is not probed (refusing those characters is the fail-closed
+  choice). On a case-insensitive file system, the run-folder write check compares bytes, so a
+  workspace that holds the run folder could reach it by another case (picked folders refuse the
+  watane home and its ancestors, so not reachable before A3). A picked folder whose canonical
+  name is NFD (macOS) refuses every read in it (fail-closed; a usability gap for A3). Brace
+  globs such as `**/*.{ts,tsx}` cannot be allowed.
 - **Q42** Login files the closed deny list misses (19.3, Protected reads;
   HOST-F-74). Under the shell grant, a sandboxed runner word can read
   `~/.npmrc`, `~/.cargo/credentials.toml`, `~/.config/gcloud/**`, shell
@@ -2713,14 +2868,14 @@ A stream carries numbered items from a producer to one consumer, in order.
 | Commit | `push`, `close`, `cancel`, `hand-off` and `resume` follow the chain rule of requests (19.6): they take effect after the top-level invoke of the chain succeeds and its writes commit, in call order, `close` and `cancel` after the pushes before them; a call that is rolled back, deferred or failed, and every call nested in it, drops them. The checks of the call (`not-yours`, `unknown-stream`, `full`, `too-large`) count what every chain in flight has queued, not only the current chain: a call checks and queues its effect under one lock of the host, and a chain releases its reservation when it applies or rolls back. So the in-flight limit, the budgets, the 32 open streams, the 256 live timers (their cancels count only in the chain that made them) and the single hand-off hold across chains running at once. `streams.open` is a request (19.6); a stream opened in a chain can be pushed to and closed in the same chain. A host stream that `claude-code.start` or `claude-code-shell.start` opened in a chain is visible to that chain's later stream and session calls as an `Open` is: its consumer, the starting mod, can `say`, `interrupt`, `compact`, `cancel` and `hand-off` it there, and a `cancel` of the chain starts no process |
 | Item call's caller | `host` for host streams, `mod:<producer>` for mod streams |
 | Hops | an item call that pushes on passes its hop count; at `limits.hops` (8) the item is dropped and logged |
-| In flight | items queued and not yet taken, 256 items or 4 MiB per stream; `push` past it fails `full`; the producer's `ready` runs once when it drops below half after a `push` to it failed `full` (never without such a push); host streams stop reading their source |
+| In flight | items queued and not yet taken, 256 items or 4 MiB per stream; `push` past it fails `full`; the producer's `ready` runs once when it drops below half after a `push` to it failed `full` (never without such a push); host streams stop reading their source; the host's `ask-resolved` items bypass the item and byte limit; their bytes are reserved in the budgets when the ask or check opens, 19.3 step 5 |
 | Page queue | lossless, one per connection, apart from the page bus of 9.3. The host takes a batch for a page when its SSE write completes |
 | Ends | close, cancel, `lagging`, `replaced`, disable, removal or update of either side, lost grant or consent (a mod stream depends on the consumer's `Call` grant of the link through which `open` ran, the link and its provider too: revoked, withdrawn (`manage.withdraw`) or unbound, it ends `gone` for both sides at once, after the catalog write (Q24, Q46), or at apply for an `open` of a chain still in flight (19.6, At apply); a side disabled and enabled again while that `open` was in flight keeps the stream, which did not exist at the disable; none for a page or a host stream until A2), closed page connection, `consumer-failed`, `idle-timeout`, app quit; each side gets `ended(outcome)` (`stream-sink.ended`, `stream-producer.ended`; a page gets the message of 8.4) |
 | Forwarding | a mod that forwards defers when a `push` to its own downstream stream fails `full`, and resumes in its `stream-producer.ready` for that stream. When that downstream stream ends with any outcome (closed, `replaced`, `lagging`, page gone), `stream-producer.ended` runs and the mod resumes every deferred upstream of it |
-| Lag clock | a stream's clock starts when a `push` to it fails `full` and stops and resets when the host calls `ready` for it; after 10 s on one run of the clock the stream ends `lagging` and both sides get `ended`. So a consumer that stops taking items, or takes a few and stops (a page that stays connected but stops reading), cannot hold its producer, nor the producer's deferred upstream, for longer |
+| Lag clock | a stream's clock starts when a `push` to it fails `full` and stops and resets when the host calls `ready` for it or when a producer's push to it commits (19.3 step 5; an `ask-resolved` close item is no producer push and changes nothing); after 10 s on one run of the clock the stream ends `lagging` and both sides get `ended`. So a consumer that stops taking items, or takes a few and stops (a page that stays connected but stops reading), cannot hold its producer, nor the producer's deferred upstream, for longer |
 | Deferral | a stream whose consumer has deferred it has no lag clock (a running one stops when the consumer defers; a new one starts only at a failed push after `resume`; its producer's pushes fail `full` because the consumer chose to wait). Backstop: a stream deferred for 5 minutes without `resume` ends `consumer-failed`. Neither needs a timer of the mod |
 | Restart | streams are memory only; old ids are `unknown-stream` |
-| Byte budgets | queued items (in flight and kept by a deferral) count against the host's budget of 512 MiB in all, 128 MiB per origin client (the consumer's 32 streams × 4 MiB), and 16 MiB per page connection. A `push` that would pass the origin client's or the host's budget fails `full`, as the in-flight limit does; its `ready` then waits until the stream is below half and the budget that refused it has room for the refused push again (Q44). A page connection past its 16 MiB ends; its streams end `lagging` |
+| Byte budgets | queued items (in flight and kept by a deferral), and the close reserve and kept input of each open ask or check (19.3 step 5), count against the host's budget of 512 MiB in all, 128 MiB per origin client (the consumer's 32 streams × 4 MiB), and 16 MiB per page connection. A `push` that would pass the origin client's or the host's budget fails `full`, as the in-flight limit does; its `ready` then waits until the stream is below half and the budget that refused it has room for the refused push again (Q44). A page connection past its 16 MiB ends; its streams end `lagging` |
 | Limits | 32 open streams per consumer (`streams.open` and a host start past it fail `full`); 4 MiB per item (`too-large`); 4 `claude` processes per origin client, 8 in all (a start past it ends `failed("too many claude processes")`) |
 
 A deferral is how a consumer says "not now" without losing order: the
@@ -2830,7 +2985,7 @@ names its reason.
 `**/AGENTS.md`, `.mcp.json`, `.envrc`, `**/.github/workflows/**`, `build.rs`,
 `package.json`, `Makefile` and `.husky/**`. No launch can remove them.
 
-**Protected reads** (S63; open: Q41 symlinks, Q42 login files outside the list). A file in the participant's home folder is as
+**Protected reads** (S63; open: Q42 login files outside the list; Q41: the third rule resolves symlinks). A file in the participant's home folder is as
 readable to `claude` as to the participant, and the mod that consumes the
 stream reads whatever the agent prints; so the workspace refusals below do
 not keep a credential from a mod on their own. Three rules do:
@@ -2857,8 +3012,21 @@ not keep a credential from a mod on their own. Three rules do:
   folder, or whose pattern input (`Glob`'s `pattern`, `Grep`'s `glob`)
   starts with `/` or `~` or has a `..` segment, after the
   host resolves it as `claude` would (relative to the workspace, symlinks
-  resolved), is refused `not-allowed-here`; nothing is written to stdin, and
+  resolved; only a component that does not exist counts as a new name, and
+  any other error while resolving, such as a file used as a folder, a loop or
+  no permission, refuses it: review r2 of S100, F2.1), is refused `not-allowed-here`; nothing is written to stdin, and
   the ask is denied at its `expires-at`.
+  Read as `claude` reads it, fail-closed (S100's adversary; foreman's
+  decision): a path input with leading or trailing white space (what
+  JavaScript's `trim` removes) or that is not in Unicode NFC is refused, so
+  the host never resolves another name than `claude` does; a `Glob` `pattern`
+  or `Grep` `glob` holding `{`, `}`, `,` or white space is refused (Claude
+  Code splits a `glob` into several and expands braces). The run folder counts
+  for `Read`, `Glob` and `Grep` only: an `allow` of `Edit`, `Write` or
+  `NotebookEdit` there is refused, so a consumer cannot plant a skill file
+  past the `skills` frontmatter rule. The path is checked at the call; a link
+  swapped before `claude` opens the file is section 14, Not protected (the
+  deny rules of `--settings=` stay the hard limit).
 
 **The run.**
 
@@ -2873,7 +3041,7 @@ not keep a credential from a mod on their own. Three rules do:
   `initialize` with `hook_on_failure_supported` and has the protected-path
   symlink fixes (2.1.295 or later). None: the stream ends `no-binary`; too old:
   `version {found, need}`; no app: `no-app`.
-- Process: its own process group; the pid is recorded in `<home>/runs/pids`.
+- Process: its own process group; the pid is recorded in `<home>/runs/pids` with the boot id and its start time (3.1 step 3); the record is removed when the run ends.
   The consent of 19.7 is held first: the host starts the process only then.
 - Environment: only `HOME`, `USER`, `LOGNAME`, `LANG`, `LC_*`, `TMPDIR`,
   `SHELL`, a fixed `PATH` (`/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin`), `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`, and
@@ -2890,7 +3058,7 @@ not keep a credential from a mod on their own. Three rules do:
    <timeout-s>, onFailure: "block"}]`.
 2. With a callback, the answer must hold `hook_on_failure_supported: true` and
    not `hooks_applied: false`; otherwise the host kills the group and ends the
-   stream `mismatch`. Once this step has passed, the host pushes the item
+   stream `mismatch(hooks)`. Once this step has passed, the host pushes the item
    `{"type":"initialized","workspace":"<the launch's workspace id>"}` on the
    stream (Folders). The process starts only after the
    workspace consent is held, so `initialized` never comes before it; the
@@ -2922,8 +3090,11 @@ not keep a credential from a mod on their own. Three rules do:
 |---|---|
 | `control_request` `can_use_tool` | `{"type":"ask","id":<host id>,"tool_use_id":<the request's>,"tool":…,"input":…,"expires-at":<ms>}` |
 | `control_request` `hook_callback` (PreToolUse) | `{"type":"check","id":<host id>,"tool_use_id":<the request's>,"tool":…,"input":…,"expires-at":<ms>}` |
+|  | (review r1 of S100) An `ask` or a `check` of `Read`, `Glob`, `Grep`, `Edit`, `Write` or `NotebookEdit` also carries `"path":"<absolute path>"` after `input`: its path input (absent: the working folder) resolved as the third rule of Protected reads resolves it (symlinks resolved), taken from the key that tool reads (`Read`, `Edit`, `Write`: `file_path`; `Glob`, `Grep`: `path`; `NotebookEdit`: `notebook_path`); an input that also holds another of those keys gives no `path` (S100's third adversary pass); an absent key means the working folder only for `Glob` and `Grep`, and gives no `path` for the other four (S100's fourth pass: `claude` refuses those inputs, so a workspace-wide scope must not be offered), so the kernel can scope a session allow before it answers (agentic-harness TECHNICAL 9.6 and 15; the H2 wire form, agreed by the deputy on PR #15); a path the host cannot resolve, or that the rule refuses, gives no `path` key. `input` stays as `claude` sent it |
+|  | (S100's foreman) The host id is a decimal counter from `"1"` per stream, one count for asks and checks. An ask's `tool` and `input` are the request's `tool_name` and `input`; a check's are its `input.tool_name` and `input.tool_input`; `tool_use_id` is the request's `tool_use_id` for both. A `tool` that is not a string or an `input` that is not an object is answered deny at once and pushes nothing, as a missing `tool_use_id` is |
 | a line whose top-level `type` is a watane item type that can share the stream: `ask`, `check`, `ask-resolved`, `initialized`, `wrapped`, `consent-pending`, and the checked provider's `verdict` and `checking` | never passed through (Q36, option 1): the line goes on the stream as `{"type":"wrapped","line":"<the line as a JSON string>"}`, so that no `claude` line can pass as a host item |
 | a line that is not UTF-8, is not one JSON object, or has a duplicate top-level key | `{"type":"wrapped","line":"<the line as a JSON string>"}`, the bytes decoded with U+FFFD for the invalid ones |
+| `control_cancel_request` | never pushed. When its `request_id` is that of an open ask or check, the host closes it with `ask-resolved {by: cancelled}`; any other cancel does nothing (S100's foreman) |
 | any other line | the line unchanged |
 
    `expires-at` is on the host's clock: for an ask, the push time plus 10
@@ -2935,13 +3106,14 @@ not keep a credential from a mod on their own. Three rules do:
    its own parsed value and serializes it itself; it never copies bytes of a
    `claude` line into an item, so no `claude` line can pass as a host item. An
    ask or check closes with one item, built by the host as well:
-   `{"type":"ask-resolved","ask":"<the id of the ask or check>","by":<by>}`, with
+   `{"type":"ask-resolved","id":"<the id of the ask or check>","by":<by>}` (the key is `id`, as agentic-harness TECHNICAL 4.5 and 9.4 read it; review r1 of S100), with
    `by` one of: `answered` (a `claude-session.answer` was written, and the item
    also carries `"outcome":"allow"|"deny"|"none"`, the answer the host sent to
    `claude`; `none` only for a check, Q35); `expired` (an ask that the host
    denied at its `expires-at`, step 5; or a check that reached its
    `expires-at`: the host closes it, and writes nothing to stdin for it);
-   `cancelled` (`claude` sent a `control_cancel_request` for it). Each ask or
+   `cancelled` (`claude` sent a `control_cancel_request` for it, or the
+   consumer's `interrupt` ended its turn, step 5). Each ask or
    check gets exactly one `ask-resolved`, and a later answer to it is
    `unknown-ask` (Q36).
 5. Writes to stdin are only these; after `initialize`, none is written until the answer to it has passed step 2 (not until `system/init`), then they go in queue order, and none if step 2 fails:
@@ -2952,13 +3124,95 @@ not keep a credential from a mod on their own. Three rules do:
 | `compact` | a `user` message `/compact` | – |
 | `answer` to an ask | `control_response` `{behavior: allow, updatedInput}` or `{behavior: deny, message}` | `none` refused `not-allowed-here`; `allow(none)` sends the original input; a changed input only for `AskUserQuestion` and `ExitPlanMode`, else refused `not-allowed-here` |
 | `answer` to a check | `{}` for `none`; `{hookSpecificOutput: {hookEventName: PreToolUse, permissionDecision: deny, permissionDecisionReason}}` for `deny` | `allow` refused `not-allowed-here` |
-| `interrupt` | `control_request` `interrupt` | – |
+| `interrupt` | `control_request` `interrupt` | first, a deny (`message` `interrupted`) for each open ask of the stream, nothing for an open check; each open ask and check then closes with `ask-resolved {by: cancelled}`, in the order they were pushed, before the stream's next item (S100's foreman) |
 
    An ask the host has not had answered at its `expires-at` is denied (written
    as the deny above) and closes with `ask-resolved {by: expired}`. A check
    that is not answered at its `expires-at` is closed with `ask-resolved
    {by: expired}` and nothing is written to stdin for it. A second
    answer, or an answer to an ask or check that is closed, is `unknown-ask`.
+   No ask or check is opened before the `system/init` line has passed step 3
+   (review r1 of S100): a `can_use_tool` or `hook_callback` that comes before it is
+   answered deny at once and pushes nothing. Before the answer to `initialize` has
+   passed step 2 nothing is written to stdin, so the deny for a request that comes
+   then is queued and written first, before any other line, once step 2 passes; if
+   step 2 fails, the stream ends and nothing is written (review r2 of S100, F2.8; the
+   deputy's ruling). An ask or check whose `expires-at` has
+   come is closed at that instant, whether or not the host's sweep has run: an
+   `answer` at or after it is `unknown-ask` at the call, and one whose apply comes at
+   or after it writes nothing (the expiry's deny, for an ask, is written once). A
+   `control_cancel_request` or an `interrupt` that acts at or after an ask's or
+   check's `expires-at` finds it expired first: the ask gets its single expiry deny
+   and `ask-resolved {by: expired}`, never the interrupt's deny or `cancelled`
+   (review r2, F2.2). An
+   `ask-resolved {by: answered}` is pushed only after its line was written to
+   `claude`'s stdin; a write that fails (stdin closed) pushes no `answered`, and
+   the stream ends as the process does. The end of a run is bounded (review r2,
+   F2.3 and F2.4): once `claude`'s stdout reaches its end, the host waits at most
+   2 s for the process to exit and then kills its group; it then closes the
+   writer's queue and waits at most 2 s more for the stdin writer. The host's write
+   end of `claude`'s stdin is non-blocking: a write that finds the pipe full waits for
+   room in short slices and gives up at that second bound, so a stray process that
+   keeps the pipe open cannot hold the writer. The bound is checked before every
+   write call, whatever the last one returned (a partial write, `EINTR`, the next
+   queued line), so no write starts after it (review r3, F3.1). If the host cannot
+   make its write end non-blocking, the start ends `failed("stdin")` before any line
+   is written (fail closed). The `ask-resolved` items that close asks and checks are
+   host items, few and small (one per ask or check), and wait on neither the stream
+   nor a budget: they go on the stream past its in-flight limit, in order, and the
+   bytes of each (128, the most one can take) are reserved in the origin and host
+   budgets when its ask or check opens, which is refused `full` when item and reserve
+   do not fit; the close takes the reserve, and the stream's end frees what is left.
+   So the end of a run never waits on a consumer that stopped reading or on a budget
+   (review r3, F3.2). The budget check, the enqueue and the reserve of an ask or
+   check are one step under one lock: a stream that ends meanwhile takes nothing
+   from the budgets. While an ask or check is open, the input the host keeps of it
+   counts against its origin client's and the host's byte budgets, beside its close
+   reserve, and is freed when it closes or the stream ends; at most 64 asks and
+   checks are open on one stream at a time, and a `can_use_tool` or `hook_callback`
+   past that is answered deny at once and pushes nothing (fail closed; S100's sixth
+   adversary pass). One whose item, close reserve and kept input do not fit those
+   budgets is not denied: its open fails `full` and the run stops reading `claude`
+   until it fits, as every host push waits (19.2, In flight); the lag clock bounds
+   that wait, so a stream whose budget stays held ends `lagging` (19.2, Lag clock).
+   A refusal and its wake come from the one admission check (review r6, F6.1 and
+   F6.2; review r7, F7.1: the scan calls the same function as a retry with the
+   same arguments, the stream's own pending items and bytes included, so the two
+   cannot disagree; the deputy's ruling): whether a waiting producer is woken is decided by
+   that check, run under the same lock, on the current pending bytes of every chain
+   in flight, against both the origin's and the host's budget, so a woken producer's
+   retry is admitted. The scan's admission answer equals a retry's for every state; the
+   19.2 In flight rule (`ready` once the stream is below half) then gates the wake. A stream's refusal and lag state change only when a push to it
+   commits (its refusal then clears and its lag clock stops); a tentative push in a
+   chain that rolls back leaves them exactly as they were. A host close item
+   (`ask-resolved`) is no producer push: it neither clears a refusal nor stops
+   the lag clock. When the check cannot run at once because the chains gate or a
+   chain's log is held, the wake is owed, not dropped: the hub's own worker runs
+   the check as soon as it can take the gate (holding no other lock first), so a
+   drained stream's producer is woken within that wait, never only at the
+   holder chain's end (review r6, validator). A close and a chain's end
+   (commit or rollback) run that check for the waiting producers (review r5 and r6). The input an open ask or check keeps is held as the bytes of its JSON
+   text, not as a parsed value, and counted by that length, so the count is what
+   the host holds; it is parsed again when needed (S100-CAP). When `claude` exits,
+   the waiter kills what is left of its group while the exited process is not yet
+   reaped (its pid still held), clears the recorded group, and only then reaps it;
+   every other kill of the group (`stop()`, the end of the run) goes through that
+   record under one lock, so no kill follows the reap and a pid reused since is
+   never killed (S100-CAP). The same holds for the version probe (`claude
+   --version`): its group is killed, if at all, before its child is reaped, never
+   after (S100-CAP, item 5).
+   Every line the writer reported written
+   has its `ask-resolved {by: answered}` pushed before `ended`; a write that did not
+   complete (failed, or given up) pushes none, and none is pushed after the stream
+   ended. No thread of the run outlives the bounds, but for the one that reaps
+   `claude` if the process is still not reaped 2 s after its group got SIGKILL (a
+   process stuck in the kernel).
+   The checks of an `answer` are made at the call against the asks open then
+   (`unknown-ask` for an id that is not open on `s`); one that closes between the
+   call and its apply (expired, cancelled, a second answer applied first) writes
+   nothing and pushes nothing more. An ask's `permission_suggestions` and every
+   other field of `claude`'s request but `tool_name`, `input` and `tool_use_id`
+   stay out of the item; an `allow` never carries `updatedPermissions`.
    The items for a close are those of step 4. Nothing else is ever written: no
    `apply_flag_settings`, `mcp_set_servers`, `set_permission_mode`,
    `updatedPermissions` or second `initialize`.
@@ -2970,7 +3224,7 @@ not keep a credential from a mod on their own. Three rules do:
 **Wire shapes** (Claude Code's stream-json, as S99 builds them; dev's
 `fake-claude` checks the same). `initialize`:
 `{"type":"control_request","request_id":"<id>","request":{"subtype":"initialize"}}`
-(with `hooks` once checks exist, S100); its answer
+(with `hooks` when the launch has `pre-tool-check`); its answer
 `{"type":"control_response","response":{"subtype":"success","request_id":"<id>","response":{…}}}`.
 `say`: `{"type":"user","message":{"role":"user","content":"<text>"}}`;
 `compact`: the same with the text `/compact`; `interrupt`:
@@ -2989,7 +3243,7 @@ the session flags, `--no-session-persistence`, `--include-partial-messages`, and
 `--plugin-dir=<run folder>/watane-run`. `--tools=` always goes out, empty when the launch
 names no tool, because `claude` has every built-in tool without it; at `subagent-depth`
 0 `Task` is dropped from it. The program is started with `process_group(0)`; the workspace
-forbids `unsafe`, so a group is killed by running `kill -KILL -- -<pgid>`. A line over 4 MiB
+forbids `unsafe`, so a group is killed with `rustix::process::kill_process_group` (SIGKILL), only for a pgid above 1 (review r3, F3.6). A line over 4 MiB
 ends the stream `failed`. `claude-code-shell.start` requires a `sandbox` object and
 takes its content unchecked until Q39 and Q42 are decided.
 
@@ -3475,7 +3729,10 @@ pub struct TestNet { pub routes: Vec<(String, SocketAddr)>, pub root_pem: String
     timers of 19.6, which tests wait for in real time); `TestClock::advance`
     moves it, and the host checks the stream clocks at each advance.
   - `Host::test_stats()` reads the counters of the state writer (7) since
-    open: commits, the wall time spent in them (redb commit, fsync included),
+    open: commits, the wall time spent in them (redb commit, fsync included), and
+    the part of both that the host's own writes made (every commit of `state.rs` that is not a
+    mod's transaction: timer writes, the scratch rows added, deleted or removed, the generation, a removed mod's state;
+    the rest are the mods' transactions),
     and the state bytes read and written by calls (keys and values through
     `state`, host tables excluded). The load test of A1 takes the writer
     busy share and the state bytes written per item from two readings.
@@ -3517,5 +3774,5 @@ pub struct Delivery { pub seqs: Vec<u64>, pub answer: DeliveryAnswer }
 pub enum DeliveryAnswer { Taken, Deferred, Failed }
 #[cfg(feature = "test-streams")]
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TestStats { pub commits: u64, pub commit_time: Duration, pub state_bytes_read: u64, pub state_bytes_written: u64 }
+pub struct TestStats { pub commits: u64, pub commit_time: Duration, pub host_commits: u64, pub host_commit_time: Duration, pub state_bytes_read: u64, pub state_bytes_written: u64 }
 ```
