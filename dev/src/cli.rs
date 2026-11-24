@@ -472,6 +472,7 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
                     preview::stop(&dir, &env)
                 } else {
                     let script = script.map(|path| cwd.join(path));
+                    let script = preview::read_script(&dir, script.as_deref()).map_err(|error| vec![error])?;
                     let mut tested = test_local(&dir);
                     if !tested.ok {
                         outcome.next = if tested.dir.as_deref() == Some(dir.as_path()) {
@@ -494,7 +495,7 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
                     if let Err(warning) = preview::find_fake_claude() {
                         outcome.warnings.push(warning);
                     }
-                    preview::serve_with_script(&dir, &env, &format!("watane-dev serve --json{args}"), script.as_deref())
+                    preview::serve_with_script(&dir, &env, &format!("watane-dev serve --json{args}"), script, &mut outcome.warnings)
                 }
             }),
     };
@@ -510,10 +511,21 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
             outcome
         }
         Err(e) => {
-            if e.first()
-                .is_some_and(|p| p.code.class() == crate::outcome::Class::Env)
+            if let Some(problem) = e
+                .first()
+                .filter(|p| p.code.class() == crate::outcome::Class::Env)
             {
-                outcome.next = Some("watane-dev doctor --json".into());
+                outcome.next = if name == "serve"
+                    && problem.code == crate::outcome::Code::EnvPreviewStart
+                    && problem.file.is_some()
+                {
+                    problem
+                        .fix
+                        .as_ref()
+                        .map(|fix| format!("{fix}, then run: watane-dev serve --json{args}"))
+                } else {
+                    Some("watane-dev doctor --json".into())
+                };
             } else if name == "check"
                 && e.first()
                     .is_some_and(|p| p.code.class() == crate::outcome::Class::Mod)

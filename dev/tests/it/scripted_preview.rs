@@ -64,8 +64,12 @@ impl Preview {
         path
     }
 
-    fn started(&self, args: &[&str], reused: bool) -> Value {
-        let out = self.serve(args);
+    fn started(&self, args: &[&str], reused: bool, fake: &Path) -> Value {
+        let out = self
+            .command(args)
+            .env("WATANE_SCRIPTED_RESPONSES", fake)
+            .output()
+            .unwrap();
         let envelope: Value = serde_json::from_slice(&out.stdout).unwrap();
         assert!(
             out.status.success(),
@@ -83,7 +87,7 @@ impl Drop for Preview {
     }
 }
 
-fn delta(result: &Value) -> String {
+fn preview_call(result: &Value, function: &str, args: Value) -> Value {
     let url = reqwest::Url::parse(result["api"].as_str().unwrap()).unwrap();
     let port = url.port().unwrap();
     let host = format!("https.localhost:{port}");
@@ -92,23 +96,25 @@ fn delta(result: &Value) -> String {
         .timeout(Duration::from_secs(15))
         .build()
         .unwrap();
-    let call = |function: &str, args: Value| {
-        let response = client
-            .post(format!("http://127.0.0.1:{port}/call"))
-            .header("Host", &host)
-            .header("Origin", format!("http://{host}"))
-            .header("Content-Type", "application/json")
-            .body(json!({"fn": function, "args": args}).to_string())
-            .send()
-            .unwrap();
-        assert!(
-            response.status().is_success(),
-            "{}",
-            response.text().unwrap()
-        );
-        let body: Value = serde_json::from_str(&response.text().unwrap()).unwrap();
-        body["value"].clone()
-    };
+    let response = client
+        .post(format!("http://127.0.0.1:{port}/call"))
+        .header("Host", &host)
+        .header("Origin", format!("http://{host}"))
+        .header("Content-Type", "application/json")
+        .body(json!({"fn": function, "args": args}).to_string())
+        .send()
+        .unwrap();
+    assert!(
+        response.status().is_success(),
+        "{}",
+        response.text().unwrap()
+    );
+    let body: Value = serde_json::from_str(&response.text().unwrap()).unwrap();
+    body["value"].clone()
+}
+
+fn delta(result: &Value) -> (String, String) {
+    let call = |function, args| preview_call(result, function, args);
     let id = call(
         "api.start",
         json!({"request": json!({
@@ -135,7 +141,7 @@ fn delta(result: &Value) -> String {
     assert_eq!(head["status"], 200);
     let delta: Value = serde_json::from_str(&items[1]).unwrap();
     assert_eq!(delta["type"], "response.output_text.delta");
-    delta["delta"].as_str().unwrap().to_owned()
+    (id.to_owned(), delta["delta"].as_str().unwrap().to_owned())
 }
 
 #[test]
@@ -155,7 +161,9 @@ fn script_error_names_original_file_and_stop_conflicts() {
     assert!(error["errors"][0]["fix"].is_string());
 
     let out = preview.serve(&["--stop", "--script", "bad.json"]);
-    assert!(!out.status.success());
+    assert_eq!(out.status.code(), Some(2));
+    let error: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(error["errors"][0]["code"], "usage.args");
 }
 
 #[test]
@@ -291,8 +299,19 @@ fn serve_delivers_default_folder_and_explicit_script_responses() {
         "set WATANE_BIN to a development host"
     );
     let preview = Preview::new();
-    let default = preview.started(&[], false);
-    assert_eq!(delta(&default), "ok");
+    std::os::unix::fs::symlink(
+        env!("CARGO_BIN_EXE_scripted-responses"),
+        preview.0.path().join("responses-bin"),
+    )
+    .unwrap();
+    let fake = preview.host_stub(
+        r#"dir=${0%/*}; printf '%s\n' "$$" > "$dir/responses-pid"; exec "$dir/responses-bin" "$@""#,
+    );
+    let default = preview.started(&[], false, &fake);
+    let (stream, reply) = delta(&default);
+    assert_eq!(reply, "ok");
+    let retained = preview_call(&default, "api.items", json!({"s": stream}));
+    assert!(retained.as_array().is_some_and(|items| !items.is_empty()));
 
     let mod_script = preview.mod_dir().join("scripted-responses.json");
     fs::write(
@@ -300,9 +319,9 @@ fn serve_delivers_default_folder_and_explicit_script_responses() {
         br#"{"replies":[{"sse":[{"delta":"folder"}]}]}"#,
     )
     .unwrap();
-    let folder = preview.started(&[], false);
-    assert_eq!(delta(&folder), "folder");
-    let same = preview.started(&[], true);
+    let folder = preview.started(&[], false, &fake);
+    assert_eq!(delta(&folder).1, "folder");
+    let same = preview.started(&[], true, &fake);
     assert_eq!(same["api"], folder["api"]);
 
     let explicit = preview.0.path().join("explicit.json");
@@ -311,9 +330,12 @@ fn serve_delivers_default_folder_and_explicit_script_responses() {
         br#"{"token":"fixture-token","replies":[{"sse":[{"delta":"explicit"}]}]}"#,
     )
     .unwrap();
-    let explicit = preview.started(&["--script", "explicit.json"], false);
-    assert_eq!(delta(&explicit), "explicit");
-    assert_eq!(explicit["home"], default["home"]);
+    let explicit = preview.started(&["--script", "explicit.json"], false, &fake);
+    assert_eq!(delta(&explicit).1, "explicit");
+    assert_eq!(
+        preview_call(&explicit, "api.items", json!({"s": stream})),
+        retained
+    );
     let folder = Path::new(explicit["home"].as_str().unwrap())
         .parent()
         .unwrap();
@@ -325,8 +347,19 @@ fn serve_delivers_default_folder_and_explicit_script_responses() {
             .starts_with(".scripted-responses-")
     }));
 
+    let pid = fs::read_to_string(preview.0.path().join("responses-pid")).unwrap();
+    let fake_alive = || {
+        Command::new("/bin/kill")
+            .args(["-0", pid.trim()])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    };
+    assert!(fake_alive());
     let stopped = preview.serve(&["--stop"]);
     assert!(stopped.status.success());
+    assert!(!fake_alive());
     let stopped: Value = serde_json::from_slice(&stopped.stdout).unwrap();
     assert_eq!(stopped["result"]["stopped"], true);
     assert!(!Path::new(explicit["home"].as_str().unwrap()).exists());
