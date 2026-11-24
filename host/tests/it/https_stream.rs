@@ -29,34 +29,45 @@ struct Pki {
 /// One root and one certificate for `api.openai.com` and `second.test`, made once.
 fn pki() -> &'static Pki {
     static PKI: OnceLock<Pki> = OnceLock::new();
-    PKI.get_or_init(|| {
-        use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, Issuer, KeyPair};
-        let ca_key = KeyPair::generate().unwrap();
-        let mut ca = CertificateParams::new(Vec::<String>::new()).unwrap();
-        ca.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-        ca.distinguished_name
-            .push(DnType::CommonName, "watane test root");
-        let ca_cert = ca.self_signed(&ca_key).unwrap();
-        let leaf_key = KeyPair::generate().unwrap();
-        let leaf =
-            CertificateParams::new(vec!["api.openai.com".to_owned(), "second.test".to_owned()])
-                .unwrap()
-                .signed_by(&leaf_key, &Issuer::from_params(&ca, &ca_key))
-                .unwrap();
-        let key = rustls::pki_types::PrivatePkcs8KeyDer::from(leaf_key.serialize_der());
-        let config = rustls::ServerConfig::builder_with_provider(Arc::new(
-            rustls::crypto::ring::default_provider(),
-        ))
-        .with_safe_default_protocol_versions()
-        .unwrap()
-        .with_no_client_auth()
-        .with_single_cert(vec![leaf.der().clone()], key.into())
-        .unwrap();
-        Pki {
-            root_pem: ca_cert.pem(),
-            config: Arc::new(config),
-        }
-    })
+    PKI.get_or_init(|| make_pki(&["api.openai.com", "second.test"]))
+}
+
+#[cfg(all(unix, watane_dev_profile, debug_assertions))]
+pub(super) fn scripted_preview_root() -> &'static str {
+    &pki().root_pem
+}
+
+fn make_pki(names: &[&str]) -> Pki {
+    use rcgen::{BasicConstraints, CertificateParams, DnType, IsCa, Issuer, KeyPair};
+    let ca_key = KeyPair::generate().unwrap();
+    let mut ca = CertificateParams::new(Vec::<String>::new()).unwrap();
+    ca.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    ca.distinguished_name
+        .push(DnType::CommonName, "watane test root");
+    let ca_cert = ca.self_signed(&ca_key).unwrap();
+    let leaf_key = KeyPair::generate().unwrap();
+    let leaf = CertificateParams::new(
+        names
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<_>>(),
+    )
+    .unwrap()
+    .signed_by(&leaf_key, &Issuer::from_params(&ca, &ca_key))
+    .unwrap();
+    let key = rustls::pki_types::PrivatePkcs8KeyDer::from(leaf_key.serialize_der());
+    let config = rustls::ServerConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .with_no_client_auth()
+    .with_single_cert(vec![leaf.der().clone()], key.into())
+    .unwrap();
+    Pki {
+        root_pem: ca_cert.pem(),
+        config: Arc::new(config),
+    }
 }
 
 /// A request as the server read it.
@@ -130,6 +141,14 @@ impl Server {
         F: Fn(Conn) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
+        Self::start_with_pki(pki(), handler)
+    }
+
+    fn start_with_pki<F, Fut>(pki: &Pki, handler: F) -> Self
+    where
+        F: Fn(Conn) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let listener = rt
             .block_on(tokio::net::TcpListener::bind("127.0.0.1:0"))
@@ -137,7 +156,7 @@ impl Server {
         let addr = listener.local_addr().unwrap();
         let stats = Arc::new(Stats::default());
         let (acceptor, handler) = (
-            tokio_rustls::TlsAcceptor::from(Arc::clone(&pki().config)),
+            tokio_rustls::TlsAcceptor::from(Arc::clone(&pki.config)),
             Arc::new(handler),
         );
         let seen_stats = Arc::clone(&stats);
@@ -1070,6 +1089,163 @@ fn ac5_a_preview_has_no_accounts() {
             == json!([format!("{s} no-account")])
     });
     assert_eq!(server.stats.connections.load(Ordering::SeqCst), 0);
+}
+
+#[cfg(all(unix, watane_dev_profile, debug_assertions))]
+mod scripted_preview {
+    use super::{
+        Host, Limits, Mode, Pki, RESPONSES, SSE_HEAD, Server, TestNet, answer_one, get, make_pki,
+        pki, post, with,
+    };
+    use crate::streams::{call_as, install, wait};
+    use serde_json::{Value, json};
+    use std::net::{SocketAddr, SocketAddrV4};
+    use std::sync::Arc;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+    use watane_host::Caller;
+
+    struct Preview {
+        host: Arc<Host>,
+        _dir: tempfile::TempDir,
+    }
+
+    impl Preview {
+        fn new(addr: SocketAddr, pki: &Pki) -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+            install(&host, &["https"]);
+            host.set_scripted_openai(v4(addr), &pki.root_pem, "tok".into())
+                .unwrap();
+            Self { host, _dir: dir }
+        }
+
+        fn test_route(&self, server: &Server) {
+            self.host.set_test_net(TestNet {
+                routes: vec![("api.openai.com".into(), server.addr)],
+                root_pem: pki().root_pem.clone(),
+            });
+        }
+
+        fn call(&self, func: &str, args: Value) -> Value {
+            call_as(&self.host, Caller::Page, "https", func, args).unwrap()
+        }
+
+        fn start(&self, request: Value) -> String {
+            self.call("api.start", json!({"request": request.to_string()}))
+                .as_str()
+                .unwrap()
+                .to_owned()
+        }
+
+        fn end(&self, stream: &str) -> String {
+            let prefix = format!("{stream} ");
+            let outcome = || {
+                let lines = self.call("api.ended", Value::Null);
+                lines.as_array().unwrap().iter().find_map(|line| {
+                    line.as_str()
+                        .unwrap()
+                        .strip_prefix(&prefix)
+                        .map(str::to_owned)
+                })
+            };
+            wait("the HTTPS stream to end", Duration::from_secs(20), || {
+                outcome().is_some()
+            });
+            outcome().unwrap()
+        }
+    }
+
+    fn v4(addr: SocketAddr) -> SocketAddrV4 {
+        let SocketAddr::V4(addr) = addr else {
+            panic!("the fixture binds IPv4");
+        };
+        addr
+    }
+
+    fn openai(request: Value) -> Value {
+        with(request, "account", json!("openai"))
+    }
+
+    #[test]
+    fn rejects_an_empty_token_and_one_with_whitespace() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        for token in ["", "two words"] {
+            let error = host
+                .set_scripted_openai(
+                    "127.0.0.1:1".parse().unwrap(),
+                    &pki().root_pem,
+                    token.into(),
+                )
+                .unwrap_err();
+            assert_eq!(error.to_string(), "invalid scripted OpenAI token");
+        }
+    }
+
+    #[test]
+    fn reaches_the_loopback_fake_with_the_token_and_original_host() {
+        let fake = Server::start(answer_one("scripted answer"));
+        let preview = Preview::new(fake.addr, pki());
+        let stream = preview.start(openai(post(RESPONSES)));
+        assert_eq!(preview.end(&stream), "closed");
+        assert_eq!(
+            preview.call("api.items", json!({"s":stream})),
+            json!([SSE_HEAD, "scripted answer"])
+        );
+        let requests = fake.stats.requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].header("authorization"), ["Bearer tok"]);
+        assert_eq!(requests[0].header("host"), ["api.openai.com"]);
+    }
+
+    #[test]
+    fn rejects_the_same_trusted_root_with_the_wrong_tls_name() {
+        let wrong_name = make_pki(&["second.test"]);
+        let fake = Server::start_with_pki(&wrong_name, answer_one("wrong server"));
+        let preview = Preview::new(fake.addr, &wrong_name);
+        let stream = preview.start(openai(post(RESPONSES)));
+        let end = preview.end(&stream);
+        assert!(end.contains("scripted OpenAI TLS failed"), "{end}");
+        assert_eq!(fake.stats.connections.load(Ordering::SeqCst), 1);
+        assert!(fake.stats.requests().is_empty());
+    }
+
+    #[test]
+    fn refuses_a_closed_fake_without_trying_the_normal_route() {
+        // Reserve the port without listening, so another parallel fixture cannot take it.
+        let closed = tokio::net::TcpSocket::new_v4().unwrap();
+        closed.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let preview = Preview::new(closed.local_addr().unwrap(), pki());
+        let ordinary = Server::start(answer_one("wrong route"));
+        preview.test_route(&ordinary);
+        let stream = preview.start(openai(post(RESPONSES)));
+        let end = preview.end(&stream);
+        assert!(end.contains("cannot connect to scripted OpenAI"), "{end}");
+        assert_eq!(ordinary.stats.connections.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn an_uncredentialed_request_uses_the_ordinary_route_without_authorization() {
+        let fake = Server::start(answer_one("wrong route"));
+        let preview = Preview::new(fake.addr, pki());
+        let ordinary = Server::start(answer_one("ordinary answer"));
+        preview.test_route(&ordinary);
+        let stream = preview.start(post(RESPONSES));
+        assert_eq!(preview.end(&stream), "closed");
+        let requests = ordinary.stats.requests();
+        assert_eq!(requests.len(), 1);
+        assert!(requests[0].header("authorization").is_empty());
+        assert_eq!(fake.stats.connections.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn refuses_get_responses_before_contacting_the_fake() {
+        let fake = Server::start(answer_one("wrong method"));
+        let preview = Preview::new(fake.addr, pki());
+        assert_eq!(preview.start(openai(get(RESPONSES))), "destination");
+        assert_eq!(fake.stats.connections.load(Ordering::SeqCst), 0);
+    }
 }
 
 fn live_pair(rig: &mut Rig) -> (Arc<Stats>, Arc<Stats>) {

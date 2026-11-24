@@ -77,9 +77,11 @@ target `wasm32-wasip2`.
 
 | Path | Job |
 |---|---|
+| `build.rs` | selects the Cargo development profile for the scripted OpenAI preview (19.9) |
 | `src/lib.rs` | `Host`, re-exports, `HOST_WIT`, `WATANE_JS`, `DEFAULT_PORT` |
 | `src/error.rs` | `HostError`, `CallError`, codes (section 2.2) |
 | `src/home.rs` | home layout, lock, `home.json`, `run.json`, `LocalName`, `default_home` (section 3) |
+| `src/home/scripted_openai.rs` | preview-only loopback settings and TLS root (19.9) |
 | `src/catalog.rs` | sources, plan, install, update, remove, grants, `installed.json` (section 4); package and release checks (5.1, 5.2) |
 | `src/manage.rs` | the manager's functions, request table, manage effects (6.10) |
 | `src/runtime/mod.rs` | engine, registry snapshot, the import check (sections 5.3, 6) |
@@ -97,11 +99,13 @@ target `wasm32-wasip2`.
 | `src/confirm.rs` | `Confirm`, `InstallRequest`, `Answer` (section 12) |
 | `src/harness.rs` | `Harness` for contract tests (section 2.6) |
 | `src/bin/watane.rs` | the program (section 12.2) |
+| `src/bin/watane/scripted_openai.rs` | development CLI settings and lifetime of the scripted Responses child (19.9) |
 | `wit/host.wit` | the `watane:host` package (section 6.4; step 11: 19.1) |
 | `src/agent/mod.rs` | the host functions of `streams` and `timers` at the call (19.2, 19.6), the effects of a chain and their application after its commit |
 | `src/agent/streams.rs` | H1: stream table, FIFO per consumer, batches, backpressure, ends (19.2) |
 | `src/agent/claude/` (`launch.rs`, `run.rs`, `control.rs`, `init.rs`, `mod.rs`) and `src/agent/accounts.rs` | H2: launch parsing, flags, the process, stdin and stdout, `initialize` and `init` checks (19.3) |
 | `src/agent/https_stream.rs` | H3: `https-stream.start` at the call, one HTTPS connection per stream, SSE splitting, idle timeout, the account `openai` with its consent, the live-stream table for withdrawal, sign-out and a lost grant (19.4) |
+| `src/agent/https_stream/preview.rs` | checked OpenAI streams through the preview's loopback fake (19.9) |
 | `src/agent/timers.rs` | H7: timers per mod in host state (19.6); H5 effects are in `src/runtime/call.rs` |
 | `src/agent/consent.rs` | consents per origin client in `installed.json` (19.7) |
 | `src/agent/tools.rs` | H4: the handles, their toolset consents, tokens and jobs (19.5) |
@@ -461,7 +465,9 @@ in `Outcome.value`.
 
 `host` never reads or writes the four reserved names, and never creates
 another name. A preview home has none of them (W5); it does have `state/`,
-which `Host::open` creates (3.1 step 6).
+which `Host::open` creates (3.1 step 6). On shutdown, the host releases
+`lock` after all other home resources, including the state database, close.
+The run marker can disappear earlier (12.2).
 
 `default_home()`: `$WATANE_HOME` if set and not empty, else
 `$HOME/.watane`. It does not create the directory.
@@ -1713,8 +1719,12 @@ nothing for a plan that needs no confirmation.
 ```text
 watane [--home <dir>] [--port <n>]
 watane --preview <dir> [--port <n>] [--install <folder>]... [--fake-claude <path>]
+    [--scripted-openai <program> [--openai-script <file>]]
 watane --version
 ```
+
+The second line of preview options is available in Unix development builds
+with debug assertions (19.9).
 
 - `--home`: a participant home with no app (`Mode::Home { app: None }`):
   it runs and serves the installed mods; every install that needs a
@@ -1846,7 +1856,7 @@ run on the preview install path.
 | "Safe" cannot widen the mode | a check is answered `none` or `deny`, never `allow` (19.3). File: `control.rs` | A2: case 15 |
 | Writes cannot plant code that runs later | the protected paths of the host's `--settings=` (19.3). File: `run.rs` | A2: case 18 |
 | No mod sees a credential | tokens, keys and the `claude` path only through `AccountSource`; MCP tokens on fd 3; handle names, not handles (19.4, 19.5); the protected reads of 19.3 (deny rules, relative file-tool allows and no bare one, no `allow` answer outside the workspaces by path or pattern). Files: `src/agent/https_stream.rs`, `src/agent/tools.rs`, `src/agent/claude/launch.rs`, `run.rs`, `control.rs`, app account files | A2: S63, S67; A3: S68; A4 |
-| A plan token goes only to OpenAI's agent endpoints | the account binding of `openai`, the forbidden headers, no redirects (19.4). File: `https_stream.rs` | A4: case 19 |
+| A plan token goes only to OpenAI's agent endpoints | the account binding of `openai`, the forbidden headers, no redirects (19.4); the preview binds the fake token to loopback with TLS name verification (19.9). Files: `src/agent/https_stream.rs`, `src/agent/https_stream/preview.rs` | A4: case 19 |
 | A judge key goes only to its judge | the binding of `judge`: identity, value, one origin parse, `POST`, `[http]`, no redirects, `no-account` (19.4). File: `https_stream.rs` | A5: cases 19, 33 |
 | A mod in the middle gains no authority | consent per origin client, carried with the chain by identity (19.7); a subscriber is its own origin client (19, Terms); the grants and the origin client checked again at apply (19.6); a toolset consent covers only the functions it named, and `remove` or a `grant` of `Manage` drops that mod's names from it (19.5, 4.4); `remove` leaves no timer carrying the removed mod (4.4); a tool on borrowed authority opens no handle, stream or timer (19.5, Borrowed authority). Files: `src/agent/consent.rs`, `src/agent/mod.rs`, `src/runtime/call.rs`, `src/runtime/events.rs` | A3: S61, S62, S65, S66, S68 |
 | A stream has one consumer and cannot starve the host | consumer rules, byte budgets, the lag clock and the deferral backstop (19.2). File: `src/agent/streams.rs` | A1: cases 36, 51, 58 |
@@ -3943,7 +3953,22 @@ review r1 of S103 a gate in place of a sleep.
   The setting lives in memory and real homes refuse it, including a home
   named with `--preview` (3). Release builds compile out the flags and the
   setting, including when debug assertions are enabled in the release
-  profile. The app has no entry point to configure it.
+  profile. The app has no entry point to configure it. The CLI reports
+  errors from configuring or starting the fake with the prefix
+  `scripted OpenAI:`.
+
+```rust
+#[cfg(all(unix, watane_dev_profile, debug_assertions))]
+impl Host {
+    pub fn set_scripted_openai(
+        &self,
+        address: std::net::SocketAddrV4,
+        root_pem: &str,
+        token: String,
+    ) -> Result<(), HostError>;
+}
+```
+
 - **Test routes** (feature `test-net`, off by default; host 1). With the
   feature, `Host::set_test_net(TestNet)` makes `https-stream` connect a
   request whose host equals a route's name to the route's local address,

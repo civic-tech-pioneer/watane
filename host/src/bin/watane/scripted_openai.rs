@@ -66,29 +66,36 @@ impl Options {
         let stdout = child.0.stdout.take().expect("piped stdout");
         let (send, receive) = std::sync::mpsc::sync_channel(1);
         std::thread::spawn(move || {
-            let mut line = String::new();
-            let result = BufReader::new(stdout).take(64 * 1024).read_line(&mut line);
-            let _ = send.send(result.map(|_| line));
+            let _ = send.send(read_ready(stdout));
         });
-        let line = receive
+        let ready = receive
             .recv_timeout(Duration::from_secs(10))
-            .map_err(|err| invalid(format!("waiting for the ready line: {err}")))?
-            .map_err(|err| invalid(format!("reading the ready line: {err}")))?;
-        #[derive(Deserialize)]
-        struct Ready {
-            scripted: u32,
-            responses_addr: SocketAddrV4,
-            ca_pem: String,
-        }
-        let ready: Ready = serde_json::from_str(&line).map_err(|_| {
-            invalid("no valid ready line; see the program's error in the preview log")
-        })?;
-        if ready.scripted != 1 || !line.ends_with('\n') {
-            return Err(invalid("invalid ready line"));
-        }
-        host.set_scripted_openai(ready.responses_addr, &ready.ca_pem, token)?;
+            .map_err(|err| invalid(format!("waiting for the ready line: {err}")))??;
+        host.set_scripted_openai(ready.responses_addr, &ready.ca_pem, token)
+            .map_err(invalid)?;
         Ok(Some(child))
     }
+}
+
+#[derive(Deserialize)]
+struct Ready {
+    scripted: u32,
+    responses_addr: SocketAddrV4,
+    ca_pem: String,
+}
+
+fn read_ready(reader: impl Read) -> Result<Ready, HostError> {
+    let mut line = String::new();
+    BufReader::new(reader)
+        .take(64 * 1024)
+        .read_line(&mut line)
+        .map_err(|err| invalid(format!("reading the ready line: {err}")))?;
+    let ready: Ready = serde_json::from_str(&line)
+        .map_err(|_| invalid("no valid ready line; see the program's error in the preview log"))?;
+    if ready.scripted != 1 || !line.ends_with('\n') {
+        return Err(invalid("invalid ready line"));
+    }
+    Ok(ready)
 }
 
 fn invalid(message: impl std::fmt::Display) -> HostError {
@@ -118,5 +125,34 @@ impl Drop for ScriptedChild {
     fn drop(&mut self) {
         let _ = self.0.kill();
         let _ = self.0.wait();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Options, read_ready, script_token};
+
+    #[test]
+    fn an_option_is_not_a_scripted_program_path() {
+        let mut options = Options::default();
+        assert_eq!(
+            options.parse("--scripted-openai", Some("--openai-script".into())),
+            Err("scripted OpenAI option needs a path")
+        );
+        assert!(options.program.is_none());
+    }
+
+    #[test]
+    fn the_ready_line_requires_version_one_a_newline_and_a_bounded_line() {
+        let ready = r#"{"scripted":1,"responses_addr":"127.0.0.1:1","ca_pem":"fixture"}"#;
+        assert!(read_ready(format!("{ready}\n").as_bytes()).is_ok());
+        assert!(read_ready(ready.as_bytes()).is_err());
+        assert!(read_ready(format!("{}\n", ready.replace(":1,", ":2,")).as_bytes()).is_err());
+        assert!(read_ready(format!("{}{ready}\n", " ".repeat(64 * 1024)).as_bytes()).is_err());
+    }
+
+    #[test]
+    fn no_script_uses_the_fixture_token() {
+        assert_eq!(script_token(None).ok().as_deref(), Some("watane-preview"));
     }
 }

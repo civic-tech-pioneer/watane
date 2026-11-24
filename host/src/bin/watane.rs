@@ -9,6 +9,11 @@ use watane_host::{DEFAULT_PORT, Host, Mode, default_home};
 #[path = "watane/scripted_openai.rs"]
 mod scripted_openai;
 
+#[cfg(all(unix, watane_dev_profile, debug_assertions))]
+const USAGE: &str = "use watane [--home <dir>] [--port <n>], --preview <dir> [--port <n>] [--install <folder>] [--fake-claude <path>] [--scripted-openai <program> [--openai-script <file>]], or --version";
+#[cfg(not(all(unix, watane_dev_profile, debug_assertions)))]
+const USAGE: &str = "use watane [--home <dir>] [--port <n>], --preview <dir> [--port <n>] [--install <folder>] [--fake-claude <path>], or --version";
+
 struct Args {
     home: Option<PathBuf>,
     mode: Mode,
@@ -76,11 +81,7 @@ fn arguments() -> Result<Option<Args>, &'static str> {
             Some(option @ ("--scripted-openai" | "--openai-script")) => {
                 scripted_openai.parse(option, args.next())?;
             }
-            _ => {
-                return Err(
-                    "use watane [--home <dir>] [--port <n>], --preview <dir> [--port <n>] [--install <folder>] [--fake-claude <path>], or --version",
-                );
-            }
+            _ => return Err(USAGE),
         }
     }
     if matches!(mode, Mode::Home { .. }) && !folders.is_empty() {

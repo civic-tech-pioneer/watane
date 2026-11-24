@@ -84,9 +84,10 @@ pub fn default_home() -> Result<PathBuf, HostError> {
 pub(crate) struct Home {
     pub path: PathBuf,
     pub mode: Mode,
-    _lock: fs::File,
     #[cfg(all(unix, watane_dev_profile, debug_assertions))]
     pub(crate) scripted_openai: std::sync::OnceLock<ScriptedOpenAi>,
+    // Keep the lock through the drop of the preview settings as well.
+    _lock: fs::File,
 }
 
 impl Home {
@@ -171,9 +172,9 @@ impl Home {
         Ok(Self {
             path,
             mode,
-            _lock: lock,
             #[cfg(all(unix, watane_dev_profile, debug_assertions))]
             scripted_openai: std::sync::OnceLock::new(),
+            _lock: lock,
         })
     }
 }

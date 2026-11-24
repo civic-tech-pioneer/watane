@@ -56,6 +56,10 @@ fn scripted_child_with_invalid_address_or_ca_is_reaped() {
             "192.0.2.1:1234",
             "scripted OpenAI requires a nonzero port on 127.0.0.1",
         ),
+        (
+            "127.0.0.1:0",
+            "scripted OpenAI requires a nonzero port on 127.0.0.1",
+        ),
         ("127.0.0.1:1234", "invalid scripted OpenAI TLS root"),
     ] {
         let temp = tempfile::tempdir().unwrap();
@@ -72,7 +76,10 @@ fn scripted_child_with_invalid_address_or_ca_is_reaped() {
         let (status, error) = invoke("--preview", &home, &fake);
         assert_eq!(status, Some(1));
         assert_eq!(error["error"]["code"], "bad_request");
-        assert_eq!(error["error"]["message"], message);
+        assert_eq!(
+            error["error"]["message"],
+            format!("scripted OpenAI: {message}")
+        );
         let pid = fs::read_to_string(temp.path().join("pid")).unwrap();
         let status = Command::new("/bin/kill")
             .args(["-0", pid.trim()])
