@@ -1786,7 +1786,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   accept the write run's share as N4's price (rec: a kernel batch rarely writes); (b) group commits
   across batches (a host change, weaker per-batch durability). Undo: (a) none; (b) a host write path.
 - (2026-11-21, from S95; none blocks stage A's A1) Six security questions in host/TECHNICAL 18, each
-  with its options there: Q38 the consent key names no provider (`via`), blocks A3; Q39 the Claude
+  with its options there: Q38 the consent key names no provider (`via`), blocks A3 (answered (b) by the human, 2026-11-24: Human answers); Q39 the Claude
   login token and loopback under the shell grant (probe V28; agentic-harness S1's V27 found a
   loopback proxy breach), blocks the shell grant in A2; Q40 sessions read each other's scratch and
   run folders, blocks A2's scratch work; Q41 symlinks past the deny rules (V29), blocks A2; Q42 login
@@ -1837,6 +1837,10 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   convention) and the host passes the hint on. Recommendation: (a). The hint is the mod's own
   claim, so a mod could mark a write read-only to skip approval, and (b) adds a format. Cost to
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
+
+## Human answers
+
+- 2026-11-24 host 18 **Q38: (b)**, the human ("b is fine for q38"). A workspace or account consent is kept per (origin client, `via` = the provider's identity, folder or account); a new provider asks again. S103 built (b); its next answer round writes host 18 Q38 as decided by the human, 2026-11-24, and the 19.7 rows to match. agentic-harness TECHNICAL 8 already cites 19.7.
 
 ## Deputy decisions
 
