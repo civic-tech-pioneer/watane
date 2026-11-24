@@ -849,6 +849,16 @@ fn ac8_sessions_belong_to_the_origin_client_that_ran_them() {
     assert!(r.starts_with("bad-launch:session:"), "{r}");
     let r = home.start_in("claude", &with(json!({"new": OTHER})));
     assert_eq!(r.len(), 32, "{r}");
+    // A run of another origin client whose `system/init` reports the id ends at once.
+    let theirs = home.start_in("claude-b", &scratch);
+    assert_eq!(theirs.len(), 32, "{theirs}");
+    wait("the end", Duration::from_secs(20), || {
+        !home.ended("claude-b").is_empty()
+    });
+    assert_eq!(
+        home.ended("claude-b"),
+        [format!("{theirs} mismatch(session_id)")]
+    );
     home.close();
     assert_eq!(
         sessions_table(&home),
