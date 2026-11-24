@@ -208,7 +208,9 @@ fn listed_local_env() -> Option<String> {
 pub fn run(config: Config) -> Result<(), AppError> {
     let broker = Broker::new();
     let parties = Arc::new(words::Parties::new());
+    let accounts = Arc::new(accounts::Accounts::new(&config.home));
     let confirm = Arc::new(confirm::HostConfirm {
+        accounts: Arc::clone(&accounts),
         broker: Arc::clone(&broker),
         parties: Arc::clone(&parties),
         host: OnceLock::new(),
@@ -264,7 +266,7 @@ pub fn run(config: Config) -> Result<(), AppError> {
         let _ = failed.set(e.clone());
     }
     let state = AppState {
-        accounts: Arc::new(accounts::Accounts::new(&config.home)),
+        accounts,
         home: config.home,
         port: config.port,
         mark: mark.ok(),

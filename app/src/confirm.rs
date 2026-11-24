@@ -14,6 +14,7 @@ pub(crate) struct HostConfirm {
     pub core: OnceLock<Weak<crate::core::Core>>,
     pub main: OnceLock<Arc<crate::main_mod::MainMod>>,
     pub notices: Arc<ManagerNotices>,
+    pub accounts: Arc<crate::accounts::Accounts>,
 }
 
 #[derive(Default)]
@@ -333,6 +334,11 @@ impl<T> Drop for ManageTask<T> {
     }
 }
 impl Confirm for HostConfirm {
+    fn accounts(&self) -> Option<Arc<dyn watane_host::AccountSource>> {
+        Some(Arc::new(crate::accounts::Source(Arc::clone(
+            &self.accounts,
+        ))))
+    }
     fn installed(&self, report: &watane_host::Installed) {
         let Some(main) = self.main.get() else { return };
         if main.get().is_some() {
@@ -770,6 +776,7 @@ mod tests {
                 core: OnceLock::new(),
                 main: OnceLock::from(Arc::clone(&main)),
                 notices: Arc::new(ManagerNotices::default()),
+                accounts: Arc::new(crate::accounts::Accounts::new(_home.path())),
             };
             let report = watane_host::Installed {
                 requester,
@@ -841,6 +848,7 @@ mod tests {
             core: OnceLock::new(),
             main: OnceLock::new(),
             notices: Arc::new(ManagerNotices::default()),
+            accounts: Arc::new(crate::accounts::Accounts::new(_home.path())),
         };
         let request = |origin: &str| watane_host::ConsentRequest {
             origin: LocalName::parse(origin).unwrap(),
@@ -1018,6 +1026,7 @@ mod tests {
             core: OnceLock::new(),
             main: OnceLock::new(),
             notices: Arc::clone(&notices),
+            accounts: Arc::new(crate::accounts::Accounts::new(_home.path())),
         });
         let local = LocalName::parse("reading-list").unwrap();
         let by = LocalName::parse("recommendations").unwrap();

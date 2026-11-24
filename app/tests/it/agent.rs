@@ -260,7 +260,11 @@ impl Claude {
     }
     /// The consent view shows `question` (the call that began it has returned).
     fn view(&self, title: &str, question: &str) {
-        assert!(self.app.wait("consent", TIMEOUT));
+        assert!(
+            self.app.wait("consent", TIMEOUT),
+            "no consent view; {}",
+            self.app.stderr()
+        );
         until(
             &self.app,
             "consent",

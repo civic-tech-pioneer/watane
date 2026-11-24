@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 #[derive(Deserialize, Serialize)]
 pub(crate) struct OpenAi {
@@ -41,6 +41,29 @@ impl From<&ClaudeStatus> for ClaudeSetting {
             version: Some(checked.version.clone()),
             error: None,
         }
+    }
+}
+
+/// What the host reads of the accounts (19.4): the chosen `claude` program. The ChatGPT token and
+/// the judge key come with their own stages and are `NoAccount` until then.
+pub(crate) struct Source(pub Arc<Accounts>);
+impl watane_host::AccountSource for Source {
+    fn openai_token(
+        &self,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<String, watane_host::AccountError>> + Send>,
+    > {
+        Box::pin(async { Err(watane_host::AccountError::NoAccount) })
+    }
+    fn judge(&self, _: &str) -> Result<watane_host::JudgeAccount, watane_host::AccountError> {
+        Err(watane_host::AccountError::NoAccount)
+    }
+    fn claude_binary(&self) -> Result<PathBuf, watane_host::AccountError> {
+        self.0
+            .claude()
+            .filter(|c| c.error.is_none())
+            .map(|c| c.path)
+            .ok_or(watane_host::AccountError::NoAccount)
     }
 }
 
