@@ -394,10 +394,11 @@ seed bytes, refuse reparse points, nondisk or nonregular files, multiple
 links, a foreign owner or a DACL other than one owner-only allow entry.
 A key creation uses `CREATE_NEW` with a protected owner-only DACL. Check
 the handle before writing the seed, then flush the file and publish it
-using `windows-fs::publish(tmp, key, true)`, which calls `MoveFileExW`
-with `MOVEFILE_WRITE_THROUGH` and `MOVEFILE_REPLACE_EXISTING`. If the filesystem
-cannot supply the required protections, opening or creating an identity
-fails with an error at the path.
+using `windows-fs::publish(tmp, key, replace)`. It calls `MoveFileExW`
+with `MOVEFILE_WRITE_THROUGH` and adds `MOVEFILE_REPLACE_EXISTING` when
+`replace` is true. Identity publication passes true under the lock.
+If the filesystem cannot supply the required protections, opening or
+creating an identity fails with an error at the path.
 
 ### 4.8 The channel store
 
@@ -733,7 +734,7 @@ channels by kind, a schema version 2 adds an index on a `kind` column; the
 | `Entry::bytes` | `dist` | the exact bytes that `dist` writes to the published folder and reads back. |
 | `Log` (all of section 2) | `dist` only | the identity, the own channel, followed channels, backup and restore; from step 8 the keyless open of a replica (5.5). |
 | `Status`, `Fork`, `Ingest`, `Head` | `dist`, through `dist` to `app` | gap and compromise reports (F-PUB-6, F-PUB-7). |
-| `watane-log-windows-fs` (4.7, 6) | `net`, `dist`, `host`, `app` on Windows | Create owner-only directories and files, open handles without following reparse points, check file kind, links, ownership and ACLs, read handle-based file IDs, and publish with write-through renames. |
+| `watane-log-windows-fs` (4.7, 6) | `net`, `dist`, `host`, `app` on Windows | Create owner-only directories and files, open handles without following reparse points, check file kind, links, ownership and ACLs, read handle-based file IDs, and publish with write-through renames. `private_dir` creates missing private directories and returns a checked handle that pins the final directory. |
 | `MAX_KIND`, `MAX_BODY` | `dist`, `pkg` | `pkg` keeps an encoded `Release` body within `MAX_BODY`. |
 
 ## 11. Needs from other subsystems

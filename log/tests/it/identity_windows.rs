@@ -15,8 +15,28 @@ fn s110_key_is_private_and_reopens() {
         Log::open(&dir).expect("reopen private identity").identity(),
         log.identity()
     );
-    // Read the ACL through .NET. The runner can inherit a PSModulePath for
-    // PowerShell 7, so the Windows PowerShell child must not load Get-Acl.
+    let user = Command::new("whoami.exe")
+        .args(["/user", "/fo", "csv", "/nh"])
+        .output()
+        .expect("query the current user's SID");
+    assert!(user.status.success(), "{user:?}");
+    // The SID is ASCII and is the last CSV field, even for a localized account name.
+    let stdout = String::from_utf8_lossy(&user.stdout);
+    let (_, sid) = stdout.trim().rsplit_once(',').expect("whoami CSV fields");
+    let sid = sid.trim_matches('"');
+    assert!(sid.starts_with("S-1-"), "invalid account SID");
+
+    let acl_path = temp.path().join("key.acl");
+    let result = Command::new("icacls.exe")
+        .arg(&path)
+        .arg("/save")
+        .arg(&acl_path)
+        .output()
+        .expect("save the key's DACL using icacls");
+    assert!(result.status.success(), "{result:?}");
+
+    // icacls saves only the DACL. Decode its SDDL with .NET and check the owner
+    // separately. No PowerShell modules are needed.
     let result = Command::new("powershell.exe")
         .args([
             "-NoProfile",
@@ -24,26 +44,72 @@ fn s110_key_is_private_and_reopens() {
             "-Command",
             r"
             $ErrorActionPreference = 'Stop'
-            $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+            $sid = $env:WATANE_TEST_USER_SID
+            $lines = [System.IO.File]::ReadAllLines($env:WATANE_TEST_ACL_PATH, [System.Text.Encoding]::Unicode)
+            if ($lines.Count -ne 2 -or -not $lines[1].StartsWith('D:')) {
+                throw 'icacls must save exactly one DACL'
+            }
+            $descriptor = [System.Security.AccessControl.RawSecurityDescriptor]::new($lines[1])
+            $dacl = $descriptor.DiscretionaryAcl
+            $protected = [System.Security.AccessControl.ControlFlags]::DiscretionaryAclProtected
+            if (-not ($descriptor.ControlFlags -band $protected) -or
+                $dacl.Count -ne 1 -or
+                $dacl[0].AceType -ne 'AccessAllowed' -or
+                $dacl[0].SecurityIdentifier.Value -ne $sid -or
+                $dacl[0].AceFlags -ne 'None') {
+                throw 'identity.key must have a protected owner-only DACL'
+            }
             $acl = [System.IO.File]::GetAccessControl($env:WATANE_TEST_KEY_PATH)
-            $sidType = [System.Security.Principal.SecurityIdentifier]
-            $rules = $acl.GetAccessRules($true, $true, $sidType)
-            if ($acl.GetOwner($sidType).Value -ne $sid -or
-                -not $acl.AreAccessRulesProtected -or $rules.Count -ne 1 -or
-                $rules[0].IdentityReference.Value -ne $sid -or
-                $rules[0].AccessControlType -ne 'Allow' -or $rules[0].IsInherited) {
-                throw 'identity.key must have a protected owner-only ACL'
+            if ($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid) {
+                throw 'identity.key must be owned by the current user'
             }
         ",
         ])
+        .env("WATANE_TEST_USER_SID", sid)
+        .env("WATANE_TEST_ACL_PATH", &acl_path)
         .env("WATANE_TEST_KEY_PATH", &path)
         .output()
-        .expect("inspect the key ACL with PowerShell");
+        .expect("check the saved DACL and live owner");
     assert!(
         result.status.success(),
         "{}",
         String::from_utf8_lossy(&result.stderr)
     );
+}
+
+#[test]
+fn s116_private_dir_creates_and_pins_a_checked_directory() {
+    use watane_log_windows_fs::{PrivateDirError, private_dir};
+
+    let temp = tempfile::tempdir().expect("create temporary parent");
+    let dir = temp.path().join("fresh/nested");
+    let directory = private_dir(&dir).expect("create and open a private directory");
+    assert!(directory.metadata().expect("inspect directory").is_dir());
+    let moved = dir.with_file_name("moved");
+    assert!(
+        fs::rename(&dir, &moved).is_err(),
+        "the open directory must be pinned"
+    );
+    drop(directory);
+    fs::rename(&dir, &moved).expect("move directory after releasing its handle");
+
+    let image = moved.join("regular-file");
+    fs::write(&image, b"not a directory").expect("create a regular file");
+    assert!(matches!(
+        private_dir(&image),
+        Err(PrivateDirError::Invalid(_))
+    ));
+
+    let result = Command::new("icacls.exe")
+        .arg(&moved)
+        .args(["/grant", "*S-1-1-0:(R)"])
+        .output()
+        .expect("expose directory to Everyone");
+    assert!(result.status.success(), "{result:?}");
+    assert!(matches!(
+        private_dir(&moved),
+        Err(PrivateDirError::Invalid(_))
+    ));
 }
 
 #[test]
