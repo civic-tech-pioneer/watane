@@ -116,9 +116,9 @@ blocks: every dist call runs in `tauri::async_runtime::spawn_blocking`.
    5. With feature `driver`: start the driver.
    If step 2, 3, 4 or 6.1 fails, set `AppState.failed`, skip the other
    steps except opening the main window, and serve nothing (APP-F-2). The
-   main window then shows only the cause. A serve `PortInUse(P)` uses
-   `words::port_in_use(P)` in `status.error` and the main text, and prints
-   that same line to stderr once. No server means no `run.json`. Other
+   main window shows `The local API is not running.` followed by the cause.
+   A serve `PortInUse(P)` supplies the cause with `words::port_in_use(P)`
+   in `status.error` and prints the cause line to stderr once. No server means no `run.json`. Other
    serve failures retain `cause_chain` text.
 7. On `RunEvent::ExitRequested`: `broker.deny_all()`; then, while a server
    runs, `prevent_exit()`, take `served`, run `served.shutdown()` on the async
@@ -204,10 +204,11 @@ no interface, host or provider.
   network and manage lines are the same in both forms. A subscription to
   an interface named `events` reads `Receive the events of {provider}`
   (not `the events events`). Example:
-  `Call books of Reading list by Alice`. Install and grant consent show
-  a Call line with the interface word, retaining the full provider and
-  binding labels. The exact interface is in its tooltip.
-  The remaining consent lines show `text`. `GrantLine.short` is
+  `Call books of Reading list by Alice`. Install and grant consent keep `text` visible for every grant
+  because the participant decides on the exact words (APP-F-77). A Call
+  line may also show the short wording beside it, retaining the full
+  provider and binding labels. If a Call short form repeats anywhere in
+  the same view, those lines show the exact wording alone. `GrantLine.short` is
   `#[serde(default)]`; an empty `short` renders `text`.
 
 ```rust
@@ -469,7 +470,10 @@ For `install_release` and `install_link`, read `result?.followed || []`:
 for each party label, append `watane now follows <label>, so its updates
 reach you.` in the note. In Find, a verified installable result with a
 channel link says that installing may follow the publisher’s channel
-for updates. An absent or empty array leaves the note unchanged.
+for updates. Reading the result and showing its plan follow nothing.
+After installation succeeds, follow any linked channel through
+`follow_derived` (9.4). Denying the install follows nothing. An absent
+or empty array leaves the note unchanged.
 
 #### 5.3.4 Details
 
@@ -1544,11 +1548,13 @@ sign-title wording functions, shared by the pages and their wording tests.
   `uncheckedSince` as `not read since <ago>`, as in 5.3.5. A compromised
   hit shows the compromised tag and explanation, with no install button.
 - `install_release(release, link)`: `ReleaseRef::from_str`,
-  `Link::from_str`; then dist 5.10 "Install a hit" (follow the derived link when
-  it is set, `dist.fetch(&release)`); then steps 3 and 4 of 9.4 with the
-  fetched release as the first source. The consent view shows the plan as
-  for a link. Return the same `installed` and newly `followed` labels as 9.4,
-  taking the before snapshot before following the hit's link.
+  `Link::from_str`. A link naming the release's publisher and slug is read
+  with `node.read_link`; if the latest release differs, fetch the exact
+  reference with `node.fetch`. Without a matching link, fetch the exact
+  reference through the locations already known to dist. Then run steps
+  3 to 5 of 9.4, with the fetched release as the first source and derived
+  follows only after install succeeds. Return the same `installed` and newly
+  `followed` labels as 9.4.
 - `index_list`, `index_include`, `index_unlist`: `dist.list`,
   `dist.include`, `dist.unlist` in `spawn_blocking`; the participant sees
   the `Sign` request (6.2). dist's refusals before the consent view
