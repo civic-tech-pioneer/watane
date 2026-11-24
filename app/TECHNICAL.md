@@ -818,7 +818,7 @@ host 12.1).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Request {
-    Install { mods: Vec<PlanMod>, by_program: bool },              // install order; Requester::LocalApi
+    Install { mods: Vec<PlanMod>, following: Vec<String>, by_program: bool }, // install order; Requester::LocalApi
     Sign { statement: Statement, signer: Party, details: Vec<Detail> },
     /// Step 5 (9.7): the named provider of `consumer` is not available; pick one that fits.
     Pick { consumer: String, provider: String, cause: String, candidates: Vec<Candidate> },
@@ -1023,7 +1023,7 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `token_issue` | main | `toolset`, `handle` | `{token, mcpUrl}` | B |
 | `token_end` | main | `id` | `null` | B |
 | `install_link` | main | `link` | `{installed: [local], followed: [label]}` | C |
-| `release_install` | main | `release` (ReleaseRef text) | `{installed: [local]}` | D |
+| `release_install` | main | `release` (ReleaseRef text) | `{installed: [local]}` or `{declined: message}` | D |
 | `release_withdraw` | main | `release` (ReleaseRef text), `reason` | null | D |
 | `identity_set_name` | main | `name` | `null` | C |
 | `site_set_url` | main | `url` | `Status` | C |
@@ -1038,7 +1038,7 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `index_choose` | main | `link, derived?` | `[IndexRow]` | D |
 | `index_drop` | main | `channel` | `null` | D |
 | `search` | main | `text`, `publisher: string \| null`, `interface: string \| null`, `origin: string \| null` (step 5: `<key>/<slug>`, for the derived list of 9.7) | `[HitView]` | D |
-| `install_release` | main | `release` (ReleaseRef text), `link: string \| null` (the hit's) | `{installed: [local], followed: [label]}` | D |
+| `install_release` | main | `release` (ReleaseRef text), `link: string \| null` (the hit's) | `{installed: [local], followed: [label]}` or `{declined: message}` | D |
 | `index_list` | main | `link` (with a slug), `note` | `null` | D |
 | `index_include` | main | `link` (no slug), `note` | `null` | D |
 | `index_unlist` | main | `entry` (entry id text) | `null` | D |
@@ -1561,8 +1561,8 @@ sign-title wording functions, shared by the pages and their wording tests.
   followed and the own channel. If the participant declines the install,
   the manager shows `You declined installing <mod name>.` in its normal
   status notice and stays in the current view. The next action clears
-  the notice. Other install failures still show their cause in the error
-  line.
+  the notice. The command returns `{declined: message}` for this case.
+  Other install failures still show their cause in the error line.
 - `index_list`, `index_include`, `index_unlist`: `dist.list`,
   `dist.include`, `dist.unlist` in `spawn_blocking`; the participant sees
   the `Sign` request (6.2). dist's refusals before the consent view

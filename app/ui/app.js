@@ -23,7 +23,7 @@ async function action(cmd, args = {}) {
   const before = new Set(currentMods.map(mod => mod.local));
   if (installing) dismissInstalled();
   const result = await runAction(() => call(cmd, args));
-  if (installing) {
+  if (installing && !result?.declined) {
     const added = (result?.installed || []).filter(local => !before.has(local)).map(local => currentMods.find(mod => mod.local === local)).filter(Boolean);
     if (added.length) {
       $('#library-filter').value = ''; sourceFilter = ''; selected = added[0].local;
@@ -57,8 +57,14 @@ function grantIcon(grant, parent, size) {
 }
 async function runAction(work) {
   const id = errors.begin();
+  const notice = $('#action-notice');
+  notice.textContent = '';
   try {
     const result = await work();
+    if (result?.declined) {
+      if (id === errors.current()) notice.textContent = result.declined;
+      return result;
+    }
     await refresh();
     return result;
   } catch (e) {

@@ -711,8 +711,13 @@ pub(crate) async fn release_install(
 ) -> Result<Value, CmdError> {
     record(&webview, "release_install");
     let release = parse_release(&release)?;
-    let installed = core(&state)?.install_release(release, None).await?;
-    Ok(json!({"installed":installed.into_iter().map(|m| m.local).collect::<Vec<_>>()}))
+    match core(&state)?.install_release(release, None).await {
+        Ok(installed) => {
+            Ok(json!({"installed": installed.into_iter().map(|m| m.local).collect::<Vec<_>>()}))
+        }
+        Err(error) if error.code == "install_declined" => Ok(json!({"declined": error.message})),
+        Err(error) => Err(error),
+    }
 }
 fn sign_error(error: watane_dist::DistError, kind: &str, target: &str) -> CmdError {
     match error {
@@ -1063,8 +1068,11 @@ pub(crate) async fn install_release(
     let link = link.as_deref().map(parse_link).transpose()?;
     let core = core(&state)?;
     let before = crate::core::followed_keys(&core.dist, &core.parties)?;
-    let installed = core.install_release(release, link).await?;
-    crate::core::install_result(&core.dist, &core.parties, before, installed)
+    match core.install_release(release, link).await {
+        Ok(installed) => crate::core::install_result(&core.dist, &core.parties, before, installed),
+        Err(error) if error.code == "install_declined" => Ok(json!({"declined": error.message})),
+        Err(error) => Err(error),
+    }
 }
 #[tauri::command]
 pub(crate) async fn index_list(

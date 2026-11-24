@@ -201,6 +201,11 @@ fn resolve_provider(
         )
     })
 }
+// The host calls Confirm::install inside the pending install future.
+tokio::task_local! {
+    pub(crate) static INSTALL_FOLLOWS: Vec<String>;
+}
+
 fn request_view(
     request: &InstallRequest,
     parties: &Parties,
@@ -303,6 +308,7 @@ fn request_view(
             _ => None,
         },
         by_program: matches!(request.requester, Requester::LocalApi),
+        following: INSTALL_FOLLOWS.try_with(Clone::clone).unwrap_or_default(),
         mods,
     }
 }
@@ -1103,6 +1109,7 @@ mod tests {
         let mut request = Box::pin(broker.ask(consent::Request::Install {
             asked_by: None,
             by_program: false,
+            following: vec![],
             mods: vec![],
         }));
         assert!(

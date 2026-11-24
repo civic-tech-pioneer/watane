@@ -55,6 +55,8 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         asked_by: Option<Asker>,
         mods: Vec<PlanMod>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        following: Vec<String>,
         by_program: bool,
     }, // install order; Requester::LocalApi
     Manage {
