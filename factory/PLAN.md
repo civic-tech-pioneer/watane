@@ -1340,7 +1340,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   (regular file, nlink 1, owner the user, mode 0600); a symlink, a hard link, a FIFO or a device node at the key path is
   refused with a clear error and the key is never read from it; each has a test. Unix only: the Windows design waits on
   the human (factory/README "Windows"). A security boundary (spec/TECHNICAL.md 6): the adversary runs. Touches: `log/`.
-- [ ] **S107 (guard) a base reached through dist's own links is never given (S105 option A).** (sketch ahead; S102 merged;
+- [~] **S107 (guard) a base reached through dist's own links is never given (S105 option A).** (in flight, cloud, builder codex, reviewer claude; rule 3: last two S110 codex, S105 claude; dispatched ~07:29 UTC 2026-11-24, https://chatgpt.com/local/6b053cd8-4bc8-83eb-aba3-7bb52479b044; S110 runs beside it in dist/ with cfg gates only, the later one rebases.) (was sketch ahead; S102 merged;
   waits for S105 to merge, since both touch dist/.) A follow from a derived link (a search-hit install, the app's `follow_fetched` after
   an install, DD-29) never gives its base; only a link the participant opens or pastes (`open_link`, a pasted follow,
   `choose_index`) does. dist gets a way to say which (e.g. `follow_derived(link)` or a `Given` flag), and the app calls it.
@@ -1350,8 +1350,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   never reaches a local address or skips `held_ungiven`, with a red test of that route first. Folded here, not a slice of
   its own: the same question (which links may give a base), the same files, and S107 already goes out as soon as S105
   merges. Touches: `dist/` (incl. `own.rs`), `app/src/core.rs`, `app/src/api.rs`. A security boundary: the adversary runs.
-- [ ] **S103 Alice gives a mod's agents a folder, and can take it back (stage C, the watane half: host A3,
-  app 19.2).** (sketch ahead; after S100 merges: it touches host/src/agent/, as S100 does.) agentic-harness
+- [~] **S103 Alice gives a mod's agents a folder, and can take it back (stage C, the watane half: host A3,
+  app 19.2).** (in flight, cloud, builder claude, reviewer codex; rule 3: last two S107 and S110 codex; routine `trig_01HDxDURcJvT2C5LrfygVeXb`, fires 07:33 UTC 2026-11-24; app window outcomes go to the macOS CI job; S110 runs beside it in host/src/agent/ with cfg gates only.) (was sketch ahead; after S100 merges: it touches host/src/agent/, as S100 does.) agentic-harness
   stage C: the workspace consent held before `initialized`, the consent view's words (app S58, S60),
   withdrawal ending dependent streams and closing handles, H4 agent tools (host 19.5), `consent-pending`.
   Outcomes: app S58 and S60 on the real app; host case 31 `consent` part; a withdrawal mid-turn ends that
@@ -1377,7 +1377,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   adversary runs on the `log` change. Size: a whole capability (Windows as a checked platform).
   Progress: draft PR #23; BLOCKED at 80ffd54 (20:56 UTC) as briefed: log (native no-follow handles, owner-only ACLs,
   refusal tests), net, pkg, install ported; Windows build now fails only in host/src/agent/ and dist/. Resume after S100
-  and S105 merge: a build brief "continue from branch slice/s110; rebase onto main" into the same Codex task.
+  and S105 merge: a build brief "continue from branch slice/s110; rebase onto main" into the same Codex task. Resumed ~07:28 UTC 2026-11-24 in the same task (edits in dist/ and host/src/agent/ kept to cfg gates and refusals, since S107 and S103 run there).
 
 ## Suite time
 
