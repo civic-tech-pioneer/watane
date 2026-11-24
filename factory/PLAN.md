@@ -1358,7 +1358,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   session's stream. Touches: `host/src/agent/`, `host/src/` consent, `app/` consent view and details. Also adds
   S100's accepted deep-tree line to host TECHNICAL 14 'Not protected' (deputy, 2026-11-24). The
   agentic-harness half (console consent activity and plan line) follows S35/S36. Builder by rule 3.
-- [~] **S116 (upkeep) leftovers in app, dist, log and net.** (in flight, cloud, builder codex, reviewer claude; rule 3:
+- [x] **S116 (upkeep) leftovers in app, dist, log and net.** DONE 2026-11-25: PR #32 merged by the deputy (no bypass); builder codex, reviewer claude, 1 round (0/7); ~1.5 h in flight. A no-op managed install follows nothing (only New or Update releases follow); a declined install is matched by type; dist redirect tests; one `private_dir` helper and an independent ACL oracle; a forced store-timeout test. R1.1, R1.2 accepted; polish P1.1 to P1.7 and host's 'always asks' wording in Leftovers. (Was: (in flight, cloud, builder codex, reviewer claude; rule 3:
   last two S115 claude, S114 codex; the upkeep lane, sketched 2026-11-24 by deputy-3 from Leftovers; beside S114, which holds
   `host/` and `dev/`: the host flakes and host polish wait for it; Codex task https://chatgpt.com/local/6b061040-9cc4-83ed-a17a-39e655fd4057, dispatched 22:35 UTC; DELIVERED ~23:10 UTC as PR #32 (+618/-117, all four CI jobs green; item 1's red test reproduced on macOS and passes); r1: Claude review, fires 23:37 UTC.) Outcomes, each item's check:
   1. (guard, S113 R2.1) a no-op managed install (every plan entry `Unchanged`) follows nothing; the held red test
@@ -1670,6 +1670,8 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### app
 
+- [S116 r1] P1.1 a mixed-plan consent test (no follow line for an Unchanged release's publisher); P1.2 the needless `#[allow(dead_code)]` on `app_home`; P1.4 the dist redirect test records calls instead of asserting inside the check; P1.5 OS failures in `check_owner_only` map to `Io`; P1.6 the `icacls` oracle on `parent` and `dir`; P1.7 a `#[cfg(test)]` STORE_WAIT of ~200 ms (net unit tests went from 1.1 s to 6.3 s); host TECHNICAL 1833 and 2411 still say a manager install 'always asks'.
+
 - [S113 r3] P3.1 detect a declined install by a typed refusal, not the host's text (`app/src/core.rs:868`); P3.2 the wrong-slug test at Alice's real base from a separate reader; P3.3 tests that the consent's follow line is absent for a followed publisher, the own channel and LocalApi or background installs.
 
 - [S113 R2.1] follow only fetched items whose plan entry is not `Change::Unchanged`, so a no-op managed install re-follows nothing (red test `manage::adv_s113_unchanged_managed_install_refollows_without_install_consent`, held by the S113 r2 review team).
@@ -1933,6 +1935,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - 2026-11-24 host 18 **Q38: (b)**, the human ("b is fine for q38"). A workspace or account consent is kept per (origin client, `via` = the provider's identity, folder or account); a new provider asks again. S103 built (b); its next answer round writes host 18 Q38 as decided by the human, 2026-11-24, and the 19.7 rows to match. agentic-harness TECHNICAL 8 already cites 19.7.
 
 ## Deputy decisions
+
+- 2026-11-25 (S116 r1) accepted: R1.1 every `HostError::Refused` on the interactive app install path reads as a decline (the host can refuse there only because Alice declined); R1.2 a manager install with a New or Update entry follows the publisher with no follow line in its consent (app TECHNICAL by design, same class as S113 R2.1, now limited to changed releases).
 
 - 2026-11-24 (S114 r2) accepted: R2.1 the home lock may close just before the database if a thread holds the database past the host at process exit and a restart follows at once; R2.2 a dangling `scripted-responses.json` symlink reads as no script; R2.3 by design (host 19.9) a request without `account: "openai"` to api.openai.com still goes to the real host, with no token.
 
