@@ -524,6 +524,42 @@ async fn ac3_fetch_errors_loopback_and_host_origin_guard() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn s107_publish_provider_read_uses_listed_entry_budget() {
+    let publisher_home = tempfile::tempdir().unwrap();
+    let publisher = open(publisher_home.path(), Recording::new(true), true);
+    let site = Site::serve(publisher.site_dir()).await;
+    publisher.set_site_url(&site.base).unwrap();
+    let link = publisher.publish(package()).unwrap().link.unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let confirm = Recording::new(true);
+    let dist = Arc::new(
+        watane_dist::Dist::open(
+            home.path(),
+            Arc::<Recording>::clone(&confirm),
+            watane_dist::Options {
+                listed_local: true,
+                max_listed_entries: 0,
+                ..Default::default()
+            },
+        )
+        .unwrap(),
+    );
+    let (status, _, bytes) = api_request(
+        Some(dist),
+        "/api/publish",
+        api_support::consumer(&publisher.identity().unwrap()),
+        Some(&link.to_string()),
+    )
+    .await;
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&bytes));
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["providers"][0]["listed"], false);
+    let requests = confirm.requests.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].statement.kind(), "release");
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn ac4_publish_lists_provider_after_release_and_denial_keeps_release() {
     let carol_home = tempfile::tempdir().unwrap();
     let carol = open(carol_home.path(), Recording::new(true), true);
