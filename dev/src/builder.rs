@@ -898,6 +898,10 @@ mod tests {
                 "TMP",
                 #[cfg(windows)]
                 "SystemRoot",
+                #[cfg(windows)]
+                "ProgramFiles(x86)",
+                #[cfg(windows)]
+                "ProgramFiles",
             ]
             .contains(k)
         }));
