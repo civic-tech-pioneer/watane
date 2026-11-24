@@ -22,8 +22,7 @@ fn ac12_j3_dist() {
     assert_eq!(fetched.package.as_bytes(), bytes);
     assert_eq!(fetched.entry.bytes(), p.entry.bytes());
     alice.export(&copy_dir).unwrap();
-    let path = copy
-        .path()
+    let path = copy_dir
         .join("packages")
         .join(p.info.release.package.to_string());
     let mut bytes = std::fs::read(&path).unwrap();

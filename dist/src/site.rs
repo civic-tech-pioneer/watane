@@ -186,8 +186,6 @@ impl Dist {
     }
     pub(crate) fn export_unlocked(&self, dir: &Path) -> Result<Exported, DistError> {
         let own = self.require_identity()?;
-        #[cfg(windows)]
-        public_dir(dir)?;
         let entries = self.log.entries(&own, 0, usize::MAX)?;
         let head = entries.last().map(Entry::seq);
         let head_path = dir.join("head");

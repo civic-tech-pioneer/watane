@@ -100,12 +100,12 @@ fn ac3_unchanged_keeps_generation_one_byte_updates_package() {
     assert_eq!(catalog(home.path())["generation"], 2);
 }
 
-#[cfg(unix)] // Uses a Unix symlink fixture.
 #[test]
 fn ac4_package_errors_name_input_and_leave_no_staging() {
-    for symlink in [true, false] {
+    for symlink in [false].into_iter().chain(cfg!(unix).then_some(true)) {
         let folder = page();
         if symlink {
+            #[cfg(unix)] // Uses a Unix symlink fixture.
             std::os::unix::fs::symlink("index.html", folder.path().join("ui/link")).unwrap();
         } else {
             fs::File::create(folder.path().join("ui/large"))
