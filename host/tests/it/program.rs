@@ -114,22 +114,30 @@ impl Preview {
     }
 
     fn stop(&mut self) {
-        assert!(
-            Command::new("kill")
-                .args(["-TERM", &self.child.id().to_string()])
-                .status()
-                .unwrap()
-                .success()
-        );
-        let deadline = Instant::now() + Duration::from_secs(30); // hang guard: spec drains up to 5 s
-        loop {
-            if let Some(status) = self.child.try_wait().unwrap() {
-                assert_eq!(status.code(), Some(0));
-                break;
+        #[cfg(unix)] // SIGTERM tests require a Unix signal and exit status.
+        {
+            assert!(
+                Command::new("kill")
+                    .args(["-TERM", &self.child.id().to_string()])
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            let deadline = Instant::now() + Duration::from_secs(30); // hang guard: spec drains up to 5 s
+            loop {
+                if let Some(status) = self.child.try_wait().unwrap() {
+                    assert_eq!(status.code(), Some(0));
+                    break;
+                }
+                assert!(Instant::now() < deadline, "SIGTERM exceeded 30 seconds");
+                std::thread::sleep(Duration::from_millis(10));
             }
-            assert!(Instant::now() < deadline, "SIGTERM exceeded 30 seconds");
-            std::thread::sleep(Duration::from_millis(10));
         }
+        #[cfg(windows)] // Tests that only need cleanup can wait for an ordinary child kill.
+        {
+            self.child.kill().unwrap();
+            self.child.wait().unwrap()
+        };
         let mut rest = String::new();
         self.stdout.read_to_string(&mut rest).unwrap();
         assert_eq!(rest, "", "stdout must contain exactly one line");
@@ -292,6 +300,7 @@ fn ac6_program_arguments_lock_and_sigterm() {
     assert_eq!(error["watane"], 1);
     assert_eq!(error["error"]["code"], "busy");
     preview.stop();
+    #[cfg(unix)] // SIGTERM tests assert the Unix process did its graceful cleanup.
     assert!(!home.path().join("run.json").exists());
     for ip in ["127.0.0.1", "::1"] {
         std::net::TcpStream::connect(SocketAddr::new(ip.parse().unwrap(), preview.ready.port))
@@ -544,6 +553,7 @@ async fn ac2_home_creates_marker_status_run_and_cleans_up() {
         json!({"watane":1,"mode":"home","home":dir.path().canonicalize().unwrap(),"port":home.ready.port,"app":false})
     );
     home.stop();
+    #[cfg(unix)] // SIGTERM tests assert the Unix process did its graceful cleanup.
     assert!(!dir.path().join("run.json").exists());
 }
 

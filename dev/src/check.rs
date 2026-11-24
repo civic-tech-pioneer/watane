@@ -15,14 +15,28 @@ fn files(root: &Path) -> Result<Vec<Problem>, Problem> {
             let entry = entry.map_err(Problem::internal)?;
             let kind = entry.file_type().map_err(Problem::internal)?;
             let path = entry.path();
-            if kind.is_symlink() {
+            #[cfg(unix)]
+            let link = kind.is_symlink();
+            #[cfg(windows)]
+            let link = {
+                use std::os::windows::fs::MetadataExt;
+                const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+                entry
+                    .metadata()
+                    .map_err(Problem::internal)?
+                    .file_attributes()
+                    & FILE_ATTRIBUTE_REPARSE_POINT
+                    != 0
+            };
+            if link {
                 let file = path
                     .strip_prefix(root)
                     .expect("walked paths are under the root")
-                    .to_string_lossy();
+                    .to_string_lossy()
+                    .replace(std::path::MAIN_SEPARATOR, "/");
                 errors.push(
                     Problem::new(Code::ModSymlink, format!("{file} is a symbolic link"))
-                        .at(file.to_string(), None, None)
+                        .at(file, None, None)
                         .fix("Replace it with a file"),
                 );
             } else {
@@ -37,22 +51,22 @@ fn files(root: &Path) -> Result<Vec<Problem>, Problem> {
                         relative.starts_with("logic/src")
                     } else {
                         kind.is_file()
-                            && (matches!(
-                                relative.to_str(),
-                                Some("logic/Cargo.toml" | "logic/Cargo.lock")
-                            ) || (relative.starts_with("logic/src")
-                                && relative.extension().is_some_and(|e| e == "rs")))
+                            && ((relative == Path::new("logic/Cargo.toml")
+                                || relative == Path::new("logic/Cargo.lock"))
+                                || (relative.starts_with("logic/src")
+                                    && relative.extension().is_some_and(|e| e == "rs")))
                     };
                     if !allowed {
-                        let file = relative.to_string_lossy();
+                        let file = relative
+                            .to_string_lossy()
+                            .replace(std::path::MAIN_SEPARATOR, "/");
                         let reason = if relative == Path::new("logic/build.rs") {
                             "the builder runs no build script"
                         } else if relative.starts_with("logic/.cargo") {
                             "the builder uses no cargo configuration of the mod"
-                        } else if matches!(
-                            relative.to_str(),
-                            Some("logic/rust-toolchain" | "logic/rust-toolchain.toml")
-                        ) {
+                        } else if relative == Path::new("logic/rust-toolchain")
+                            || relative == Path::new("logic/rust-toolchain.toml")
+                        {
                             "the builder chooses the toolchain"
                         } else {
                             "only Cargo.toml, Cargo.lock and src/**/*.rs are built"
@@ -62,8 +76,8 @@ fn files(root: &Path) -> Result<Vec<Problem>, Problem> {
                                 Code::ModLogicFile,
                                 format!("{file} is not allowed: {reason}"),
                             )
-                            .at(file.to_string(), None, None)
-                            .fix(format!("Remove {file}")),
+                            .fix(format!("Remove {file}"))
+                            .at(file, None, None),
                         );
                     }
                 }
@@ -981,6 +995,25 @@ mod tests {
             serde_json::to_value(report).unwrap()["providers"][0]["path"],
             serde_json::Value::Null
         );
+    }
+
+    #[cfg(windows)] // Junctions exercise Windows reparse points without symlink privileges.
+    #[test]
+    fn s110_builder_refuses_a_junction_in_the_source_tree() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("mod");
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(temp.path().join("outside")).unwrap();
+        let output = std::process::Command::new("cmd.exe")
+            .args(["/d", "/c", "mklink", "/J", "alias", "../outside"])
+            .current_dir(&root)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let problems = files(&root).unwrap();
+        assert_eq!(problems.len(), 1);
+        assert_eq!(problems[0].code, Code::ModSymlink);
+        assert_eq!(problems[0].file.as_deref(), Some("alias"));
     }
 
     #[cfg(unix)] // Uses a POSIX symlink fixture.

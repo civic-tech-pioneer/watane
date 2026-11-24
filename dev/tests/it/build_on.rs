@@ -400,6 +400,7 @@ fn ac10_fake_fetch_bytes_headers_recording_and_unknown_key() {
     }
 }
 
+#[cfg(unix)] // This recovery command is from the Unix preview pipeline.
 #[test]
 fn ac5_missing_released_cache_has_actionable_fix() {
     let f = Fixture::new();
@@ -551,19 +552,23 @@ fn ac5_offline_contract_and_fake_preview_provider_order() {
     let (code, v) = run_mod(&f, &dir, "test", &[], fake);
     assert_eq!(code, 0, "{v}");
     assert_eq!(v["result"]["contract"]["passed"], 1);
-    let (code, v) = run_mod(&f, &dir, "serve", &[], fake);
-    assert_eq!(code, 0, "{v}");
-    let home = PathBuf::from(v["result"]["home"].as_str().unwrap());
-    let request: Value =
-        serde_json::from_slice(&fs::read(home.join("requests/1-install")).unwrap()).unwrap();
-    assert_eq!(run_mod(&f, &dir, "serve", &["--stop"], fake).0, 0);
-    let folders = request["folders"].as_array().unwrap();
-    assert_eq!(folders.len(), 2);
-    assert!(folders[0].as_str().unwrap().contains("/providers/"));
-    assert_eq!(folders[1], json!(dir.canonicalize().unwrap()));
-    assert_eq!(v["result"]["pages"][0]["slug"], "ratings");
-    assert_eq!(v["result"]["pages"][1]["slug"], "stats");
+    #[cfg(unix)] // This part starts and stops a preview using Unix process groups.
+    {
+        let (code, v) = run_mod(&f, &dir, "serve", &[], fake);
+        assert_eq!(code, 0, "{v}");
+        let home = PathBuf::from(v["result"]["home"].as_str().unwrap());
+        let request: Value =
+            serde_json::from_slice(&fs::read(home.join("requests/1-install")).unwrap()).unwrap();
+        assert_eq!(run_mod(&f, &dir, "serve", &["--stop"], fake).0, 0);
+        let folders = request["folders"].as_array().unwrap();
+        assert_eq!(folders.len(), 2);
+        assert!(folders[0].as_str().unwrap().contains("/providers/"));
+        assert_eq!(folders[1], json!(dir.canonicalize().unwrap()));
+        assert_eq!(v["result"]["pages"][0]["slug"], "ratings");
+        assert_eq!(v["result"]["pages"][1]["slug"], "stats")
+    };
 }
+#[cfg(unix)] // The real preview lifecycle uses Unix process-group controls.
 #[test]
 #[ignore = "slow: real preview installs the built consumer and a cached released provider"]
 fn ac5_real_preview_installs_released_provider_before_consumer() {
@@ -912,6 +917,7 @@ fn regress_s93_no_source_fix_runs_as_written() {
     assert_ne!(v["errors"][0]["code"], "usage.not_a_mod", "{v}");
     assert_eq!(code, 0, "{v}");
 }
+#[cfg(unix)] // Executes the recovery command with POSIX shell paths.
 #[test]
 fn regress_s93_no_source_fix_without_slug_runs_as_written() {
     // `new --from <link>` with no slug: the fix names the release's own slug, so the new mod
