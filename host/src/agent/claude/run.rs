@@ -232,7 +232,7 @@ pub(crate) fn pid_record(pgid: i32) -> Option<String> {
 }
 
 /// One parsed line of `runs/pids`: `pgid boot-id start-time`.
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Record {
     pgid: i32,
     boot: String,
@@ -320,23 +320,40 @@ fn bad_line(line: &[u8]) -> String {
     format!("{:?}", String::from_utf8_lossy(&line[..line.len().min(64)]))
 }
 
-/// Opens `runs/pids` without following a link and without blocking, and reads at most
-/// `PIDS_CAP` bytes of it when it is a regular file; anything else but a missing file is logged
-/// once. The flag is true when the file was longer.
+/// Opens the folder of `path` without following a link, then `pids` in it through `openat` on that
+/// descriptor, without following a link and without blocking, and reads at most `PIDS_CAP` bytes
+/// of it when it is a regular file; a link or a non-folder for `runs`, or anything but a regular
+/// file for `pids`, is logged once (a missing file is not). The flag is true when the file was
+/// longer.
 fn read_pids(path: &Path, log: &mut CleanupLog) -> Option<(Vec<u8>, bool)> {
-    use std::os::unix::fs::OpenOptionsExt;
-    let opened = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags((rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32)
-        .open(path);
+    use rustix::fs::{Mode, OFlags, openat};
+    let (dir, name) = (path.parent()?, path.file_name()?);
+    let opened = openat(
+        rustix::fs::CWD,
+        dir,
+        OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )
+    .and_then(|dir| {
+        openat(
+            dir,
+            name,
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+    });
     let file = match opened {
-        Ok(file) if file.metadata().is_ok_and(|m| m.is_file()) => file,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
-        _ => {
+        Ok(fd) => std::fs::File::from(fd),
+        Err(rustix::io::Errno::NOENT) => return None,
+        Err(_) => {
             log.say("watane: runs/pids is not a regular file: it is not read".to_owned());
             return None;
         }
     };
+    if !file.metadata().is_ok_and(|m| m.is_file()) {
+        log.say("watane: runs/pids is not a regular file: it is not read".to_owned());
+        return None;
+    }
     let mut bytes = vec![];
     if let Err(e) = file.take(PIDS_CAP + 1).read_to_end(&mut bytes) {
         log.say(format!("watane: runs/pids cannot be read: {e}"));
@@ -370,34 +387,31 @@ fn clean_lines<H>(
                 bad_line(line)
             )),
             Some(record) => {
-                if seen.insert(record) {
-                    clean_line(line, boot, &hold, &start_of, &signal, log);
+                if seen.insert(record.clone()) {
+                    clean_line(&record, boot, &hold, &start_of, &signal, log);
                 }
             }
         }
     }
 }
 
-/// What startup does with one line of `runs/pids`: the line is parsed into a full record first
-/// (`parse_record`); a bad one is skipped and false returned, for the caller to log. Then the
-/// leader is held (`hold`), its identity is checked while it is held, and the signal goes to
-/// that held process (`signal`), never to the group by its number. Without a hold nothing is
-/// signalled, and a recorded group that still matches is logged as a leftover; so are the other
-/// members of a group whose leader was signalled (3.1 step 3, review r6, F6.3).
+/// What startup does with one parsed record of `runs/pids` (`parse_record`, run by the caller
+/// before any handle opens): the leader is held (`hold`), its identity is checked while it is
+/// held, and the signal goes to that held process (`signal`), never to the group by its number.
+/// Without a hold nothing is signalled, and a recorded group that still matches is logged as a
+/// leftover; so are the other members of a group whose leader was signalled (3.1 step 3, review
+/// r6, F6.3).
 fn clean_line<H>(
-    line: &[u8],
+    record: &Record,
     boot: &str,
     hold: impl FnOnce(i32) -> Option<H>,
     start_of: impl Fn(i32) -> Option<String>,
     signal: impl FnOnce(&H),
     log: &mut CleanupLog,
-) -> bool {
-    let Some(record) = parse_record(line) else {
-        return false;
-    };
+) {
     let pgid = record.pgid;
     let held = hold(pgid);
-    match (still_run(&record, boot, start_of), held) {
+    match (still_run(record, boot, start_of), held) {
         (true, Some(held)) => {
             signal(&held);
             log.say(format!(
@@ -409,7 +423,6 @@ fn clean_line<H>(
         )),
         (false, _) => {}
     }
-    true
 }
 
 /// Holds the leader of a group: a pidfd, open while the identity is checked and the signal is
@@ -432,114 +445,6 @@ fn hold_leader(_pgid: i32) -> Option<()> {
 }
 #[cfg(not(target_os = "linux"))]
 fn kill_held(_held: &()) {}
-
-/// The most entries that one open removes from the `runs.*.gone` folders (3.1 step 3).
-const WALK_BUDGET: usize = 10_000;
-
-/// The deepest folder that the walk opens below a `runs.*.gone` (3.1 step 3): one descriptor is
-/// open per level, so this stays well under the open-file limit.
-const WALK_DEPTH: usize = 256;
-
-/// One open folder of the walk: its descriptor, its name in its parent, and the subfolders still
-/// to do.
-struct Level {
-    fd: rustix::fd::OwnedFd,
-    name: std::ffi::OsString,
-    pending: Vec<std::ffi::OsString>,
-}
-
-/// Lists the folder `fd`: removes what is not a folder, and returns the subfolders. `None` when
-/// the budget runs out or the folder cannot be read; `clean` is cleared when an entry stays.
-fn list_level(
-    fd: &rustix::fd::OwnedFd,
-    budget: &mut usize,
-    clean: &mut bool,
-) -> Option<Vec<std::ffi::OsString>> {
-    use rustix::fs::{AtFlags, Dir, FileType, statat, unlinkat};
-    use std::os::unix::ffi::OsStrExt;
-    let mut dirs = vec![];
-    for entry in Dir::read_from(fd).ok()? {
-        let Ok(entry) = entry else {
-            *clean = false;
-            break;
-        };
-        let name = entry.file_name();
-        if name == c"." || name == c".." {
-            continue;
-        }
-        if *budget == 0 {
-            return None;
-        }
-        *budget -= 1;
-        let kind = match entry.file_type() {
-            FileType::Unknown => statat(fd, name, AtFlags::SYMLINK_NOFOLLOW)
-                .map_or(FileType::Unknown, |st| FileType::from_raw_mode(st.st_mode)),
-            kind => kind,
-        };
-        if kind == FileType::Directory {
-            dirs.push(std::ffi::OsStr::from_bytes(name.to_bytes()).to_owned());
-        } else if unlinkat(fd, name, AtFlags::empty()).is_err() {
-            *clean = false;
-        }
-    }
-    Some(dirs)
-}
-
-/// Removes the folder `name` of `home` with what it holds, without recursion and without
-/// following a link, spending at most `budget` entries. The walk keeps a stack of the open
-/// folders from `name` down and never climbs by `..`, so a folder moved out during the walk
-/// takes nothing outside with it; below `WALK_DEPTH` levels a folder is left. False when
-/// something is left.
-fn remove_tree(home: &std::fs::File, name: &std::ffi::OsStr, budget: &mut usize) -> bool {
-    use rustix::fs::{AtFlags, Mode, OFlags, openat, unlinkat};
-    let flags = OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK;
-    let Ok(fd) = openat(home, name, flags, Mode::empty()) else {
-        // Not a folder (or gone): a link or file is removed itself.
-        return unlinkat(home, name, AtFlags::empty()).is_ok();
-    };
-    let mut clean = true;
-    let Some(pending) = list_level(&fd, budget, &mut clean) else {
-        return false;
-    };
-    let mut levels = vec![Level {
-        fd,
-        name: name.to_owned(),
-        pending,
-    }];
-    loop {
-        let depth = levels.len();
-        let Some(top) = levels.last_mut() else {
-            return clean;
-        };
-        if let Some(child) = top.pending.pop() {
-            if depth >= WALK_DEPTH {
-                clean = false;
-                continue;
-            }
-            match openat(&top.fd, &child, flags, Mode::empty()) {
-                Ok(fd) => {
-                    let Some(pending) = list_level(&fd, budget, &mut clean) else {
-                        return false;
-                    };
-                    levels.push(Level {
-                        fd,
-                        name: child,
-                        pending,
-                    });
-                }
-                Err(_) => clean = false,
-            }
-            continue;
-        }
-        let done = levels.pop().expect("a top level");
-        drop(done.fd);
-        let removed = match levels.last() {
-            Some(parent) => unlinkat(&parent.fd, &done.name, AtFlags::REMOVEDIR),
-            None => unlinkat(home, &done.name, AtFlags::REMOVEDIR),
-        };
-        clean &= removed.is_ok();
-    }
-}
 
 /// Kills the leaders of the groups that a crashed host left in `runs/pids` and are still its runs,
 /// and empties `runs/` (3.1 step 3).
@@ -565,44 +470,44 @@ fn clean_runs_logged(home: &Path, log: &mut CleanupLog) {
             ));
         }
     }
-    // `runs` that is a directory is moved aside, so `runs/` is free at once; anything else (a
-    // file, a FIFO, a link) is removed itself, and a link's target is kept.
-    match runs.symlink_metadata() {
-        Ok(m) if m.is_dir() => {
-            let aside = home.join(format!("runs.{}.gone", random_hex()));
-            if let Err(e) = std::fs::rename(&runs, &aside) {
-                log.say(format!("watane: runs/ cannot be moved aside: {e}"));
-            }
+    // `runs`, whatever it is, is moved aside, so `runs/` is free at once; a link is moved itself
+    // and its target is kept.
+    if runs.symlink_metadata().is_ok() {
+        let aside = home.join(format!("runs.{}.gone", random_hex()));
+        if let Err(e) = std::fs::rename(&runs, &aside) {
+            log.say(format!("watane: runs/ cannot be moved aside: {e}"));
         }
-        Ok(_) => {
-            let _ = std::fs::remove_file(&runs);
-        }
-        Err(_) => {}
     }
     remove_gone(home, log);
     log.end();
 }
 
-/// Removes every `runs.*.gone` of `home` within one budget; what is left is logged once.
+/// Removes every `runs.*.gone` of `home`: a directory with `remove_dir_all`, which does not follow
+/// a link inside the tree, anything else with `remove_file`. A failure is logged once and tried
+/// again at the next open (3.1 step 3).
 fn remove_gone(home: &Path, log: &mut CleanupLog) {
     use std::os::unix::ffi::OsStrExt;
-    let Ok(dir) = std::fs::File::open(home) else {
-        return;
-    };
     let Ok(entries) = std::fs::read_dir(home) else {
         return;
     };
-    let mut budget = WALK_BUDGET;
-    let mut left = false;
+    let mut failed = false;
     for entry in entries.flatten() {
-        let name = entry.file_name();
-        let bytes = name.as_bytes();
+        let bytes = entry.file_name();
+        let bytes = bytes.as_bytes();
         if bytes.starts_with(b"runs.") && bytes.ends_with(b".gone") && bytes.len() > 9 {
-            left |= !remove_tree(&dir, &name, &mut budget);
+            let path = entry.path();
+            let removed = if path.symlink_metadata().is_ok_and(|m| m.is_dir()) {
+                std::fs::remove_dir_all(&path)
+            } else {
+                std::fs::remove_file(&path)
+            };
+            failed |= removed.is_err();
         }
     }
-    if left {
-        log.say("watane: a runs.*.gone folder is left (too deep, too many or not removable): the next open tries again".to_owned());
+    if failed {
+        log.say(
+            "watane: a runs.*.gone folder is not removed: the next open tries again".to_owned(),
+        );
     }
 }
 
@@ -1667,7 +1572,7 @@ mod pids_tests {
     fn s100_fix18_ac3_the_signal_goes_out_only_while_the_leader_is_held_and_checked() {
         let events = std::cell::RefCell::new(vec![]);
         clean_line(
-            format!("4242 {BOOT} 99").as_bytes(),
+            &parse_record(format!("4242 {BOOT} 99").as_bytes()).unwrap(),
             BOOT,
             |pgid| {
                 assert_eq!(pgid, 4242);
@@ -1690,7 +1595,7 @@ mod pids_tests {
     fn s100_fix18_ac3_a_leader_that_cannot_be_held_is_never_signalled() {
         let signalled = std::cell::Cell::new(false);
         clean_line(
-            format!("4242 {BOOT} 99").as_bytes(),
+            &parse_record(format!("4242 {BOOT} 99").as_bytes()).unwrap(),
             BOOT,
             |_| None::<Held>,
             |_| Some("99".to_owned()),
@@ -1717,7 +1622,8 @@ mod pids_tests {
             #[cfg(target_os = "linux")]
             format!("7 {BOOT} -1"),
         ] {
-            let parsed = clean_line(
+            assert!(parse_record(bad.as_bytes()).is_none(), "{bad}");
+            clean_lines(
                 bad.as_bytes(),
                 BOOT,
                 |pgid| {
@@ -1728,7 +1634,6 @@ mod pids_tests {
                 |_: &Held| {},
                 &mut CleanupLog::default(),
             );
-            assert!(!parsed, "{bad}");
         }
         assert!(held.borrow().is_empty(), "{:?}", held.borrow());
         let home = tempfile::tempdir().unwrap();
@@ -1759,7 +1664,7 @@ mod pids_tests {
     #[test]
     fn s100_fix20_ac1_a_bogus_boot_id_opens_no_handle() {
         let opened = std::cell::Cell::new(0);
-        clean_line(
+        clean_lines(
             b"7 bogus 100",
             "bogus",
             |_| {
@@ -2368,73 +2273,6 @@ mod adv_s100_p15 {
         leader.kill().unwrap();
         leader.wait().unwrap();
         assert_eq!(kills.get(), 1, "{:?}", log.lines);
-    }
-}
-
-#[cfg(test)]
-mod walk_budget {
-    use super::*;
-
-    /// A tree of 20 000 entries is cut at the budget, logged once, and finished at the next
-    /// call; a link inside is removed and its target kept (3.1 step 3).
-    #[test]
-    fn ac2_a_big_tree_is_cut_at_the_budget_and_finished_at_the_next_call() {
-        let home = tempfile::tempdir().unwrap();
-        let target = tempfile::tempdir().unwrap();
-        std::fs::write(target.path().join("keep"), "k").unwrap();
-        let runs = home.path().join("runs");
-        std::fs::create_dir_all(runs.join("a/b")).unwrap();
-        for i in 0..19_990 {
-            std::fs::write(runs.join(format!("a/b/f{i}")), "").unwrap();
-        }
-        std::os::unix::fs::symlink(target.path(), runs.join("a/link")).unwrap();
-        let gone = |home: &Path| {
-            std::fs::read_dir(home)
-                .unwrap()
-                .flatten()
-                .filter(|e| e.file_name().to_string_lossy().starts_with("runs."))
-                .count()
-        };
-        let mut log = CleanupLog::default();
-        clean_runs_logged(home.path(), &mut log);
-        assert!(!runs.exists());
-        assert_eq!(gone(home.path()), 1);
-        assert_eq!(log.lines.len(), 1, "{:?}", log.lines);
-        let mut log = CleanupLog::default();
-        clean_runs_logged(home.path(), &mut log);
-        assert_eq!(gone(home.path()), 0, "{:?}", log.lines);
-        assert!(log.lines.is_empty(), "{:?}", log.lines);
-        assert!(target.path().join("keep").exists());
-    }
-
-    /// A home with a `runs` chain of `depth` folders, cleaned once: the names starting with
-    /// `runs.` that are left, and the log.
-    fn clean_chain(depth: usize) -> (usize, Vec<String>) {
-        let home = tempfile::tempdir().unwrap();
-        let chain: std::path::PathBuf = std::iter::once("runs")
-            .chain(std::iter::repeat_n("d", depth))
-            .collect();
-        std::fs::create_dir_all(home.path().join(chain)).unwrap();
-        let mut log = CleanupLog::default();
-        clean_runs_logged(home.path(), &mut log);
-        assert!(!home.path().join("runs").exists());
-        let left = std::fs::read_dir(home.path())
-            .unwrap()
-            .flatten()
-            .filter(|e| e.file_name().to_string_lossy().starts_with("runs."))
-            .count();
-        (left, log.lines)
-    }
-
-    /// The walk opens at most `WALK_DEPTH` folders: a chain one level deeper is left with one
-    /// log line and no crash; one level less is removed (3.1 step 3).
-    #[test]
-    fn a_tree_deeper_than_the_cap_is_left_and_logged_once() {
-        let (left, lines) = clean_chain(256);
-        assert_eq!(left, 1, "{lines:?}");
-        assert_eq!(lines.len(), 1, "{lines:?}");
-        assert!(lines[0].contains("too deep"), "{lines:?}");
-        assert_eq!(clean_chain(255), (0, vec![]));
     }
 }
 
