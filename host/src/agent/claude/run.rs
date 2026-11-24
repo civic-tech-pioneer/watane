@@ -174,6 +174,7 @@ fn start_time(pid: i32) -> Option<String> {
 
 /// The start time of `pid` as `start_time` reads it, only while `pid` leads its own group
 /// (field 5 of the same read equals the pid): what startup checks while it holds the leader.
+/// macOS holds no leader (`hold_leader`), so it does not check the group.
 fn leader_start_time(pid: i32) -> Option<String> {
     #[cfg(target_os = "linux")]
     {
@@ -188,27 +189,23 @@ fn leader_start_time(pid: i32) -> Option<String> {
 /// Field 5 (pgrp) and field 22 (start time) of `/proc/<pid>/stat`, from one read.
 #[cfg(target_os = "linux")]
 fn stat_fields(pid: i32) -> Option<(i32, String)> {
-    {
-        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-        // The comm field may hold spaces and `)`: count from the last `)`; field 3 comes next.
-        let rest = stat.get(stat.rfind(')')? + 1..)?;
-        let mut fields = rest.split_whitespace();
-        let pgrp = fields.nth(2)?.parse::<i32>().ok()?;
-        Some((pgrp, fields.nth(16)?.to_owned()))
-    }
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    // The comm field may hold spaces and `)`: count from the last `)`; field 3 comes next.
+    let rest = stat.get(stat.rfind(')')? + 1..)?;
+    let mut fields = rest.split_whitespace();
+    let pgrp = fields.nth(2)?.parse::<i32>().ok()?;
+    Some((pgrp, fields.nth(16)?.to_owned()))
 }
 
 #[cfg(not(target_os = "linux"))]
 fn lstart(pid: i32) -> Option<String> {
-    {
-        let text = tool_output("/bin/ps", &["-o", "lstart=", "-p", &pid.to_string()])?;
-        let token: String = text
-            .trim()
-            .chars()
-            .map(|c| if c.is_whitespace() { '_' } else { c })
-            .collect();
-        (!token.is_empty()).then_some(token)
-    }
+    let text = tool_output("/bin/ps", &["-o", "lstart=", "-p", &pid.to_string()])?;
+    let token: String = text
+        .trim()
+        .chars()
+        .map(|c| if c.is_whitespace() { '_' } else { c })
+        .collect();
+    (!token.is_empty()).then_some(token)
 }
 
 /// The standard output of a system tool (`/usr/sbin/sysctl`, `/bin/ps`), in the C locale and an
@@ -351,11 +348,11 @@ fn clean_lines<H>(
 }
 
 /// What startup does with one line of `runs/pids`: the line is parsed into a full record first
-/// (`parse_record`); a bad one is skipped, and false returned for the caller to log. Then the leader is held (`hold`), its
-/// identity is checked while it is held, and the signal goes to that held process (`signal`),
-/// never to the group by its number. Without a hold nothing is signalled, and a recorded group
-/// that still matches is logged as a leftover; so are the other members of a group whose leader
-/// was signalled (3.1 step 3, review r6, F6.3).
+/// (`parse_record`); a bad one is skipped and false returned, for the caller to log. Then the
+/// leader is held (`hold`), its identity is checked while it is held, and the signal goes to
+/// that held process (`signal`), never to the group by its number. Without a hold nothing is
+/// signalled, and a recorded group that still matches is logged as a leftover; so are the other
+/// members of a group whose leader was signalled (3.1 step 3, review r6, F6.3).
 fn clean_line<H>(
     line: &[u8],
     boot: &str,
@@ -1848,13 +1845,12 @@ mod fix21_tests {
     #[test]
     fn s100_fix21_ac2_a_symlink_at_runs_pids_is_not_followed() {
         let home = tempfile::tempdir().unwrap();
-        let (mut run, record) = leader();
         std::fs::create_dir_all(home.path().join("runs")).unwrap();
         let target = home.path().join("elsewhere");
-        std::fs::write(&target, format!("{record}\n")).unwrap();
+        std::fs::write(&target, "1 a 2\n").unwrap();
         std::os::unix::fs::symlink(&target, home.path().join("runs/pids")).unwrap();
+        assert_eq!(read_pids(&home.path().join("runs/pids")), None);
         clean_runs(home.path());
-        assert!(!killed(&mut run), "a record behind a link was handled");
         assert!(!home.path().join("runs").exists());
         assert!(target.exists());
     }
@@ -1865,11 +1861,13 @@ mod fix21_tests {
         let (mut run, record) = leader();
         std::fs::create_dir_all(home.path().join("runs")).unwrap();
         let mut file = format!("{record}\n").into_bytes();
-        file.resize(70_000, b'\n');
+        // A line across the cap: its first part is no record.
+        file.resize(65_530, b'\n');
+        file.resize(70_000, b'y');
         std::fs::write(home.path().join("runs/pids"), file).unwrap();
         let (bytes, over) = read_pids(&home.path().join("runs/pids")).unwrap();
         assert!(over);
-        assert!(bytes.len() <= 64 * 1024);
+        assert_eq!(bytes.len(), 65_530, "cut after the last whole line");
         clean_runs(home.path());
         assert!(killed(&mut run), "a record in the first 64 KiB is handled");
         assert!(!home.path().join("runs").exists());
