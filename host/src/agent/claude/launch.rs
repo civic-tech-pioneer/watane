@@ -1085,8 +1085,14 @@ mod tests {
             "dotfiles/claude/sub",
         ] {
             let got = resolve_picked(user.join(dir).to_str().unwrap(), &forbidden);
-            assert!(got.is_err(), "{dir} was accepted as {got:?}");
+            assert!(
+                got.as_ref().is_err_and(|e| e.contains("credentials")),
+                "{dir} was not refused as a credential folder: {got:?}"
+            );
         }
+        // The folder beside them is no credential folder.
+        let dotfiles = user.join("dotfiles");
+        assert!(resolve_picked(dotfiles.to_str().unwrap(), &forbidden).is_ok());
     }
 
     /// Adversary S103 (19.3, Picked workspace): a credential folder kept elsewhere and linked
