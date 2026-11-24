@@ -149,6 +149,7 @@ impl Dist {
     /// then every channel of its read set (DIST-F-40). Fails like `follow`
     /// when the first read of the index fails; then nothing changes.
     pub fn choose_index(&self, link: &Link) -> Result<Vec<RefreshReport>, DistError>;
+    pub fn choose_index_derived(&self, link: &Link) -> Result<Vec<RefreshReport>, DistError>;
     /// Removes the index mark. The channel stays when it is followed.
     pub fn drop_index(&self, channel: &PublicKey) -> Result<(), DistError>;
     pub fn indexes(&self) -> Result<Vec<IndexView>, DistError>;     // chosen indexes, key order
@@ -622,7 +623,8 @@ equals the first element when `bases` is nonempty. The optional
 `"explicit_given": [text]` field holds up to 16 bases verified after a
 participant supplied a link to `follow`, `choose_index`, or `open_link`.
 It can retain permission for bases evicted from the four-base list. A
-derived follow adds no permissions. A pruned record leaves no permissions.
+derived follow or derived index choice adds no permissions. Pruning a
+record removes its permissions.
 Records written before S107 lack explicit provenance and their bases are
 read as listed until given again. S107 readers ignore legacy
 `given`, `seen`, `seen_full`, and `gone` on load. New saves omit them.
@@ -1007,7 +1009,8 @@ The limits of 4.5 and the channel caps below still apply, with at most
 
 `refresh`, `refresh_channel` and `fetch` read a followed or chosen record the
 same way, with the same move to the front; the local-address skip below stays
-for listed reads only.
+for listed reads only. If every base is refused, the report retains the
+first refusal cause, including `BadUrl` for a local address.
 
 **Local addresses.** Unless `Options::listed_local` is set (tests only;
 default `false`), dist skips a listed base whose host is `localhost`, ends
@@ -1038,6 +1041,10 @@ the channels of step 4. A channel is read at most once per refresh. The
 channel budgets also span passes: if pass (b) discovers lists that would exceed the remaining budget,
 those channels wait for the next refresh; no unread record is created. Then
 remove the listed records that no read set holds.
+
+**`choose_index_derived(link)`** uses the listed policy for its first read and grants
+no base permission. The app uses it for channel-row links. The remaining
+index-choice behavior is shared with `choose_index`.
 
 **`choose_index(link)`**: a link with a slug is `BadLink`; own key is
 `OwnChannel`. `read_channel` as `follow` does (a failed or compromised
@@ -1612,5 +1619,5 @@ are `list` and `include` statements of 4.1.
 | DD-44 | `local_base` ignores trailing dots of a host name; an IPv4 literal with a trailing dot is read as the literal. | `localhost.` is the same host as `localhost`; the rule must not be bypassed by spelling. Undo: cheap (one check). |
 | DD-45 | A listed record on a cache miss tries the record's base first, then the provider bases of 5.11 (at most 4 in all). The record's bases, timestamps and permissions stay unchanged. | A dead record base must not end a fetch that another listing of the channel can serve, as for a channel with no record (S104). Undo: cheap (fetch.rs). |
 | DD-46 | A listed-only record that becomes followed or chosen by `follow` or `choose_index` holds only the base the link gave: `base` is the link's base, `bases` is empty. Foreman decision S105. | The listing's bases were read as the participant's own, which skipped the redirect check of DD-43 (A35). The alternative, a per-base origin in `follows.json`, is a format change. Undo: cheap (follow.rs). |
-| DD-47 | A base of a followed or chosen record without explicit provenance is read as listed. The initial base and every redirect target use the local-address rule, and the listed entry limit applies. A cached package is still usable. | Records written before S107 can hold bases learned from discovery. Treating those permissions as unknown lets participants reauthorize a LAN mirror by opening or pasting its link. |
-| DD-48 | S107 replaces the S105 seen history with an explicit follow interface. A base can be given by a participant's `follow`, `choose_index`, or `open_link`. Discovery and fetched-release links use `follow_derived`. The latter cannot give a base, even after pruning or mirror churn. Listing preflight is always listed. | Permission comes from the entry point that receives the link. Record history no longer has to stand in for its origin. |
+| DD-47 | A base of a followed or chosen record without explicit provenance is read as listed. The initial base and every redirect target use the local-address rule, and the listed entry limit applies. A cached package is still usable. | Records written before S107 can hold bases learned from discovery. Treating those permissions as unknown lets participants reauthorize a LAN mirror by opening or pasting its link. Undo: cheap in dist (follow.rs, index.rs). |
+| DD-48 | S107 replaces the S105 seen history with an explicit follow interface. A base can be given by a participant's `follow`, `choose_index`, or `open_link`. Discovery and fetched-release links use `follow_derived`. Channel-row index links use `choose_index_derived`. Derived links give no base, even after pruning or mirror churn. Listing preflight is always listed. | Permission comes from the entry point that receives the link. Record history no longer has to stand in for its origin. Undo: requires changing the dist, node and app call sites. |

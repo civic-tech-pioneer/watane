@@ -245,6 +245,19 @@ impl Dist {
         result
     }
     pub fn choose_index(&self, link: &Link) -> Result<Vec<RefreshReport>, DistError> {
+        self.choose_index_link(link, false)
+    }
+
+    /// Chooses an index from a link built from a channel record.
+    pub fn choose_index_derived(&self, link: &Link) -> Result<Vec<RefreshReport>, DistError> {
+        self.choose_index_link(link, true)
+    }
+
+    fn choose_index_link(
+        &self,
+        link: &Link,
+        listed: bool,
+    ) -> Result<Vec<RefreshReport>, DistError> {
         if link.slug().is_some() {
             return Err(DistError::BadLink {
                 cause: "index needs a channel link",
@@ -258,7 +271,7 @@ impl Dist {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         self.settle(true)?;
-        let report = self.read_channel(link.channel(), link.base())?;
+        let report = self.read_channel_mode(link.channel(), link.base(), listed)?;
         match report.outcome {
             Outcome::Failed { cause } => return Err(cause),
             Outcome::Compromised { seq } => {
@@ -279,7 +292,9 @@ impl Dist {
             .entry(link.channel())
             .or_insert_with(|| Self::new_record(false, true, false));
         follow::adopt_base(r, link.base());
-        follow::note_given(&mut r.given, link.base());
+        if !listed {
+            follow::note_given(&mut r.given, link.base());
+        }
         r.index = true;
         let learned = follow::add_base(r, link.base());
         r._last_attempt = time;
@@ -409,12 +424,14 @@ impl Dist {
             record.bases.clone()
         };
         let mut best = None;
+        let mut refused = None;
         let mut changes = Vec::new();
         let mut highest: Option<(u64, String)> = None;
         let mut any_current = false;
         for base in bases {
             let listed = follow::listed_read(&record, &base);
-            if listed && self.check_listed_base(&base).is_err() {
+            if listed && let Err(cause) = self.check_listed_base(&base) {
+                refused.get_or_insert(cause);
                 continue;
             }
             let mut report = self
@@ -478,9 +495,9 @@ impl Dist {
         let mut report = best.unwrap_or(RefreshReport {
             channel: key,
             outcome: Outcome::Failed {
-                cause: DistError::BadLink {
+                cause: refused.unwrap_or(DistError::BadLink {
                     cause: "listed channel has no permitted base",
-                },
+                }),
             },
             changes: Vec::new(),
         });

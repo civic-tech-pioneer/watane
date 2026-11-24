@@ -953,6 +953,25 @@ mod tests {
     }
 
     #[test]
+    fn s107_a_derived_index_uses_the_listed_address_policy() {
+        let w = world();
+        let (dir, eve) = w.eve(&[&w.a]);
+        eve.follow_derived(&w.link(&w.a)).unwrap();
+        let view = eve.followed().unwrap().remove(0);
+        let link = crate::Link::new(view.channel, view.base.as_deref().unwrap(), None).unwrap();
+        exempt(&eve, &[]);
+        let before = w.a.count();
+        assert_refused(eve.choose_index_derived(&link).err(), &w.a.url);
+        assert_eq!(w.a.count(), before);
+        exempt(&eve, &[&w.a]);
+        eve.choose_index_derived(&link).unwrap();
+        let file = follows_file(dir.path());
+        let record = &file["channels"][w.key.to_string()];
+        assert_eq!(record["index"], true);
+        assert!(record.get("explicit_given").is_none(), "{record}");
+    }
+
+    #[test]
     fn s107_derived_follow_checks_the_initial_base() {
         let w = world();
         let (_dir, eve) = w.eve(&[]);

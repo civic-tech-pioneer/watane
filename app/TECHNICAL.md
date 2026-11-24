@@ -1024,7 +1024,7 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `channel_unfollow` | main | `channel` | `null` | C |
 | `channels_refresh` | main | — | `[ChannelRow]` | C |
 | `indexes_list` | main | — | `[IndexRow]` | D |
-| `index_choose` | main | `link` | `[IndexRow]` | D |
+| `index_choose` | main | `link, derived?` | `[IndexRow]` | D |
 | `index_drop` | main | `channel` | `null` | D |
 | `search` | main | `text`, `publisher: string \| null`, `interface: string \| null`, `origin: string \| null` (step 5: `<key>/<slug>`, for the derived list of 9.7) | `[HitView]` | D |
 | `install_release` | main | `release` (ReleaseRef text), `link: string \| null` (the hit's) | `{installed: [local], followed: [label]}` | D |
@@ -1496,8 +1496,9 @@ When the own channel is the only index and has no live listings or includes,
 its row is hidden and the hint shows alone. Any live own listing or include,
 or another chosen index, makes the own row visible again.
 watane adds no index by itself (W23). A row of the channels view gets the
-buttons "Use as index" (`index_choose` with the row's link), "Include in my
-index", and for each of its mods "List in my index".
+buttons "Use as index", "Include in my index", and for each of its mods
+"List in my index". "Use as index" sets `derived: true` on `index_choose`.
+Row listing buttons use the listed preflight rules and give no base.
 
 The page gets a followed channel's mods with `search` filtered by that
 channel's publisher key. The channels row builds its channel and mod links
@@ -1510,8 +1511,9 @@ sign-title wording functions, shared by the pages and their wording tests.
   its live `list` listings. `status` and `cause` as for
   `ChannelRow` (9.3), except an index failure reads `Could not read <index>: <cause>`
   with its profile name, else its key fingerprint. The own row has `you: true`.
-- `index_choose(link)`: `Link::from_str`, `dist.choose_index(&link)` in
-  `spawn_blocking`; keep each `Outcome::Failed` cause; refill the parties
+- `index_choose(link, derived?)`: parse the link. In `spawn_blocking`, call
+  `node.choose_index_derived(&link)` for a row link, or `node.choose_index(&link)`
+  for a pasted link. Keep each `Outcome::Failed` cause; refill the parties
   cache; answer `indexes_list`. A failed first read is a command error with
   `Could not read <index>: <cause>` with its stored name, else the link's
   fingerprint (APP-F-37).
@@ -1632,7 +1634,7 @@ existing fields (in particular no `verified`; the UI HitView has it).
 **Calls through node.** In sections 8, 9.1 to 9.7, these calls go to
 `node` in place of `dist`: `set_name`, `publish`, `withdraw`, `list`,
 `include`, `unlist`, `confirm_own`, `follow`, `refresh`,
-`refresh_channel`, `choose_index`, `fetch`, `fetch_for`, `open_link`,
+`refresh_channel`, `choose_index`, `choose_index_derived`, `fetch`, `fetch_for`, `open_link`,
 `read_link` and `search` (`node.search` gives `NodeHit`; `HitView.from`
 is its machines' short keys, APP-F-59). After each install of a fetched
 release (9.4, 9.6, 9.7), `node.installed(&fetched)` (node 5.3). The views

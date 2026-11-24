@@ -979,10 +979,11 @@ pub(crate) async fn index_choose(
     webview: tauri::Webview,
     state: tauri::State<'_, AppState>,
     link: String,
+    derived: Option<bool>,
 ) -> Result<Vec<Value>, CmdError> {
     record(&webview, "index_choose");
     let core = Arc::clone(core(&state)?);
-    blocking(move || core.choose_index(&link)).await
+    blocking(move || core.choose_index(&link, derived.unwrap_or_default())).await
 }
 #[tauri::command]
 pub(crate) async fn index_drop(

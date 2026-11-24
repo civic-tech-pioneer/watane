@@ -255,3 +255,65 @@ fn ac1_follow_choose_and_a_learned_link_mark_the_base_given() {
     let _ = bob.open_link(&link);
     assert_eq!(given(&home, key), [b]);
 }
+
+/// S107 user-sim: Bob's pre-S107 home follows Alice at a LAN base (127.0.0.1 here). The base
+/// now reads as listed and is refused; the failure must name the reason, not call his
+/// followed channel "listed" or blame a link he never gave.
+#[test]
+fn regress_s107_legacy_local_base_failure_names_local_address() {
+    let w = world();
+    w.bob.follow(&w.link(&w.b())).unwrap();
+    let home = w.bob_home.path().to_owned();
+    let (key, b) = (w.key, w.b());
+    drop(w.bob);
+    let legacy = serde_json::json!({"version": 1, "channels": {key.to_string(): {
+        "base": b, "given": [b], "seen": [b], "followed_at": 1, "last_attempt": 1,
+        "last_success": 1}}});
+    std::fs::write(home.join("dist/follows.json"), legacy.to_string()).unwrap();
+    let bob = open(&home);
+    let report = bob
+        .refresh()
+        .into_iter()
+        .find(|r| r.channel == key)
+        .unwrap();
+    let Outcome::Failed { cause } = report.outcome else {
+        panic!("a legacy local base must not be read: {:?}", report.outcome);
+    };
+    let text = cause.to_string();
+    assert!(
+        text.contains("local address") && !text.contains("listed channel"),
+        "Bob's followed channel fails with: {text}"
+    );
+}
+
+/// open_link at a base given before and since evicted by the 4-base cap holds it again;
+/// opening a chosen index learns the base but does not follow it.
+#[test]
+fn s107_open_link_relearns_an_evicted_given_base_and_keeps_an_index_unfollowed() {
+    let w = world();
+    w.bob.follow(&w.link(&w.a())).unwrap();
+    let home = w.bob_home.path().to_owned();
+    let (key, a, b) = (w.key, w.a(), w.b());
+    drop(w.bob);
+    let dead = "http://127.0.0.1:9/";
+    let old = serde_json::json!({"version": 1, "channels": {key.to_string(): {
+        "base": a, "bases": [a, dead], "explicit_given": [a, b],
+        "followed_at": 1, "last_attempt": 1, "last_success": 1}}});
+    std::fs::write(home.join("dist/follows.json"), old.to_string()).unwrap();
+    let bob = open(&home);
+    let link = Link::new(key, &b, Some(&"reading-list".parse().unwrap())).unwrap();
+    let _ = bob.open_link(&link);
+    assert!(bases(&home, key).contains(&b), "{:?}", bases(&home, key));
+
+    let w = world();
+    w.bob.choose_index(&w.link(&w.a())).unwrap();
+    let link = Link::new(w.key, &w.b(), Some(&"reading-list".parse().unwrap())).unwrap();
+    let _ = w.bob.open_link(&link);
+    assert_eq!(given(w.bob_home.path(), w.key), [w.a(), w.b()]);
+    let r = record(w.bob_home.path(), w.key);
+    assert_eq!(
+        (&r["index"], &r["followed"]),
+        (&serde_json::json!(true), &serde_json::json!(false)),
+        "{r}"
+    );
+}

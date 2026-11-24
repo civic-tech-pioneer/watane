@@ -121,6 +121,7 @@ impl Node {
     pub fn refresh(&self) -> Vec<RefreshReport>;
     pub fn refresh_channel(&self, channel: &PublicKey) -> Result<RefreshReport, DistError>;
     pub fn choose_index(&self, link: &Link) -> Result<Vec<RefreshReport>, DistError>;
+    pub fn choose_index_derived(&self, link: &Link) -> Result<Vec<RefreshReport>, DistError>;
     pub fn fetch(&self, release: &ReleaseRef) -> Result<Fetched, DistError>;
     pub fn fetch_for(&self, release: &ReleaseRef, consumer: Option<&PublicKey>) -> Result<Fetched, DistError>;
     pub fn open_link(&self, link: &Link) -> Result<Fetched, DistError>;
@@ -244,7 +245,7 @@ stored. With `net` off, `told` does nothing (net 3).
 ### 5.2 Reads and `told`
 
 Each read wrapper (`follow`, `follow_derived`, `refresh`, `refresh_channel`,
-`choose_index`, `fetch`, `fetch_for`, `open_link`, `read_link`) takes
+`choose_index`, `choose_index_derived`, `fetch`, `fetch_for`, `open_link`, `read_link`) takes
 `dist.heads(None)` before and after dist's call, and calls `told` for each
 channel whose head rose, in key order (NODE-F-8). node calls `told` after
 dist returned, never inside a holder method.
@@ -270,7 +271,7 @@ comes before the channel's. Any other dist error (`Compromised`, `Withdrawn`,
 
 | Wrapper | Before dist's call |
 |---|---|
-| `follow(link)`, `follow_derived(link)`, `choose_index(link)` | `net.need(link.channel())` |
+| `follow(link)`, `follow_derived(link)`, `choose_index(link)`, `choose_index_derived(link)` | `net.need(link.channel())` |
 | `refresh_channel(c)` | `net.need(c)` |
 | `fetch(r)`, `fetch_for(r, _)` | if the stored view of `r.publisher` lacks `r`: `net.need(channel)`. Then, if the release is stored and `dist.package_file(release.package)` is `None`: `net.need_blob(id, release.size)` |
 | `open_link(link)`, `read_link(link)` | `net.need(link.channel())`; then the package of `dist.latest(channel, slug)` as for `fetch` |
@@ -285,8 +286,8 @@ the asked set of 4.1 first, and removes it once the package is stored, so
 `fetched.link` is `None` and the channel is not followed,
 `dist.keep(channel)`. The channel is then held, so `net` keeps it current
 from the full machines, and the app's refresh shows its updates (APP-F-39).
-On any other home it does nothing: the app follows `fetched.link` as before
-(app 9.4).
+On any other home it does nothing: the app calls `follow_derived(fetched.link)`
+(dist DD-29, app 9.4).
 
 ### 5.4 Search
 

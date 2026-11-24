@@ -839,10 +839,7 @@ impl Core {
                 {
                     read_managed_release(&planner.node, &target, link)?
                 } else {
-                    if let Some(link) = &link {
-                        planner.node.follow_derived(link)?;
-                    }
-                    planner.node.fetch(&target)?
+                    fetch_for_install(&planner.node, &target, link.as_ref())?
                 };
                 planner.plan_fetched(fetched, pick.as_deref(), asked_by.as_ref())
             })
@@ -1102,18 +1099,10 @@ impl Core {
             }
         }
         if let Ok(followed) = self.parties.channels.followed(&self.dist) {
-            let links = crate::build_on::follow_links(
-                fetched.iter().filter_map(|f| f.link.clone()),
-                followed.iter().map(|c| c.channel),
-            );
-            crate::build_on::follow_all(
-                links,
-                |link| {
-                    self.node
-                        .follow_derived(link)
-                        .map(|_| ())
-                        .map_err(CmdError::from)
-                },
+            follow_installed_links(
+                &self.node,
+                fetched,
+                &followed,
                 &mut self
                     .failures
                     .lock()
@@ -1122,6 +1111,38 @@ impl Core {
         }
         let _ = self.channels();
     }
+}
+
+fn fetch_for_install(
+    node: &watane_node::Node,
+    release: &watane_dist::ReleaseRef,
+    link: Option<&watane_dist::Link>,
+) -> Result<watane_dist::Fetched, watane_dist::DistError> {
+    if let Some(link) = link {
+        node.follow_derived(link)?;
+    }
+    node.fetch(release)
+}
+
+fn follow_installed_links(
+    node: &watane_node::Node,
+    fetched: &[watane_dist::Fetched],
+    followed: &[watane_dist::ChannelView],
+    failures: &mut std::collections::BTreeMap<String, String>,
+) {
+    let links = crate::build_on::follow_links(
+        fetched.iter().filter_map(|f| f.link.clone()),
+        followed.iter().map(|c| c.channel),
+    );
+    crate::build_on::follow_all(
+        links,
+        |link| {
+            node.follow_derived(link)
+                .map(|_| ())
+                .map_err(CmdError::from)
+        },
+        failures,
+    );
 }
 
 // Read only after the manager's read consent. Following waits for an install.
@@ -2358,8 +2379,12 @@ impl Core {
                 .expect("lock poisoned: another thread panicked while holding it"),
         )
     }
-    pub fn choose_index(&self, text: &str) -> Result<Vec<serde_json::Value>, CmdError> {
-        for report in choose_index_with(&self.dist, text, |link| self.node.choose_index(link))? {
+    pub fn choose_index(
+        &self,
+        text: &str,
+        derived: bool,
+    ) -> Result<Vec<serde_json::Value>, CmdError> {
+        for report in choose_index_link(&self.node, text, derived)? {
             keep_outcome(
                 &mut self
                     .failures
@@ -2388,6 +2413,20 @@ impl Core {
             .map(|h| crate::find::node_hit_view(h, &installed, &self.parties))
             .collect())
     }
+}
+
+fn choose_index_link(
+    node: &watane_node::Node,
+    text: &str,
+    derived: bool,
+) -> Result<Vec<watane_dist::RefreshReport>, CmdError> {
+    choose_index_with(node.dist(), text, |link| {
+        if derived {
+            node.choose_index_derived(link)
+        } else {
+            node.choose_index(link)
+        }
+    })
 }
 
 #[cfg(test)]
@@ -2772,6 +2811,44 @@ mod find_integration_tests {
         assert_eq!(party.name.as_deref(), Some("Alice"));
         assert!(!party.you);
     }
+    fn assert_no_given(home: &std::path::Path, channel: PublicKey) {
+        let file: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(home.join("dist/follows.json")).unwrap())
+                .unwrap();
+        let record = &file["channels"][channel.to_string()];
+        assert_eq!(record["followed"], true, "{record}");
+        assert!(record.get("explicit_given").is_none(), "{record}");
+    }
+
+    #[test]
+    fn s107_using_a_channel_row_as_an_index_keeps_its_base_derived() {
+        let source_home = tempfile::tempdir().unwrap();
+        let source = open(&source_home);
+        source.set_name("Alice").unwrap();
+        let site = Site::serve(source.site_dir());
+        source.set_site_url(&site.base).unwrap();
+        let link = source.own_link(None).unwrap();
+        let reader_home = tempfile::tempdir().unwrap();
+        let reader = watane_node::Node::open_keyless(
+            reader_home.path(),
+            watane_node::Options {
+                dist: Options {
+                    listed_local: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        reader.follow_derived(&link).unwrap();
+        let view = reader.dist().followed().unwrap().remove(0);
+        let row = channel_row(&view, None);
+        let link = format!("watane:{}@{}", row.channel, row.base.unwrap());
+        choose_index_link(&reader, &link, true).unwrap();
+        assert!(reader.dist().channel(&view.channel).unwrap().index);
+        assert_no_given(reader_home.path(), view.channel);
+    }
+
     #[test]
     fn ac5_install_hit_follows_before_fetch_and_keeps_dist_cause() {
         let alice_home = tempfile::tempdir().unwrap();
@@ -2805,9 +2882,29 @@ mod find_integration_tests {
         assert_eq!(error.message, expected);
         assert_eq!(error.code, "dist");
         assert!(carol.followed().unwrap().is_empty());
-        node.follow_derived(published.link.as_ref().unwrap())
-            .unwrap();
-        let fetched = node.fetch(reference).unwrap();
+        let fetched = fetch_for_install(&node, reference, published.link.as_ref()).unwrap();
+        assert_no_given(carol_home.path(), fetched.info.channel);
+        let post_install_home = tempfile::tempdir().unwrap();
+        let post_install = watane_node::Node::open_keyless(
+            post_install_home.path(),
+            watane_node::Options {
+                dist: Options {
+                    listed_local: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let mut failures = Default::default();
+        follow_installed_links(
+            &post_install,
+            std::slice::from_ref(&fetched),
+            &[],
+            &mut failures,
+        );
+        assert!(failures.is_empty());
+        assert_no_given(post_install_home.path(), fetched.info.channel);
         assert_eq!(
             carol.followed().unwrap()[0].channel,
             alice.identity().unwrap()
