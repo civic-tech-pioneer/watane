@@ -3852,7 +3852,8 @@ app, kept by the host with the grants.
   participant's `claude`. It links `claude-code` and `claude-code-shell` as it
   grants any declared grant, but a start there runs only the program given by
   `Host::set_fake_claude` (19.9; dev's `fake-claude`), else ends `no-binary`;
-  every `account` use ends `no-account`; every consent is refused (Asking), so
+  every participant `account` use ends `no-account` (19.9 supplies a development fake);
+  every consent is refused (Asking), so
   a preview's `fake-claude` runs only in a scratch workspace (19.3).
 
 ```rust
@@ -3922,6 +3923,22 @@ review r1 of S103 a gate in place of a sleep.
   (12.2); `watane-dev serve` passes the `fake-claude` it linked into
   `<P>/claude/` (dev 18.4). Tests in a participant home give the path through
   their fake `AccountSource::claude_binary` instead.
+- **Scripted OpenAI in a development preview.** On Unix with debug
+  assertions, `watane --preview <dir> --scripted-openai <program> [--openai-script <file>]`
+  starts the S111 `scripted-responses` program after the preview home opens
+  and before the ready line. Both flags require preview mode. The script is
+  optional and requires the program flag. The host starts the program with
+  a cleared environment and stops it on shutdown or startup failure.
+  The program's ready line (dev 18.3) supplies a nonzero IPv4 localhost
+  socket address and the TLS root. The host binds the fake account only to
+  the OpenAI requests already checked by 19.4. It connects to that socket
+  using only the fake root and still verifies the TLS name. It uses a
+  fixture token from the script, or `watane-preview` by default. It neither
+  asks for consent nor consults an account source for those requests.
+  A fake failure ends the stream without retrying a public address.
+  The setting lives in memory and real homes refuse it, including a home
+  named with `--preview` (3). Release builds compile out the flags and the
+  setting. The app has no entry point to configure it.
 - **Test routes** (feature `test-net`, off by default; host 1). With the
   feature, `Host::set_test_net(TestNet)` makes `https-stream` connect a
   request whose host equals a route's name to the route's local address,

@@ -2677,17 +2677,11 @@ Each has a proposed answer, which this specification uses.
     its build uses `--no-default-features --features fake-claude` (1.1) and
     packs both programs beside `watane-dev`. Until then `serve` warns
     `preview.fake_claude_missing`.
-15. **No scripted OpenAI stream in a release preview** (step 11): the host's
-    test routes (`test-net`) are never in a release (host 19.9), and a preview
-    refuses accounts (W5), so a preview cannot reach `scripted-responses`.
-    Decided (foreman, S95): `ScriptedResponses` serves tests as the program
-    `scripted-responses` that host and app tests spawn (no library use of
-    `watane-dev` across subsystems, spec §2). Open for stage D: spec
-    F-MAKE-4 promises a scripted OpenAI stream in a preview from stage D, which
-    needs a host preview setting outside `test-net` (host 19.9) and `serve`
-    starting `scripted-responses`; options: (a) that setting, recommended;
-    (b) drop the promise from F-MAKE-4 (the human's, since it narrows an
-    accepted requirement). Until stage D a preview offers `fake-claude` only.
+15. **Scripted OpenAI in development previews** (decided, S114, option a):
+    `serve` starts the S111 `scripted-responses` program through the host's
+    separate preview setting (host 19.9). Release hosts and the app's real
+    home have no access to the setting. Tests can still spawn the standalone
+    program and use `test-net`. Subsystems do not link `watane-dev`.
 16. **How the host trusts the fake** (step 11): `https-stream` connects to
     `api.openai.com` and to the judge's origin over TLS, and a preview must
     run `fake-claude` in place of `claude`. Decided in host 19.9: the host's
@@ -2963,8 +2957,22 @@ once. The maker tools offer the fake `claude` instead:
 - If `fake-claude` is not found (9.1), `serve` and `doctor` give the warning
   `preview.fake_claude_missing` (2.2), and a start of Claude Code in that
   preview ends `no-binary` (host 19.9).
-- A scripted OpenAI stream is not offered in a preview (question 15): the
-  preview refuses the account `openai`.
+- On Linux and macOS with a development host, `watane-dev serve [--script <file>]`
+  enables scripted Responses when a served mod declares `http.hosts` with
+  `api.openai.com`, or when a script is supplied. `--script` takes a path
+  relative to the invoking directory and conflicts with `--stop`. Without it,
+  `serve` looks for `scripted-responses.json` in the root mod folder. With no
+  file the program uses its built-in reply (18.3). The format is the
+  standalone program's JSON from 18.3. Its optional `token` is a fixture
+  value and defaults on the preview side to `watane-preview`.
+- Dev finds `scripted-responses` beside `watane-dev`, on PATH, or via the
+  override `WATANE_SCRIPTED_RESPONSES` (checked first). Dev snapshots the
+  script in the preview cache and asks the host to launch the program
+  before reporting ready (host 19.9). A missing program, unreadable or bad
+  script, or an unavailable host setting fails with `env.preview_start`.
+  An unchanged script reuses a live preview. Changing the script or enabling
+  or disabling scripted Responses restarts the preview and keeps its data.
+  A release can still serve ordinary previews.
 - Contract tests (8) do not use the fakes: a contract test fakes the host's
   interfaces by key (8.1), and the agent layer's calls are tested with the
   kernel's own tests.
