@@ -397,6 +397,59 @@ mod tests {
     }
 
     #[test]
+    fn s114_restart_waits_for_stop_home_lock_after_marker_removal() {
+        use std::io::Read;
+        use std::net::TcpListener;
+
+        let home = tempfile::tempdir().unwrap();
+        let path = home.path().canonicalize().unwrap();
+        let lock = fs::File::create(path.join("lock")).unwrap();
+        lock.try_lock().unwrap();
+        let mut child = Command::new("/bin/sleep").arg("10").spawn().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        fs::write(
+            path.join("run.json"),
+            json!({"watane":1,"mode":"preview","pid":child.id(),"port":port}).to_string(),
+        )
+        .unwrap();
+
+        let (marker_removed, removed) = mpsc::channel();
+        let (stopped, result) = mpsc::channel();
+        std::thread::scope(|scope| {
+            let path = &path;
+            scope.spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut header = Vec::new();
+                while !header.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    stream.read_exact(&mut byte).unwrap();
+                    header.push(byte[0]);
+                }
+                assert!(header.starts_with(b"GET /api/status "));
+                let body = json!({"watane":1,"mode":"preview","home":path,"port":port}).to_string();
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+                drop(stream);
+                child.wait().unwrap();
+                fs::remove_file(path.join("run.json")).unwrap();
+                marker_removed.send(()).unwrap();
+            });
+            scope.spawn(move || stopped.send(stop_home(path)).unwrap());
+
+            removed.recv_timeout(Duration::from_secs(12)).unwrap();
+            let early = result.recv_timeout(Duration::from_millis(350));
+            drop(lock);
+            assert!(matches!(early, Err(mpsc::RecvTimeoutError::Timeout)));
+            assert!(result.recv_timeout(Duration::from_secs(3)).unwrap().unwrap());
+        });
+    }
+
+    #[test]
     fn ac6_serve_posts_all_folders_once_in_provider_order() {
         use std::io::Read;
         use std::net::TcpListener;
