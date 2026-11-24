@@ -1358,8 +1358,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   session's stream. Touches: `host/src/agent/`, `host/src/` consent, `app/` consent view and details. Also adds
   S100's accepted deep-tree line to host TECHNICAL 14 'Not protected' (deputy, 2026-11-24). The
   agentic-harness half (console consent activity and plan line) follows S35/S36. Builder by rule 3.
-- [ ] **S111 A mod streams from OpenAI on Alice's ChatGPT plan (stage D, the watane half: host A4, dev 18).** (sketch
-  ahead, deputy-3, 2026-11-24; hand out after S103 merges: both touch `host/src/agent/`.) agentic-harness stage D needs
+- [ ] **S111 A mod streams from OpenAI on Alice's ChatGPT plan (stage D, the watane half: host A4, dev 18).** (in flight, cloud, builder claude, reviewer codex; rule 3: last two S39 codex, S38 codex; handed out 2026-11-24 ~15:20 UTC beside S103 (the human asked for more concurrency): S111's work is mostly new files (`host/src/agent/https_stream.rs`, dev's `ScriptedResponses`); it builds against S103's branch for `consent` and borrowed authority, and merges main once S103 merges; it must not edit S103's files beyond the wiring line.) agentic-harness stage D needs
   H3 (host 19.4) with the account `openai`, and dev's scripted Responses server, before its OpenAI loop can run.
   Outcomes (user-sim on `watane-dev serve` with a test mod and dev's `ScriptedResponses`, `test-net`):
   1. A mod with an `Http` grant for a host streams an SSE response: `{status, headers}`, then one item per event; a
@@ -1374,6 +1373,19 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   no real OpenAI call in CI (the scripted server); `judge` (A5) is left out. Touches: `host/src/agent/` (new
   `https_stream.rs`), `host/` grants and accounts, `dev/` scripted Responses, `pkg/` if a row needs it. Boundary: W39
   and the token never reaching a mod (adversary); from S103 r3 F3.2: `https-stream.start` under borrowed authority (a tool's job or tools/call) is refused `not_granted`, as host 19.5 says. Protects: *core*.
+- [~] **S112 (upkeep, guard) dist, log, net and pkg close their known gaps.** (in flight, cloud, builder codex,
+  reviewer claude; sketched 2026-11-24 by deputy-3 from Leftovers, run beside S103 and S111: it touches none of
+  `host/` or `app/`.) Outcomes, each item's check:
+  1. (guard, S105 adversary) dist's local ranges (5.9) also refuse 100.64.0.0/10, 198.18.0.0/15, 0.0.0.0/8, fec0::/10 and
+     the NAT64 and 6to4 forms of a local address, each with a test.
+  2. (guard, S109 review) the log refuses a log directory owned by another user (root over a 0700 folder someone else
+     owns), with a test; a Windows equivalent refuses or is named a known limit.
+  3. (guard, S100 CI) `net/tests/it/budget.rs:98` stops flaking: the cause named, fixed, 20 runs green in CI.
+  4. (S110 R2) `pkg` refuses Windows reserved device names in a package path on every platform, with a test.
+  5. Polish where cheap: S105 P5.3, P5.4, P6.1 to P6.3; S107 P3.1, P3.2; S109 P2.1 to P2.3; S110 r1 P1.2, P1.4, P1.6.
+  Touches: `dist/`, `log/`, `net/`, `pkg/` only. Boundaries: Verification (dist 5.9) and log's key file (adversary
+  runs). Protects: *guard*. Size: below 1,500 lines, by reason: three guards on `main` plus the polish queued behind
+  them.
 - [x] **S110 (guard) CI is green on Windows, so its check can be required.** DONE 2026-11-24: PR #23 merged with --admin at d797750d on the human's word; builder codex, reviewer claude, 3 rounds (2/10, 1/1, 0/0); ~17.5 h in flight, most of it waiting for S100 and S105 (active ~6 h). Windows is a checked platform: `test (windows-latest)` green and no longer continue-on-error; log's identity key keeps no-follow and owner-only guarantees on Windows; features without a Windows equivalent refuse there with a test. Decisions: `watane-log-windows-fs` the one unsafe crate, workspace `deny` (Deputy decisions); R1, R2 accepted. The Windows check is required in the ruleset 'main: CI green before merge' since 2026-11-24 ~14:30 UTC (set by the deputy with gh on the human's word). (Was: asked by the human, 2026-11-23;
   in flight, cloud, builder codex, reviewer claude; rule 3: last three S36 claude, S109 codex, S108 codex - Codex builds
   2 in 3; dispatched ~20:27 UTC, https://chatgpt.com/local/6b04a1f4-b2cc-83ed-9939-168f9ec34073.) Today Windows CI reports but does not block (`continue-on-error`, factory/README "Windows"): it stops in
