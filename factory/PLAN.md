@@ -1358,6 +1358,22 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   session's stream. Touches: `host/src/agent/`, `host/src/` consent, `app/` consent view and details. Also adds
   S100's accepted deep-tree line to host TECHNICAL 14 'Not protected' (deputy, 2026-11-24). The
   agentic-harness half (console consent activity and plan line) follows S35/S36. Builder by rule 3.
+- [ ] **S111 A mod streams from OpenAI on Alice's ChatGPT plan (stage D, the watane half: host A4, dev 18).** (sketch
+  ahead, deputy-3, 2026-11-24; hand out after S103 merges: both touch `host/src/agent/`.) agentic-harness stage D needs
+  H3 (host 19.4) with the account `openai`, and dev's scripted Responses server, before its OpenAI loop can run.
+  Outcomes (user-sim on `watane-dev serve` with a test mod and dev's `ScriptedResponses`, `test-net`):
+  1. A mod with an `Http` grant for a host streams an SSE response: `{status, headers}`, then one item per event; a
+     non-SSE body arrives in 64 KiB chunks; `idle-s` without bytes ends it `idle-timeout`.
+  2. Each refusal of 19.4 at the call happens before a byte leaves (`destination`, `forbidden-header` incl. case and
+     pseudo-header forms (S64 header part), `too-large`), and a revoked grant or disabled mod at apply ends it `gone`.
+  3. With `account: "openai"`, the host adds a fresh bearer token from `AccountSource::openai_token` (the app's tokens
+     of S102), only to the two allowed OpenAI routes; no app ends it `no-app`, no tokens `no-account`, and the 19.7
+     consent is held first.
+  4. agentic-harness cases 3 and 19 (`openai`) host parts pass; the stage D budgets hold.
+  Interface: `watane:host@0.1.0` H3 as host 19.4 states it (a WIT shape change goes to the deputy first). Constraints:
+  no real OpenAI call in CI (the scripted server); `judge` (A5) is left out. Touches: `host/src/agent/` (new
+  `https_stream.rs`), `host/` grants and accounts, `dev/` scripted Responses, `pkg/` if a row needs it. Boundary: W39
+  and the token never reaching a mod (adversary). Protects: *core*.
 - [~] **S110 (guard) CI is green on Windows, so its check can be required.** (asked by the human, 2026-11-23;
   in flight, cloud, builder codex, reviewer claude; rule 3: last three S36 claude, S109 codex, S108 codex - Codex builds
   2 in 3; dispatched ~20:27 UTC, https://chatgpt.com/local/6b04a1f4-b2cc-83ed-9939-168f9ec34073.) Today Windows CI reports but does not block (`continue-on-error`, factory/README "Windows"): it stops in
