@@ -725,7 +725,7 @@ second agent, `listed_agent`, built like the first but with
 itself (`http::follow_hops`): on 300, 301, 302, 303, 307 or 308 with a `Location`,
 the target is that `Location` resolved against the current URL; unless
 `Options::listed_local` is set, a target whose host is local (`index::local_base`,
-5.9) is refused before any request to it with `BadUrl { url: <target>,
+5.9) is refused before any request to it with `BadUrl { url: <original request URL>,
 cause: "local address" }`; at most 5 redirects are followed, the 6th gives
 `Network { cause: "too many redirects" }`; the one deadline of the read
 covers every hop. A redirect without a `Location` is `Http`. A followed or
@@ -971,8 +971,8 @@ indexes in key order), then reordered by the read below. A follow or a choice
 of index replaces a listed-only record's bases with that link's base
 (DD-46). Only an explicit participant link gives the base (4.4, DD-48).
 Reads of a base are listed when the record is listed-only or that base
-lacks explicit permission. This covers initial derived follows, refreshes,
-and package reads. The listed policy checks the first address, every redirect
+lacks explicit permission. This covers initial derived follows and derived
+index choices, refreshes, and package reads. The listed policy checks the first address, every redirect
 target, and the listed entry budget. `fetch` and `read_link` can still return
 a cached package with no link when its base is refused. A listed record is
 created when the walk first reaches the channel and removed when no read set
@@ -1015,8 +1015,11 @@ first refusal cause, including `BadUrl` for a local address.
 **Local addresses.** Unless `Options::listed_local` is set (tests only;
 default `false`), dist skips a listed base whose host is `localhost`, ends
 in `.localhost`, or is an IP literal that is loopback, unspecified,
-private (10/8, 172.16/12, 192.168/16, fc00::/7) or link-local. Trailing
-dots do not change a name: `localhost.` and `a.localhost..` are local, and
+private (10/8, 172.16/12, 192.168/16, fc00::/7), link-local, shared
+(100.64/10), for benchmarking (198.18/15), on this network (0/8), or
+site-local (fec0::/10). Apply the same IPv4 rules to an embedded address
+in IPv4-mapped IPv6, NAT64 (64:ff9b::/96 and the 64:ff9b:1::/48 layout),
+or 6to4 (2002::/16). Trailing dots do not change a name: `localhost.` and `a.localhost..` are local, and
 an IPv4 literal with a trailing dot (`127.0.0.1.`) is the literal. A third
 party's listing must not make dist send requests into the participant's
 own network, also through a redirect: every redirect target of a listed read
@@ -1040,10 +1043,13 @@ request). Pass (b): the channels of steps 2 and 3 of every walk. Pass (c):
 the channels of step 4. A channel is read at most once per refresh. The
 channel budgets also span passes: if pass (b) discovers lists that would exceed the remaining budget,
 those channels wait for the next refresh; no unread record is created. Then
-remove the listed records that no read set holds.
+remove the listed records that no read set holds. If the initial settlement
+of pending work (4.4) fails, stop before any pass and report that failure
+against the first followed channel or index in key order, if any.
 
 **`choose_index_derived(link)`** uses the same per-base policy as
-`follow_derived` for its first read. It grants no base permission. The app uses it for channel-row links. The remaining
+`follow_derived` for its first read (see **Listed records**). It grants no
+base permission. The app uses it for channel-row links. The remaining
 index-choice behavior is shared with `choose_index`.
 
 **`choose_index(link)`**: a link with a slug is `BadLink`; own key is

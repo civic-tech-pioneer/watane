@@ -32,12 +32,25 @@ fn check_mode(path: &Path, meta: &fs::Metadata) -> Result<(), Error> {
     }
     Ok(())
 }
-fn check_dir(path: &Path, _current: u32) -> Result<(), Error> {
+fn check_dir(path: &Path, current: u32) -> Result<(), Error> {
     let meta = fs::symlink_metadata(path).map_err(|e| io_error(path, e))?;
+    check_directory(path, &meta, current)
+}
+
+fn check_directory(path: &Path, meta: &fs::Metadata, current: u32) -> Result<(), Error> {
     if !meta.is_dir() {
         return Err(not_plain(path, "directory", meta.file_type().is_symlink()));
     }
-    check_mode(path, &meta)
+    check_mode(path, meta)?;
+    let owner = meta.uid();
+    if owner != current {
+        return Err(Error::DirectoryOwner {
+            path: path.to_owned(),
+            owner,
+            current,
+        });
+    }
+    Ok(())
 }
 fn key_metadata(path: &Path, file: &File) -> Result<fs::Metadata, Error> {
     let meta = file.metadata().map_err(|e| io_error(path, e))?;
@@ -161,15 +174,14 @@ pub(crate) fn open_keyless(dir: &Path) -> Result<(), Error> {
         Err(e) => Err(io_error(&path, e)),
     }
 }
-fn publish_key(tmp: &Path, path: &Path) -> Result<(), Error> {
-    fs::rename(tmp, path).map_err(|e| io_error(path, e))
-}
 fn lock_dir(dir: &Path) -> Result<File, Error> {
     let directory = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
         .open(dir)
         .map_err(|e| io_error(dir, e))?;
+    let meta = directory.metadata().map_err(|e| io_error(dir, e))?;
+    check_directory(dir, &meta, effective_uid())?;
     // Serialize the lookup and first publication with other opens and restores.
     directory.lock().map_err(|e| io_error(dir, e))?;
     Ok(directory)
@@ -194,13 +206,12 @@ pub(crate) fn replace(dir: &Path, key: &SigningKey) -> Result<(), Error> {
 }
 
 pub(crate) fn remove(dir: &Path, key: &mut Option<SigningKey>) -> Result<(), Error> {
+    let directory = lock_dir(dir)?;
     let path = dir.join("identity.key");
     fs::remove_file(&path).map_err(|e| io_error(&path, e))?;
     // SigningKey zeroizes on drop. Stop signing even if the following sync fails.
     *key = None;
-    File::open(dir)
-        .and_then(|file| file.sync_all())
-        .map_err(|e| io_error(dir, e))
+    directory.sync_all().map_err(|e| io_error(dir, e))
 }
 
 fn write_key(dir: &Path, directory: &File, path: &Path, seed: &[u8; 32]) -> Result<(), Error> {
@@ -221,7 +232,7 @@ fn write_key(dir: &Path, directory: &File, path: &Path, seed: &[u8; 32]) -> Resu
             .map_err(|e| io_error(&tmp, e))?;
         file.write_all(seed).map_err(|e| io_error(&tmp, e))?;
         file.sync_all().map_err(|e| io_error(&tmp, e))?;
-        publish_key(&tmp, path)
+        fs::rename(&tmp, path).map_err(|e| io_error(path, e))
     })();
     if let Err(error) = result {
         let _ = fs::remove_file(&tmp);
@@ -231,7 +242,7 @@ fn write_key(dir: &Path, directory: &File, path: &Path, seed: &[u8; 32]) -> Resu
 }
 #[cfg(test)]
 mod tests {
-    use super::{check_dir, check_key_owner, effective_uid, open, publish_key, read};
+    use super::{check_dir, check_key_owner, effective_uid, open, read, write_key};
     use crate::Error;
     use std::fs;
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -244,7 +255,36 @@ mod tests {
             .expect("set private directory mode");
         let owner = fs::metadata(dir.path()).expect("stat directory").uid();
         let error = check_dir(dir.path(), owner ^ 1).expect_err("refuse the foreign owner");
-        assert!(error.to_string().contains("log directory must be owned"), "{error}");
+        assert!(matches!(
+            error,
+            Error::DirectoryOwner { path, owner: found, current }
+                if path == dir.path() && found == owner && current == owner ^ 1
+        ));
+    }
+
+    #[test]
+    fn s112_root_refuses_to_open_a_private_directory_owned_by_another_user() {
+        if effective_uid() != 0 {
+            return; // The check above runs without chown privileges.
+        }
+        let parent = tempfile::tempdir().expect("create temporary parent");
+        let dir = parent.path().join("log");
+        fs::create_dir(&dir).expect("create log directory");
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))
+            .expect("set private directory mode");
+        std::os::unix::fs::chown(&dir, Some(65534), None)
+            .expect("change temporary directory owner");
+
+        for result in [crate::Log::open(&dir), crate::Log::open_keyless(&dir)] {
+            assert!(
+                matches!(
+                    &result,
+                    Err(Error::DirectoryOwner { path, owner: 65534, current: 0 }) if path == &dir
+                ),
+                "{result:?}"
+            );
+        }
+        assert_eq!(fs::read_dir(&dir).expect("list log directory").count(), 0);
     }
 
     #[test]
@@ -252,18 +292,21 @@ mod tests {
         let dir = tempfile::tempdir().expect("create log directory");
         fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700))
             .expect("set private directory mode");
-        let tmp = dir.path().join(".identity.key.test.tmp");
+        let directory = super::lock_dir(dir.path()).expect("lock the log directory");
         let path = dir.path().join("identity.key");
         let seed = [7; 32];
-        fs::write(&tmp, seed).expect("write seed");
-        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600)).expect("set key mode");
 
-        publish_key(&tmp, &path).expect("publish the seed");
+        write_key(dir.path(), &directory, &path, &seed).expect("publish the seed");
+        drop(directory);
 
-        // Assert the state an interruption immediately after publication leaves.
         let meta = fs::metadata(&path).expect("stat published key");
         assert_eq!(meta.nlink(), 1);
-        assert!(!tmp.exists());
+        assert_eq!(
+            fs::read_dir(dir.path())
+                .expect("list log directory")
+                .count(),
+            1
+        );
         assert_eq!(
             open(dir.path()).expect("reopen published key").to_bytes(),
             seed

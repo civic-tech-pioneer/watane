@@ -596,8 +596,31 @@ impl Walk {
 
 pub(crate) fn local_base(base: &str) -> bool {
     fn local_v4(ip: std::net::Ipv4Addr) -> bool {
-        ip.is_loopback() || ip.is_unspecified() || ip.is_private() || ip.is_link_local()
+        let [first, second, ..] = ip.octets();
+        ip.is_loopback()
+            || ip.is_private()
+            || ip.is_link_local()
+            || first == 0
+            || (first == 100 && (64..=127).contains(&second))
+            || (first == 198 && (18..=19).contains(&second))
     }
+
+    fn embedded_v4(ip: std::net::Ipv6Addr) -> Option<std::net::Ipv4Addr> {
+        if let Some(mapped) = ip.to_ipv4_mapped() {
+            return Some(mapped);
+        }
+        let octets = ip.octets();
+        match octets {
+            // RFC 6052 well-known NAT64 prefix.
+            [0, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0, a, b, c, d] => Some([a, b, c, d].into()),
+            // RFC 8215 local-use prefix, with the RFC 6052 /48 layout.
+            [0, 0x64, 0xff, 0x9b, 0, 1, a, b, 0, c, d, ..] => Some([a, b, c, d].into()),
+            // RFC 3056 6to4 puts the IPv4 address immediately after 2002::/16.
+            [0x20, 0x02, a, b, c, d, ..] => Some([a, b, c, d].into()),
+            _ => None,
+        }
+    }
+
     match url::Url::parse(base)
         .ok()
         .and_then(|u| u.host().map(|h| h.to_owned()))
@@ -613,7 +636,8 @@ pub(crate) fn local_base(base: &str) -> bool {
                 || ip.is_unspecified()
                 || (ip.segments()[0] & 0xfe00 == 0xfc00)
                 || (ip.segments()[0] & 0xffc0 == 0xfe80)
-                || ip.to_ipv4_mapped().is_some_and(local_v4)
+                || (ip.segments()[0] & 0xffc0 == 0xfec0)
+                || embedded_v4(ip).is_some_and(local_v4)
         }
         None => true,
     }

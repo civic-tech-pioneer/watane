@@ -530,6 +530,11 @@ rest    = ALPHA / DIGIT / "_" / "-" / "."
 Also refused: two paths equal after ASCII lowercase (macOS file systems
 ignore case); a path that is also the parent directory of another path.
 
+Every platform also refuses Windows device names in any segment. Compare
+the part before the first dot without regard to ASCII case. Reserved names
+are `CON`, `PRN`, `AUX`, `NUL`, `COM1` through `COM9`, and
+`LPT1` through `LPT9`.
+
 ### 6.3 Byte format
 
 All integers are big-endian.

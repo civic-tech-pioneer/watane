@@ -82,25 +82,46 @@ fn s9_the_unknown_budgets_default_to_the_spec() {
 }
 
 #[test]
-fn s9_requests_over_limits_and_budgets_are_refused_before_work() {
-    let plain: Vec<_> = (0..3).map(|_| servers(Limits::default())).collect();
+fn s112_oversized_requests_are_refused_before_decoding() {
+    const TRIALS: usize = 20;
+    // Stream admission charges QUIC bytes already received, including the
+    // request itself. If that charge empties the bucket, admission returns
+    // over_budget before the request reader can return too_large. Give this
+    // fixture room for all trials, including transport overhead.
+    let open = node(
+        MemHoldings::new(fixture()),
+        Some(Limits {
+            unknown_bytes_per_sec: 16 << 20,
+            unknown_streams_per_peer: TRIALS,
+            ..Limits::default()
+        }),
+    );
+    runtime().block_on(async {
+        let ep = endpoint(100).await;
+        let conn = connect(&ep, &open).await;
+        let huge = vec![0xff; 256 * 1024 + 1];
+        for trial in 1..=TRIALS {
+            assert_eq!(
+                code_of(ask(&conn, &huge).await),
+                "too_large",
+                "trial {trial}"
+            );
+        }
+        assert_eq!(open.holdings.calls(), 0);
+    });
+}
+
+#[test]
+fn s9_connections_and_streams_over_budget_are_refused_before_work() {
+    let plain: Vec<_> = (0..2).map(|_| servers(Limits::default())).collect();
     let pooled = servers(Limits {
         unknown_conns: 3,
         ..Limits::default()
     });
     let rt = runtime();
     rt.block_on(async {
-        // a request over the limit
-        let (open, _) = &plain[0];
-        let ep = endpoint(100).await;
-        let conn = connect(&ep, open).await;
-        let huge = vec![0xff; 256 * 1024 + 1];
-        assert_eq!(code_of(ask(&conn, &huge).await), "too_large");
-        assert_eq!(open.holdings.calls(), 0);
-        drop(conn);
-
         // a third connection of one unknown key, beside two held open
-        let (open, trusted) = &plain[1];
+        let (open, trusted) = &plain[0];
         for (server, seed, expect_closed) in [(&open, 101u8, true), (&trusted, 200u8, false)] {
             let ep = endpoint(seed).await;
             let held = [connect(&ep, server).await, connect(&ep, server).await];
@@ -113,7 +134,7 @@ fn s9_requests_over_limits_and_budgets_are_refused_before_work() {
         }
 
         // a third concurrent stream of one unknown key
-        let (open, trusted) = &plain[2];
+        let (open, trusted) = &plain[1];
         for (server, seed, expect) in [(&open, 102u8, "over_budget"), (&trusted, 200u8, "ok")] {
             let ep = endpoint(seed).await;
             let conn = connect(&ep, server).await;
