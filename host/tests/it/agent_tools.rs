@@ -901,3 +901,32 @@ fn ac6_withdrawing_a_toolset_consent_closes_the_handles_and_ends_the_live_jobs()
         .unwrap_err();
     assert_eq!(e.code(), "bad_request");
 }
+
+// ---- Harness (19.1) --------------------------------------------------------------------------
+
+#[test]
+fn harness_fakes_agent_tools_and_records_open_and_call_as_requests() {
+    use watane_host::{Fakes, Harness, RequestRecord};
+    let h = Harness::open(&fixture("toolbox"), Fakes::new()).unwrap();
+    let out = h.call("api.open", json!({"toolsets": ["t"]})).unwrap();
+    assert_eq!(out.value, json!({"ok": format!("{:032x}", 1)}));
+    assert_eq!(
+        out.requests,
+        vec![RequestRecord {
+            function: "agent-tools.open".into(),
+            args: json!({"toolsets": ["t"]}),
+        }]
+    );
+    let args = json!({"handle": "h", "key": "k", "tool": "x", "args": "{}"});
+    let out = h.call("api.call", args.clone()).unwrap();
+    assert_eq!(out.value, json!({"ok": "s2"}));
+    assert_eq!(
+        out.requests,
+        vec![RequestRecord {
+            function: "agent-tools.call".into(),
+            args,
+        }]
+    );
+    let out = h.call("api.describe", json!({"handle": "h"})).unwrap();
+    assert_eq!((out.value, out.requests), (json!({"ok": []}), vec![]));
+}
