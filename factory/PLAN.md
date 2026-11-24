@@ -1375,7 +1375,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   and the token never reaching a mod (adversary); from S103 r3 F3.2: `https-stream.start` under borrowed authority (a tool's job or tools/call) is refused `not_granted`, as host 19.5 says. Protects: *core*.
 - [~] **S112 (upkeep, guard) dist, log, net and pkg close their known gaps.** (in flight, cloud, builder codex,
   reviewer claude; sketched 2026-11-24 by deputy-3 from Leftovers, run beside S103 and S111: it touches none of
-  `host/` or `app/`; Codex task https://chatgpt.com/local/6b05a9c2-788c-83ed-a2bd-c772a853c056, dispatched 15:17 UTC.) Outcomes, each item's check:
+  `host/` or `app/`; Codex task https://chatgpt.com/local/6b05a9c2-788c-83ed-a2bd-c772a853c056, dispatched 15:17 UTC; DELIVERED ~16:20 UTC as PR #27 at 6f0aea0 (+474/-67, all four CI jobs green); r1: Claude review routine, fires 16:31 UTC. Codex's task reported that a shell diagnostic printed fragments of an environment credential into its own transcript (not on GitHub: diff, commits, PR and CI log scanned clean): told the human.) Outcomes, each item's check:
   1. (guard, S105 adversary) dist's local ranges (5.9) also refuse 100.64.0.0/10, 198.18.0.0/15, 0.0.0.0/8, fec0::/10 and
      the NAT64 and 6to4 forms of a local address, each with a test.
   2. (guard, S109 review) the log refuses a log directory owned by another user (root over a 0700 folder someone else
