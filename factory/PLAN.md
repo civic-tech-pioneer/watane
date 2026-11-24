@@ -1375,7 +1375,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   and the token never reaching a mod (adversary); from S103 r3 F3.2: `https-stream.start` under borrowed authority (a tool's job or tools/call) is refused `not_granted`, as host 19.5 says. Protects: *core*.
 - [~] **S112 (upkeep, guard) dist, log, net and pkg close their known gaps.** (in flight, cloud, builder codex,
   reviewer claude; sketched 2026-11-24 by deputy-3 from Leftovers, run beside S103 and S111: it touches none of
-  `host/` or `app/`; Codex task https://chatgpt.com/local/6b05a9c2-788c-83ed-a2bd-c772a853c056, dispatched 15:17 UTC; DELIVERED ~16:20 UTC as PR #27 at 6f0aea0 (+474/-67, all four CI jobs green); r1: Claude review routine, fires 16:31 UTC. Codex's task reported that a shell diagnostic printed fragments of an environment credential into its own transcript (not on GitHub: diff, commits, PR and CI log scanned clean): told the human.) Outcomes, each item's check:
+  `host/` or `app/`; Codex task https://chatgpt.com/local/6b05a9c2-788c-83ed-a2bd-c772a853c056, dispatched 15:17 UTC; DELIVERED ~16:20 UTC as PR #27 at 6f0aea0 (+474/-67, all four CI jobs green); r1: Claude review routine, fires 16:31 UTC; r1 (17:14): 2/9, changes (2) (validators PASS x4, adversary BREACHED 2, user-sim ACCEPTED): F1.1 a redirect to a SOCKS scheme reaches a local port, F1.2 lock_dir's owner check untested; answer r1 dispatched 17:18 UTC into the Codex task. Codex's task reported that a shell diagnostic printed fragments of an environment credential into its own transcript (not on GitHub: diff, commits, PR and CI log scanned clean): told the human.) Outcomes, each item's check:
   1. (guard, S105 adversary) dist's local ranges (5.9) also refuse 100.64.0.0/10, 198.18.0.0/15, 0.0.0.0/8, fec0::/10 and
      the NAT64 and 6to4 forms of a local address, each with a test.
   2. (guard, S109 review) the log refuses a log directory owned by another user (root over a 0700 folder someone else
@@ -1570,6 +1570,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
   exists", "No such file or directory").
 
 ### log
+
+- [S112 R1.1] move the identity and store operations to `openat`/`renameat`/`unlinkat` on the checked folder handle (Unix and Windows); a spec call on refusing parents writable by others.
 
 - [S110 r1] P1.2 an independent `icacls`/`whoami` oracle in `log/tests/it/identity_windows.rs`; P1.4 move net's Windows storage paragraph into net TECHNICAL 4.5 and name log's `publish(…, replace)` in 4.7; P1.6 one `private_dir` helper in windows-fs for `net/src/blobs.rs` and `key.rs`; P1.7 gate dev's builder tests per test, not the whole module; P1.10 a literal shell-quoting oracle in `dev/tests/it/install.rs`; R3 off-profile home ACL hardening.
 
@@ -1859,6 +1861,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - 2026-11-24 host 18 **Q38: (b)**, the human ("b is fine for q38"). A workspace or account consent is kept per (origin client, `via` = the provider's identity, folder or account); a new provider asks again. S103 built (b); its next answer round writes host 18 Q38 as decided by the human, 2026-11-24, and the 19.7 rows to match. agentic-harness TECHNICAL 8 already cites 19.7.
 
 ## Deputy decisions
+
+- 2026-11-24 (S112 r1) accepted: R1.1 a log folder swapped after its owner check (root over a home under another user's folder plus an active race; openat later, Leftovers); R1.2 embedded IPv4 forms needing a translator or tunnel on the participant's network; R1.3 the participant's own proxy variables (spec 6). P1.6: no compatibility owed before 1.0, a package with a device-name path no longer decodes.
 
 - 2026-11-24 (S103 r2) borrowed authority (a tool running as its handle's origin client) may only do work that ends with the call: `agent-tools.open`, timers and streams are refused under it (host 19.5). Clause: W39 (a mod in the middle gains no authority), HOST-F-68. Rulings narrow: no binding of deferred work to consents. Undo: lift the refusal once deferred work is bound to its source consent. Accepted: F2.3, a mod update racing a queued tool dispatch gives a generic error instead of `unknown-tool` / -32602 (still refused).
 
