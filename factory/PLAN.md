@@ -1355,7 +1355,8 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   stage C: the workspace consent held before `initialized`, the consent view's words (app S58, S60),
   withdrawal ending dependent streams and closing handles, H4 agent tools (host 19.5), `consent-pending`.
   Outcomes: app S58 and S60 on the real app; host case 31 `consent` part; a withdrawal mid-turn ends that
-  session's stream. Touches: `host/src/agent/`, `host/src/` consent, `app/` consent view and details. The
+  session's stream. Touches: `host/src/agent/`, `host/src/` consent, `app/` consent view and details. Also adds
+  S100's accepted deep-tree line to host TECHNICAL 14 'Not protected' (deputy, 2026-11-24). The
   agentic-harness half (console consent activity and plan line) follows S35/S36. Builder by rule 3.
 - [~] **S110 (guard) CI is green on Windows, so its check can be required.** (asked by the human, 2026-11-23;
   in flight, cloud, builder codex, reviewer claude; rule 3: last three S36 claude, S109 codex, S108 codex - Codex builds
