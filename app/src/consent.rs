@@ -1228,21 +1228,21 @@ mod machines_pairing_tests {
             watane_dist::Decision::Approve
         }
     }
-    fn open(home: &std::path::Path) -> Arc<watane_node::Node> {
-        let node = Arc::new(
-            watane_node::Node::open(
-                home,
-                Arc::new(Approve),
-                watane_node::Options {
-                    net: watane_node::net::Options {
-                        bind: Some("127.0.0.1:0".parse().unwrap()),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-            )
-            .unwrap(),
-        );
+    fn open(home: &std::path::Path, replica: bool) -> Arc<watane_node::Node> {
+        let options = watane_node::Options {
+            net: watane_node::net::Options {
+                bind: Some("127.0.0.1:0".parse().unwrap()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        // Windows refuses to drop an existing identity. Exercise consent with a keyless replica.
+        let node = if cfg!(windows) && replica {
+            watane_node::Node::open_keyless(home, options)
+        } else {
+            watane_node::Node::open(home, Arc::new(Approve), options)
+        };
+        let node = Arc::new(node.unwrap());
         let mut options = node.net().options();
         options.on = true;
         node.net().set_options(options).unwrap();
@@ -1251,13 +1251,13 @@ mod machines_pairing_tests {
     #[test]
     fn ac2_real_pairing_events_wait_for_consent_and_decline_changes_nothing() {
         let home = tempfile::tempdir().unwrap();
-        let anchor = open(home.path());
+        let anchor = open(home.path(), false);
         let broker = Broker::new();
         let _machines = crate::machines::Machines::start(&anchor, Arc::clone(&broker));
         let mut used = None;
         for approve in [true, false] {
             let replica_home = tempfile::tempdir().unwrap();
-            let replica = open(replica_home.path());
+            let replica = open(replica_home.path(), true);
             let code = anchor
                 .net()
                 .pair_code(watane_node::net::Role::Full)
@@ -1272,7 +1272,7 @@ mod machines_pairing_tests {
                     break current;
                 }
                 assert!(Instant::now() < end, "join never reached broker");
-                std::thread::sleep(Duration::from_millis(10));
+                std::thread::yield_now();
             };
             let Request::Join { node, role, text } = request else {
                 panic!("join request");
@@ -1315,7 +1315,7 @@ mod machines_pairing_tests {
             }
         }
         let other_home = tempfile::tempdir().unwrap();
-        let other = open(other_home.path());
+        let other = open(other_home.path(), true);
         other.join(&used.unwrap(), false).unwrap_err();
         assert!(broker.current().is_none());
     }

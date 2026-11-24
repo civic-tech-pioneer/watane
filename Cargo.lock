@@ -8424,6 +8424,7 @@ dependencies = [
  "blake3",
  "clap",
  "claude-codes",
+ "find-msvc-tools",
  "semver",
  "serde",
  "serde_json",
