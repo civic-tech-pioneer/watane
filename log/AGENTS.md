@@ -26,7 +26,10 @@ depends on no watane subsystem, so you can build all of it now.
   fails, suspect the code first; change the vector only after checking it
   against the oracle of section 8.1.
 - `Entry` has no public constructor except `decode` and `append`. Add no
-  public `sign`, no setter, no `unsafe`, no `legacy_compatibility`.
+  public `sign`, no setter, no `unsafe` in `watane-log`, no `legacy_compatibility`.
+- `windows-fs/` is the shared Windows platform crate for log, net, dist, host
+  and app. Only its FFI to the Windows security and file APIs may use
+  `unsafe` (spec/TECHNICAL 2).
 - No network code, and no knowledge of what a body means. Never weaken a check to make a test pass. Fix a real defect in the spec
   yourself and record it in "Questions for spec/" (TECHNICAL.md section 12).
 - Write in plain English: short sentences, active voice.

@@ -54,7 +54,10 @@ Rules:
   tests only (`install/TECHNICAL.md` 1). It is the one subsystem that
   nothing depends on and that is not part of watane at run time.
 - The inner modules of a subsystem are its own business (its `TECHNICAL.md`).
-- Each subsystem is one crate `watane-<name>` at the root of its folder.
+- Each subsystem has a crate `watane-<name>` at the root of its folder.
+  Under log, `watane-log-windows-fs` is the shared Windows platform crate.
+  Log, net, dist, host and app may depend on it on Windows. It is the only
+  crate allowed to use `unsafe` for FFI to the Windows security and file APIs.
   The root `Cargo.toml` is a workspace: a subsystem's crate becomes a member
   when it is created. The workspace uses resolver `3`, one root `Cargo.lock`
   and the shared root `target/`; S1 members are `pkg`, `host`, and `dev`.

@@ -15,7 +15,7 @@ fn s110_preview_refuses_start_and_stop_before_touching_the_cache() {
             .env("WATANE_DEV_CACHE", &cache)
             .output()
             .expect("run watane-dev");
-        assert!(!output.status.success(), "{output:?}");
+        assert_eq!(output.status.code(), Some(3), "{output:?}");
         let result: Value = serde_json::from_slice(&output.stdout).expect("read JSON envelope");
         assert_eq!(result["errors"][0]["code"], "env.preview_start");
         assert!(
@@ -24,6 +24,11 @@ fn s110_preview_refuses_start_and_stop_before_touching_the_cache() {
                 .is_some_and(|message| message.contains("requires Unix process-group controls")),
             "{result}"
         );
+        assert_eq!(
+            result["errors"][0]["fix"],
+            "Run watane-dev serve on Linux or macOS; on Windows, watane-dev test still builds and tests the mod"
+        );
+        assert_eq!(result["next"], result["errors"][0]["fix"]);
         assert!(!cache.exists());
     }
 }

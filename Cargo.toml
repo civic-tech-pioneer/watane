@@ -18,9 +18,10 @@ debug = "line-tables-only"
 opt-level = 1
 
 # Google Rust style (https://google.github.io/styleguide/rustguide.html), application crates.
-# app keeps its own copy of this table without unsafe_code, for its AppKit FFI.
+# app keeps its own copy for AppKit FFI. The Windows platform crate locally allows
+# unsafe_code for its Win32 FFI and inherits every other workspace lint.
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 unstable_features = "deny"
 ambiguous_negative_literals = "warn"
 missing_debug_implementations = "warn"

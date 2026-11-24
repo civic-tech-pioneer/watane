@@ -1,11 +1,12 @@
 //! Win32 handle operations for the log's private files (log/TECHNICAL 4.7).
 
 #![cfg(windows)]
+#![allow(unsafe_code, reason = "Win32 security and file APIs require FFI")]
 
 use std::ffi::c_void;
 use std::fs::{File, OpenOptions};
 use std::io;
-use std::mem::{size_of, zeroed};
+use std::mem::zeroed;
 use std::os::windows::ffi::OsStrExt;
 use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
@@ -183,13 +184,13 @@ pub fn create_dir_all(path: &Path) -> io::Result<()> {
 ///
 /// Verify access control on the handle before allowing the caller to write.
 pub fn create_file(path: &Path) -> io::Result<File> {
-    let path = absolute_wide(path)?;
+    let wide_path = absolute_wide(path)?;
     let descriptor = User::current()?.descriptor(false)?;
     let attributes = private_attributes(&descriptor);
     // SAFETY: The path is nul terminated and attributes borrow the live descriptor.
     let handle = unsafe {
         CreateFileW(
-            path.as_ptr(),
+            wide_path.as_ptr(),
             GENERIC_READ | GENERIC_WRITE,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             &attributes,
@@ -206,13 +207,21 @@ pub fn create_file(path: &Path) -> io::Result<File> {
     }
     // SAFETY: CreateFileW returned a new owned file handle.
     let file = unsafe { File::from_raw_handle(handle) };
-    if !matches!(kind(&file)?, FileKind::Regular { links: 1 }) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "expected a new regular Windows file",
-        ));
+    let verified = kind(&file).and_then(|kind| {
+        if matches!(kind, FileKind::Regular { links: 1 }) {
+            check_owner_only(&file)
+        } else {
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "expected a new regular Windows file",
+            ))
+        }
+    });
+    if let Err(error) = verified {
+        drop(file);
+        let _ = std::fs::remove_file(path);
+        return Err(error);
     }
-    check_owner_only(&file)?;
     Ok(file)
 }
 

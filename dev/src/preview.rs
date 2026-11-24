@@ -27,6 +27,7 @@ fn unavailable() -> Problem {
         Code::EnvPreviewStart,
         "preview is unavailable on Windows because it requires Unix process-group controls",
     )
+    .fix("Run watane-dev serve on Linux or macOS; on Windows, watane-dev test still builds and tests the mod")
 }
 
 #[cfg(windows)]

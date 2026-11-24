@@ -156,7 +156,6 @@ fn write_key(dir: &Path, path: &Path, seed: &[u8; 32]) -> Result<(), Error> {
     ));
     let mut file = winfs::create_file(&tmp).map_err(|e| io_error(&tmp, e))?;
     let result = (|| {
-        check_regular(&tmp, &file)?;
         file.write_all(seed).map_err(|e| io_error(&tmp, e))?;
         file.sync_all().map_err(|e| io_error(&tmp, e))?;
         drop(file);

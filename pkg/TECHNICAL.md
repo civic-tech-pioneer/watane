@@ -947,6 +947,8 @@ world recommendations {
 
 Residual: a fault in `wit-parser` or `wasmparser` (stack overflow is not
 caught by `catch_unwind`; the nesting limit reduces it).
+On Windows the walk re-resolves paths and has no coverage for links swapped
+in by a running program of the same user (spec/TECHNICAL 6, Not protected).
 
 ## 11. Test plan
 
