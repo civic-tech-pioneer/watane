@@ -154,7 +154,7 @@ mod windows {
             }
         }
         fn eve(&self) -> tempfile::TempDir {
-            let home = app_home();
+            let home = crate::support::app_home();
             let eve = dist(home.path());
             // Explicit choices permit loopback sites without a driver exception.
             eve.choose_index(&self.carol.link()).unwrap();
@@ -162,19 +162,6 @@ mod windows {
             eve.follow(&self.dave.link()).unwrap();
             home
         }
-    }
-    /// An empty app home with its marker, so the test can seed Eve's dist before the app starts.
-    fn app_home() -> tempfile::TempDir {
-        let home = tempfile::tempdir().unwrap();
-        drop(
-            watane_host::Host::open(
-                home.path(),
-                watane_host::Mode::Home { app: None },
-                Default::default(),
-            )
-            .unwrap(),
-        );
-        home
     }
     fn start(home: &std::path::Path) -> App {
         let app = App::start(home, &[]);
@@ -335,7 +322,7 @@ mod windows {
             None,
             Some(&reading.info.reference.to_string()),
         );
-        let home = app_home();
+        let home = crate::support::app_home();
         {
             let eve = dist(home.path());
             eve.follow(&alice.link()).unwrap();

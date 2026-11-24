@@ -869,6 +869,11 @@ mod windows {
         click(&app, "#results .install-release");
         assert!(app.wait("consent", super::support::journey::TIMEOUT));
         until(&app, "consent", "document.body.dataset.ready === 'true'");
+        let plan = app.eval("consent", "document.body.textContent");
+        assert!(
+            !plan.as_str().unwrap().contains("Approving also follows"),
+            "{plan}"
+        );
         approve(&app);
         installed(&app, "reading-list");
         check(
@@ -892,6 +897,11 @@ mod windows {
         });
         assert!(app.wait("consent", super::support::journey::TIMEOUT));
         until(&app, "consent", "document.body.dataset.ready === 'true'");
+        let plan = app.eval("consent", "document.body.textContent");
+        assert!(
+            !plan.as_str().unwrap().contains("Approving also follows"),
+            "{plan}"
+        );
         approve(&app);
         assert!(request.join().unwrap().is_success());
         app.eval("main", "window.dispatchEvent(new Event('focus')); null");
