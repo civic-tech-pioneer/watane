@@ -301,6 +301,7 @@ fn segment(s: &str) -> bool {
         && s.len() <= 128
         && s.bytes().next().is_some_and(first)
         && s.bytes().all(|b| first(b) || b == b'.')
+        && !crate::package::windows_device(s)
 }
 // Never recurse through links; use an explicit stack for hostile directory depths.
 fn inspect(dir: &Path, violations: &mut Vec<Violation>) -> Result<Vec<String>, ModError> {

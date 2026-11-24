@@ -533,7 +533,9 @@ ignore case); a path that is also the parent directory of another path.
 Every platform also refuses Windows device names in any segment. Compare
 the part before the first dot without regard to ASCII case. Reserved names
 are `CON`, `PRN`, `AUX`, `NUL`, `COM1` through `COM9`, and
-`LPT1` through `LPT9`.
+`LPT1` through `LPT9`. A package published before this rule (S112) with such a
+segment no longer decodes (`PackageError::Path`); no compatibility is owed
+before 1.0, so its publisher republishes without the name.
 
 ### 6.3 Byte format
 

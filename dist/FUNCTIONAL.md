@@ -313,8 +313,9 @@ its own local host.
   gets no request and `skipped` is 1. (DIST-F-49)
   The same holds for `http://localhost./`, and when a listed base answers
   with a redirect to such an address: that target gets no request and the
-  read fails with `BadUrl` ("local address"); a redirect to a non-local
-  host is followed, at most 5 times. A base of a followed or chosen record
+  read fails with `BadUrl` ("redirects to a local address"); a redirect to a
+  non-local host is followed, at most 5 times. A redirect to a scheme other than
+  http or https (`socks5://127.0.0.1:<p>/`) gets no request from any read. A base of a followed or chosen record
   without explicit permission is read as listed. This covers legacy bases,
   listing bases, search hits and fetched releases. A local base gets no
   request, including the first read of a derived follow or index choice.
