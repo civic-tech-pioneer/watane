@@ -1362,7 +1362,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   cloud, builder codex, reviewer claude; rule 3: last two S40 claude, S113 codex; main line, sketched 2026-11-24 by
   deputy-3: F-MAKE-4 promises a scripted OpenAI stream in a preview from stage D, and dev TECHNICAL question 15 recommends
   option (a); it unblocks agentic-harness S40's run on `serve`. It builds against `scripted-responses` as on `slice/s111`
-  (PR #28, approved) and merges main once that merges.) Outcomes (user-sim with a maker's mod under `watane-dev serve`):
+  (PR #28, approved) and merges main once that merges; Codex task https://chatgpt.com/local/6b05ef35-5ee4-83ed-b7bb-2b58230a9070, dispatched 20:12 UTC.) Outcomes (user-sim with a maker's mod under `watane-dev serve`):
   1. `watane-dev serve` of a mod that uses `https-stream` with `account: "openai"` starts `scripted-responses` and the
      preview routes `api.openai.com` to it: the mod's stream gets the scripted reply, with no real account and no network.
   2. The preview setting is not `test-net`, is never in a release build of the host or app, and a real home refuses it.
@@ -1375,7 +1375,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   (adversary). Protects: *core*.
 - [~] **S115 (guard) the net reach test stops flaking on Windows.** (in flight, cloud, builder claude, reviewer codex;
   a fix that guards `main`: Windows is a required check and `net/tests/it/reach.rs:193` failed on it with `Database
-  already open. Cannot acquire lock.`.) Outcome: the cause is named (net's redb reopen on Windows), fixed in code or test,
+  already open. Cannot acquire lock.`; routine `trig_01Qb1GYPxMdJLutKESYRz4Vw`, fires 20:16 UTC.) Outcome: the cause is named (net's redb reopen on Windows), fixed in code or test,
   and `reach::s11_machines_on_different_networks_connect_through_the_servers_relay` is green in 20 Windows runs in CI.
   Touches: `net/` only. Size: a guard, by reason. Protects: *guard*.
 - [~] **S113 (upkeep) the app says what it is doing and what Alice agrees to.** (in flight, cloud, builder codex,
