@@ -711,7 +711,11 @@ fn outside_reads(dep_info: &str, allowed: &[&Path]) -> Vec<PathBuf> {
         let mut word = String::new();
         let mut paths = Vec::new();
         while let Some(ch) = chars.next() {
-            if ch == '\\'
+            if cfg!(windows) && word.is_empty() && ch == '\\' && chars.peek() == Some(&'\\') {
+                // A verbatim or UNC path starts with two separators, even in dep-info.
+                while chars.next_if_eq(&'\\').is_some() {}
+                word.push_str(r"\\");
+            } else if ch == '\\'
                 && chars
                     .peek()
                     .is_some_and(|c| c.is_whitespace() || *c == '\\' || *c == '#')
@@ -880,6 +884,24 @@ mod tests {
             ]
         );
     }
+    #[cfg(windows)] // The compiler emits Windows verbatim paths in dep-info.
+    #[test]
+    fn s110_dep_info_preserves_the_verbatim_path_prefix() {
+        let root = tempfile::tempdir().unwrap();
+        let copy = root.path().join("copy");
+        fs::create_dir(&copy).unwrap();
+        let inside = copy.join("inside.wit");
+        let outside = root.path().join("outside.wit");
+        for path in [&inside, &outside] {
+            fs::write(path, "").unwrap();
+        }
+        let inside = inside.canonicalize().unwrap();
+        let outside = outside.canonicalize().unwrap();
+        let dep_path = |path: &Path| path.to_str().unwrap().replace(' ', r"\ ");
+        let dep_info = format!("module.wasm: {} {}", dep_path(&inside), dep_path(&outside));
+        assert_eq!(outside_reads(&dep_info, &[&copy]), vec![outside]);
+    }
+
     #[test]
     fn ac6_cargo_config_quotes_paths_and_restricts_environment() {
         let env = Env {
