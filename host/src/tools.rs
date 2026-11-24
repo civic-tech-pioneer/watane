@@ -1,6 +1,7 @@
 //! Tools and MCP (TECHNICAL 10): toolsets, tokens and the MCP endpoint that
 //! exposes mod functions to agents.
 
+use crate::agent::tools::{AgentFailure, AgentRun};
 use crate::{Caller, Host, HostError, LocalName, api, home};
 use axum::Json;
 use axum::body::{Body, to_bytes};
@@ -96,7 +97,13 @@ impl Tools {
             Err(e) => return Err(e.into()),
         };
         for (name, entries) in &sets {
-            check_toolset(name, entries)?;
+            // A home saved before S103 may hold a toolset `agent`: it opens, is listed and can be
+            // removed (10.1). `set_toolset` still refuses the name.
+            if name.0 == "agent" {
+                check_entries(entries)?;
+            } else {
+                check_toolset(name, entries)?;
+            }
         }
         Ok(Self {
             sets,
@@ -119,12 +126,15 @@ fn entry_parts(entry: &str) -> Option<(LocalName, &str, Option<&str>)> {
     Some((local, interface, function))
 }
 fn check_toolset(name: &ToolsetName, entries: &[String]) -> Result<(), HostError> {
-    if name.0 == "preview" {
+    if name.0 == "preview" || name.0 == "agent" {
         return Err(HostError::BadName {
             value: name.to_string(),
-            rule: "preview is reserved",
+            rule: "preview and agent are reserved",
         });
     }
+    check_entries(entries)
+}
+fn check_entries(entries: &[String]) -> Result<(), HostError> {
     for entry in entries {
         if entry_parts(entry).is_none() {
             return Err(HostError::BadToolsetEntry {
@@ -139,14 +149,39 @@ fn tool_name(local: &LocalName, interface: &str, function: &str) -> Option<Strin
     let name = format!("{local}_{interface}_{function}");
     (name.len() <= 64).then_some(name)
 }
-struct Tool {
-    local: LocalName,
-    function: String,
+pub(crate) struct Tool {
+    pub(crate) local: LocalName,
+    /// `<interface>.<function>`, as `Host::call` takes it.
+    pub(crate) function: String,
     info: FunctionInfo,
-    schema: Value,
+    pub(crate) schema: Value,
+    /// The install generation of the tool's mod when the tool was resolved (19.5, Authority at
+    /// the run).
+    pub(crate) install: Option<u64>,
+}
+/// The annotations of a tool's WIT doc comment (19.5): a line made only of `@parallel` and
+/// `@idempotent`, in either order. `(parallel, idempotent)`.
+pub(crate) fn annotations(docs: Option<&str>) -> (bool, bool) {
+    let (mut parallel, mut idempotent) = (false, false);
+    for line in docs.unwrap_or_default().lines() {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        if words.is_empty()
+            || !words
+                .iter()
+                .all(|w| matches!(*w, "@parallel" | "@idempotent"))
+        {
+            continue;
+        }
+        parallel |= words.contains(&"@parallel");
+        idempotent |= words.contains(&"@idempotent");
+    }
+    (parallel, idempotent)
 }
 impl Tool {
-    fn description(&self) -> String {
+    pub(crate) fn annotations(&self) -> (bool, bool) {
+        annotations(self.info.docs.as_deref())
+    }
+    pub(crate) fn description(&self) -> String {
         self.info.docs.clone().unwrap_or_else(|| {
             format!(
                 "{}: func({}){}",
@@ -233,35 +268,27 @@ impl Host {
             .tools
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        if !(toolset.0 == "preview" && self.is_preview()) && !tools.sets.contains_key(toolset) {
+        // `agent` is the route of handle tokens (10.2): a toolset of that name, kept from before
+        // S103, has none.
+        if toolset.0 == "agent"
+            || !(toolset.0 == "preview" && self.is_preview()) && !tools.sets.contains_key(toolset)
+        {
             return Err(HostError::NoSuchToolset(toolset.to_string()));
         }
-        let mut bytes = [0; 32];
-        getrandom::fill(&mut bytes).map_err(|e| HostError::Internal(e.to_string()))?;
-        // RFC 4648 base64url without padding: 256 random bits give 43 characters.
-        let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-        let mut text = String::from("wt_");
-        let mut bits = 0u32;
-        let mut count = 0;
-        for b in bytes {
-            bits = (bits << 8) | u32::from(b);
-            count += 8;
-            while count >= 6 {
-                count -= 6;
-                text.push(alphabet[((bits >> count) & 63) as usize] as char);
-            }
-        }
-        if count > 0 {
-            text.push(alphabet[((bits << (6 - count)) & 63) as usize] as char);
-        }
-        tools.tokens.insert(
-            *blake3::hash(text.as_bytes()).as_bytes(),
-            Binding {
-                toolset: toolset.clone(),
-                handle: handle.clone(),
-            },
-        );
-        Ok(Token(text))
+        mint(&mut tools, toolset, handle)
+    }
+    /// The token of an agent handle (10.2, 19.5): bound to the toolset name `agent`, so that it
+    /// is accepted on `/mcp/agent` only, and to the handle's caller name.
+    pub(crate) fn issue_agent_token(&self, name: &str) -> Result<Token, HostError> {
+        let mut tools = self
+            .tools
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
+        mint(
+            &mut tools,
+            &ToolsetName::parse("agent")?,
+            &Handle::parse(name)?,
+        )
     }
     pub fn end_token(&self, id: &TokenId) -> bool {
         let mut tools = self
@@ -275,7 +302,74 @@ impl Host {
             .copied();
         key.is_some_and(|key| tools.tokens.remove(&key).is_some())
     }
+    /// The tools of an agent handle (19.5): the union of its toolsets as 10.1 resolves them now,
+    /// each only if its name is in the functions stored with the origin client's consent for
+    /// that toolset. A manager's function is in no list unless the consent named it.
+    pub(crate) fn handle_tools(&self, toolsets: &[String], origin: &str) -> BTreeMap<String, Tool> {
+        let catalog = self
+            .catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
+        self.handle_tools_in(&catalog, toolsets, origin)
+    }
+    /// `handle_tools` under one read of the catalog the caller holds (19.5, Authority at the run).
+    pub(crate) fn handle_tools_in(
+        &self,
+        catalog: &crate::catalog::Catalog,
+        toolsets: &[String],
+        origin: &str,
+    ) -> BTreeMap<String, Tool> {
+        let stored: Vec<(String, Vec<String>)> = catalog
+            .mods
+            .iter()
+            .find(|m| m.identity == origin)
+            .map(|m| {
+                m.consents
+                    .iter()
+                    .filter_map(|c| match c {
+                        crate::Consent::Toolset { toolset, functions } => {
+                            Some((toolset.clone(), functions.clone()))
+                        }
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut tools = BTreeMap::new();
+        for toolset in toolsets {
+            let (Ok(name), Some((_, functions))) = (
+                ToolsetName::parse(toolset),
+                stored.iter().find(|(t, _)| t == toolset),
+            ) else {
+                continue;
+            };
+            for (tool, found) in self.resolve_tools_in(catalog, &name) {
+                if functions.contains(&tool) {
+                    tools.entry(tool).or_insert(found);
+                }
+            }
+        }
+        tools
+    }
+    /// The functions of a toolset as 10.1 resolves them now, sorted (the names of a consent request).
+    pub(crate) fn toolset_functions(&self, toolset: &str) -> Vec<String> {
+        ToolsetName::parse(toolset)
+            .map(|name| self.resolve_tools(&name).into_keys().collect())
+            .unwrap_or_default()
+    }
     fn resolve_tools(&self, name: &ToolsetName) -> BTreeMap<String, Tool> {
+        let catalog = self
+            .catalog
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it");
+        self.resolve_tools_in(&catalog, name)
+    }
+    /// The catalog's lock comes before the toolsets' (`handle_tools_in` holds the first).
+    fn resolve_tools_in(
+        &self,
+        catalog: &crate::catalog::Catalog,
+        name: &ToolsetName,
+    ) -> BTreeMap<String, Tool> {
         let entries = self
             .tools
             .lock()
@@ -284,10 +378,6 @@ impl Host {
             .get(name)
             .cloned()
             .unwrap_or_default();
-        let catalog = self
-            .catalog
-            .lock()
-            .expect("lock poisoned: another thread panicked while holding it");
         let mut tools = BTreeMap::new();
         for m in catalog
             .mods
@@ -320,12 +410,42 @@ impl Host {
                         function,
                         info,
                         schema,
+                        install: catalog.install_of(&m.local),
                     },
                 );
             }
         }
         tools
     }
+}
+/// Makes a token of 32 random bytes and keeps its hash (10.2).
+fn mint(tools: &mut Tools, toolset: &ToolsetName, handle: &Handle) -> Result<Token, HostError> {
+    let mut bytes = [0; 32];
+    getrandom::fill(&mut bytes).map_err(|e| HostError::Internal(e.to_string()))?;
+    // RFC 4648 base64url without padding: 256 random bits give 43 characters.
+    let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut text = String::from("wt_");
+    let mut bits = 0u32;
+    let mut count = 0;
+    for b in bytes {
+        bits = (bits << 8) | u32::from(b);
+        count += 8;
+        while count >= 6 {
+            count -= 6;
+            text.push(alphabet[((bits >> count) & 63) as usize] as char);
+        }
+    }
+    if count > 0 {
+        text.push(alphabet[((bits << (6 - count)) & 63) as usize] as char);
+    }
+    tools.tokens.insert(
+        *blake3::hash(text.as_bytes()).as_bytes(),
+        Binding {
+            toolset: toolset.clone(),
+            handle: handle.clone(),
+        },
+    );
+    Ok(Token(text))
 }
 fn rpc_error(id: Value, code: i32, message: impl ToString) -> Value {
     json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message.to_string()}})
@@ -396,6 +516,23 @@ pub(crate) async fn respond(host: &Arc<Host>, request: Request<Body>) -> Respons
     if request.uri().path() != format!("/mcp/{}", binding.toolset) {
         return api::error(403, "forbidden", "token belongs to another toolset");
     }
+    // A handle token (19.5) lists the tools of its handle, as consented; a handle that closed or
+    // is not ready has no live token.
+    let toolset_tools = || -> Option<BTreeMap<String, Tool>> {
+        if binding.toolset.to_string() == "agent" {
+            host.agent_tools_of(&binding.handle.to_string())
+        } else {
+            Some(host.resolve_tools(&binding.toolset))
+        }
+    };
+    if binding.toolset.to_string() == "agent" && toolset_tools().is_none() {
+        let mut r = api::error(401, "forbidden", "a live bearer token is required");
+        r.headers_mut().insert(
+            header::WWW_AUTHENTICATE,
+            header::HeaderValue::from_static("Bearer"),
+        );
+        return r;
+    }
     let types = request.headers().get_all(header::CONTENT_TYPE);
     if types.iter().count() != 1
         || !types
@@ -441,13 +578,13 @@ pub(crate) async fn respond(host: &Arc<Host>, request: Request<Body>) -> Respons
         }
         "ping" => json!({}),
         "tools/list" => {
-            json!({"tools":host.resolve_tools(&binding.toolset).into_iter().map(|(name,t)|json!({"name":name,"description":t.description(),"inputSchema":t.schema})).collect::<Vec<_>>()})
+            json!({"tools":toolset_tools().unwrap_or_default().into_iter().map(|(name,t)|json!({"name":name,"description":t.description(),"inputSchema":t.schema})).collect::<Vec<_>>()})
         }
         "tools/call" => {
             let Some(name) = params["name"].as_str() else {
                 return rpc_response(rpc_error(id, -32602, "tool name is required"));
             };
-            let Some(tool) = host.resolve_tools(&binding.toolset).remove(name) else {
+            let Some(tool) = toolset_tools().and_then(|mut t| t.remove(name)) else {
                 return rpc_response(rpc_error(id, -32602, format!("unknown tool {name}")));
             };
             let is_result = tool
@@ -455,17 +592,39 @@ pub(crate) async fn respond(host: &Arc<Host>, request: Request<Body>) -> Respons
                 .result
                 .as_ref()
                 .is_some_and(|t| t.starts_with("result<"));
-            match host
-                .call_async(
+            let is_agent = binding.toolset.to_string() == "agent";
+            let outcome = if is_agent {
+                // A handle's tool runs as its origin client, and the host decides again whether
+                // it may run just before it starts (19.5, Authority at the run).
+                let run = AgentRun {
+                    handle: binding.handle.to_string(),
+                    tool: name.to_owned(),
+                    install: tool.install,
+                };
+                host.call_agent_async(
+                    run,
+                    binding.handle,
+                    tool.local,
+                    tool.function,
+                    params.get("arguments").cloned().unwrap_or(json!({})),
+                )
+                .await
+            } else {
+                host.call_async(
                     Caller::Agent(binding.handle),
                     tool.local,
                     tool.function,
                     params.get("arguments").cloned().unwrap_or(json!({})),
                 )
                 .await
-            {
+                .map_err(AgentFailure::Call)
+            };
+            match outcome {
+                Err(AgentFailure::Denied(_)) => {
+                    return rpc_response(rpc_error(id, -32602, format!("unknown tool {name}")));
+                }
                 Ok(value) => content(value, is_result),
-                Err(e) => {
+                Err(AgentFailure::Call(e)) => {
                     let code = serde_json::to_value(&e).expect("CallError serializes")["code"]
                         .as_str()
                         .expect("a CallError serializes its code as a string")
@@ -482,6 +641,23 @@ pub(crate) async fn respond(host: &Arc<Host>, request: Request<Body>) -> Respons
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// 19.5: a doc line made only of `@parallel` and `@idempotent` sets them; prose that names
+    /// one does not.
+    #[test]
+    fn ac2_annotations_are_whole_doc_lines() {
+        assert_eq!(annotations(None), (false, false));
+        assert_eq!(annotations(Some("Says hello.")), (false, false));
+        assert_eq!(annotations(Some("Says hello.\n@parallel")), (true, false));
+        assert_eq!(annotations(Some("@idempotent\nText.")), (false, true));
+        assert_eq!(
+            annotations(Some("@parallel\n  @idempotent  ")),
+            (true, true)
+        );
+        assert_eq!(annotations(Some("@idempotent @parallel")), (true, true));
+        assert_eq!(annotations(Some("Is it @parallel?")), (false, false));
+        assert_eq!(annotations(Some("@parallelism")), (false, false));
+        assert_eq!(annotations(Some("@parallel because")), (false, false));
+    }
     #[test]
     fn ac7_tool_name_limit_is_in_bytes() {
         let local = LocalName::parse("counter").unwrap();

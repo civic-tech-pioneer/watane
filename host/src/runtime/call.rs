@@ -3,6 +3,7 @@
 
 use super::{json, limits};
 use crate::agent::Effect;
+use crate::agent::tools::{AgentFailure, AgentRun, Denied};
 use crate::{CallCode, CallError, Caller, EventRecord, Host, Limit, LinkKind, LocalName, Outcome};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -40,6 +41,11 @@ pub(crate) struct Chain {
     timer: Option<(String, u64)>,
     /// The top-level call failed because its own mod is disabled, removed or updated.
     unavailable: AtomicBool,
+    /// The top-level call is an agent's tool: its authority is decided at the run (19.5), and the
+    /// chain runs on borrowed authority (19.5, Borrowed authority).
+    pub(crate) agent: Option<AgentRun>,
+    /// Why the host did not start that tool.
+    denied: Mutex<Option<Denied>>,
 }
 #[derive(Clone)]
 pub(crate) struct Invocation {
@@ -97,6 +103,8 @@ pub(crate) struct Start {
     pub hop: u8,
     pub defers: bool,
     pub timer: Option<(String, u64)>,
+    /// An agent's tool (19.5, Authority at the run).
+    pub agent: Option<AgentRun>,
 }
 impl Start {
     /// A call of the host's own: an item call, a notification or a firing.
@@ -121,6 +129,7 @@ impl Start {
             hop: 0,
             defers: false,
             timer: None,
+            agent: None,
         }
     }
 }
@@ -130,6 +139,8 @@ pub(crate) struct Done {
     /// The call's own mod was disabled, removed or updated (a firing keeps its row, 19.6).
     pub unavailable: bool,
     pub outcome: Option<Outcome>,
+    /// The host did not start an agent's tool (19.5).
+    pub denied: Option<Denied>,
 }
 const DEFERRED: &str = "the consumer deferred the batch";
 const IGNORED: &str = "the timer was cancelled or replaced while its firing waited";
@@ -214,6 +225,7 @@ pub(crate) fn run_connection(
             hop: 0,
             defers: false,
             timer: None,
+            agent: None,
         },
     );
     done.result.map(|value| {
@@ -221,6 +233,45 @@ pub(crate) fn run_connection(
         outcome.value = value;
         outcome
     })
+}
+
+/// An agent's tool as a top-level call (19.5): the handle's origin client is its origin client,
+/// and the host decides just before it starts whether it may run (Authority at the run).
+pub(crate) fn run_agent(
+    host: &Host,
+    run: &AgentRun,
+    handle: crate::Handle,
+    local: &LocalName,
+    function: &str,
+    args: Value,
+) -> Result<Value, AgentFailure> {
+    let done = run_start(
+        host,
+        Start {
+            who: Who::Caller(Caller::Agent(handle)),
+            local: local.clone(),
+            function: function.to_owned(),
+            args: Args::Json(args),
+            publish: true,
+            subscription: false,
+            internal: false,
+            origin: None,
+            origin_gen: None,
+            connection: None,
+            hop: 0,
+            defers: false,
+            timer: None,
+            agent: Some(run.clone()),
+        },
+    );
+    match (done.denied, done.result) {
+        (Some(d), _) => Err(AgentFailure::Denied(d)),
+        (None, Ok(v)) => Ok(v),
+        // The tool's mod was removed, disabled or updated before the call started: the tool is
+        // not in the handle's tools now (19.5, Authority at the run).
+        (None, Err(_)) if done.unavailable => Err(AgentFailure::Denied(Denied::UnknownTool)),
+        (None, Err(e)) => Err(AgentFailure::Call(e)),
+    }
 }
 
 fn identity_of(snapshot: &crate::catalog::Catalog, local: &LocalName) -> String {
@@ -297,6 +348,8 @@ pub(crate) fn test_chain(host: &Host, effects: Vec<Effect>) -> Arc<Chain> {
         deferred: AtomicBool::new(false),
         timer: None,
         unavailable: AtomicBool::new(false),
+        agent: None,
+        denied: Mutex::new(None),
     });
     register(host, &chain);
     chain
@@ -308,6 +361,7 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
         deferred: false,
         unavailable: false,
         outcome: None,
+        denied: None,
     };
     let deadline = match deadline(host) {
         Ok(d) => d,
@@ -336,6 +390,7 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
         hop,
         defers,
         timer,
+        agent,
     } = start;
     let origin = origin.unwrap_or_else(|| match &who {
         Who::Caller(Caller::Mod(m)) if !subscription => identity_of(&snapshot, m),
@@ -376,6 +431,8 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
         deferred: AtomicBool::new(false),
         timer,
         unavailable: AtomicBool::new(false),
+        agent,
+        denied: Mutex::new(None),
     });
     register(host, &chain);
     let invocation = Invocation {
@@ -430,6 +487,10 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
     if publish {
         host.events.finish(host, &chain);
     }
+    #[cfg(feature = "test-streams")]
+    if matches!(who, Who::Caller(Caller::Agent(_))) {
+        host.agent_gate.finish();
+    }
     match result {
         Ok((value, _)) => Done {
             outcome: Some(Outcome {
@@ -441,12 +502,17 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
             result: Ok(value),
             deferred: false,
             unavailable: false,
+            denied: None,
         },
         Err(error) => Done {
             result: Err(error),
             deferred,
             unavailable: chain.unavailable.load(Ordering::Acquire),
             outcome: None,
+            denied: *chain
+                .denied
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it"),
         },
     }
 }
@@ -784,6 +850,10 @@ impl Invocation {
             Args::Json(args) => json::arguments(&function.ty, args)?,
             Args::Vals(values) => values,
         };
+        #[cfg(feature = "test-streams")]
+        if self.depth == 0 && matches!(caller, Who::Caller(Caller::Agent(_))) {
+            host.agent_gate.pass();
+        }
         let lock = Arc::clone(
             host.call_locks
                 .lock()
@@ -835,16 +905,29 @@ impl Invocation {
                     }
                 }
             }
-            // The identity and the install generation (a reinstall is another install).
-            let still = current.mods.iter().find(|o| {
-                o.identity == wanted
-                    && o.enabled
-                    && o.error.is_none()
-                    && wanted_gen.is_none_or(|g| current.install_of(&o.local) == Some(g))
-            });
-            let who = still.unwrap_or(active);
-            origin = who.identity.clone();
-            origin_gen = current.install_of(&who.local);
+            if let (0, Some(run)) = (self.depth, &chain.agent) {
+                // An agent's tool runs as the handle's origin client, or not at all: never as
+                // the tool's mod (19, Terms; 19.5, Authority at the run).
+                (origin, origin_gen) =
+                    host.agent_authority(&current, run, &self.local, name)
+                        .map_err(|denied| {
+                            *chain.denied.lock().expect(
+                                "lock poisoned: another thread panicked while holding it",
+                            ) = Some(denied);
+                            CallError::new(CallCode::NotGranted, "the agent's tool may not run now")
+                        })?;
+            } else {
+                // The identity and the install generation (a reinstall is another install).
+                let still = current.mods.iter().find(|o| {
+                    o.identity == wanted
+                        && o.enabled
+                        && o.error.is_none()
+                        && wanted_gen.is_none_or(|g| current.install_of(&o.local) == Some(g))
+                });
+                let who = still.unwrap_or(active);
+                origin = who.identity.clone();
+                origin_gen = current.install_of(&who.local);
+            }
             if let Who::Caller(Caller::Mod(other)) = caller {
                 // Selection can precede a wait for this mod's lock. Check
                 // authority again before invoking the selected export.
@@ -1256,6 +1339,8 @@ fn process(delivery: &Delivery) {
                 deferred: AtomicBool::new(false),
                 timer: None,
                 unavailable: AtomicBool::new(false),
+                agent: None,
+                denied: Mutex::new(None),
             });
             register(host, &subscriber);
             let invocation = Invocation {

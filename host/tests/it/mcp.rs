@@ -368,6 +368,11 @@ fn ac7_toolset_grammar_and_persistence() {
             .code(),
         "bad_name"
     );
+    // `agent` is the route of handle tokens (10.1, 19.5): reserved as `preview` is.
+    assert_eq!(
+        host.set_toolset(&name("agent"), vec![]).unwrap_err().code(),
+        "bad_name"
+    );
     for bad in [
         "",
         "Counter",
@@ -412,4 +417,73 @@ fn ac7_toolset_grammar_and_persistence() {
     reopened
         .issue_token(&name("t"), &watane_host::Handle::parse("alice").unwrap())
         .unwrap();
+}
+#[tokio::test]
+async fn s103_a_toolset_token_is_refused_on_mcp_agent_and_an_unknown_one_is_401() {
+    let (_home, host) = setup();
+    host.set_toolset(&name("t"), vec!["counter:api".into()])
+        .unwrap();
+    let token = token(&host, "t");
+    let (served, client, _) = server(&host).await;
+    let url = format!("http://localhost:{}/mcp/agent", served.port);
+    let post = |bearer: String| {
+        let (client, url) = (client.clone(), url.clone());
+        async move {
+            client
+                .post(url)
+                .bearer_auth(bearer)
+                .json(&json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))
+                .send()
+                .await
+                .unwrap()
+                .status()
+                .as_u16()
+        }
+    };
+    assert_eq!(post(token.as_str().to_owned()).await, 403);
+    assert_eq!(post("wt_nothing".into()).await, 401);
+    served.shutdown().await;
+}
+/// F1.3 (10.1): a `toolsets.json` of the old format, with a toolset `agent`, opens; the toolset is
+/// listed and can be removed, is `bad_name` to set, and no token for it reaches `/mcp/agent`.
+#[tokio::test]
+async fn s103_r1_ac3_a_legacy_agent_toolset_opens_is_listed_and_removed_and_has_no_token() {
+    let home = tempfile::tempdir().unwrap();
+    std::fs::write(
+        home.path().join("home.json"),
+        r#"{"watane_home":1,"mode":"preview"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        home.path().join("toolsets.json"),
+        r#"{"agent":["counter:api"]}"#,
+    )
+    .unwrap();
+    let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
+    assert_eq!(
+        serde_json::to_value(host.toolsets()).unwrap(),
+        json!({"agent":["counter:api"]})
+    );
+    assert_eq!(
+        host.set_toolset(&name("agent"), vec![]).unwrap_err().code(),
+        "bad_name"
+    );
+    // No toolset token names it: the only tokens bound to `agent` are handle tokens (10.2).
+    assert_eq!(
+        host.issue_token(
+            &name("agent"),
+            &watane_host::Handle::parse("alice").unwrap()
+        )
+        .unwrap_err()
+        .code(),
+        "no_toolset"
+    );
+    host.remove_toolset(&name("agent")).unwrap();
+    assert_eq!(serde_json::to_value(host.toolsets()).unwrap(), json!({}));
+    assert_eq!(
+        std::fs::read_to_string(home.path().join("toolsets.json"))
+            .unwrap()
+            .trim(),
+        "{}"
+    );
 }

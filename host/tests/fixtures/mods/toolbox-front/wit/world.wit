@@ -1,0 +1,7 @@
+package mods:toolbox-front@0.1.0;
+interface api {
+  open: func(toolsets: list<string>) -> result<string, string>;
+  describe: func(handle: string) -> result<list<string>, string>;
+  call: func(handle: string, key: string, tool: string, args: string) -> result<string, string>;
+}
+world toolbox-front { import watane:host/caller@0.1.0; import mods:toolbox/api@0.1.0; export api; }

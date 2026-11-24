@@ -191,4 +191,9 @@ impl Listener {
     pub fn count(&self) -> usize {
         self.count.load(Ordering::SeqCst)
     }
+
+    /// The connection count itself, to read after the listener is dropped.
+    pub fn counter(&self) -> Arc<AtomicUsize> {
+        Arc::clone(&self.count)
+    }
 }

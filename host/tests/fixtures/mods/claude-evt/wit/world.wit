@@ -1,0 +1,13 @@
+package mods:claude-evt@0.1.0;
+interface api { arm: func(launch: string, ms: u64); started: func() -> list<string>; items: func(s: string) -> list<string>; ended: func() -> list<string>; }
+world claude-evt {
+  import watane:host/state@0.1.0;
+  import watane:host/streams@0.1.0;
+  import watane:host/claude-types@0.1.0;
+  import watane:host/claude-code@0.1.0;
+  import watane:host/timers@0.1.0;
+  export mods:shelf/events@0.1.0;
+  export api;
+  export watane:host/stream-sink@0.1.0;
+  export watane:host/timer-sink@0.1.0;
+}

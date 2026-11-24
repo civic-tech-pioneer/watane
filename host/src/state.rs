@@ -18,6 +18,9 @@ const TIMERS: TableDefinition<&str, &str> = TableDefinition::new("timers");
 const HOST: TableDefinition<&str, u64> = TableDefinition::new("host");
 /// A scratch workspace id -> the identity of its owner (TECHNICAL 7, 19.3).
 const SCRATCH: TableDefinition<&str, &str> = TableDefinition::new("scratch");
+/// A Claude Code session id -> the identity of the origin client whose run reported it
+/// (TECHNICAL 7, 19.3, Sessions are the origin client's).
+const SESSIONS: TableDefinition<&str, &str> = TableDefinition::new("sessions");
 
 /// The writer's counters since open (TECHNICAL 19.9, `Host::test_stats`).
 #[derive(Debug, Default)]
@@ -187,6 +190,69 @@ impl State {
         }
         self.commit_host(txn).map_err(CallError::internal)?;
         Ok(ids)
+    }
+    /// The identity that owns a session id (19.3, Sessions are the origin client's).
+    pub fn session_owner(&self, id: &str) -> Result<Option<String>, CallError> {
+        let Some(db) = self.database(false)? else {
+            return Ok(None);
+        };
+        let read = db.begin_read().map_err(CallError::internal)?;
+        let table = match read.open_table(SESSIONS) {
+            Ok(t) => t,
+            Err(TableError::TableDoesNotExist(_)) => return Ok(None),
+            Err(e) => return Err(CallError::internal(e)),
+        };
+        Ok(table
+            .get(id)
+            .map_err(CallError::internal)?
+            .map(|v| v.value().to_owned()))
+    }
+    /// Records that `owner`'s run reported session `id`. `Ok(false)` and no write when another
+    /// identity holds the id.
+    pub fn session_add(&self, id: &str, owner: &str) -> Result<bool, CallError> {
+        let db = self.database(true)?.expect("created database");
+        let txn = db.begin_write().map_err(CallError::internal)?;
+        let free = {
+            let mut table = txn.open_table(SESSIONS).map_err(CallError::internal)?;
+            let held = table
+                .get(id)
+                .map_err(CallError::internal)?
+                .map(|v| v.value().to_owned());
+            match held {
+                Some(other) if other != owner => false,
+                Some(_) => true,
+                None => {
+                    table.insert(id, owner).map_err(CallError::internal)?;
+                    true
+                }
+            }
+        };
+        if free {
+            self.commit_host(txn).map_err(CallError::internal)?;
+        }
+        Ok(free)
+    }
+    /// Deletes the session rows of `identity` (4.4, remove).
+    pub fn sessions_removed(&self, identity: &str) -> Result<(), CallError> {
+        let Some(db) = self.database(false)? else {
+            return Ok(());
+        };
+        let txn = db.begin_write().map_err(CallError::internal)?;
+        {
+            let mut table = txn.open_table(SESSIONS).map_err(CallError::internal)?;
+            let mut ids = vec![];
+            for row in table.iter().map_err(CallError::internal)? {
+                let (key, value) = row.map_err(CallError::internal)?;
+                if value.value() == identity {
+                    ids.push(key.value().to_owned());
+                }
+            }
+            for id in &ids {
+                table.remove(id.as_str()).map_err(CallError::internal)?;
+            }
+        }
+        self.commit_host(txn).map_err(CallError::internal)?;
+        Ok(())
     }
     /// The ids of the live timers of one mod (19.6).
     pub fn timer_ids(&self, identity: &str) -> Result<BTreeSet<String>, CallError> {

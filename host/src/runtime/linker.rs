@@ -300,7 +300,7 @@ fn link_agent(
             interface.func_new(function, move |ctx, ty, values, results| {
                 let invocation = ctx.data().invocation.clone();
                 let value = match short.as_str() {
-                    "streams" | "timers" | "claude-session" => {
+                    "streams" | "timers" | "claude-session" | "agent-tools" => {
                         let who = ctx.data().who.clone();
                         crate::agent::call(&invocation, &who, &short, &function_name, values)?
                     }
@@ -324,7 +324,7 @@ fn link_agent(
                         crate::agent::call(&invocation, &who, &short, &function_name, values)?
                     }
                     other => {
-                        // Not built yet (A3, A4): a clear error at the call.
+                        // Not built yet (A4): a clear error at the call.
                         return Err(CallError::internal(format!(
                             "watane:host/{other}.{function_name} is not available in this host yet"
                         ))

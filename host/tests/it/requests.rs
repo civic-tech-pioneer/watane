@@ -349,8 +349,8 @@ fn ac9_s56_identity_comes_from_the_transport() {
         .unwrap(),
         json!("local/relay-front")
     );
-    // An agent: `agent:<handle-name>`. The agent part of S56 that needs a handle of an owner
-    // (`agent:h1` through the kernel) waits for A3.
+    // An agent: `agent:<handle-name>`. A handle's own name through a job is in
+    // `agent_tools.rs` (S103).
     assert_eq!(
         call_as(
             &env.host,

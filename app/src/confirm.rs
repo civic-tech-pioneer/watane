@@ -14,6 +14,7 @@ pub(crate) struct HostConfirm {
     pub core: OnceLock<Weak<crate::core::Core>>,
     pub main: OnceLock<Arc<crate::main_mod::MainMod>>,
     pub notices: Arc<ManagerNotices>,
+    pub accounts: Arc<crate::accounts::Accounts>,
 }
 
 #[derive(Default)]
@@ -130,6 +131,75 @@ fn asker(m: &watane_host::InstalledMod, parties: &Parties) -> consent::Asker {
             .map(|p| words::party(&p.to_string(), parties)),
     }
 }
+/// A provider as section 4 writes it, from the `via` of a consent or a request.
+fn provider_text(
+    host: &watane_host::Host,
+    via: &watane_host::LocalName,
+    parties: &Parties,
+) -> String {
+    host.get(via).map_or_else(
+        || via.to_string(),
+        |m| {
+            words::provider(
+                &watane_host::watane_pkg::Provider {
+                    slug: m.slug,
+                    publisher: m.publisher,
+                },
+                parties,
+            )
+        },
+    )
+}
+/// The consent view of a host's question (19.2); `None` when its origin client is gone.
+fn agent_view(
+    host: &watane_host::Host,
+    request: &watane_host::ConsentRequest,
+    parties: &Parties,
+) -> Option<consent::Request> {
+    let origin = asker(&host.get(&request.origin)?, parties);
+    let what = match &request.consent {
+        watane_host::Consent::Workspace { folder, .. } => consent::AgentWhat::Workspace {
+            folder: folder.clone(),
+            profile: request.profile.clone(),
+            provider: provider_text(host, &request.via, parties),
+        },
+        watane_host::Consent::Account { .. } => consent::AgentWhat::Account,
+        watane_host::Consent::Toolset { toolset, .. } => consent::AgentWhat::Toolset {
+            name: toolset.clone(),
+            functions: request.functions.clone(),
+        },
+    };
+    Some(consent::Request::Agent { what, origin })
+}
+/// The provider a plan entry's call reaches, from the plan first and else the installed mod
+/// (the host resolves identities), and whether it holds a Claude Code grant (19.2, Plan line).
+fn resolve_provider(
+    request: &InstallRequest,
+    host: Option<&watane_host::Host>,
+    local: &watane_host::LocalName,
+) -> Option<(watane_host::watane_pkg::Provider, bool)> {
+    use watane_host::watane_pkg::{Grant, Provider};
+    let claude = |g: &Grant| matches!(g, Grant::ClaudeCode | Grant::ClaudeCodeShell);
+    if let Some(p) = request.entries.iter().find(|p| &p.local == local) {
+        return Some((
+            Provider {
+                slug: p.slug.clone(),
+                publisher: p.publisher.clone(),
+            },
+            p.grants.iter().any(claude),
+        ));
+    }
+    host.and_then(|h| h.get(local)).map(|m| {
+        let held = m.grants.iter().any(|g| g.granted && claude(&g.grant));
+        (
+            Provider {
+                slug: m.slug,
+                publisher: m.publisher,
+            },
+            held,
+        )
+    })
+}
 fn request_view(
     request: &InstallRequest,
     parties: &Parties,
@@ -196,25 +266,8 @@ fn request_view(
                     .providers
                     .iter()
                     .map(|local| {
-                        // The host resolves provider identities. Look in the plan first;
-                        // an already-installed provider is also named by its grant.
-                        let provider =
-                            request.entries.iter().find(|p| &p.local == local).map(|p| {
-                                watane_host::watane_pkg::Provider {
-                                    slug: p.slug.clone(),
-                                    publisher: p.publisher.clone(),
-                                }
-                            });
-                        let provider = provider.or_else(|| {
-                            host.and_then(|h| h.get(local)).map(|m| {
-                                watane_host::watane_pkg::Provider {
-                                    slug: m.slug,
-                                    publisher: m.publisher,
-                                }
-                            })
-                        });
-                        provider
-                            .map(|p| {
+                        resolve_provider(request, host, local)
+                            .map(|(p, _)| {
                                 // A uses line names the picked target and the pinned provider.
                                 let pinned = e.binds.iter().find(|b| {
                                     b.to == format!(
@@ -235,6 +288,13 @@ fn request_view(
                             })
                             .unwrap_or_else(|| local.to_string())
                     })
+                    .collect(),
+                agents_via: e
+                    .providers
+                    .iter()
+                    .filter_map(|local| resolve_provider(request, host, local))
+                    .filter(|(_, claude)| *claude)
+                    .map(|(p, _)| words::provider(&p, parties))
                     .collect(),
             })
             .collect(),
@@ -267,13 +327,18 @@ fn host_answer(answer: consent::Answer, request: &InstallRequest) -> Answer {
 }
 // Host cancels a manager's request when it loses management authority. Dropping
 // its future must also cancel our spawned work and remove any queued consent.
-struct ManageTask(tauri::async_runtime::JoinHandle<Result<(), crate::CmdError>>);
-impl Drop for ManageTask {
+struct ManageTask<T = Result<(), crate::CmdError>>(tauri::async_runtime::JoinHandle<T>);
+impl<T> Drop for ManageTask<T> {
     fn drop(&mut self) {
         self.0.abort();
     }
 }
 impl Confirm for HostConfirm {
+    fn accounts(&self) -> Option<Arc<dyn watane_host::AccountSource>> {
+        Some(Arc::new(crate::accounts::Source(Arc::clone(
+            &self.accounts,
+        ))))
+    }
     fn installed(&self, report: &watane_host::Installed) {
         let Some(main) = self.main.get() else { return };
         if main.get().is_some() {
@@ -311,6 +376,34 @@ impl Confirm for HostConfirm {
             match (&mut task.0).await {
                 Ok(result) => manage_outcome(result),
                 Err(e) => watane_host::ManageOutcome::Failed(e.to_string()),
+            }
+        })
+    }
+    fn consent(
+        &self,
+        request: watane_host::ConsentRequest,
+    ) -> Pin<Box<dyn Future<Output = watane_host::ConsentAnswer> + Send>> {
+        let broker = Arc::clone(&self.broker);
+        let view = self
+            .host
+            .get()
+            .and_then(Weak::upgrade)
+            .and_then(|host| agent_view(&host, &request, &self.parties));
+        Box::pin(async move {
+            // No view means the origin is gone: nobody to name, nothing to keep.
+            let Some(view) = view else {
+                return watane_host::ConsentAnswer::Refused;
+            };
+            // Host polls this future on its own runtime. The broker's queue and timer run on
+            // ours; dropping this future aborts the task, which leaves the queue.
+            let mut task = ManageTask(tauri::async_runtime::spawn(async move {
+                broker.ask(view).await
+            }));
+            match (&mut task.0).await {
+                Ok(consent::Answer::Approve { withheld }) if withheld.is_empty() => {
+                    watane_host::ConsentAnswer::Granted
+                }
+                _ => watane_host::ConsentAnswer::Refused,
             }
         })
     }
@@ -683,6 +776,7 @@ mod tests {
                 core: OnceLock::new(),
                 main: OnceLock::from(Arc::clone(&main)),
                 notices: Arc::new(ManagerNotices::default()),
+                accounts: Arc::new(crate::accounts::Accounts::new(_home.path())),
             };
             let report = watane_host::Installed {
                 requester,
@@ -742,6 +836,73 @@ mod tests {
         })
         .await
         .unwrap();
+    }
+    #[tokio::test]
+    async fn ac3_host_consent_answers_the_held_future_and_leaves_the_queue_when_dropped() {
+        let (_home, host) = preview();
+        fixtures(&host).await;
+        let confirm = HostConfirm {
+            broker: consent::Broker::new(),
+            parties: Arc::new(Parties::new()),
+            host: OnceLock::from(Arc::downgrade(&host)),
+            core: OnceLock::new(),
+            main: OnceLock::new(),
+            notices: Arc::new(ManagerNotices::default()),
+            accounts: Arc::new(crate::accounts::Accounts::new(_home.path())),
+        };
+        let request = |origin: &str| watane_host::ConsentRequest {
+            origin: LocalName::parse(origin).unwrap(),
+            via: LocalName::parse("reading-list").unwrap(),
+            consent: watane_host::Consent::Workspace {
+                via: "local/reading-list".into(),
+                folder: "/w".into(),
+            },
+            profile: Some("coder".into()),
+            functions: vec![],
+        };
+        let wait_head = |broker: Arc<consent::Broker>, open: bool| async move {
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                while broker.current().is_some() != open {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+        };
+        for (approve, expected) in [
+            (true, watane_host::ConsentAnswer::Granted),
+            (false, watane_host::ConsentAnswer::Refused),
+        ] {
+            let future = tokio::spawn(confirm.consent(request("recommendations")));
+            wait_head(Arc::clone(&confirm.broker), true).await;
+            let (_, view) = confirm.broker.current().unwrap();
+            let consent::Request::Agent { what, origin } = view else {
+                panic!("not an agent request");
+            };
+            assert_eq!(
+                words::agent_consent(&what, &origin).1,
+                "Let Recommendations (local) have agents work in /w (coder, through reading-list (local))?"
+            );
+            confirm.broker.answer_head(approve);
+            assert_eq!(future.await.unwrap(), expected);
+        }
+        // A closed view or a quit denies every request.
+        let future = tokio::spawn(confirm.consent(request("recommendations")));
+        wait_head(Arc::clone(&confirm.broker), true).await;
+        confirm.broker.deny_all();
+        assert_eq!(future.await.unwrap(), watane_host::ConsentAnswer::Refused);
+        // The host drops the future: the request leaves the queue.
+        let future = confirm.consent(request("recommendations"));
+        let task = tokio::spawn(future);
+        wait_head(Arc::clone(&confirm.broker), true).await;
+        task.abort();
+        wait_head(Arc::clone(&confirm.broker), false).await;
+        // An origin that is gone is refused without a view.
+        assert_eq!(
+            confirm.consent(request("gone")).await,
+            watane_host::ConsentAnswer::Refused
+        );
+        assert!(confirm.broker.current().is_none());
     }
     #[test]
     fn ac3_manage_outcomes() {
@@ -865,6 +1026,7 @@ mod tests {
             core: OnceLock::new(),
             main: OnceLock::new(),
             notices: Arc::clone(&notices),
+            accounts: Arc::new(crate::accounts::Accounts::new(_home.path())),
         });
         let local = LocalName::parse("reading-list").unwrap();
         let by = LocalName::parse("recommendations").unwrap();
@@ -1045,6 +1207,15 @@ mod tests {
         );
         assert!(mods[0].origin.is_none());
         assert!(mods[0].binds.is_empty());
+        // 19.2, Plan line: only a provider holding a Claude Code grant is named.
+        assert!(mods[1].agents_via.is_empty());
+        let mut request = request;
+        request.entries[0].grants = vec![Grant::ClaudeCodeShell];
+        let consent::Request::Install { mods, .. } = request_view(&request, &parties, None) else {
+            panic!()
+        };
+        assert_eq!(mods[1].agents_via, ["ratings by Frank (yyyyyyyyyy)"]);
+        assert!(mods[0].agents_via.is_empty());
     }
 
     #[tokio::test]
@@ -1384,6 +1555,8 @@ mod tests {
         assert!(!by_program);
         assert_eq!(mods.len(), 1);
         assert_eq!(mods[0].uses, ["reading-list (local)"]);
+        // Its granted grants hold no Claude Code grant: no plan line (19.2).
+        assert!(mods[0].agents_via.is_empty());
     }
 }
 

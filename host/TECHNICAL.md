@@ -89,9 +89,9 @@ target `wasm32-wasip2`.
 | `src/agent/streams.rs` | H1: stream table, FIFO per consumer, batches, backpressure, ends (19.2) |
 | `src/agent/claude/` (`launch.rs`, `run.rs`, `control.rs`, `init.rs`, `mod.rs`) and `src/agent/accounts.rs` | H2: launch parsing, flags, the process, stdin and stdout, `initialize` and `init` checks (19.3) |
 | planned `src/agent/https_stream.rs` | H3: one request, SSE splitting, idle timeout, account binding (19.4) |
-| planned `src/agent/tools.rs` | H4: handles, MCP tokens, keyed jobs, with `src/tools.rs` (19.5) |
 | `src/agent/timers.rs` | H7: timers per mod in host state (19.6); H5 effects are in `src/runtime/call.rs` |
-| planned `src/agent/consent.rs` | consents per origin client in `installed.json` (19.7) |
+| `src/agent/consent.rs` | consents per origin client in `installed.json` (19.7) |
+| `src/agent/tools.rs` | H4: the handles, their toolset consents, tokens and jobs (19.5) |
 | `tests/*.rs`, `tests/fixtures/` | section 13 |
 
 ## 2. Public API
@@ -146,6 +146,8 @@ impl Host {
     pub fn set_test_clock(&self, clock: TestClock);
     #[cfg(feature = "test-streams")]
     pub fn test_stats(&self) -> TestStats;
+    #[cfg(feature = "test-streams")]   // 19.9: S103 review r1
+    pub fn hold_agent_runs(&self) -> AgentHold;   // `waiting()`, `finished()`, `release()`; Drop releases
 
     // runtime (section 6)
     /// The callable functions: `world().exports` only, never a subscription export (6.6 step 2).
@@ -568,8 +570,8 @@ form the saved identity. It repacks release folders with source included,
 so a package that shipped source keeps the same hash (Q26). Local folders
 still use `pack(dir, false)`. `consents` (step 11, serde default `[]`, so an older file reads unchanged
 and `watane_installed` stays 1) lists the consents the mod holds as an
-origin client (19.7): `{"kind":"workspace","folder":"<canonical path>"}`,
-`{"kind":"account","account":"openai"}`, `{"kind":"toolset","toolset":"<name>","functions":["<local>_<interface>_<function>", ...]}` (the functions the participant consented to, 19.5).
+origin client (19.7; omitted from the file while empty): `{"kind":"workspace","via":"<identity>","folder":"<canonical path>"}`,
+`{"kind":"account","via":"<identity>","account":"openai"}`, `{"kind":"toolset","toolset":"<name>","functions":["<local>_<interface>_<function>", ...]}` (the functions the participant consented to, 19.5).
 They follow the record's life like grants: kept across an update, deleted by
 `remove`. Slug, version, name, summary and origin are
 read from `mods/<local>/` at open; they are not repeated here. Each write: serialize, write
@@ -681,8 +683,8 @@ Install checks the generation again before committing (Q24).
   write, the origin of every other mod's timer that carries the removed mod's
   identity to that timer's own mod: a local mod's identity is `local/<slug>`,
   so a later local mod with the same slug has the same identity and must not
-  find the removed mod's authority waiting in a timer (S62). `remove`, and a
-  `grant` of `Manage`, drop the names `<local>_…` of that mod (3.2: no `_` in
+  find the removed mod's authority waiting in a timer (S62). `remove`, a
+  `grant` of `Manage` and an update whose approval grants `Manage`, drop the names `<local>_…` of that mod (3.2: no `_` in
   a local name) from the `functions` of every stored toolset consent (19.5,
   19.7), in the same write, so that a later mod under that local name, or a
   mod that became a manager, reaches no agent until a new consent (S65).
@@ -1180,6 +1182,7 @@ One redb database at `state/state.redb`.
 | `timers` (step 11) | `&str` `<id>/<timer id>` (`timers/<mod>/<id>` in 19.6) | `&str`: JSON text `{"due":<unix ms>,"origin":"<identity of the origin client>"}`; not counted in `sizes` |
 | `host` (step 11, stage A2) | `&str` name; the one key `generation` | `u64`: the start number that `host-info.generation()` returns (19.1); not counted in `sizes`; stage A2 (S99) creates the table |
 | `scratch` (step 11, stage A2) | `&str` the 32 hex chars of a scratch workspace id (19.3, Folders) | `&str`: the identity of its owner, the origin client of the launch that made it; not counted in `sizes` |
+| `sessions` (step 11, stage A3) | `&str` a Claude Code session id, as `system/init` reports it (19.3, Folders, "Sessions are the origin client's") | `&str`: the identity of the origin client whose run reported it; not counted in `sizes` |
 
 `<id>` is the first 32 hex chars of `blake3(identity)`. State follows the
 identity, not the local name (section 18, Q2).
@@ -1536,8 +1539,12 @@ tool; tools are deduplicated by name and sorted by name.
 Tool name: `<local>_<interface>_<function>`, with the short interface name.
 A name longer than 64 bytes gives no tool. Step 11: a tool mod may mark a
 function `@parallel` or `@idempotent` (19.5); `agent-tools.describe` carries
-both. The name `agent` is reserved as `preview` is (`bad_name`): `/mcp/agent`
-is the route of handle tokens (19.5). Description: the WIT doc comment
+both. The name `agent` is reserved as `preview` is (`bad_name` at
+`set_toolset`): `/mcp/agent` is the route of handle tokens (19.5). A home whose
+`toolsets.json` already holds a toolset `agent` (saved before S103) still opens
+and keeps it: it is listed and can be removed, but no token reaches it, since
+`/mcp/agent` takes handle tokens only (`issue_token` fails `no_toolset`, 10.2), and no
+handle can open it (`agent-tools.open` fails `not-granted`; review r1 of S103, F1.3). Description: the WIT doc comment
 of the function (`Resolve::push_dir` on `mods/<local>/wit/`, then
 `Function::docs.contents`; both exist in wit-parser 0.254), else its
 signature `<function>: func(<p>: <type>, ...) -> <type>`. Input schema:
@@ -1553,7 +1560,9 @@ keeps only `blake3(token)` in memory, mapped to (toolset, handle).
 `end_token` or until the host stops; tokens are never written to disk. In a
 participant home, only the app issues toolset tokens, in its process (W6);
 the host also issues a token for each handle that `agent-tools.open` opens,
-after the toolset consents (19.5, 19.7; W6 as changed in spec §7). In a
+when it opens; `/mcp/agent` answers it 401 until the toolset consents are held (19.5, 19.7;
+W6 as changed in spec §7). `issue_token` for the name `agent` fails `no_toolset`, also when
+a legacy toolset of that name is held (10.1): the only tokens bound to `agent` are handle tokens. In a
 preview, the program `watane` issues one token for `preview` with handle
 `preview` at start.
 
@@ -1755,6 +1764,9 @@ folder in pkg's format, package `mods:<name>@0.1.0`.
 | `latch` (step 11, A1) | import state; export `api { trip: func(key: string) -> bool; }`: `true` and puts the key when it is absent, else `false`. Its write commits when its call succeeds, even if the caller then traps (6.6, Q3), so it remembers across a rolled-back call what `relay` cannot |
 | `relay` (step 11, A1) | `deps.json` `{"mods:latch": null}`; import state, caller, `streams`, `timers`, `mods:latch/api`; export `api { open: func() -> result<string, string>; push: func(s: string, text: string) -> result<_, string>; close: func(s: string); cancel: func(s: string); hand-off: func(s: string) -> result<_, string>; resume: func(s: string) -> result<_, string>; after: func(id: string, ms: u64) -> result<_, string>; cancel-timer: func(id: string); after-then-fail: func(id: string, ms: u64); mode: func(m: string); forward: func(up: string, down: string, write: bool); received: func() -> list<string>; ended: func() -> list<string>; fired: func() -> list<string>; who: func() -> string; }` (each `result` error is the WIT error case's name, e.g. `"not-yours"`) and the host-only exports `stream-sink`, `stream-producer`, `timer-sink`. `close(s)` closes with `closed`, or with `gone` while `mode` is `close-gone` (the test of the host-only outcome, 19.2). It keeps an `index` key of the `got/` keys, since `state` cannot list. `items(s, batch)`: when `forward` named `s` as an `up`, it pushes each body to that `down` and puts nothing else (with `write`, it also puts `last/<s>` = the last seq: one write per batch, for V8), and answers `defer` when a push fails `full`; else it puts each body at `got/<s>/<seq as 20 digits>` and the key `who/<s>` = `caller.identity()` (S56; a forwarded batch writes no key, so the load test sees no state bytes written per item). Then it answers by `mode` (state key, default `taken`): `taken`, `defer`, `trap` (traps), `trap-once` (calls `latch.trip("<s>/<first seq>")` and traps when it returns `true`, else answers `taken`). `received` returns the values of `got/` in key order. `stream-sink.ended` and `stream-producer.ended` add the line `<s> <outcome case>` (e.g. `"<s> consumer-failed"`) to `ended`; `ready(d)` adds `<d> ready` and calls `resume` for each `up` forwarded to `d`, and `stream-producer.ended(d, ..)` resumes them too (the forwarding rule of 19.2); `fired` adds the id to `fired`. `who` returns `caller.identity()` |
 | `relay-front` (step 11, A1) | import `mods:relay/api`; export `api { after-then-fail: func(id: string, ms: u64); push-then-fail: func(s: string, text: string); who: func() -> string; }`; the first two call that function of `relay` (`after`, `push`), which succeeds, and then trap: the nested request and push that 19.6 drops; `who` returns `relay`'s `who` (S56) |
+| `tool`, `tool-plus`, `tool-manage` (S103, 19.5) | package `mods:tool`; import caller; export `api { hello: func(name: string) -> string; double: func(n: u32) -> u32; who: func() -> string; slow: func(ms: u32) -> string; refuse: func() -> result<string, string>; boom: func(); }`: `hello` has the doc lines `Says hello.` and `@parallel`, `double` has `Doubles a number.` and `@idempotent`, `who` returns `caller.identity()`, `slow` sleeps `ms`, `refuse` returns `err("refused")`, `boom` traps. `tool-plus` is the same package with one more function, `extra() -> string`, so that installing it is an update that gains a function (S65). `tool-manage` is the same package and functions with the import of `manage` (used by `boom`), so that installing it is an update that gains `Manage` |
+| `toolbox` (S103, 19.5) | import state, caller, streams, `agent-tools`, `claude-types`, `claude-code`; export `api { open: func(toolsets: list<string>) -> result<string, string>; describe: func(handle: string) -> result<list<string>, string>; call: func(handle, key, tool, args: string) -> result<string, string>; call-twice: func(..) -> list<string>; open-describe: func(toolsets: list<string>) -> string; open-many: func(toolsets: list<string>, n: u32) -> list<string>; close: func(handle: string); items: func(s: string) -> list<string>; ended: func() -> list<string>; who: func() -> string; start: func(launch: string) -> string; }` and the host-only `stream-sink`. An error is the case's name (`unknown-handle`; `consent-pending:<what>`). `describe` gives one line per tool, `name\|parallel\|idempotent\|description\|input-schema`. `call-twice` calls twice in one chain and returns both stream ids; `open-describe` opens and describes in one chain; `open-many` opens `n` handles in one chain (each a handle or the error's name); `items` and `ended` read what its sink took |
+| `toolbox-front` (S103, 19.5) | `deps.json` `{"mods:toolbox": null}`; import caller, `mods:toolbox/api`; export `api { open, describe, call }` passing through, so that `toolbox` runs with the front as origin client |
 
 The mutual fixtures copy only provider interfaces and outlets into
 dependency worlds, without back-references (Q23). Their real components
@@ -1781,6 +1793,7 @@ run on the preview install path.
 | `tests/it/manage.rs` (stage 11) | S40 to S47 with `manager`, `counter`, `shelf`, `recs` in a participant home whose `Confirm` fake records `reduced`, `manage` and `install` calls and answers `manage` from a script; the harness rows of 6.10; `manager` refused at plan when the world lacks `manage` but the component imports it (5.3) | literal `mod-info` JSON; `installed.json` parsed as plain JSON; the fake's recorded calls; request ids matched by the regex `^[0-9a-f]{32}$`; page-bus messages read from `/events` of a served manager |
 | `tests/it/streams.rs` (A1) | agentic-harness cases 7, 36 and 51 (host parts) and 58, with `relay`, `latch` and the test streams of 19.9 (feature `test-streams`: `Host::test_stream`, `TestConsumer::Held`, `TestClock`; no H2 to H4): 19.2 and FUNCTIONAL S48 to S52; a page consumer through a served `relay` and a `reqwest` reader of `/events`; a page that stops reading is a reader that stops polling the body, with items of 64 KiB so the socket buffers fill | literal item numbers and bodies read from the consumer's state; `ended` lines; `TestStream::deliveries()` |
 | `tests/it/requests.rs` (A1) | agentic-harness cases 20 and 21 with `relay`; the rows of 19.6 (limits, replacement, rollback); with `relay-front` for the nested rollback; FUNCTIONAL S53 to S56 | literal `fired` lines; `timers` table read from `state/state.redb` after `drop(host)`; a restart on the same home |
+| `tests/it/agent_tools.rs` (A3, S103) | 19.5, 19.7, 10.2, 10.3; FUNCTIONAL S56 (agent), S60, S65, S68: a home whose `Confirm` fake holds each consent answer, the fake `claude` that copies fd 3, and `toolbox`, `toolbox-front`, `tool`, `tool-plus`, `manager`; `open` `not-granted`; the question's fields; `consent-pending` and `consent-refused`; the stored list in `installed.json`; annotations; keys and jobs; foreign and same-chain handles; the manager's functions; a gained function; `remove` and a `grant` of `Manage`; `--mcp-config=/dev/fd/3` and the token on `/mcp/agent` (listed tools, 403 on another route, 401 after `close` and after either mod ends, never in an item, argument or file); withdrawal | literal strings and JSON; `installed.json` parsed as plain JSON; the ended lines of `toolbox`; HTTP status codes |
 | `tests/it/agent_load.rs` (A1, `#[ignore = "slow: stage A budgets and V8"]`) | the load row of stage A (15): 8 `Host::test_stream(TestConsumer::Mod(relay))`, each forwarded by `relay.forward(up, down, false)` to a stream that a served page of `relay` opened with its connection id; each body starts with its send time; 60 s at 100 items/s each; then `api.cancel` of one page stream from the page; then the V8 run (15) again with `write` true | p95 item delay (send time to the `/events` read); `cancel` `/call` to its `stream-end` message; writer busy share and state bytes per item from two `Host::test_stats()` readings; every page stream's seqs read in order with no gap |
 | `tests/it/verify.rs` (stage 8) | S31, S32 | a `watane_log::Log` on a temporary directory signs the body with `append(RELEASE_KIND, ..)`; the expected `ReleaseRef` text is built from `Log::identity()` and literals; bytes are changed by the test |
 
@@ -1820,7 +1833,7 @@ run on the preview install path.
 | No mod sees a credential | tokens, keys and the `claude` path only through `AccountSource`; MCP tokens on fd 3; handle names, not handles (19.4, 19.5); the protected reads of 19.3 (deny rules, relative file-tool allows and no bare one, no `allow` answer outside the workspaces by path or pattern). Files: `src/agent/https_stream.rs`, `src/agent/tools.rs`, `src/agent/claude/launch.rs`, `run.rs`, `control.rs`, app account files | A2: S63, S67; A3: S68; A4 |
 | A plan token goes only to OpenAI's agent endpoints | the account binding of `openai`, the forbidden headers, no redirects (19.4). File: `https_stream.rs` | A4: case 19 |
 | A judge key goes only to its judge | the binding of `judge`: identity, value, one origin parse, `POST`, `[http]`, no redirects, `no-account` (19.4). File: `https_stream.rs` | A5: cases 19, 33 |
-| A mod in the middle gains no authority | consent per origin client, carried with the chain by identity (19.7); a subscriber is its own origin client (19, Terms); the grants and the origin client checked again at apply (19.6); a toolset consent covers only the functions it named, and `remove` or a `grant` of `Manage` drops that mod's names from it (19.5, 4.4); `remove` leaves no timer carrying the removed mod (4.4). Files: `src/agent/consent.rs`, `src/runtime/call.rs`, `src/runtime/events.rs` | A3: S61, S62, S65, S66, S68 |
+| A mod in the middle gains no authority | consent per origin client, carried with the chain by identity (19.7); a subscriber is its own origin client (19, Terms); the grants and the origin client checked again at apply (19.6); a toolset consent covers only the functions it named, and `remove` or a `grant` of `Manage` drops that mod's names from it (19.5, 4.4); `remove` leaves no timer carrying the removed mod (4.4); a tool on borrowed authority opens no handle, stream or timer (19.5, Borrowed authority). Files: `src/agent/consent.rs`, `src/agent/mod.rs`, `src/runtime/call.rs`, `src/runtime/events.rs` | A3: S61, S62, S65, S66, S68 |
 | A stream has one consumer and cannot starve the host | consumer rules, byte budgets, the lag clock and the deferral backstop (19.2). File: `src/agent/streams.rs` | A1: cases 36, 51, 58 |
 | A repeated call changes nothing | job keys and numbered items (19.5, 19.2). Files: `tools.rs`, `streams.rs` | A1, A3 |
 | An ask shows the tool call that will run | the host serializes each `ask` and `check` from its own parsed value, with the call's `tool_use_id` and `expires-at`; no `claude` line passes as a host item (19.3). File: `control.rs` | A2 |
@@ -1832,7 +1845,9 @@ the home and call `/call` or `/events` with a forged `Origin`, and can write
 and boot id, which the host then kills at open, or plant `runs/` as a link to a
 folder it controls after the cleanup, or mount a file system under `runs/`
 that the cleanup walks or that stalls it (3.1 step 3; adversary S100 passes 13,
-14 and 16); a
+14 and 16), or build a tree under `runs/` deeper than about 10,000 levels,
+which can overflow `remove_dir_all` in the cleanup at open (same user, outside the
+mod sandbox; S100's adversary pass 17, accepted by the deputy); a
 compromised OS; a fault in Wasmtime; a privileged network change that adds
 `::1` after a host started without it (8.1): `[::1]:<port>` is then free for
 another program until the host restarts. Step 11 (agentic-harness TECHNICAL
@@ -2076,6 +2091,23 @@ is malformed is still answered deny at once and pushes nothing; `answer` to an i
 is not open is `unknown-ask`. Still cut: `agent-handle` (A3), a non-empty `skills`,
 the shell grant's sandbox; each still names its stage. A `hook_callback` is taken
 for the host's whatever its `callback_id`: the host registers one callback.
+
+**A3 in two tasks (S103).** S103's first task (host) builds the workspace half of A3:
+`Consent`, `ConsentRequest`, `ConsentAnswer` (19.7) for all three kinds, `Confirm::consent`
+(default `Refused`), `InstalledMod.consents` (3.3), `Host::withdraw_consent`; picked folders in
+`workspace` and `extra-workspaces` (19.3, Folders: resolved at the call, the consent asked at
+apply before the process, `consent-pending`, `consent-refused`); the protected paths once per
+workspace root (Q49); the `sessions` table and the session rule (Q50, 7); `via` in the workspace
+key (Q38). The account consent is only a type until A4. The second task (agent tools) builds
+the toolset consent and the handles of 19.5, and fills `agent::consent::withdrawn` for them.
+**Built (S103, second task):** `agent-tools` (`open`, `describe`, `call`, `close`) in
+`src/agent/tools.rs`: the handle table, the toolset consent asked on a thread of its own, one
+token per handle (`Host::issue_agent_token`, bound to the toolset name `agent`), the jobs with
+their keys, and the annotations `@parallel` and `@idempotent` read from the doc comment;
+`/mcp/agent` (10.3); `agent-handle` in a launch with the MCP config on fd 3 (19.3, The run);
+the toolset rows of withdrawal (`withdrawn` closes the handles and ends their jobs `gone`);
+`remove` and a `grant` of `Manage` drop a mod's names from the stored lists (4.4); the
+reserved toolset name `agent` (10.1). `agent-handle` is no longer cut.
 
 **Budgets of stage A** (the "Load" kind; all p95; a slow test on a stage's
 fakes, recorded with the date and the machine below; a stage is done only
@@ -2484,6 +2516,9 @@ Raised by S95's adversary step (none blocks A1):
   since it is a subset of (a); (a) to (b) later would void every consent given
   under (a). The source row changes in agentic-harness too. Blocks A3; A2
   starts only in scratch workspaces and needs no answer.
+  **Answered (b) by the human (2026-11-24, factory/PLAN.md ae4b9b9)**, as S103's foreman
+  had built it: the recommended option, the stronger one, and the one that keeps (a)
+  open at no cost (every consent given under (b) stays valid under (a)). 19.7 states it.
 - **Q39** The Claude login and loopback under the shell grant (19.3, The
   run; source row: agentic-harness TECHNICAL 4.4, the environment, and 4.2,
   the shell grant). `CLAUDE_CODE_OAUTH_TOKEN` is in `claude`'s environment
@@ -2631,7 +2666,7 @@ blocks A1):
 Raised by S99's adversary (open; none blocks S99, which runs only in scratch
 workspaces; each blocks A3's picked folders):
 
-- **Q49** (open) The protected paths of 19.3 are relative rules, so Claude
+- **Q49** (decided (a) by S103's foreman, 19.3 Protected paths) The protected paths of 19.3 are relative rules, so Claude
   Code anchors them at the working folder only: an `--add-dir` workspace gets
   none, and `.git/**`, `.claude/**`, `.agents/**`, `.codex/**`, `.husky/**`
   match only at the top (`sub/.git/hooks/x` can be written). Harmless in a
@@ -2639,7 +2674,7 @@ workspaces; each blocks A3's picked folders):
   rule set per workspace root, as absolute `//<root>/...` rules, and `**/`
   forms for the folder patterns; (b) keep, and add nested folders to Not
   protected. Recommended: (a). Cost to undo: deny lines only.
-- **Q50** (open) `session {resume | fork}` accepts any uuid; privacy rests on
+- **Q50** (decided (a) by S103's foreman, 19.3 Folders) `session {resume | fork}` accepts any uuid; privacy rests on
   Claude Code keeping transcripts per working folder. Two origin clients that
   hold the same picked folder could resume each other's sessions. Options:
   (a) the host keeps the session ids each origin client started (a table like
@@ -2669,8 +2704,8 @@ source's, because the host commits each invoke on its own (Q3).
 the host as producer (`claude-code.start`, `https-stream.start`,
 `agent-tools.call`); a *mod stream* is opened by a mod with `streams.open`.
 The *origin client* is the mod whose authority a chain carries: for a page
-call, the mod of the page; for an agent call, the mod that owns the handle
-(19.5); for an item call, a job call or a timer call, the origin client of the
+call, the mod of the page; for an agent call (a job of 19.5 or a `tools/call` on `/mcp/agent`), the handle's origin client with the install generation it had when the handle opened, never the tool's mod (review r1 of S103, F1.1),
+and only for work that ends with the call (19.5, Borrowed authority); for an item call, a job call or a timer call, the origin client of the
 call that opened the stream, job or timer; for an event delivery (9.2), and
 for a collect answer (9.4) and every call nested in it, the subscriber
 itself, never the emitter or the collector: the participant, not the
@@ -2908,7 +2943,7 @@ argument.
 | `mode` | `manual`, `accept-edits`, `plan`, `dont-ask` | `--permission-mode=` with Claude's names: `default`, `acceptEdits`, `plan`, `dontAsk`; `system/init` has `permissionMode` in the same names (an absent `mode` reads `default`) |
 | `ask` | bool | `--permission-prompts=host --permission-prompt-tool=stdio`, or `--permission-prompts=none` |
 | `pre-tool-check` | `{timeout-s: 5..120}` | the host's PreToolUse callback in `initialize` |
-| `agent-handle` | a handle the origin client holds (19.5) | `--mcp-config=/dev/fd/3` |
+| `agent-handle` | 32 lowercase hex characters, a handle the origin client holds (19.5): else `bad-launch {field: "agent-handle"}` at the call (a handle opened in the same chain is not held yet) | `--mcp-config=/dev/fd/3` |
 | `subagents` | each exactly `{name [a-z0-9-]{1,64}, description, prompt, tools ⊆ tools, model}`; any other key is refused by name; 64 KiB in all (N9, the human, 2026-11-20: subagents stay `--agents=` flags) | `--agents=` |
 | `subagent-depth` | 0..3, default 1; 0 also removes `Task` | env `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` |
 | `skills` | `{name [a-z0-9-]{1,64}, files}`; paths under the skill folder, no `..`, 1 MiB in all; a `SKILL.md` that starts with `---` has strict frontmatter, below | the run folder's plugin, `--plugin-dir=` |
@@ -2984,6 +3019,12 @@ names its reason.
 `.claude/**`, `.agents/**`, `.codex/**`, `**/.aws/**`, `**/CLAUDE.md`,
 `**/AGENTS.md`, `.mcp.json`, `.envrc`, `**/.github/workflows/**`, `build.rs`,
 `package.json`, `Makefile` and `.husky/**`. No launch can remove them.
+Each rule is written once per workspace root (the working folder and each
+`--add-dir`) as an absolute `//<root>/...` rule after canonicalization, and the
+folder patterns also in their nested form (`//<root>/**/.git/**`,
+`//<root>/**/.claude/**`, `//<root>/**/.agents/**`, `//<root>/**/.codex/**`,
+`//<root>/**/.husky/**`), so a workspace added with `--add-dir` and a nested
+`sub/.git` are covered (section 18, Q49, option (a), decided by S103's foreman).
 
 **Protected reads** (S63; open: Q42 login files outside the list; Q41: the third rule resolves symlinks). A file in the participant's home folder is as
 readable to `claude` as to the participant, and the mod that consumes the
@@ -3048,8 +3089,16 @@ not keep a credential from a mod on their own. Three rules do:
   `CLAUDE_CODE_OAUTH_TOKEN` when the participant set it. The host never reads
   that token. Whether a sandboxed `Bash` child can read it, and
   whether `WebFetch` reaches loopback, is section 18, Q39 (probe V28).
-- MCP: `{"mcpServers":{"watane":{"type":"http","url":…,"headers":{"Authorization":"Bearer <token>"}}}}`
-  written to a pipe that the child inherits as fd 3 (19.5 for the token).
+- MCP: with an `agent-handle`, `{"mcpServers":{"watane":{"type":"http","url":"http://localhost:<port>/mcp/agent","headers":{"Authorization":"Bearer <token>"}}}}`
+  written to a pipe that the child inherits as fd 3 (19.5 for the token); the run adds
+  `--mcp-config=/dev/fd/3`. The crate forbids `unsafe`, so the pipe comes in as the child's stderr and
+  `/bin/sh -c 'exec "$0" "$@" 3<&2 2>/dev/null' <claude> <arguments>` moves it to fd 3 and
+  execs `claude` (the same pid, so the process group, the record in `runs/pids` and the
+  kills are those of `claude`; the program path is `$0`, never part of the script). The run
+  waits for the handle's consents first, and puts `consent-pending` on the stream once per
+  consent that waits; a refused one ends the stream `consent-refused(what)`. A host that
+  serves no port ends it `failed`. No handle: no pipe, stderr is `/dev/null`, `claude` is
+  started directly. The token is in the pipe and in no argument, item or file.
 
 **The control protocol.**
 
@@ -3064,7 +3113,8 @@ not keep a credential from a mod on their own. Three rules do:
    workspace consent is held, so `initialized` never comes before it; the
    checked provider relies on that. Before the answer only control lines may come, and none
    is pushed: any other line kills the group and ends the stream `mismatch "init"`, so
-   `initialized` is the first item.
+   `initialized` is the first item of the run; only the host's `consent-pending` items
+   (19.7; one per folder or toolset asked, Folders) can come before it.
 3. The `system/init` line must match the launch in tools, MCP servers, agents,
    permission mode (`manual` reads `default`) and plugins (exactly
    `watane-run` and Claude Code's `cc-plugin-*`). Skills are not compared. A
@@ -3072,8 +3122,8 @@ not keep a credential from a mod on their own. Three rules do:
    it: `tools`, `mcp_servers`, `agents`, `permissionMode`, `plugins`. The lists hold
    names, as strings or as objects with a `name` (Claude Code's `{"name","path"}`
    plugins and `{"name","status"}` servers). Only an entry that the launch did not
-   ask for is a difference (a tool not in the launch's `tools`, any MCP server until
-   A3, an agent neither in `subagents` nor one of Claude Code's own, another plugin);
+   ask for is a difference (a tool not in the launch's `tools`, an MCP server other than the
+   host's `watane` of an `agent-handle`, an agent neither in `subagents` nor one of Claude Code's own, another plugin);
    a missing list holds nothing, a missing or other `permissionMode` differs. Every `system/init` line is checked,
    and then passed on as an ordinary line after `initialized`. The first line after the answer
    to `initialize` that is not a control line (`control_request`, `control_response`) must be a
@@ -3285,16 +3335,47 @@ checks of the table above are made at the call.
     new scratch folder and its row; if stopped, it deletes that one folder and that one row
     (never the owner's other rows) and the stream ends `gone`. A preview's home goes with
     the preview.
-  - **Picked folders** come with the workspace consent (stage A3): until then a
-    `workspace` or `extra-workspaces` value that is not a scratch value is
-    `bad-launch {field, reason: "picked folders need the workspace consent (stage A3)"}`.
+  - **Picked folders** come with the workspace consent (stage A3, S103). A
+    `workspace` or `extra-workspaces` value that is not a scratch value is an
+    absolute path. At the call the host resolves it (canonical, symlinks resolved,
+    it must exist and be a folder) and checks it against the refusals of "Picked
+    workspace" below and against Unicode NFC (a canonical name not in NFC is
+    refused, fail-closed: S100's adversary); any failure is `bad-launch {field,
+    reason}`. The workspace id is that canonical path, and `initialized` names it.
+    At apply (19.6), after the version probe and before the run folder, the
+    process or any scratch row, the host checks each picked folder of the launch
+    against the origin client's consents `Workspace {via, folder}` (`via` the
+    identity of the starting mod), resolving it again; a folder whose canonical
+    path changed since the call ends the stream `gone`. For each one not held it
+    pushes `{"type":"consent-pending","what":"workspace:<via>:<folder>"}` once
+    and asks `Confirm::consent` (19.7), one folder at a time in launch order;
+    `Granted` is stored and the next is checked; `Refused`, a dropped answer or
+    600 s ends the stream `consent-refused("workspace:<via>:<folder>")` and no
+    process starts. After the last answer the host resolves each folder once more
+    (an answer may take minutes); a changed one ends the stream `gone`, and the
+    consent just stored stays. So `consent-pending` items, when any, come before
+    `initialized`, which stays the first item of a run.
+  - **Sessions are the origin client's** (section 18, Q50, option (a), decided by
+    S103's foreman). The host keeps the session ids each origin client's runs
+    reported (the `sessions` table of 7: the `session_id` of each `system/init`
+    line, to the origin client's identity, written when step 3 of the control
+    protocol passes). `session {resume | fork}` with an id that the table does not
+    hold for the origin client is `bad-launch {field: "session", reason}` at the
+    call and ends the stream `gone` at apply; `session {new: uuid}` with an id
+    the table holds for another identity is refused the same way. `remove` of an
+    identity deletes its rows.
   - Whether one session can read another's scratch or run folder is section
     18, Q40, still open. Mods see only ids, so moving the folders (Q40 b)
     changes no interface.
 - Picked workspace: canonical, symlinks resolved. Refused: `/`, the home
   folder, the watane home and its ancestors, `~/.claude`, `~/.codex`, `~/.ssh`,
-  `~/.aws`, `~/Library/Keychains`, the run and scratch trees; compared without
-  case on a case-insensitive file system.
+  `~/.aws`, `~/.gnupg`, `~/.config/gh`, `~/.docker`, `~/.kube`,
+  `~/Library/Keychains`, the run and scratch trees, and any folder inside one
+  of these (the watane home, the credential folders just named, `runs/`,
+  `scratch/`); each credential folder is compared in both spellings, as named
+  under `$HOME` and canonical (a `~/.ssh` that is a link to `~/dotfiles/ssh`
+  refuses both: S103's adversary); compared without case on a
+  case-insensitive file system.
 
 ### 19.4 HTTPS streams and accounts (H3)
 
@@ -3416,17 +3497,62 @@ The toolsets are those of 10.1; `open` with no toolset, or one that
   unknown or foreign handle fail `unknown-handle`; a tool not in the handle's
   toolsets `unknown-tool`. A handle whose `open` has not been applied yet (the
   same chain) is `unknown-handle`.
-- **Token.** One MCP token per handle, 32 bytes, memory only (10.2), written to
-  `claude`'s fd 3 (19.3). It names the handle's toolsets together and is
+  The first `describe` or `call` that finds a refusal returns `consent-refused(what)` and
+  closes the handle; the next is `unknown-handle`. A handle is the origin client's: a
+  `describe`, `call`, `close` or launch of another origin client, or by another mod than the
+  opener (`describe`, `call`, `close`), finds `unknown-handle`. When each toolset's consent is
+  held at `open` the handle is ready as soon as the call returns. The questions of the toolsets
+  that wait go one after the other, on a thread of the host.
+- **Token.** One MCP token per handle, 32 bytes, memory only (10.2), made when the handle
+  opens, and written to `claude`'s fd 3 (19.3) only once its consents are held. It names the handle's toolsets together and is
   presented on `/mcp/agent` (10.3). A tool's mod sees the caller
   `agent:<handle-name>`: `h` and 30 lowercase hex chars (a `Handle`, 2.3), a
   second random value, never the handle itself.
-- **Job.** `call(handle, key, tool, args)` returns a stream at once; the tool
-  runs later as its own top-level call with its own budget and the caller of
-  the previous bullet; its result is the stream's one item `{ok: <json>} |
-  {err: {code, message}}`.
-- **Key.** A live job with the same (handle, key) returns the same stream.
-  Keys are memory only.
+- **Authority at the run** (review r1 of S103, F1.1, F1.2). A tool runs, from a job or
+  from `/mcp/agent` `tools/call`, with the handle's origin client as origin client, so
+  every request it makes asks and uses that client's consents, never the tool mod's.
+  Just before the tool's call starts, under one read of the catalog, the host decides
+  again whether it may run: the handle is live and its origin client still holds the
+  consent of each of its toolsets (a withdrawal writes the catalog before it closes the
+  handle, so a missing one counts as a closed handle), the tool is in the handle's toolsets
+  and in the stored consent list as it stands then, the origin client is the same
+  install (identity and generation), and the tool's mod is the install it resolved to.
+  Otherwise the tool does not run: a job's item is `{"err":{"code":"unknown-tool",..}}`
+  (when the handle, its opener or the origin client is gone, no item: the job's stream ends `gone`, as a live job's does at a withdrawal, 19.7) and `tools/call` answers
+  `-32602`.
+- **Borrowed authority** (review r2 of S103, F2.1, F2.2). A tool that runs on the handle's
+  origin client's authority (a job or a `tools/call` on `/mcp/agent`, and every call nested in
+  it) may only do work that ends with that call. So in such a chain the host refuses, at the
+  call, each request that would outlive it: `agent-tools.open` fails `not-granted`; and
+  `agent-tools.call`, `streams.open`, `claude-code.start`, `claude-code-shell.start`,
+  `https-stream.start` and `timers.after` fail the call `not_granted` (their WIT has no such
+  case), so the tool's call ends as any failed call does (a job's item `{"err":{"code":
+  "not_granted",..}}`, `tools/call` an error result). A handle, a stream or a timer therefore
+  never carries borrowed authority past the call, and a withdrawn toolset consent leaves none
+  behind (19.7). Work on streams and timers that the tool's mod already holds (`push`, `close`,
+  `cancel`, `claude-session`, `timers.cancel`) and synchronous calls are unchanged. Outside
+  such a chain, `open`, streams and timers are as above and in 19.2 and 19.6.
+- **Job.** `call(handle, key, tool, args)` returns a stream at once (its consumer is the
+  opening mod, its origin client the handle's); the tool runs later as its own top-level
+  call with its own budget and the caller of the previous bullet; its result is the stream's
+  one item `{"ok": <json>} | {"err": {"code", "message"}}` (`args` that are not JSON: the
+  `err` item with code `bad_request`, no call), and then the stream ends `closed`. `close`,
+  a withdrawn consent, and the end of either mod end the job's stream `gone`; the
+  running call is not interrupted, its result goes nowhere.
+- **Known limit** (accepted by the product owner, review r2 of S103, F2.3). A normal update of
+  the tool's mod that lands after the dispatch looked the tool up and before the call resolves
+  the export can make that call fail with a generic call error (no export, or arguments that no
+  longer decode) before Authority at the run decides: the tool still does not run, but a job's
+  item carries that error's code instead of `unknown-tool`, and `tools/call` answers it instead
+  of `-32602`.
+- **Limits** (decided by S103's foreman; host-internal, cheap to undo). At most 32 live
+  handles per (origin client, opening mod); an `open` past it fails `not-granted` (no new WIT
+  case). At most one consent question waits per (origin client, toolset): a later `open` that
+  needs the same toolset waits on that answer instead of asking again, so a looping mod
+  can neither spawn questions nor waiting threads without bound.
+- **Key.** A live job with the same (handle, key) returns the same stream, also a job that
+  the same chain, or another chain in flight, queued. The key is free when the result is
+  there. Keys are memory only.
 - **Annotations `@parallel` and `@idempotent`** come from the tool mod: a
   doc-comment line of the WIT function (`@parallel`, `@idempotent`); no
   `mod.toml` table (pkg question 21); default false each. They decide order and
@@ -3451,6 +3577,13 @@ The toolsets are those of 10.1; `open` with no toolset, or one that
   under a removed mod's local name has the same names. So `remove` and a
   `grant` of `Manage` drop that mod's names from every stored list (4.4), and
   its functions are asked again like gained ones.
+  A question that waits across such a change does not undo it (S103's adversary):
+  the host notes a drop counter when it builds the question's list, and at
+  `Granted` it leaves out of the stored list, under the catalog lock that writes it, the
+  names of each mod whose names a `remove`, a `grant` of `Manage` or an update that grants
+  `Manage` dropped since (4.4). The handle is ready with the names the participant saw; the names left out
+  are asked again by a later `open`, like gained ones. A toolset left with no function
+  stores an empty list and asks nothing.
 
 ### 19.6 Requests and timers (H5, H7)
 
@@ -3575,14 +3708,18 @@ app, kept by the host with the grants.
 
 | Consent | Asked when | Kept for |
 |---|---|---|
-| Workspace | a launch names a folder new for the origin client | (origin client, folder) |
-| Account | an `https-stream` with `account: "openai"` new for the origin client (`judge` asks none: entering its key is the consent) | (origin client, account) |
+| Workspace | a launch names a folder new for the origin client and the mod whose request waits | (origin client, via, folder) |
+| Account | an `https-stream` with `account: "openai"` new for the origin client and the mod whose request waits (`judge` asks none: entering its key is the consent) | (origin client, via, account) |
 | Toolset | `agent-tools.open` with a toolset new for the origin client, or whose current functions are not all in the stored list (19.5) | (origin client, toolset), with the functions named |
 
 - **Storage.** In `installed.json` on the record of the origin client (3.3,
-  `consents`), shown and withdrawn like grants (4.4). Whether the key also names
-  the provider (`via`) or the grant kind is section 18, Q38. The words, the consent
-  view and the choice belong to the app (app 19.2).
+  `consents`), shown and withdrawn like grants (4.4). A workspace and an account
+  consent name `via`, the identity (pkg 4.1) of the mod whose request waits (the
+  provider), so a consent given through one provider is not reused by another, nor
+  by a mod in the middle that holds its own grant (section 18, Q38, option (b),
+  answered by the human, 2026-11-24). A toolset consent names no `via`: its handle is the
+  origin client's own (19.5). The words, the consent view and the choice belong to
+  the app (app 19.2).
 - **Asking.** When a request needs a consent not held, the host calls
   `Confirm::consent` (12.1), the one method for the three consents, when it
   applies the request. `Granted` is stored and the request goes on; `Refused`,
@@ -3599,9 +3736,11 @@ app, kept by the host with the grants.
   chain, never read from a request field.
 - **While a consent waits,** a request's requester gets the item
   `{"type":"consent-pending","what":"<what>"}` once on the request's stream
-  (`agent-tools` as 19.5 says); `what` is `workspace:<folder>`,
-  `account:openai` or `toolset:<name>`, the same in `consent-refused(what)`.
-- **Withdrawal** ends the dependent streams (outcome `gone`) and closes the
+  (`agent-tools` as 19.5 says); `what` is `workspace:<via>:<folder>`,
+  `account:<via>:openai` or `toolset:<name>`, the same in `consent-refused(what)`
+  (`<via>` the identity, which holds no `:`; the folder is the rest of the text).
+- **Withdrawal** (`Host::withdraw_consent`, errors: `no_mod` for an unknown mod, `bad_request`
+  for a consent the mod does not hold, matched by the `what` key) ends the dependent streams (outcome `gone`) and closes the
   dependent handles (19.5), at once, also inside a running chain (Q24).
 - **Previews** refuse both grants and both accounts, and dev's fakes stand in
   (W5; agentic-harness FUNCTIONAL AGT-F-31): a preview never runs the
@@ -3612,13 +3751,13 @@ app, kept by the host with the grants.
   a preview's `fake-claude` runs only in a scratch workspace (19.3).
 
 ```rust
-// Debug, Clone, PartialEq, Eq, Serialize, Deserialize; JSON {"kind":"workspace","folder":"…"} etc.
-// Display and parse(&str) -> Result<Consent, HostError> use the `what` text: "workspace:<folder>",
-// "account:openai", "toolset:<name>" (the key by which the app lists and withdraws a consent;
+// Debug, Clone, PartialEq, Eq, Serialize, Deserialize; JSON {"kind":"workspace","via":"…","folder":"…"} etc.
+// Display and parse(&str) -> Result<Consent, HostError> use the `what` text: "workspace:<via>:<folder>",
+// "account:<via>:openai", "toolset:<name>" (the key by which the app lists and withdraws a consent;
 // `functions` is not part of the key). Toolset.functions: the `<local>_<interface>_<function>` names
 // of the ConsentRequest that was Granted, sorted, less those that `remove` or a `grant` of `Manage`
 // dropped since (4.4); a handle reaches no other (19.5).
-pub enum Consent { Workspace { folder: String }, Account { account: String }, Toolset { toolset: String, functions: Vec<String> } }
+pub enum Consent { Workspace { via: String, folder: String }, Account { via: String, account: String }, Toolset { toolset: String, functions: Vec<String> } }
 pub struct ConsentRequest {            // Debug, Clone, PartialEq
     pub origin: LocalName,             // the origin client: {origin client}
     pub via: LocalName,                // the mod whose request waits (a provider, the kernel): {provider}
@@ -3663,7 +3802,11 @@ rather than clamp it.
 dev's fakes (dev 18; dev 17, question 16) stand in for `claude`, OpenAI and a
 judge. Two settings of the host let them in; neither exists in a participant
 home's production path. A third, `test-streams`, serves only host's own A1
-tests (last item).
+tests (last item); it also holds `Host::hold_agent_runs`: every run of an agent's tool (a job or
+a `tools/call`) waits, just before the host reads its authority (19.5, Authority at the run) and
+before it takes the tool mod's call lock, until the hold is released; `AgentHold::waiting()` counts
+the runs that wait and `finished()` the runs that ended, denied or not. It gives the tests of the
+review r1 of S103 a gate in place of a sleep.
 
 - **The preview's `claude`.** `Host::set_fake_claude(program)` names the
   program that a preview runs for every `claude-code` and

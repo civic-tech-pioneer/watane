@@ -1,0 +1,2 @@
+name = "toolc"
+summary = "S103 tool fixture that starts claude and counts its calls."

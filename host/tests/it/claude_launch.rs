@@ -104,7 +104,18 @@ fn ac4_each_field_outside_its_grammar_is_bad_launch_with_no_stream_and_no_proces
             launch(json!({"pre-tool-check":{"timeout-s":5,"x":1}})),
             "pre-tool-check",
         ),
+        // Built by S103 (19.5): a value that is no handle, and a handle the origin client does
+        // not hold, are `bad-launch {field: "agent-handle"}`; neither names a stage.
         (launch(json!({"agent-handle":"h"})), "agent-handle"),
+        (launch(json!({"agent-handle":7})), "agent-handle"),
+        (
+            launch(json!({"agent-handle":"A".repeat(32)})),
+            "agent-handle",
+        ),
+        (
+            launch(json!({"agent-handle":"a".repeat(32)})),
+            "agent-handle",
+        ),
         (
             launch(json!({"skills":[{"name":"s","files":{}}]})),
             "skills",
@@ -128,7 +139,7 @@ fn ac4_each_field_outside_its_grammar_is_bad_launch_with_no_stream_and_no_proces
     for (text, field) in &cases {
         bad(&rig, "api.start", text, field);
     }
-    let stages = ["agent-handle", "skills", "sandbox"];
+    let stages = ["skills", "sandbox"];
     for (text, field) in cases.iter().filter(|(_, f)| stages.contains(f)) {
         let r = rig.call("api.start", json!({"launch": text}));
         assert!(
