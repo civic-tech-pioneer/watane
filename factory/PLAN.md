@@ -1266,7 +1266,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
      base reads as not found, not as stale.
   Touches: `dist/` only (code, tests, `dist/TECHNICAL.md` where a rule changes). Runs beside S100 (host/,
   dev/) and S102 (app/): no shared file. Remove the three items from Leftovers when it merges.
-- [~] **S105 (upkeep) a listed base cannot lead dist into the local network.** (in flight, cloud, builder claude,
+- [x] **S105 (upkeep) DONE 2026-11-24: PR #19 merged by the human at 07:26 UTC (main 10ff574f), after 6 review rounds; R6.1 accepted by the deputy (availability only, until S107); polish under Upkeep. a listed base cannot lead dist into the local network.** (in flight, cloud, builder claude,
   reviewer codex; sketched 2026-11-23 by the deputy from S104's review; routine `trig_01LmtxyjTdABbJfHbfWq8FqF`,
   13:10 UTC, branch `slice/s105`; DELIVERED as PR #19 (+950 -33, dist/ only); r1 to Codex,
   https://chatgpt.com/local/6b044a3f-725c-83ed-9b8f-699e84a7b005; r1 `changes (5)` (adversary BREACHED: old records'
@@ -1467,6 +1467,13 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dist | S6 find | 4 | done (S28) |
 
 ## Leftovers
+
+Upkeep (polish from S105's reviews r5 and r6, 2026-11-24):
+- [S105 P5.3] `dist/src/holder.rs:162`: a Kept ingest of the participant's own channel settles too, so it fails while the store is unsynced; settle only when `channel != identity`, or say so in dist TECHNICAL 4.4.
+- [S105 P5.4] a refused redirect names the local URL Eve never typed; name the base that redirected instead.
+- [S105 P6.1] `dist/src/index.rs:457`: no test pins `self.sync_pending()?` after the base loop in `read_record`.
+- [S105 P6.2] `dist/src/fetch.rs:500`: no test pins the gate in `open_link` before `follows.contains_key`.
+- [S105 P6.3] `dist/src/follow.rs:591`: `refresh` ignores a failed `settle(true)` and goes on to `read_listed`.
 
 Upkeep (polish from S109's review r2, 2026-11-23):
 - [S109 P2.1] `log/TECHNICAL.md:594`: the Libraries line for rustix omits `default-features = false` (log/Cargo.toml:22).
