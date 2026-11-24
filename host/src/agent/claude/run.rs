@@ -463,7 +463,7 @@ fn remove_tree(home: &std::fs::File, name: &std::ffi::OsStr, budget: &mut usize)
         let level = levels.last_mut().expect("one level at least");
         if !level.listed {
             level.listed = true;
-            let Ok(mut dir) = Dir::read_from(&cur) else {
+            let Ok(dir) = Dir::read_from(&cur) else {
                 return false;
             };
             for entry in dir {
