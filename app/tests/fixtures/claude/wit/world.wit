@@ -1,0 +1,36 @@
+package mods:claude@0.1.0;
+interface api {
+  start: func(launch: string) -> string;
+  start-shell: func(launch: string) -> string;
+  say: func(s: string, text: string) -> string;
+  say-then-fail: func(s: string, text: string);
+  answer: func(s: string, ask: string) -> string;
+  decide: func(s: string, ask: string, decision: string) -> string;
+  decide-then-fail: func(s: string, ask: string, decision: string);
+  quiet: func();
+  tally: func(s: string) -> string;
+  interrupt: func(s: string) -> string;
+  compact: func(s: string) -> string;
+  cancel: func(s: string);
+  items: func(s: string) -> list<string>;
+  ended: func() -> list<string>;
+  generation: func() -> u64;
+  who: func() -> string;
+  start-hand-off: func(launch: string) -> string;
+  start-say-hand-off: func(launch: string, text: string) -> string;
+  start-cancel: func(launch: string) -> string;
+  start-hand-off-fail: func(launch: string);
+  open-stream: func() -> string;
+}
+world claude {
+  import watane:host/state@0.1.0;
+  import watane:host/caller@0.1.0;
+  import watane:host/streams@0.1.0;
+  import watane:host/claude-types@0.1.0;
+  import watane:host/claude-code@0.1.0;
+  import watane:host/claude-code-shell@0.1.0;
+  import watane:host/claude-session@0.1.0;
+  import watane:host/host-info@0.1.0;
+  export api;
+  export watane:host/stream-sink@0.1.0;
+}

@@ -1,0 +1,23 @@
+package mods:claude-front@0.1.0;
+interface api {
+  run: func(launch: string) -> string;
+  run-say: func(launch: string, text: string) -> string;
+  run-say-first: func(launch: string, text: string) -> string;
+  run-cancel: func(launch: string) -> string;
+  run-fail: func(launch: string) -> string;
+  run-then-sleep: func(launch: string, ms: u64) -> string;
+  open-say: func(text: string) -> string;
+  run-say-to: func(launch: string, other: string, text: string) -> string;
+  say: func(s: string, text: string) -> string;
+  items: func(s: string) -> list<string>;
+  ended: func() -> list<string>;
+}
+world claude-front {
+  import watane:host/state@0.1.0;
+  import watane:host/streams@0.1.0;
+  import watane:host/claude-types@0.1.0;
+  import watane:host/claude-session@0.1.0;
+  import mods:claude/api@0.1.0;
+  export api;
+  export watane:host/stream-sink@0.1.0;
+}

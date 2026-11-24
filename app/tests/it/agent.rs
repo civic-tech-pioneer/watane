@@ -16,7 +16,9 @@ mod issuer;
 
 use crate::support::GUI;
 use crate::support::driver::App;
-use crate::support::journey::{TIMEOUT, invoke, until};
+use crate::support::journey::{
+    TIMEOUT, approve, begin_install, deny, fixture, installed, invoke, open, until,
+};
 use serde_json::{Value, json};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -175,4 +177,231 @@ fn ac3_s61_claude_picker_refuses_old_version_and_keeps_valid_choice() {
     text_is(&app, "#claude-status", "No program chosen");
     assert!(!path.exists());
     assert!(app.quit().success());
+}
+
+const INIT: &str = r#"{"type":"system","subtype":"init","tools":[],"mcp_servers":[],"agents":[],"permissionMode":"default","plugins":[{"name":"watane-run"}]}"#;
+const GRANT_CLAUDE: &str = "Can start Claude Code with your Claude account, to read and change files in folders you choose. Not checked by watane.";
+const GRANT_SHELL: &str = "Can start Claude Code with your Claude account and let it run programs and use the web, inside Claude's sandbox. Not checked by watane.";
+
+/// A running app with the fake `claude` chosen and the `claude` and `claude-front` fixtures
+/// installed, the page of `claude` open.
+struct Claude {
+    app: App,
+    home: tempfile::TempDir,
+    _fake: tempfile::TempDir,
+}
+fn claude_app() -> Claude {
+    let home = tempfile::tempdir().unwrap();
+    let fake = tempfile::tempdir().unwrap();
+    let program = fake.path().join("claude");
+    fs::copy(fixture("fake-claude/claude"), &program).unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::write(fake.path().join("init"), format!("{INIT}\n")).unwrap();
+    let app = App::start(home.path(), &[]);
+    assert!(app.wait("main", TIMEOUT));
+    until(&app, "main", "document.body.dataset.ready === 'true'");
+    app.pick(&[program.canonicalize().unwrap()]);
+    invoke(&app, "claude_binary_pick", json!({}));
+    begin_install(&app, &[fixture("claude"), fixture("claude-front")]);
+    // The plan of the consumer of a Claude Code provider says so (S60).
+    assert_eq!(
+        app.eval(
+            "consent",
+            "[...document.querySelectorAll('section p')].map(e => e.textContent).filter(t => t.startsWith('Uses Claude Code'))"
+        ),
+        json!(["Uses Claude Code through claude (local)."])
+    );
+    approve(&app);
+    installed(&app, "claude");
+    installed(&app, "claude-front");
+    open(&app, "claude");
+    Claude {
+        app,
+        home,
+        _fake: fake,
+    }
+}
+impl Claude {
+    fn page(&self, function: &str, args: Value) -> Value {
+        self.app.eval(
+            "mod-claude",
+            &format!("window.__r = null; watane.call({}, {args}).then(v => window.__r = {{ok: v}}, e => window.__r = {{error: String(e.message || e)}}); null", json!(function)),
+        );
+        until(&self.app, "mod-claude", "window.__r !== null");
+        let result = self.app.eval("mod-claude", "window.__r");
+        assert!(result.get("error").is_none(), "{function}: {result}");
+        result["ok"].clone()
+    }
+    fn start(&self, folder: &str) -> String {
+        let launch = json!({"version": 1, "workspace": folder, "profile": "coder"}).to_string();
+        let s = self.page("api.start", json!({"launch": launch}));
+        assert_eq!(s.as_str().unwrap().len(), 32, "no stream id: {s}");
+        s.as_str().unwrap().to_owned()
+    }
+    fn items(&self, s: &str) -> Vec<String> {
+        serde_json::from_value(self.page("api.items", json!({"s": s}))).unwrap()
+    }
+    fn ended(&self) -> Vec<String> {
+        serde_json::from_value(self.page("api.ended", Value::Null)).unwrap()
+    }
+    fn until_items(&self, s: &str, what: &str, test: impl Fn(&[String]) -> bool) {
+        let end = Instant::now() + TIMEOUT;
+        while !test(&self.items(s)) {
+            assert!(Instant::now() < end, "{what}: {:?}", self.items(s));
+            std::thread::yield_now();
+        }
+    }
+    fn until_ended(&self, line: &str) {
+        let end = Instant::now() + TIMEOUT;
+        while !self.ended().iter().any(|e| e == line) {
+            assert!(Instant::now() < end, "{line}: {:?}", self.ended());
+            std::thread::yield_now();
+        }
+    }
+    /// The consent view shows `question` (the call that began it has returned).
+    fn view(&self, title: &str, question: &str) {
+        assert!(self.app.wait("consent", TIMEOUT));
+        until(
+            &self.app,
+            "consent",
+            "document.body.dataset.ready === 'true'",
+        );
+        assert_eq!(
+            self.app
+                .eval("consent", "document.querySelector('h1').textContent"),
+            title
+        );
+        assert_eq!(
+            self.app.eval(
+                "consent",
+                "[...document.querySelector('main').children].map(e => e.textContent)"
+            ),
+            json!([question])
+        );
+        assert_eq!(
+            self.app
+                .eval("consent", "document.querySelector('#stop').hidden"),
+            true
+        );
+    }
+    fn consents(&self) -> Value {
+        let text = fs::read_to_string(self.home.path().join("installed.json")).unwrap();
+        let all: Value = serde_json::from_str(&text).unwrap();
+        let m = all["mods"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["local"] == "claude")
+            .unwrap();
+        m.get("consents").cloned().unwrap_or_else(|| json!([]))
+    }
+}
+fn new_folder() -> (tempfile::TempDir, String) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().canonicalize().unwrap().display().to_string();
+    (dir, path)
+}
+fn pending(folder: &str) -> String {
+    json!({"type": "consent-pending", "what": format!("workspace:local/claude:{folder}")})
+        .to_string()
+}
+fn question(folder: &str) -> String {
+    format!("Let claude (local) have agents work in {folder} (coder, through claude (local))?")
+}
+
+#[test]
+#[ignore = "slow: the real app, host and fake claude: the consent view, a returned call, deny and approve"]
+fn s58_consent_for_agents_in_a_new_folder_deny_keeps_nothing_approve_starts() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let c = claude_app();
+    let (_dir, folder) = new_folder();
+    let first = c.start(&folder);
+    c.view("Agents in a folder", &question(&folder));
+    // The call has returned: its stream holds `consent-pending` while the view waits.
+    c.until_items(&first, "consent-pending", |i| i == [pending(&folder)]);
+    deny(&c.app);
+    c.until_ended(&format!(
+        "{first} consent-refused(workspace:local/claude:{folder})"
+    ));
+    assert_eq!(c.consents(), json!([]));
+    // The next ask shows the view again; approving lets the stream start.
+    let second = c.start(&folder);
+    c.view("Agents in a folder", &question(&folder));
+    c.until_items(&second, "consent-pending", |i| i == [pending(&folder)]);
+    approve(&c.app);
+    c.until_items(&second, "initialized", |i| {
+        i.iter().any(|l| l.contains("\"initialized\""))
+    });
+    assert_eq!(
+        c.consents(),
+        json!([{"kind": "workspace", "via": "local/claude", "folder": folder}])
+    );
+    assert!(c.app.quit().success());
+}
+
+#[test]
+#[ignore = "slow: the real app, host and fake claude: the details, the switch and the next ask"]
+fn s60_consent_in_the_details_and_its_withdrawal() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let c = claude_app();
+    let (_dir, folder) = new_folder();
+    let s = c.start(&folder);
+    c.view("Agents in a folder", &question(&folder));
+    approve(&c.app);
+    c.until_items(&s, "initialized", |i| {
+        i.iter().any(|l| l.contains("\"initialized\""))
+    });
+    let row = |key: &str| {
+        format!(
+            "section[data-local=claude] .grant-row[data-key={}]",
+            json!(key)
+        )
+    };
+    let text = |selector: &str| {
+        format!(
+            "(document.querySelector({}) || {{textContent: null}}).textContent",
+            json!(selector)
+        )
+    };
+    let line = format!("Let claude have agents work in {folder} (through claude (local))?");
+    let consent_row = "section[data-local=claude] .consent-row .grant-text";
+    until(
+        &c.app,
+        "main",
+        &format!("{} === {}", text(consent_row), json!(line)),
+    );
+    assert_eq!(
+        c.app.eval(
+            "main",
+            "document.querySelector('section[data-local=claude] .agents .label').textContent"
+        ),
+        "Agents"
+    );
+    for (key, words) in [
+        ("claude-code", GRANT_CLAUDE),
+        ("claude-code-shell", GRANT_SHELL),
+    ] {
+        assert_eq!(
+            c.app
+                .eval("main", &text(&format!("{} .grant-text", row(key)))),
+            words
+        );
+    }
+    // The switch withdraws: the line goes, the file agrees, the stream ends `gone`.
+    c.app.eval(
+        "main",
+        "document.querySelector('section[data-local=claude] .consent-row .sw').click(); null",
+    );
+    until(
+        &c.app,
+        "main",
+        "!document.querySelector('section[data-local=claude] .consent-row')",
+    );
+    assert_eq!(c.consents(), json!([]));
+    c.until_ended(&format!("{s} gone"));
+    // The next start asks again.
+    c.start(&folder);
+    c.view("Agents in a folder", &question(&folder));
+    deny(&c.app);
+    assert!(c.app.quit().success());
 }

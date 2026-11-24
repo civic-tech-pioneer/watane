@@ -1,0 +1,156 @@
+#!/bin/sh
+# host's own fake `claude` (TECHNICAL 19.9, 13.1): a POSIX sh script that tests copy into a
+# folder of their own with files beside it:
+#   version  text printed by `--version` (default `2.1.295 (Claude Code)`)
+#   before   raw lines to write before the answer to `initialize`
+#   holdbefore  with this file the program waits for a file `go` before it writes `before`
+#   init     the `system/init` line to write after the answer to `initialize`
+#   lines    raw lines to play after it
+#   reply    the `response` object of the answer to `initialize` (default
+#            `{"hook_on_failure_supported":true}`)
+#   after.N  raw lines to write after the Nth line of stdin (`initialize` is the first); `@P@`
+#            in them is replaced by the program's pid, so that streams can tell their lines apart
+#   exit     with this file the program exits with its content as status after the lines
+#   closein  with this file the program closes its stdin after the lines and waits for a file
+#            `go`, then exits (a write to it fails)
+#   exitafter  with this file the program exits after it read as many stdin lines as its content
+#            says (`initialize` is the first)
+#   closeout with this file the program closes its stdout after the lines and stays alive for 6 s
+#            (the end of the output of a process that does not exit)
+#   rate     with this file, after the lines: `<deltas> <entries> <bytes> <seconds>`: a perl process
+#            takes over (below) and runs one turn at that rate
+#   spawn    with this file the program starts a `sleep` in its group and logs its pid
+# Rate mode (the load of S100): the first `user` line starts a turn of `seconds`; each second it
+# writes `deltas` lines `{"type":"stream_event","n":N,"t":T,..}` and `entries` lines
+# `{"type":"assistant","n":N,"t":T,"message":{"content":[{"type":"text","text":..}]}}` whose text is `bytes` bytes, N counting both from 1 and T the
+# microseconds since the epoch at the moment of the write; a `can_use_tool` request with the
+# tool use id `t<pid>a` 1 s into the turn and `t<pid>b` at 2.5 s; an `interrupt` ends the turn
+# at once with its `control_response` and a `result` line; at the end, a `result` of success.
+# It logs to `stamps.<pid>` beside it, one entry per line, each with its microseconds last:
+# `ask <tool use id>`, `answer <request id>` (a `control_response` read), `interrupt`,
+# `result`, and `lines <last N>` before `result`.
+# It logs its arguments, environment and stdin to `claude.log` beside it, one `ARG`, `ENV`,
+# `IN`, `PID`, `CHILD` or `CWD` entry per line.
+dir=$(dirname "$0")
+log="$dir/claude.log"
+if [ "$1" = "--version" ]; then
+  if [ -f "$dir/version" ]; then cat "$dir/version"; else echo "2.1.295 (Claude Code)"; fi
+  exit 0
+fi
+for a in "$@"; do printf 'ARG %s\n' "$a" >> "$log"; done
+env | sort | while IFS= read -r l; do printf 'ENV %s\n' "$l" >> "$log"; done
+printf 'PID %s\n' "$$" >> "$log"
+printf 'CWD %s\n' "$(pwd)" >> "$log"
+if [ -f "$dir/spawn" ]; then
+  sleep 300 >/dev/null 2>&1 &
+  printf 'CHILD %s\n' "$!" >> "$log"
+fi
+IFS= read -r line
+printf 'IN %s\n' "$line" >> "$log"
+rid=$(printf '%s' "$line" | sed 's/.*"request_id":"\([^"]*\)".*/\1/')
+if [ -f "$dir/holdbefore" ]; then
+  while [ ! -f "$dir/go" ]; do sleep 0.05; done
+fi
+[ -f "$dir/before" ] && cat "$dir/before"
+reply='{"hook_on_failure_supported":true}'
+[ -f "$dir/reply" ] && reply=$(cat "$dir/reply")
+printf '{"type":"control_response","response":{"subtype":"success","request_id":"%s","response":%s}}\n' "$rid" "$reply"
+[ -f "$dir/init" ] && cat "$dir/init"
+[ -f "$dir/lines" ] && cat "$dir/lines"
+if [ -f "$dir/rate" ]; then
+  cat > "$dir/rate.$$.pl" <<'PERL'
+use strict;
+use Time::HiRes qw(time);
+use IO::Select;
+my ($dir, $deltas, $entries, $bytes, $seconds) = @ARGV;
+$| = 1;
+open(my $st, '>>', "$dir/stamps.$$") or die "stamps: $!";
+select((select($st), $| = 1)[0]);
+sub us { return int(time() * 1e6); }
+sub stamp { print $st join(' ', @_, us()), "\n"; }
+my $sel = IO::Select->new(\*STDIN);
+my ($buf, $started, $interrupt, $done, $t0) = ('', 0, undef, 0, 0);
+my ($n, $kd, $ke) = (0, 0, 0);
+my $pid = $$;
+my @asks = ([1.0, 'a'], [2.5, 'b']);
+sub poll {
+  my ($wait) = @_;
+  return unless $sel->can_read($wait > 0 ? $wait : 0);
+  my $r = sysread(STDIN, $buf, 65536, length $buf);
+  exit 0 unless $r;
+  while ($buf =~ s/^([^\n]*)\n//) {
+    my $line = $1;
+    if ($line =~ /"type":"control_request"/ && $line =~ /"subtype":"interrupt"/) {
+      stamp('interrupt');
+      ($interrupt) = $line =~ /"request_id":"([^"]*)"/;
+    } elsif ($line =~ /"type":"control_response"/) {
+      my ($rid) = $line =~ /"request_id":"([^"]*)"/;
+      stamp('answer', $rid);
+    } elsif ($line =~ /"type":"user"/ && !$started) {
+      $started = 1;
+      $t0 = time();
+    }
+  }
+}
+sub finish {
+  my ($subtype) = @_;
+  stamp('lines', $n);
+  print qq({"type":"result","subtype":"$subtype","is_error":false,"n_lines":$n}\n);
+  stamp('result');
+  $done = 1;
+}
+while (1) {
+  if (!$started || $done) { poll(3600); next; }
+  my @c = ($t0 + $kd / $deltas, 'd');
+  if ($entries > 0) {
+    my $te = $t0 + ($ke + 0.5) / $entries;
+    @c = ($te, 'e') if $te < $c[0];
+  }
+  @c = ($t0 + $asks[0][0], 'a') if @asks && $t0 + $asks[0][0] < $c[0];
+  @c = ($t0 + $seconds, 'end') if $c[0] >= $t0 + $seconds;
+  poll($c[0] - time());
+  if (defined $interrupt) {
+    print qq({"type":"control_response","response":{"subtype":"success","request_id":"$interrupt","response":{}}}\n);
+    finish('error_during_execution');
+    next;
+  }
+  next if time() < $c[0];
+  my $kind = $c[1];
+  if ($kind eq 'd') {
+    $kd++;
+    $n++;
+    print qq({"type":"stream_event","n":$n,"t":) . us() . qq(,"pad":"delta $kd"}\n);
+  } elsif ($kind eq 'e') {
+    $ke++;
+    $n++;
+    print qq({"type":"assistant","n":$n,"t":) . us() . qq(,"message":{"content":[{"type":"text","text":") . ('x' x $bytes) . qq("}]}}\n);
+  } elsif ($kind eq 'a') {
+    my $id = (shift @asks)->[1];
+    stamp('ask', "t${pid}$id");
+    print qq({"type":"control_request","request_id":"r${pid}$id","request":{"subtype":"can_use_tool","tool_name":"Read","input":{"file_path":"a.txt"},"tool_use_id":"t${pid}$id"}}\n);
+  } else {
+    finish('success');
+  }
+}
+PERL
+  exec perl "$dir/rate.$$.pl" "$dir" $(cat "$dir/rate")
+fi
+if [ -f "$dir/closeout" ]; then
+  exec 1>&-
+  sleep 6
+  exit 0
+fi
+if [ -f "$dir/closein" ]; then
+  exec 0<&-
+  while [ ! -f "$dir/go" ]; do sleep 0.05; done
+  exit 0
+fi
+if [ -f "$dir/exit" ]; then exit "$(cat "$dir/exit")"; fi
+n=1
+[ -f "$dir/after.$n" ] && sed "s/@P@/$$/g" "$dir/after.$n"
+while IFS= read -r line; do
+  printf 'IN %s\n' "$line" >> "$log"
+  n=$((n + 1))
+  if [ -f "$dir/exitafter" ] && [ "$n" -ge "$(cat "$dir/exitafter")" ]; then exit 0; fi
+  [ -f "$dir/after.$n" ] && sed "s/@P@/$$/g" "$dir/after.$n"
+done
