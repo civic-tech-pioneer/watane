@@ -150,14 +150,11 @@ pub fn create_dir(path: &Path) -> io::Result<()> {
     if unsafe { CreateDirectoryW(wide.as_ptr(), &attributes) } == 0 {
         return Err(io::Error::last_os_error());
     }
-    let directory = open_path(path, false)?;
-    if !matches!(kind(&directory)?, FileKind::Directory) {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "expected a plain Windows directory",
-        ));
-    }
-    check_owner_only(&directory)
+    open_private_dir(path)
+        .map(drop)
+        .map_err(|error| match error {
+            PrivateDirError::Io(error) | PrivateDirError::Invalid(error) => error,
+        })
 }
 
 /// Create missing directories with the same private ACL as the final directory.
@@ -178,6 +175,52 @@ pub fn create_dir_all(path: &Path) -> io::Result<()> {
         }
         Err(e) => Err(e),
     }
+}
+
+/// Failure to create, open or validate a private directory.
+#[derive(Debug)]
+pub enum PrivateDirError {
+    /// An operating-system failure while creating, opening or inspecting the directory.
+    Io(io::Error),
+    /// The final path has the wrong kind, ownership or access control.
+    Invalid(io::Error),
+}
+
+impl std::fmt::Display for PrivateDirError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Io(error) | Self::Invalid(error) => error.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for PrivateDirError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(error) | Self::Invalid(error) => Some(error),
+        }
+    }
+}
+
+/// Create missing private directories. Return a checked handle that pins the final directory.
+pub fn private_dir(path: &Path) -> Result<File, PrivateDirError> {
+    create_dir_all(path).map_err(PrivateDirError::Io)?;
+    open_private_dir(path)
+}
+
+fn open_private_dir(path: &Path) -> Result<File, PrivateDirError> {
+    let directory = open_path(path, false).map_err(PrivateDirError::Io)?;
+    if !matches!(
+        kind(&directory).map_err(PrivateDirError::Io)?,
+        FileKind::Directory
+    ) {
+        return Err(PrivateDirError::Invalid(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "expected a plain Windows directory",
+        )));
+    }
+    check_owner_only(&directory).map_err(PrivateDirError::Invalid)?;
+    Ok(directory)
 }
 
 /// Create an exclusive new file with a protected owner-only ACL.
