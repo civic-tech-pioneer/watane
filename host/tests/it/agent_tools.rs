@@ -426,9 +426,12 @@ fn ac1_the_request_names_the_opening_mod_as_via_and_the_origin_client() {
     assert_eq!(asked[0].origin, local("toolbox-front"));
     home.answer(0, ConsentAnswer::Granted);
     // The consent is the origin client's, not the opening mod's.
-    wait("the consent", Duration::from_secs(20), || {
-        home.consents_of("toolbox-front") != json!([])
+    // The handle is ready once the consent is stored (the asking thread then marks it).
+    wait("the front's handle", Duration::from_secs(20), || {
+        result::<Vec<String>>(home.call("toolbox-front", "api.describe", json!({"handle": h})))
+            .is_ok()
     });
+    assert_ne!(home.consents_of("toolbox-front"), json!([]));
     assert_eq!(home.consents_of("toolbox"), json!([]));
     // The handle is the origin client's: the front reaches it, `toolbox` as page does not.
     let described =
@@ -870,8 +873,9 @@ fn ac6_withdrawing_a_toolset_consent_closes_the_handles_and_ends_the_live_jobs()
             .unwrap();
     home.wait_asked(2);
     home.answer(1, ConsentAnswer::Granted);
-    wait("the front's consent", Duration::from_secs(20), || {
-        home.consents_of("toolbox-front") != json!([])
+    wait("the front's handle", Duration::from_secs(20), || {
+        result::<Vec<String>>(home.call("toolbox-front", "api.describe", json!({"handle": front})))
+            .is_ok()
     });
     let job = home
         .call_tool(&h1, "slow", "tool_api_slow", r#"{"ms":1500}"#)
