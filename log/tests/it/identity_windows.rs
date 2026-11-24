@@ -15,7 +15,8 @@ fn s110_key_is_private_and_reopens() {
         Log::open(&dir).expect("reopen private identity").identity(),
         log.identity()
     );
-    // Use Windows' ACL reporting independently of the production Win32 wrapper.
+    // Read the ACL through .NET. The runner can inherit a PSModulePath for
+    // PowerShell 7, so the Windows PowerShell child must not load Get-Acl.
     let result = Command::new("powershell.exe")
         .args([
             "-NoProfile",
@@ -24,7 +25,7 @@ fn s110_key_is_private_and_reopens() {
             r"
             $ErrorActionPreference = 'Stop'
             $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-            $acl = Get-Acl -LiteralPath $env:WATANE_TEST_KEY_PATH
+            $acl = [System.IO.File]::GetAccessControl($env:WATANE_TEST_KEY_PATH)
             $sidType = [System.Security.Principal.SecurityIdentifier]
             $rules = $acl.GetAccessRules($true, $true, $sidType)
             if ($acl.GetOwner($sidType).Value -ne $sid -or
