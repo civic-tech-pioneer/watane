@@ -204,7 +204,9 @@ no interface, host or provider.
   network and manage lines are the same in both forms. A subscription to
   an interface named `events` reads `Receive the events of {provider}`
   (not `the events events`). Example:
-  `Call books of Reading list by Alice`. The consent view and every request
+  `Call books of Reading list by Alice`. Install and grant consent show
+  the short Call line and expose the exact interface in its tooltip.
+  Other consent lines and every request
   show only `text`; `short` never replaces it there, because the
   participant decides on the exact words. `GrantLine.short` is
   `#[serde(default)]`; an empty `short` renders `text`.
@@ -466,7 +468,9 @@ installed.`, `Book club, Notes and Stats are installed.`) and has no
 nothing in the view (only the grid).
 For `install_release` and `install_link`, read `result?.followed || []`:
 for each party label, append `watane now follows <label>, so its updates
-reach you.` in the note. An absent or empty array leaves the note unchanged.
+reach you.` in the note. In Find, a verified installable result with a
+channel link says that installing may follow the publisher’s channel
+for updates. An absent or empty array leaves the note unchanged.
 
 #### 5.3.4 Details
 
@@ -697,7 +701,9 @@ The manager tabs use `#mods` (Library), `#find`, and `#updates`;
 restore hints, including when the native window is hidden. Navigation does
 not depend on the polling timer. The library polls every 2 s while
 visible, every 10 s while hidden; focus and `visibilitychange` refresh
-at once.
+at once. If startup fails, the manager hides the install menu and presents
+the startup cause in the library. A busy port says the local API is not
+running and keeps the restart options in the error.
 The library filter matches every entered word
 against the name and publisher and can select published or local mods
 (5.3.3). A dependency warning is the inline panel of 5.3.4 item 5, before
@@ -933,7 +939,8 @@ or the fingerprint when no profile is stored. `signer` is the own identity.
   including publish; a signed home or a replica has no such line. The
   adapter sends it as a detail with an empty label, rendered as its value
   alone through `textContent`.
-- Buttons: `Deny` and `Approve`, plus `Deny and stop asks from <asker name>`
+- Buttons: `Deny` and `Approve`. Deny has an accessible label and tooltip
+  that include the heading of the request it declines. Plus `Deny and stop asks from <asker name>`
   after `Deny` for requests with `asked_by` (17.4). `Deny` has the focus at load. The page has
   no form and no default button; Enter and Space act only on the focused
   control.
@@ -1109,13 +1116,15 @@ Behaviour:
   installed mod with a page writes it; else `not_found`.
 - `updates_done` (I): the automatic updates of 9.5 that succeeded since
   start, newest first, at most 50; kept in `Core`, not on disk.
-- `mod_remove`: the page first asks "Delete the data of <name>?" with the
-  buttons `Keep data` (focused) and `Delete data`.
+- `mod_remove`: the page first shows the Remove panel in 5.3.4.
 - `grant_withdraw`, `grant_give`: find the `GrantState` of the mod whose
   grant text form is `key`; none gives `not_found`. Then `host.revoke` or
   `host.grant`. No consent view for either: a withdrawal only removes
   authority, and a give-back is the participant's own act in `main`, which
-  no mod reaches (host 4.4).
+  no mod reaches (host 4.4). After a successful change, dispatch the
+  `watane:grant-changed` DOM event in that mod’s open page. Pages can
+  listen on `window` and re-read through their existing host calls. The
+  event carries no data and preserves the document and its pending calls.
 - `tools_list`: for each enabled mod, `host.functions(local)` as rows with `entry`
   `<local>:<interface>.<function>` and `tool` `<local>_<interface>_<function>`
   (short interface name, host 3.2 and 10.1). The page labels each checkbox
@@ -2346,10 +2355,8 @@ Fixtures: **Desk** is host's prebuilt `manager` (host 13.1; `name =
 `tests/fixtures/desk-ui/ui/` and `main = true` added to its `mod.toml`.
 The page has one button per `api` function, with text inputs for the
 local name and the release, and shows each result or error code as text.
-When a grant change reloads Desk with a call still awaiting its response,
-the new document shows `page_reloaded`, using a marker in the window's
-reload URL fragment, set synchronously with `history.replaceState`. It
-does not depend on a session-storage flush, claim the call failed, or retry it.
+On `watane:grant-changed`, Desk re-reads in the existing document.
+An outstanding call retains its original response.
 Host applies or drops the call's outbox; withdrawing `manage` cancels any
 pending management request and drops the app future and its consent (17.3;
 host 6.10). Giving it back cannot revive that request.
@@ -2370,9 +2377,9 @@ Ivy's index, as `tests/it/find.rs` does.
 
 Scenarios of `tests/it/manage.rs`:
 
-- **Grant reload** (S81). Hold the response of a real Desk request while
-  withdrawing or giving back its `manage` grant. Wait for page load; the
-  replacement document reports `page_reloaded`, and its next call settles
+- **Grant notification** (S113). Hold the response of a real Desk request
+  while withdrawing its `manage` grant. The same page receives the
+  notification, the held response can settle, and its next call settles
   with a result or `not_granted`. Withdrawal closes the pending consent;
   after give-back the old request reads `denied` and a new request can be
   decided. Notes remains installed throughout the cancellation.
@@ -2407,7 +2414,7 @@ Scenarios of `tests/it/manage.rs`:
 - **S82 Stop asks** (host Q32). Desk asks to enable Weather; `Deny and stop
   asks from Desk` ends it `denied`, Desk's `manage` grant reads withdrawn
   in its details, and Desk's next request shows `not_granted`. Withdrawal
-  reloads Desk as the details switch does (S81); after give-back, querying
+  notifies Desk as the details switch does; after give-back, querying
   the original request shows `denied`, and a new request can be approved.
 - **S82 Open page** (host Q31). Desk's `api.open-page` with `reading-list`
   opens the window `mod-reading-list`; with a consent request open it opens
