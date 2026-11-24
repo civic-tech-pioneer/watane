@@ -13,6 +13,9 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 use wasmtime::component::Val;
 
+/// Live handles per (origin client, opening mod) (19.5, Limits).
+const MAX_HANDLES: usize = 32;
+
 /// Where a handle stands with the consents of its toolsets (19.5).
 #[derive(Clone, Debug, PartialEq)]
 enum Wait {
@@ -44,6 +47,9 @@ struct Entry {
 #[derive(Debug, Default)]
 pub(crate) struct Handles {
     live: Mutex<HashMap<String, Entry>>,
+    /// The consent questions that wait: (origin client, toolset) to the handles that wait on
+    /// the answer (19.5, Limits). Taken before `live` is never held with it.
+    asking: Mutex<HashMap<(String, String), Vec<String>>>,
 }
 impl Handles {
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Entry>> {
@@ -57,6 +63,18 @@ impl Handles {
             .get(id)
             .filter(|e| e.owner == *owner && e.origin == origin)
             .map(|e| (e.toolsets.clone(), e.wait.clone()))
+    }
+    /// The live handles of this (origin client, opening mod).
+    fn count(&self, owner: &ModRef, origin: &str) -> usize {
+        self.lock()
+            .values()
+            .filter(|e| e.owner == *owner && e.origin == origin)
+            .count()
+    }
+    fn asking(&self) -> std::sync::MutexGuard<'_, HashMap<(String, String), Vec<String>>> {
+        self.asking
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
     }
     /// Whether the origin client holds the handle (19.3, `agent-handle`).
     pub(crate) fn held_by(&self, id: &str, origin: &str) -> bool {
@@ -168,9 +186,27 @@ pub(crate) fn call(inv: &Invocation, function: &str, args: &[Val]) -> Result<Val
             {
                 return Ok(err("not-granted"));
             }
+            // At most 32 live handles per (origin client, opening mod), counting those that
+            // chains in flight have queued (19.5, Limits).
+            let gate = inv.gate();
+            let mut log = inv.log();
+            let mut queued = host.handles.count(&me, &inv.origin);
+            let mut count = |e: &Effect| {
+                if let Effect::AgentOpen { owner, origin, .. } = e
+                    && *owner == me
+                    && *origin == inv.origin
+                {
+                    queued += 1;
+                }
+            };
+            gate.each(&mut count);
+            log.iter().for_each(&mut count);
+            if queued >= MAX_HANDLES {
+                return Ok(err("not-granted"));
+            }
             let id = super::streams::random_id();
             let name = format!("h{}", &super::streams::random_id()[..30]);
-            inv.log().push(Effect::AgentOpen {
+            log.push(Effect::AgentOpen {
                 id: id.clone(),
                 name,
                 owner: me,
@@ -366,10 +402,6 @@ impl Host {
         let Ok(token) = self.issue_agent_token(&name) else {
             return;
         };
-        let first = self
-            .first_to_ask(&origin, &toolsets)
-            .map(|toolset| format!("toolset:{toolset}"));
-        let wait = first.clone().map_or(Wait::Ready, Wait::Pending);
         self.handles.lock().insert(
             id.clone(),
             Entry {
@@ -379,7 +411,7 @@ impl Host {
                 origin,
                 origin_gen,
                 toolsets,
-                wait,
+                wait: Wait::Ready,
                 token: token.as_str().to_owned(),
                 token_id: token.id(),
                 jobs: HashMap::new(),
@@ -387,21 +419,73 @@ impl Host {
         );
         // The checks of the call are made again where the effect lands (19.6, At apply).
         self.end_lost_handles();
-        if let Some(what) = first {
-            let ask = Asker {
-                weak: Weak::<Host>::clone(&self.weak),
-                handles: Arc::clone(&self.handles),
-                hub: Arc::clone(&self.hub),
-                mode: self.home.mode.clone(),
-                id: id.clone(),
-            };
-            let spawned = std::thread::Builder::new()
-                .name("watane-consent".into())
-                .spawn(move || ask.run());
-            if spawned.is_err() {
-                // No thread, no question: the consent is refused.
-                self.handles.set_wait(&id, Wait::Refused(what));
+        self.advance_handle(&id);
+    }
+
+    /// Takes a handle to its next toolset that needs its consent, or to ready. The question of
+    /// a (origin client, toolset) is asked once: a handle that needs the same one waits on it
+    /// (19.5, Limits).
+    pub(crate) fn advance_handle(&self, id: &str) {
+        let (origin, toolsets) = {
+            let live = self.handles.lock();
+            let Some(e) = live.get(id) else { return };
+            (e.origin.clone(), e.toolsets.clone())
+        };
+        let Some(toolset) = self.first_to_ask(&origin, &toolsets) else {
+            self.handles.set_wait(id, Wait::Ready);
+            return;
+        };
+        let what = format!("toolset:{toolset}");
+        self.handles.set_wait(id, Wait::Pending(what.clone()));
+        let key = (origin, toolset);
+        let first = {
+            let mut asking = self.handles.asking();
+            match asking.get_mut(&key) {
+                Some(waiters) => {
+                    waiters.push(id.to_owned());
+                    false
+                }
+                None => {
+                    asking.insert(key.clone(), vec![id.to_owned()]);
+                    true
+                }
             }
+        };
+        if !first {
+            return;
+        }
+        let question = Question {
+            weak: Weak::<Host>::clone(&self.weak),
+            handles: Arc::clone(&self.handles),
+            hub: Arc::clone(&self.hub),
+            mode: self.home.mode.clone(),
+            key: key.clone(),
+        };
+        if std::thread::Builder::new()
+            .name("watane-consent".into())
+            .spawn(move || question.run())
+            .is_err()
+        {
+            // No thread, no question: the consent is refused.
+            let waiters = self.handles.asking().remove(&key).unwrap_or_default();
+            for w in waiters {
+                self.refuse_handle(&w, &what);
+            }
+        }
+    }
+
+    /// The consent of a handle was refused: its token and jobs end, the first use reports why.
+    fn refuse_handle(&self, id: &str, what: &str) {
+        let taken = {
+            let mut live = self.handles.lock();
+            live.get_mut(id).map(|e| {
+                e.wait = Wait::Refused(what.to_owned());
+                (e.token_id.clone(), std::mem::take(&mut e.jobs))
+            })
+        };
+        if let Some((token_id, jobs)) = taken {
+            self.end_token(&token_id);
+            self.hub.end_gone(&jobs.into_values().collect::<Vec<_>>());
         }
     }
 
@@ -504,85 +588,86 @@ impl Host {
     }
 }
 
-/// The thread that asks the consents of a handle's toolsets, one after the other (19.7, Asking).
-struct Asker {
+/// The thread of one consent question of (origin client, toolset): it asks the app once, and
+/// its answer goes to every handle that waits (19.7, Asking; 19.5, Limits).
+struct Question {
     weak: Weak<Host>,
     handles: Arc<Handles>,
     hub: Arc<Hub>,
     mode: Mode,
-    id: String,
+    key: (String, String),
 }
-impl Asker {
+impl Question {
+    /// The live handles that wait.
+    fn waiters(&self) -> Vec<String> {
+        let ids = self
+            .handles
+            .asking()
+            .get(&self.key)
+            .cloned()
+            .unwrap_or_default();
+        let live = self.handles.lock();
+        ids.into_iter().filter(|id| live.contains_key(id)).collect()
+    }
     fn run(&self) {
-        let toolsets = {
-            let live = self.handles.lock();
-            let Some(e) = live.get(&self.id) else { return };
-            e.toolsets.clone()
+        let (origin, toolset) = (&self.key.0, &self.key.1);
+        let Some(host) = self.weak.upgrade() else {
+            return;
         };
-        for toolset in toolsets {
-            // Each question is made from what the catalog holds when it is asked.
-            let Some(host) = self.weak.upgrade() else {
-                return;
-            };
-            let (origin, origin_gen, owner) = {
-                let live = self.handles.lock();
-                let Some(e) = live.get(&self.id) else { return };
-                (e.origin.clone(), e.origin_gen, e.owner.clone())
-            };
-            if !host.toolset_needs_consent(&origin, &toolset) {
-                continue;
+        let first = self.waiters().into_iter().next().and_then(|id| {
+            let live = self.handles.lock();
+            live.get(&id).map(|e| (e.owner.clone(), e.origin_gen))
+        });
+        let origin_local = host.local_of(origin);
+        let (Some((owner, origin_gen)), Some(origin_local)) = (first, origin_local) else {
+            self.end(&host, |host, id| host.close_handle(id));
+            return;
+        };
+        let functions = host.toolset_functions(toolset);
+        let consent = Consent::Toolset {
+            toolset: toolset.clone(),
+            functions: vec![],
+        };
+        let what = consent.to_string();
+        drop(host);
+        let request = ConsentRequest {
+            origin: origin_local,
+            via: owner.local,
+            consent,
+            profile: None,
+            functions: functions.clone(),
+        };
+        let asked = consent::ask(&self.mode, &self.hub, || self.waiters().is_empty(), request);
+        let Some(host) = self.weak.upgrade() else {
+            return;
+        };
+        match asked {
+            Asked::Stopped => {
+                self.handles.asking().remove(&self.key);
             }
-            let functions = host.toolset_functions(&toolset);
-            let Some(origin_local) = host.local_of(&origin) else {
-                host.close_handle(&self.id);
-                return;
-            };
-            let consent = Consent::Toolset {
-                toolset: toolset.clone(),
-                functions: vec![],
-            };
-            let what = consent.to_string();
-            self.handles.set_wait(&self.id, Wait::Pending(what.clone()));
-            drop(host);
-            let request = ConsentRequest {
-                origin: origin_local,
-                via: owner.local,
-                consent,
-                profile: None,
-                functions: functions.clone(),
-            };
-            let asked = consent::ask(
-                &self.mode,
-                &self.hub,
-                || !self.handles.live(&self.id),
-                request,
-            );
-            let Some(host) = self.weak.upgrade() else {
-                return;
-            };
-            match asked {
-                Asked::Stopped => return,
-                Asked::Refused => {
-                    self.handles.set_wait(&self.id, Wait::Refused(what));
-                    // The handle is closed: its token and jobs end; the first use reports why.
-                    if let Some(entry) = self.handles.lock().get_mut(&self.id) {
-                        let (token_id, jobs) =
-                            (entry.token_id.clone(), std::mem::take(&mut entry.jobs));
-                        host.end_token(&token_id);
-                        host.hub.end_gone(&jobs.into_values().collect::<Vec<_>>());
-                    }
-                    return;
-                }
-                Asked::Granted => {
-                    let stored = Consent::Toolset { toolset, functions };
-                    if host.store_consent(&origin, origin_gen, stored).is_err() {
-                        host.close_handle(&self.id);
-                        return;
-                    }
+            Asked::Refused => self.end(&host, |host, id| host.refuse_handle(id, &what)),
+            Asked::Granted => {
+                let stored = Consent::Toolset {
+                    toolset: toolset.clone(),
+                    functions,
+                };
+                if host.store_consent(origin, origin_gen, stored).is_err() {
+                    self.end(&host, |host, id| host.close_handle(id));
+                } else {
+                    // The question is over: each handle goes on to its next toolset.
+                    self.end(&host, |host, id| host.advance_handle(id));
                 }
             }
         }
-        self.handles.set_wait(&self.id, Wait::Ready);
+    }
+    /// The question is over: `then` runs for each handle that waited and is still live.
+    fn end(&self, host: &Host, then: impl Fn(&Host, &str)) {
+        let waiters = self.handles.asking().remove(&self.key).unwrap_or_default();
+        for id in waiters {
+            if self.handles.live(&id) {
+                then(host, &id);
+            }
+        }
     }
 }
 

@@ -930,3 +930,78 @@ fn harness_fakes_agent_tools_and_records_open_and_call_as_requests() {
     let out = h.call("api.describe", json!({"handle": "h"})).unwrap();
     assert_eq!((out.value, out.requests), (json!({"ok": []}), vec![]));
 }
+
+// ---- Round 1: an update that gains `Manage`, and the limits of 19.5 ---------------------------
+
+#[test]
+fn ac4_an_update_whose_approval_grants_manage_leaves_an_empty_list() {
+    let home = Home::new();
+    let h = home.granted(&["t"], 0);
+    assert_eq!(names(home.describe(&h)), TOOL_NAMES);
+    // `tool` is updated to a version that declares `Manage`; the install grants it.
+    let plan = home
+        .host
+        .plan(vec![watane_host::Source::Folder(fixture("tool-manage"))])
+        .unwrap();
+    home.rt
+        .block_on(home.host.install(plan, watane_host::Requester::App))
+        .unwrap();
+    assert_eq!(
+        home.consents_of("toolbox"),
+        json!([{"kind":"toolset","toolset":"t","functions":[]}])
+    );
+    assert_eq!(names(home.describe(&h)), Vec::<String>::new());
+    assert_eq!(
+        home.call_tool(&h, "k", "tool_api_hello", r#"{"name":"x"}"#)
+            .unwrap_err(),
+        "unknown-tool"
+    );
+}
+
+#[test]
+fn limits_the_33rd_live_handle_of_an_origin_client_and_opener_is_not_granted() {
+    let home = Home::new();
+    let handles: Vec<String> = (0..32).map(|_| home.open(&["t"]).unwrap()).collect();
+    assert_eq!(home.open(&["t"]).unwrap_err(), "not-granted");
+    // Another origin client has its own 32.
+    result::<String>(home.call("toolbox-front", "api.open", json!({"toolsets": ["t"]}))).unwrap();
+    // Closing one frees a slot.
+    home.call("toolbox", "api.close", json!({"handle": handles[0]}));
+    home.open(&["t"]).unwrap();
+    assert_eq!(home.open(&["t"]).unwrap_err(), "not-granted");
+}
+
+#[test]
+fn limits_one_question_waits_per_origin_client_and_toolset_and_one_answer_serves_all() {
+    let home = Home::new();
+    let (a, b) = (home.open(&["t"]).unwrap(), home.open(&["t"]).unwrap());
+    home.wait_asked(1);
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(home.asked().len(), 1);
+    assert_eq!(home.describe(&b).unwrap_err(), "consent-pending:toolset:t");
+    home.answer(0, ConsentAnswer::Granted);
+    home.wait_ready(&a);
+    home.wait_ready(&b);
+    assert_eq!(names(home.describe(&b)), TOOL_NAMES);
+    assert_eq!(home.asked().len(), 1);
+}
+
+#[test]
+fn limits_one_refusal_refuses_every_handle_that_waited_on_the_question() {
+    let home = Home::new();
+    let (a, b) = (home.open(&["t"]).unwrap(), home.open(&["t"]).unwrap());
+    home.wait_asked(1);
+    home.answer(0, ConsentAnswer::Refused);
+    assert_eq!(
+        first_after_pending(&home, &a, false),
+        "consent-refused:toolset:t"
+    );
+    assert_eq!(
+        first_after_pending(&home, &b, false),
+        "consent-refused:toolset:t"
+    );
+    assert_eq!(home.asked().len(), 1);
+    // A later open asks again: the question is over.
+    let _ = home.open(&["t"]).unwrap();
+    home.wait_asked(2);
+}

@@ -696,6 +696,7 @@ impl Catalog {
         preview: bool,
     ) -> Result<Vec<InstalledMod>, HostError> {
         self.validate(&plan, home)?;
+        let mut gained_manage: Vec<LocalName> = vec![];
         for Prepared(_, installed, _, _) in &mut plan.prepared {
             let old = self.mods.iter().find(|m| m.identity == installed.identity);
             // Consents follow the record, like grants: kept across an update (3.3).
@@ -716,11 +717,26 @@ impl Catalog {
                     }
                 };
             }
+            // A mod that became a manager reaches no agent until a new consent (4.4, S68).
+            let manages = |m: &InstalledMod| {
+                m.grants
+                    .iter()
+                    .any(|g| g.granted && g.grant == Grant::Manage)
+            };
+            let gained = manages(&installed) && !old.is_some_and(manages);
             *plan
                 .next
                 .iter_mut()
                 .find(|m| m.local == installed.local)
                 .expect("the plan holds every installed mod") = installed.clone();
+            if gained {
+                gained_manage.push(installed.local.clone());
+            }
+        }
+        for local in &gained_manage {
+            for m in &mut plan.next {
+                crate::agent::tools::drop_names(&mut m.consents, local.as_ref());
+            }
         }
         let prepared = plan.prepared;
         let next = plan.next;
