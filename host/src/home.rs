@@ -2,6 +2,11 @@
 //! local name grammar and `default_home`.
 
 use crate::{HostError, Mode};
+
+#[cfg(all(unix, debug_assertions))]
+mod scripted_openai;
+#[cfg(all(unix, debug_assertions))]
+pub(crate) use scripted_openai::ScriptedOpenAi;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -80,6 +85,8 @@ pub(crate) struct Home {
     pub path: PathBuf,
     pub mode: Mode,
     _lock: fs::File,
+    #[cfg(all(unix, debug_assertions))]
+    pub(crate) scripted_openai: std::sync::OnceLock<ScriptedOpenAi>,
 }
 
 impl Home {
@@ -165,6 +172,8 @@ impl Home {
             path,
             mode,
             _lock: lock,
+            #[cfg(all(unix, debug_assertions))]
+            scripted_openai: std::sync::OnceLock::new(),
         })
     }
 }

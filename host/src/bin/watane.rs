@@ -5,12 +5,18 @@ use std::io::Write;
 use std::path::PathBuf;
 use watane_host::{DEFAULT_PORT, Host, Mode, default_home};
 
+#[cfg(all(unix, debug_assertions))]
+#[path = "watane/scripted_openai.rs"]
+mod scripted_openai;
+
 struct Args {
     home: Option<PathBuf>,
     mode: Mode,
     port: u16,
     folders: Vec<PathBuf>,
     fake_claude: Option<PathBuf>,
+    #[cfg(all(unix, debug_assertions))]
+    scripted_openai: scripted_openai::Options,
 }
 
 fn arguments() -> Result<Option<Args>, &'static str> {
@@ -24,6 +30,8 @@ fn arguments() -> Result<Option<Args>, &'static str> {
     let mut port = None;
     let mut folders = Vec::new();
     let mut fake_claude = None;
+    #[cfg(all(unix, debug_assertions))]
+    let mut scripted_openai = scripted_openai::Options::default();
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some(option @ ("--preview" | "--home")) if home.is_none() => {
@@ -64,6 +72,10 @@ fn arguments() -> Result<Option<Args>, &'static str> {
                 }
                 fake_claude = Some(PathBuf::from(path));
             }
+            #[cfg(all(unix, debug_assertions))]
+            Some(option @ ("--scripted-openai" | "--openai-script")) => {
+                scripted_openai.parse(option, args.next())?;
+            }
             _ => {
                 return Err(
                     "use watane [--home <dir>] [--port <n>], --preview <dir> [--port <n>] [--install <folder>] [--fake-claude <path>], or --version",
@@ -77,6 +89,8 @@ fn arguments() -> Result<Option<Args>, &'static str> {
     if matches!(mode, Mode::Home { .. }) && fake_claude.is_some() {
         return Err("--fake-claude requires --preview");
     }
+    #[cfg(all(unix, debug_assertions))]
+    scripted_openai.validate(&mode)?;
     Ok(Some(Args {
         home,
         mode: mode.clone(),
@@ -87,6 +101,8 @@ fn arguments() -> Result<Option<Args>, &'static str> {
         }),
         folders,
         fake_claude,
+        #[cfg(all(unix, debug_assertions))]
+        scripted_openai,
     }))
 }
 
@@ -137,6 +153,8 @@ async fn run(args: Args) -> Result<(), watane_host::HostError> {
     if let Some(program) = &args.fake_claude {
         host.set_fake_claude(program)?;
     }
+    #[cfg(all(unix, debug_assertions))]
+    let _scripted_openai = args.scripted_openai.start(&host)?;
     let served = host.serve(args.port, axum::Router::new()).await?;
     // Initial folders share the API's catalog transaction.
     if !args.folders.is_empty() {
