@@ -759,7 +759,7 @@ impl Job {
                 request,
             ) {
                 Asked::Granted => host
-                    .store_consent(origin, self.session.origin_gen, consent)
+                    .store_consent(origin, self.session.origin_gen, consent, None)
                     .map_err(|()| json!("gone"))?,
                 Asked::Refused => return Err(refused()),
                 Asked::Stopped => return Err(json!("gone")),

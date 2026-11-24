@@ -3538,9 +3538,9 @@ The toolsets are those of 10.1; `open` with no toolset, or one that
   its functions are asked again like gained ones.
   A question that waits across such a change does not undo it (S103's adversary):
   the host notes a drop counter when it builds the question's list, and at
-  `Granted` it leaves out of the stored list the names of each mod whose names a
-  `remove`, a `grant` of `Manage` or an update that grants `Manage` dropped since
-  (4.4). The handle is ready with the names the participant saw; the names left out
+  `Granted` it leaves out of the stored list, under the catalog lock that writes it, the
+  names of each mod whose names a `remove`, a `grant` of `Manage` or an update that grants
+  `Manage` dropped since (4.4). The handle is ready with the names the participant saw; the names left out
   are asked again by a later `open`, like gained ones. A toolset left with no function
   stores an empty list and asks nothing.
 

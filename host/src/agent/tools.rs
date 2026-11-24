@@ -517,12 +517,6 @@ impl Host {
             .expect("lock poisoned: another thread panicked while holding it")
             .drop_mark()
     }
-    fn without_dropped(&self, mark: u64, functions: &[String]) -> Vec<String> {
-        self.catalog
-            .lock()
-            .expect("lock poisoned: another thread panicked while holding it")
-            .without_dropped(mark, functions)
-    }
     fn toolset_needs_consent(&self, origin: &str, toolset: &str) -> bool {
         let current = self.toolset_functions(toolset);
         let stored = self
@@ -677,28 +671,22 @@ impl Question {
             // Every waiter had gone; one that joined since must not be lost.
             Asked::Stopped => self.end(&host, |host, id| host.advance_handle(id)),
             Asked::Refused => self.end(&host, |host, id| host.refuse_handle(id, &what)),
-            // A mod of the list was removed or became a manager while the question waited: the
-            // participant did not see its names as they are now. Store the names of the other
-            // mods; those of that mod are asked again on a later `open` like gained ones (19.5).
-            Asked::Granted if host.drop_mark() != mark => {
-                let kept = host.without_dropped(mark, &functions);
-                let stored = Consent::Toolset {
-                    toolset: toolset.clone(),
-                    functions: kept,
-                };
-                if host.store_consent(origin, origin_gen, stored).is_err() {
-                    self.end(&host, |host, id| host.close_handle(id));
-                } else {
-                    self.end(&host, |host, id| host.advance(id, Some(toolset)));
-                }
-            }
             Asked::Granted => {
+                // A mod of the list removed or made a manager while the question waited: the
+                // participant did not see its names as they are now. The store leaves them out
+                // under the catalog's lock, so no drop slips between a check and the write; they
+                // are asked again on a later `open` like gained ones (19.5).
                 let stored = Consent::Toolset {
                     toolset: toolset.clone(),
                     functions,
                 };
-                if host.store_consent(origin, origin_gen, stored).is_err() {
+                if host
+                    .store_consent(origin, origin_gen, stored, Some(mark))
+                    .is_err()
+                {
                     self.end(&host, |host, id| host.close_handle(id));
+                } else if host.drop_mark() != mark {
+                    self.end(&host, |host, id| host.advance(id, Some(toolset)));
                 } else {
                     // The question is over: each handle goes on to its next toolset.
                     self.end(&host, |host, id| host.advance_handle(id));

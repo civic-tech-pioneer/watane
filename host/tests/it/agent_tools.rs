@@ -1093,8 +1093,8 @@ fn adv_s103_a_manage_grant_while_the_question_waits_is_not_undone_by_the_answer(
 }
 
 /// S103 fix2 AC2 (19.5): the tool mod is removed while the toolset question waits. `Granted`
-/// stores nothing; the handle is not ready and asks nothing more, since the toolset now has no
-/// function.
+/// stores an empty list (or none); the handle is ready and nothing more is asked, since the
+/// toolset now has no function.
 #[test]
 fn ac2_s103_fix2_a_removal_while_the_question_waits_stores_nothing() {
     let home = Home::new();
@@ -1103,15 +1103,81 @@ fn ac2_s103_fix2_a_removal_while_the_question_waits_stores_nothing() {
     assert_eq!(home.asked()[0].functions, TOOL_NAMES);
     home.host.remove(&local("tool"), false).unwrap();
     home.answer(0, ConsentAnswer::Granted);
-    wait("the handle leaves pending", Duration::from_secs(20), || {
-        !home
-            .describe(&h)
-            .is_err_and(|e| e.starts_with("consent-pending"))
-    });
+    home.wait_ready(&h);
+    assert_eq!(names(home.describe(&h)), Vec::<String>::new());
     let stored = home.consents_of("toolbox");
     assert!(
         stored == json!([]) || stored == json!([{"kind":"toolset","toolset":"t","functions":[]}]),
         "stored {stored}"
     );
     assert_eq!(home.asked().len(), 1);
+}
+
+/// S103 fix2 (19.5): the tool mod is removed and installed again under the same local name
+/// while the question of a toolset of two mods waits. `Granted` stores the other mod's names
+/// only; the handle is ready with them, and the next `open` asks the whole list again.
+#[test]
+fn s103_fix2_a_reinstall_while_the_question_waits_keeps_only_the_other_mods_names() {
+    let home = Home::new();
+    home.host
+        .set_toolset(
+            &ToolsetName::parse("tm").unwrap(),
+            vec!["tool:api".to_owned(), "manager:api".to_owned()],
+        )
+        .unwrap();
+    let h = home.open(&["tm"]).unwrap();
+    home.wait_asked(1);
+    let all = home.asked()[0].functions.clone();
+    let others: Vec<String> = all
+        .iter()
+        .filter(|f| !f.starts_with("tool_"))
+        .cloned()
+        .collect();
+    assert!(!others.is_empty() && others.len() < all.len(), "{all:?}");
+    home.host.remove(&local("tool"), false).unwrap();
+    let plan = home
+        .host
+        .plan(vec![watane_host::Source::Folder(fixture("tool"))])
+        .unwrap();
+    home.rt
+        .block_on(home.host.install(plan, watane_host::Requester::App))
+        .unwrap();
+    home.answer(0, ConsentAnswer::Granted);
+    home.wait_ready(&h);
+    assert_eq!(names(home.describe(&h)), others);
+    assert_eq!(
+        home.consents_of("toolbox"),
+        json!([{"kind":"toolset","toolset":"tm","functions":others}])
+    );
+    assert_eq!(home.asked().len(), 1);
+    let again = home.open(&["tm"]).unwrap();
+    home.wait_asked(2);
+    assert_eq!(home.asked()[1].functions, all);
+    home.answer(1, ConsentAnswer::Granted);
+    home.wait_ready(&again);
+    assert_eq!(names(home.describe(&again)), all);
+}
+
+/// S103 fix2 (19.5): `tool` is updated to a version granted `Manage` while the question waits.
+/// `Granted` stores none of its names; the handle is ready without them.
+#[test]
+fn s103_fix2_an_update_that_grants_manage_while_the_question_waits_is_not_undone() {
+    let home = Home::new();
+    let h = home.open(&["t"]).unwrap();
+    home.wait_asked(1);
+    assert_eq!(home.asked()[0].functions, TOOL_NAMES);
+    let plan = home
+        .host
+        .plan(vec![watane_host::Source::Folder(fixture("tool-manage"))])
+        .unwrap();
+    home.rt
+        .block_on(home.host.install(plan, watane_host::Requester::App))
+        .unwrap();
+    home.answer(0, ConsentAnswer::Granted);
+    home.wait_ready(&h);
+    assert_eq!(names(home.describe(&h)), Vec::<String>::new());
+    assert_eq!(
+        home.consents_of("toolbox"),
+        json!([{"kind":"toolset","toolset":"t","functions":[]}])
+    );
 }

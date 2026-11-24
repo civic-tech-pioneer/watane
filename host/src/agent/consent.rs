@@ -242,17 +242,22 @@ impl Host {
 
     /// Stores a granted consent on the record of the origin client, if that client is still the
     /// install (identity and install generation) that asked, enabled and not in error. `Err`
-    /// when it is not: the request ends `gone`.
+    /// when it is not: the request ends `gone`. A toolset list built at the drop mark `since`
+    /// loses, under the same lock, the names of each mod dropped after it (19.5, Limits).
     pub(crate) fn store_consent(
         &self,
         identity: &str,
         generation: Option<u64>,
-        consent: Consent,
+        mut consent: Consent,
+        since: Option<u64>,
     ) -> Result<(), ()> {
         let mut catalog = self
             .catalog
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
+        if let (Some(mark), Consent::Toolset { functions, .. }) = (since, &mut consent) {
+            *functions = catalog.without_dropped(mark, functions);
+        }
         let Some(m) = catalog.mods.iter().find(|m| {
             m.identity == identity
                 && m.enabled
