@@ -82,7 +82,7 @@ exit "${DRIVER_EXIT:-0}"
             assert!(cargo.contains("<--features><driver><--><--include-ignored>"));
         }
         let docker = fs::read_to_string(docker_log).unwrap();
-        assert!(docker.contains("linux/arm64"));
+        assert!(!docker.contains("--platform"));
         if calls > 0 {
             assert!(docker.contains("--env\nNO_AT_BRIDGE=1\n"));
             let stdout = String::from_utf8(output.stdout).unwrap();
