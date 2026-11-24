@@ -705,14 +705,9 @@ fn ac4_s82_stop_asks_withdraws_manage_until_given_back() {
         "document.querySelector('#request-id').value.length === 32",
     );
     let id = app.eval(DESK, "document.querySelector('#request-id').value");
-    app.eval(DESK, "window.oldContext = true; null");
+    app.eval(DESK, "window.grantChanges = 0; window.addEventListener('watane:grant-changed', () => window.grantChanges++); null");
     app.eval("consent", "document.querySelector('#stop').click(); null");
-    assert!(app.wait(DESK, TIMEOUT));
-    until(
-        &app,
-        DESK,
-        "!window.oldContext && !!document.querySelector('#request-enable')",
-    );
+    until(&app, DESK, "window.grantChanges === 1");
     no_window(&app, "consent");
     let mods = invoke(&app, "mods_list", json!({}));
     let mods = mods.as_array().unwrap();
@@ -730,14 +725,12 @@ fn ac4_s82_stop_asks_withdraws_manage_until_given_back() {
     );
     click(&app, "request-enable", json!({"local":"reading-list"}));
     outcome(&app, "not_granted");
-    until(&app, DESK, "location.hash === ''");
     invoke(
         &app,
         "grant_give",
         json!({"local":"manager","key":"manage"}),
     );
-    assert!(app.wait(DESK, TIMEOUT));
-    until(&app, DESK, "!!document.querySelector('#request')");
+    until(&app, DESK, "window.grantChanges === 2");
     click(&app, "request", json!({"request-id":id}));
     outcome(&app, "denied");
     click(&app, "request-enable", json!({"local":"reading-list"}));
