@@ -108,6 +108,10 @@ struct Entry {
     toolsets: Vec<String>,
     wait: Wait,
     /// The bearer token of this handle and its id, in memory only (10.2).
+    #[cfg_attr(
+        windows,
+        allow(dead_code, reason = "only the Unix Claude runner reads it")
+    )]
     token: String,
     token_id: crate::TokenId,
     /// Live jobs: key to stream id.
@@ -186,6 +190,10 @@ impl Handles {
 }
 
 /// What a run needs of a handle before it starts `claude` (19.3, `agent-handle`).
+#[cfg_attr(
+    windows,
+    allow(dead_code, reason = "only the Unix Claude runner reads it")
+)]
 pub(crate) enum Readiness {
     /// The bearer token of the handle.
     Ready(String),
@@ -508,6 +516,10 @@ impl Host {
 
     /// What a run of `claude` needs of the handle `id` (19.3): its token once its consents are
     /// held.
+    #[cfg_attr(
+        windows,
+        allow(dead_code, reason = "only the Unix Claude runner reads it")
+    )]
     pub(crate) fn handle_readiness(&self, id: &str, origin: &str) -> Readiness {
         match self.handles.lock().get(id) {
             Some(e) if e.origin == origin => match &e.wait {
