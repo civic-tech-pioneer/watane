@@ -1,5 +1,6 @@
 //! Scripted OpenAI CLI isolation and child cleanup (TECHNICAL 19.9).
 
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
 use std::fs;
 use std::path::Path;
 use std::process::Command;
