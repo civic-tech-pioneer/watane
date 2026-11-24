@@ -1034,4 +1034,28 @@ mod tests {
         let e = resolve_picked(control.to_str().unwrap(), &forbidden).unwrap_err();
         assert_eq!(e, "the folder's name holds a control character");
     }
+
+    /// Adversary S103 (19.3, Picked workspace): a credential folder kept elsewhere and linked
+    /// from the participant's home (a dotfiles manager does this) is still `~/.ssh` or
+    /// `~/.claude`. Its canonical path must be refused, and so must any folder inside it; else a
+    /// mod asks the consent for a path that does not look like a credential folder.
+    #[test]
+    fn adv_s103_a_symlinked_credential_folder_is_refused() {
+        let base = tempfile::tempdir().unwrap();
+        let base = base.path().canonicalize().unwrap();
+        let (user, watane) = (base.join("user"), base.join("user/watane-home"));
+        std::fs::create_dir_all(watane.join("mods")).unwrap();
+        let dotfiles = user.join("dotfiles");
+        for dir in ["ssh/keys", "claude", "aws"] {
+            std::fs::create_dir_all(dotfiles.join(dir)).unwrap();
+        }
+        for (link, target) in [(".ssh", "ssh"), (".claude", "claude"), (".aws", "aws")] {
+            std::os::unix::fs::symlink(dotfiles.join(target), user.join(link)).unwrap();
+        }
+        let forbidden = Forbidden::new(&watane, Some(&user));
+        for dir in [".ssh", ".ssh/keys", ".claude", ".aws"] {
+            let got = resolve_picked(user.join(dir).to_str().unwrap(), &forbidden);
+            assert!(got.is_err(), "{dir} was accepted as {got:?}");
+        }
+    }
 }
