@@ -177,6 +177,16 @@ fn serve_delivers_default_folder_and_explicit_script_responses() {
     let explicit = preview.started(&["--script", "explicit.json"], false);
     assert_eq!(delta(&explicit), "explicit");
     assert_eq!(explicit["home"], default["home"]);
+    let folder = Path::new(explicit["home"].as_str().unwrap())
+        .parent()
+        .unwrap();
+    assert!(!fs::read_dir(folder).unwrap().any(|entry| {
+        entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".scripted-responses-")
+    }));
 
     let stopped = preview.serve(&["--stop"]);
     assert!(stopped.status.success());
