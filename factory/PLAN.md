@@ -1799,6 +1799,9 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
+- (2026-11-24) The human sets up Codex 'Daybreak' (authorized security work) so Codex can build and review security-boundary slices again; its filter withheld S105 r5 twice, S112 r1 and S111 r1. Until the human says it is set up, rounds that Codex withholds go to Claude (S111, S112 now). After: the next security round goes to Codex again; if it is withheld once more, tell the human.
+- (2026-11-24) The human rotates the secrets of the Codex `watane` environment (S112's build transcript held credential fragments; nothing reached GitHub).
+
 - **V8 writer busy share (S96).** One durable write per batch costs 24.5% writer busy at stage A's load
   (budget 10%, which S96 applies to the no-write run). Options: (a) keep "durable first" (19.6) and
   accept the write run's share as N4's price (rec: a kernel batch rarely writes); (b) group commits
