@@ -4,6 +4,7 @@
 
 pub(crate) mod accounts;
 pub(crate) mod claude;
+pub(crate) mod consent;
 pub(crate) mod streams;
 pub(crate) mod timers;
 

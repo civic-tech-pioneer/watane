@@ -91,7 +91,7 @@ target `wasm32-wasip2`.
 | planned `src/agent/https_stream.rs` | H3: one request, SSE splitting, idle timeout, account binding (19.4) |
 | planned `src/agent/tools.rs` | H4: handles, MCP tokens, keyed jobs, with `src/tools.rs` (19.5) |
 | `src/agent/timers.rs` | H7: timers per mod in host state (19.6); H5 effects are in `src/runtime/call.rs` |
-| planned `src/agent/consent.rs` | consents per origin client in `installed.json` (19.7) |
+| `src/agent/consent.rs` | consents per origin client in `installed.json` (19.7) |
 | `tests/*.rs`, `tests/fixtures/` | section 13 |
 
 ## 2. Public API
@@ -2080,6 +2080,16 @@ is not open is `unknown-ask`. Still cut: `agent-handle` (A3), a non-empty `skill
 the shell grant's sandbox; each still names its stage. A `hook_callback` is taken
 for the host's whatever its `callback_id`: the host registers one callback.
 
+**A3 in two tasks (S103).** S103's first task (host) builds the workspace half of A3:
+`Consent`, `ConsentRequest`, `ConsentAnswer` (19.7) for all three kinds, `Confirm::consent`
+(default `Refused`), `InstalledMod.consents` (3.3), `Host::withdraw_consent`; picked folders in
+`workspace` and `extra-workspaces` (19.3, Folders: resolved at the call, the consent asked at
+apply before the process, `consent-pending`, `consent-refused`); the protected paths once per
+workspace root (Q49); the `sessions` table and the session rule (Q50, 7); `via` in the workspace
+key (Q38). The account consent is only a type until A4. The second task (agent tools) builds
+the toolset consent and the handles of 19.5, and fills `agent::consent::withdrawn` for them;
+`agent-handle` is still cut here.
+
 **Budgets of stage A** (the "Load" kind; all p95; a slow test on a stage's
 fakes, recorded with the date and the machine below; a stage is done only
 within them). Load: 8 host streams × 100 items/s of 1 KiB from a test source
@@ -3641,7 +3651,8 @@ app, kept by the host with the grants.
   (`agent-tools` as 19.5 says); `what` is `workspace:<via>:<folder>`,
   `account:<via>:openai` or `toolset:<name>`, the same in `consent-refused(what)`
   (`<via>` the identity, which holds no `:`; the folder is the rest of the text).
-- **Withdrawal** ends the dependent streams (outcome `gone`) and closes the
+- **Withdrawal** (`Host::withdraw_consent`, errors: `no_mod` for an unknown mod, `bad_request`
+  for a consent the mod does not hold, matched by the `what` key) ends the dependent streams (outcome `gone`) and closes the
   dependent handles (19.5), at once, also inside a running chain (Q24).
 - **Previews** refuse both grants and both accounts, and dev's fakes stand in
   (W5; agentic-harness FUNCTIONAL AGT-F-31): a preview never runs the

@@ -1,7 +1,7 @@
 //! Confirmation (TECHNICAL 12.1): the `Confirm` trait the app implements, and
 //! the requests and answers that pass through it.
 
-use crate::{AccountSource, LocalName, PlanEntry};
+use crate::{AccountSource, ConsentAnswer, ConsentRequest, LocalName, PlanEntry};
 use std::pin::Pin;
 use std::sync::Arc;
 use watane_pkg::{Grant, ReleaseRef};
@@ -32,6 +32,16 @@ pub trait Confirm: Send + Sync + 'static {
     /// accounts.
     fn accounts(&self) -> Option<Arc<dyn AccountSource>> {
         None
+    }
+    /// Step 11 (19.7): asks the participant one of the three agent consents. The host drops the
+    /// future when the request ends first. Default: `Refused` at once (a preview, a home with no
+    /// app).
+    fn consent(
+        &self,
+        request: ConsentRequest,
+    ) -> Pin<Box<dyn Future<Output = ConsentAnswer> + Send>> {
+        let _ = request;
+        Box::pin(async { ConsentAnswer::Refused })
     }
 }
 /// The changed plan entries, in install order, after the catalog commit.

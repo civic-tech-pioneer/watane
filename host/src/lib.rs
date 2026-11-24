@@ -6,6 +6,7 @@ pub const WATANE_JS: &str = include_str!("watane.js");
 
 mod agent;
 pub use agent::accounts::{AccountError, AccountSource, JudgeAccount};
+pub use agent::consent::{Consent, ConsentAnswer, ConsentRequest};
 mod api;
 mod bus;
 mod catalog;
@@ -557,6 +558,10 @@ impl Host {
             .iter()
             .map(|m| (state::mod_id(&m.identity), m.identity.clone()))
             .collect();
+        let sessions = self
+            .state
+            .sessions_removed(&identity)
+            .map_err(|e| HostError::Internal(e.message));
         let rewritten = self
             .state
             .timers_removed(&identity, &owners)
@@ -570,7 +575,7 @@ impl Host {
         self.catalog_written();
         let folder = std::fs::remove_dir_all(self.home().join("mods").join(local.as_ref()))
             .map_err(HostError::from);
-        folder.and(data).and(rewritten).and(scratch)
+        folder.and(data).and(rewritten).and(scratch).and(sessions)
     }
 }
 impl Drop for Host {

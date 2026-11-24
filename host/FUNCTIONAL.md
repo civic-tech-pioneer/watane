@@ -414,9 +414,13 @@ otherwise `relay` holds no grant beyond storage and its call of `latch`.
   the fake app's `ConsentRequest` names the origin client, `via` the provider,
   the folder and `profile` `"coder"`; the stream's first item is
   `{"type":"consent-pending","what":"workspace:<via>:<folder>"}`, once, and
-  `fake-claude` is not started; after `Granted`, `initialized` follows and
+  `fake-claude` is not started; after `Granted`, `initialized` follows, a second
+  start in the folder asks nothing and pushes no `consent-pending`, and
   `installed.json` holds `{"kind":"workspace","via":"<provider identity>","folder":"<folder>"}` for the
-  origin client; after `withdraw_consent`, the stream ends `gone`.
+  origin client; after `withdraw_consent`, a live stream in the folder (also one with it
+  in `extra-workspaces`) ends `gone` within 1 s, also mid-turn, and a stream in another
+  folder goes on. `Refused`, a dropped answer or 600 s end the stream
+  `consent-refused("workspace:<via>:<folder>")` and the next start asks again.
 - **S59 Accounts** (HOST-F-69, 71, 72). A request with `account: "judge"` from
   another mod, by `GET`, to another origin, to an origin not in `[http]`, or
   with an `account` of `"other"`, fails `destination`, and the scripted judge

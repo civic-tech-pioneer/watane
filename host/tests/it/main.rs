@@ -7,6 +7,7 @@ mod binds;
 mod claude;
 mod claude_launch;
 mod collect;
+mod consent;
 mod harness;
 mod host_info;
 mod json;

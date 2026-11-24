@@ -6,8 +6,9 @@ use super::asks::ASK_TTL;
 use super::control::{self, Fields, Line};
 use super::launch::{Launch, Workspace};
 use super::{Session, Sessions, init};
+use crate::agent::consent::Asked;
 use crate::agent::streams::{Hub, MAX_ITEM, StreamError};
-use crate::{Host, Mode};
+use crate::{Consent, ConsentRequest, Host, Mode};
 use serde_json::{Value, json};
 use std::io::{BufRead, Read};
 use std::os::unix::fs::DirBuilderExt;
@@ -70,13 +71,33 @@ const PROTECTED_WATANE: [&str; 7] = [
     "installed.json",
     "toolsets.json",
 ];
+/// The folder patterns of `PROTECTED_PATHS` that are also written nested, `<root>/**/<folder>/**`.
+const NESTED: [&str; 5] = [".git", ".claude", ".agents", ".codex", ".husky"];
 const FILE_TOOLS: [&str; 6] = ["Read", "Glob", "Grep", "Edit", "Write", "NotebookEdit"];
 
 /// The `--settings=` JSON of every start (19.3): the deny rules and no unsandboxed commands.
-pub(crate) fn settings(watane_home: &Path, user_home: Option<&Path>) -> String {
+pub(crate) fn settings(
+    watane_home: &Path,
+    user_home: Option<&Path>,
+    workspaces: &[PathBuf],
+) -> String {
     let mut deny: Vec<String> = vec![];
     for tool in ["Edit", "Write", "NotebookEdit"] {
         deny.extend(PROTECTED_PATHS.iter().map(|p| format!("{tool}({p})")));
+        // Once per workspace root, absolute and canonical, the folder patterns also nested
+        // (19.3, Protected paths; Q49).
+        for root in workspaces {
+            let root = root.canonicalize().unwrap_or_else(|_| root.clone());
+            for pattern in PROTECTED_PATHS {
+                deny.push(format!("{tool}(/{})", root.join(pattern).display()));
+                if let Some(folder) = NESTED.iter().find(|f| *pattern == format!("{f}/**")) {
+                    deny.push(format!(
+                        "{tool}(/{})",
+                        root.join("**").join(folder).join("**").display()
+                    ));
+                }
+            }
+        }
     }
     let mut roots: Vec<(PathBuf, &[&str])> = vec![(watane_home.to_path_buf(), &PROTECTED_WATANE)];
     if let Some(home) = user_home {
@@ -667,6 +688,89 @@ impl Job {
         Ok((id, path))
     }
 
+    /// `session {resume | fork}` needs an id the origin client's runs reported; `{new}` one no
+    /// other identity holds (19.3, Sessions are the origin client's). Else `gone`.
+    fn sessions_held(&self) -> Result<(), Value> {
+        let Some(used) = &self.launch.session else {
+            return Ok(());
+        };
+        let host = self.weak.upgrade().ok_or_else(|| json!("gone"))?;
+        let (id, must_hold) = used.id();
+        let owner = host
+            .state
+            .session_owner(id)
+            .map_err(|e| Self::failed(e.message))?;
+        match owner.as_deref() {
+            Some(o) if o == self.session.origin => Ok(()),
+            None if !must_hold => Ok(()),
+            _ => Err(json!("gone")),
+        }
+    }
+
+    /// The workspace consent of each picked folder, in launch order, before anything starts
+    /// (19.3, Picked folders; 19.7). `consent-pending` goes on the stream once per folder that
+    /// waits. `Err(outcome)` ends the stream.
+    fn consents(&self) -> Result<(), Value> {
+        let folders = self.launch.picked();
+        if folders.is_empty() {
+            return Ok(());
+        }
+        let host = self.weak.upgrade().ok_or_else(|| json!("gone"))?;
+        let origin = &self.session.origin;
+        let via = self.session.via.clone().ok_or_else(|| json!("gone"))?;
+        for folder in folders {
+            // The folder must still be the one that the call resolved.
+            if Path::new(&folder).canonicalize().ok().as_deref() != Some(Path::new(&folder)) {
+                return Err(json!("gone"));
+            }
+            let consent = Consent::Workspace {
+                via: via.identity.clone(),
+                folder,
+            };
+            if host.consent_held(origin, &consent) {
+                continue;
+            }
+            let what = consent.to_string();
+            let refused = || json!({"consent-refused": what});
+            if !self.mode.has_app() {
+                return Err(refused());
+            }
+            let origin_local = host.local_of(origin).ok_or_else(|| json!("gone"))?;
+            push_wait(
+                &self.session,
+                &self.hub,
+                format!(
+                    r#"{{"type":"consent-pending","what":{}}}"#,
+                    Value::String(what.clone())
+                )
+                .into_bytes(),
+            )?;
+            let request = ConsentRequest {
+                origin: origin_local,
+                via: via.local.clone(),
+                consent: consent.clone(),
+                profile: self.launch.profile.clone(),
+                functions: vec![],
+            };
+            match crate::agent::consent::ask(
+                &self.mode,
+                &self.hub,
+                || self.session.stopped(),
+                request,
+            ) {
+                Asked::Granted => host
+                    .store_consent(origin, self.session.origin_gen, consent)
+                    .map_err(|()| json!("gone"))?,
+                Asked::Refused => return Err(refused()),
+                Asked::Stopped => return Err(json!("gone")),
+            }
+            if self.session.stopped() {
+                return Err(json!("gone"));
+            }
+        }
+        Ok(())
+    }
+
     #[expect(clippy::too_many_lines, reason = "one run, in the steps of 19.3")]
     fn run(&self) -> Value {
         if self.session.stopped() {
@@ -691,7 +795,14 @@ impl Job {
         if self.session.stopped() {
             return json!("gone");
         }
+        if let Err(outcome) = self.sessions_held() {
+            return outcome;
+        }
+        if let Err(outcome) = self.consents() {
+            return outcome;
+        }
         let (workspace, cwd) = match &launch.workspace {
+            Workspace::Picked(path) => (path.clone(), PathBuf::from(path)),
             Workspace::NewScratch => match self.new_scratch() {
                 Ok((id, path)) => (scratch_name(&id), path),
                 Err(outcome) => return outcome,
@@ -713,20 +824,25 @@ impl Job {
         .map(str::to_owned)
         .to_vec();
         let user_home = std::env::var_os("HOME").map(PathBuf::from);
-        args.push(format!(
-            "--settings={}",
-            settings(&self.home, user_home.as_deref())
-        ));
         let mut extra_paths = vec![];
         for id in &launch.extra {
             match self.held_scratch(id) {
-                Ok(path) => {
-                    args.push(format!("--add-dir={}", path.display()));
-                    extra_paths.push(path);
-                }
+                Ok(path) => extra_paths.push(path),
                 Err(outcome) => return outcome,
             }
         }
+        extra_paths.extend(launch.extra_picked.iter().map(PathBuf::from));
+        let mut workspaces = vec![cwd.clone()];
+        workspaces.extend(extra_paths.iter().cloned());
+        args.push(format!(
+            "--settings={}",
+            settings(&self.home, user_home.as_deref(), &workspaces)
+        ));
+        args.extend(
+            extra_paths
+                .iter()
+                .map(|path| format!("--add-dir={}", path.display())),
+        );
         args.extend(launch.flags.iter().cloned());
         if self.session.stopped() {
             return json!("gone");
@@ -876,23 +992,26 @@ struct Reading<'a> {
     /// check fails.
     release: Option<std::sync::mpsc::Sender<Vec<Vec<u8>>>>,
 }
-impl Reading<'_> {
-    /// Pushes one item, waiting while the stream is full (a host stream stops reading its
-    /// source, 19.2). `Err` when the stream is gone or the item cannot go.
-    fn push(&self, body: Vec<u8>) -> Result<(), Value> {
-        let session = &self.job.session;
-        loop {
-            match session.push(&self.job.hub, &body) {
-                Ok(()) => return Ok(()),
-                Err(StreamError::Full) if !session.stopped() => {
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-                Err(StreamError::TooLarge) => {
-                    return Err(Job::failed("a line of claude is over 4 MiB"));
-                }
-                Err(_) => return Err(json!("gone")),
+/// Pushes one item, waiting while the stream is full (a host stream stops reading its
+/// source, 19.2). `Err` when the stream is gone or the item cannot go.
+fn push_wait(session: &Session, hub: &Hub, body: Vec<u8>) -> Result<(), Value> {
+    loop {
+        match session.push(hub, &body) {
+            Ok(()) => return Ok(()),
+            Err(StreamError::Full) if !session.stopped() => {
+                std::thread::sleep(Duration::from_millis(10));
             }
+            Err(StreamError::TooLarge) => {
+                return Err(Job::failed("a line of claude is over 4 MiB"));
+            }
+            Err(_) => return Err(json!("gone")),
         }
+    }
+}
+
+impl Reading<'_> {
+    fn push(&self, body: Vec<u8>) -> Result<(), Value> {
+        push_wait(&self.job.session, &self.job.hub, body)
     }
     /// An ask or a check, or a deny at once when the launch did not ask for it, the request
     /// is malformed, or its item is too large to push (19.3, step 4).
@@ -996,6 +1115,16 @@ impl Reading<'_> {
                 self.awaiting_init = false;
                 if let Err(field) = init::check(&self.job.launch, &value) {
                     return Err(json!({"mismatch": field}));
+                }
+                // The session id belongs to the origin client from here (19.3, Sessions).
+                if let Some(id) = value.get("session_id").and_then(Value::as_str)
+                    && let Some(host) = self.job.weak.upgrade()
+                    && !host
+                        .state
+                        .session_add(id, &self.job.session.origin)
+                        .unwrap_or(false)
+                {
+                    return Err(json!({"mismatch": "session_id"}));
                 }
                 self.item(body)
             }
@@ -1454,6 +1583,9 @@ mod tests {
             launch: Arc::new(Launch {
                 workspace: Workspace::NewScratch,
                 extra: vec![],
+                extra_picked: vec![],
+                profile: None,
+                session: None,
                 flags: vec![],
                 tools: vec![],
                 agents: vec![],

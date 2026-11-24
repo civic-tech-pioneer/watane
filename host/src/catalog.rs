@@ -116,6 +116,9 @@ pub struct InstalledMod {
     pub error: Option<String>,
     #[serde(default)]
     pub binds: Vec<Bind>,
+    /// The consents the mod holds as an origin client (3.3, 19.7).
+    #[serde(default)]
+    pub consents: Vec<crate::Consent>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -168,6 +171,8 @@ struct Record {
     links: Vec<LinkView>,
     #[serde(default)]
     binds: Vec<Bind>,
+    #[serde(default)]
+    consents: Vec<crate::Consent>,
 }
 
 impl From<&InstalledMod> for Record {
@@ -181,6 +186,7 @@ impl From<&InstalledMod> for Record {
             grants: m.grants.clone(),
             links: m.links.clone(),
             binds: m.binds.clone(),
+            consents: m.consents.clone(),
         }
     }
 }
@@ -223,6 +229,7 @@ fn view(m: &Mod, local: LocalName, package: PackageId) -> InstalledMod {
         links: vec![],
         error: None,
         binds: vec![],
+        consents: vec![],
     }
 }
 
@@ -342,6 +349,7 @@ impl Catalog {
                     grants: vec![],
                     links: vec![],
                     binds: vec![],
+                    consents: vec![],
                     error: Some(match result {
                         Err(e) => e.to_string(),
                         Ok(_) => "installed slug differs from identity".into(),
@@ -355,6 +363,7 @@ impl Catalog {
             installed.grants = r.grants;
             installed.links = r.links;
             installed.binds = r.binds;
+            installed.consents = r.consents;
             mods.push(installed);
         }
         // Keep the committed provider-first order.
@@ -683,6 +692,8 @@ impl Catalog {
         self.validate(&plan, home)?;
         for Prepared(_, installed, _, _) in &mut plan.prepared {
             let old = self.mods.iter().find(|m| m.identity == installed.identity);
+            // Consents follow the record, like grants: kept across an update (3.3).
+            installed.consents = old.map(|m| m.consents.clone()).unwrap_or_default();
             for state in &mut installed.grants {
                 state.granted = if preview {
                     true
