@@ -1358,6 +1358,26 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   session's stream. Touches: `host/src/agent/`, `host/src/` consent, `app/` consent view and details. Also adds
   S100's accepted deep-tree line to host TECHNICAL 14 'Not protected' (deputy, 2026-11-24). The
   agentic-harness half (console consent activity and plan line) follows S35/S36. Builder by rule 3.
+- [~] **S114 A maker previews an OpenAI-backed mod on scripted responses (stage D, dev 18; F-MAKE-4).** (in flight,
+  cloud, builder codex, reviewer claude; rule 3: last two S40 claude, S113 codex; main line, sketched 2026-11-24 by
+  deputy-3: F-MAKE-4 promises a scripted OpenAI stream in a preview from stage D, and dev TECHNICAL question 15 recommends
+  option (a); it unblocks agentic-harness S40's run on `serve`. It builds against `scripted-responses` as on `slice/s111`
+  (PR #28, approved) and merges main once that merges.) Outcomes (user-sim with a maker's mod under `watane-dev serve`):
+  1. `watane-dev serve` of a mod that uses `https-stream` with `account: "openai"` starts `scripted-responses` and the
+     preview routes `api.openai.com` to it: the mod's stream gets the scripted reply, with no real account and no network.
+  2. The preview setting is not `test-net`, is never in a release build of the host or app, and a real home refuses it.
+  3. A maker can give the script (`--script` or a file in the mod's folder, as dev 18 says) and sees a clear error for
+     a bad one.
+  4. agentic-harness S40's `test:host:d` checks can run on this preview (its SKIP lines become runnable).
+  Interface: a host preview setting (host 19.9) and `serve`'s options (dev's CLI, a public interface: say it in dev
+  TECHNICAL first; resolve question 15 as (a)). Touches: `dev/src/preview*`, `dev/src/cli.rs`, `host/` preview setting,
+  dev and host TECHNICAL. Not S111's files beyond a wiring line. Boundary: the account binding must not reach a real home
+  (adversary). Protects: *core*.
+- [~] **S115 (guard) the net reach test stops flaking on Windows.** (in flight, cloud, builder claude, reviewer codex;
+  a fix that guards `main`: Windows is a required check and `net/tests/it/reach.rs:193` failed on it with `Database
+  already open. Cannot acquire lock.`.) Outcome: the cause is named (net's redb reopen on Windows), fixed in code or test,
+  and `reach::s11_machines_on_different_networks_connect_through_the_servers_relay` is green in 20 Windows runs in CI.
+  Touches: `net/` only. Size: a guard, by reason. Protects: *guard*.
 - [~] **S113 (upkeep) the app says what it is doing and what Alice agrees to.** (in flight, cloud, builder codex,
   reviewer claude; rule 3: last two S112 codex, S111 claude; the upkeep lane, sketched 2026-11-24 by deputy-3 from
   Leftovers `### app`; runs beside S111, which touches only `app/TECHNICAL.md` in app; Codex task https://chatgpt.com/local/6b05df95-c29c-83eb-bac0-cb04ace5305d, dispatched 19:05 UTC.) Outcomes, each item's check, on the
