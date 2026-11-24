@@ -49,3 +49,22 @@ pub mod manage;
 /// lock when it was its own binary, and binaries never ran at the same time; one lock keeps that.
 #[cfg(feature = "driver")]
 pub static GUI: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(feature = "driver")]
+#[allow(
+    dead_code,
+    reason = "Only the Find and build-on scenarios seed app homes"
+)]
+/// An empty app home with its marker, so the test can seed Eve's dist before the app starts.
+pub fn app_home() -> tempfile::TempDir {
+    let home = tempfile::tempdir().expect("create temporary app home");
+    drop(
+        watane_host::Host::open(
+            home.path(),
+            watane_host::Mode::Home { app: None },
+            Default::default(),
+        )
+        .expect("initialize the app home"),
+    );
+    home
+}

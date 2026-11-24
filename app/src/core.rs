@@ -2891,10 +2891,10 @@ mod find_integration_tests {
 
     #[test]
     fn s113_install_hit_ignores_links_for_other_publishers_or_slugs() {
-        let home = tempfile::tempdir().unwrap();
-        let node =
-            watane_node::Node::open(home.path(), Arc::new(Approve), Default::default()).unwrap();
-        let alice = node.dist();
+        let alice_home = tempfile::tempdir().unwrap();
+        let alice = open(&alice_home);
+        let alice_site = Site::serve(alice.site_dir());
+        alice.set_site_url(&alice_site.base).unwrap();
         let published = alice.publish(package()).unwrap();
         let mallory_home = tempfile::tempdir().unwrap();
         let mallory = open(&mallory_home);
@@ -2903,24 +2903,33 @@ mod find_integration_tests {
         let other = mallory.publish(package()).unwrap();
         let wrong_slug = watane_dist::Link::new(
             alice.identity().unwrap(),
-            &mallory_site.base,
+            &alice_site.base,
             Some(&"other".parse().unwrap()),
         )
         .unwrap();
-
+        let home = tempfile::tempdir().unwrap();
+        let reader = watane_node::Node::open(
+            home.path(),
+            Arc::new(Approve),
+            watane_node::Options {
+                dist: Options {
+                    listed_local: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        reader.read_link(published.link.as_ref().unwrap()).unwrap();
         for link in [other.link.as_ref().unwrap(), &wrong_slug] {
-            let fetched = fetch_for_install(&node, &published.info.reference, Some(link)).unwrap();
+            let fetched =
+                fetch_for_install(&reader, &published.info.reference, Some(link)).unwrap();
             assert_eq!(fetched.info.reference, published.info.reference);
             assert!(fetched.link.is_none());
             let mut failures = Default::default();
-            follow_installed_links(&node, &[fetched], &[], &mut failures);
+            follow_installed_links(&reader, &[fetched], &[], &mut failures);
             assert!(failures.is_empty());
-            assert!(
-                !alice
-                    .channel(&mallory.identity().unwrap())
-                    .unwrap()
-                    .followed
-            );
+            assert!(reader.dist().followed().unwrap().is_empty());
         }
     }
 
