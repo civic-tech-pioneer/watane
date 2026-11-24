@@ -840,7 +840,7 @@ impl Core {
         let background = pick.is_none();
         let interactive = !background && matches!(requester, watane_host::Requester::App);
         let result = async {
-            let (plan, fetched) = tauri::async_runtime::spawn_blocking(move || {
+            let (plan, mut fetched) = tauri::async_runtime::spawn_blocking(move || {
                 let fetched = fetch_for_install(&planner.node, &target, link.as_ref())?;
                 planner.plan_fetched(fetched, pick.as_deref(), asked_by.as_ref())
             })
@@ -848,14 +848,27 @@ impl Core {
             .map_err(|e| CmdError::new("io", e.to_string()))??;
             let automatic = background && !plan.needs_confirmation();
             let before = self.host.mods();
+            // Host orders the plan independently of fetching, so match by exact release.
+            let changed: std::collections::BTreeSet<_> = plan
+                .entries()
+                .iter()
+                .filter(|entry| !matches!(entry.change, watane_host::Change::Unchanged))
+                .filter_map(|entry| entry.release.clone())
+                .collect();
+            let changed_item = |item: &watane_dist::Fetched| changed.contains(&item.info.reference);
             let following = if interactive {
                 let already = followed_keys(&self.dist, &self.parties).unwrap_or_default();
                 crate::build_on::follow_links(
-                    fetched.iter().filter_map(|f| f.link.clone()),
+                    fetched
+                        .iter()
+                        .filter(|item| changed_item(item))
+                        .filter_map(|f| f.link.clone()),
                     already.into_iter().chain(self.dist.identity()),
                 )
                 .into_iter()
-                .map(|link| words::party_label(&words::party(&link.channel().to_string(), &self.parties)))
+                .map(|link| {
+                    words::party_label(&words::party(&link.channel().to_string(), &self.parties))
+                })
                 .collect()
             } else {
                 Vec::new()
@@ -865,10 +878,13 @@ impl Core {
                 .await
                 .map_err(|error| {
                     if interactive
-                        && matches!(&error, watane_host::HostError::Refused(reason) if reason == "install was not approved")
+                        && matches!(&error, watane_host::HostError::Refused(_))
                         && let Some(first) = fetched.first()
                     {
-                        CmdError::new("install_declined", format!("You declined installing {}.", first.info.release.name))
+                        CmdError::new(
+                            "install_declined",
+                            format!("You declined installing {}.", first.info.release.name),
+                        )
                     } else {
                         error.into()
                     }
@@ -902,6 +918,7 @@ impl Core {
                 }
                 updates.truncate(50);
             }
+            fetched.retain(changed_item);
             let follower = Arc::clone(self);
             tauri::async_runtime::spawn_blocking(move || follower.follow_fetched(&fetched))
                 .await

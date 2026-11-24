@@ -1557,8 +1557,11 @@ sign-title wording functions, shared by the pages and their wording tests.
   `followed` labels as 9.4.
   In interactive install consent, each linked channel the app expects to
   start following is named as `Approving also follows <party> for updates.`
-  The labels come from the fetched releases, excluding channels already
-  followed and the own channel. If the participant declines the install,
+  Follow only fetched releases with a matching plan entry whose change is
+  New or Update. The labels use those same releases, excluding channels
+  already followed and the own channel. Program, manager and background
+  installs show no follow line. A typed HostError::Refused from an interactive
+  app install means the participant declined the install. In that case,
   the manager shows `You declined installing <mod name>.` in its normal
   status notice and stays in the current view. The next action clears
   the notice. The command returns `{declined: message}` for this case.
@@ -2279,7 +2282,7 @@ second app runtime is created.
 
 | `Ask` | The app |
 |---|---|
-| `Install { release, link }` | If `link` is set and names a channel that dist does not already read (own, followed, or a chosen index), first `Request::Read` (17.4), with no network request before the answer (host Q30, answered b). A deny ends the request `Denied` and reads nothing. On approve, the app reads the link with `node.read_link`, retaining its verified `Fetched` and link for planning and `follow_fetched`. Unlike `open_link`, this does not follow before the install. The existing dist checks for listed locations still apply. Then, for every request, the path of `install_release` (7), with a pick request (9.7) when a provider is missing, and `host.install(plan, Requester::Mod(by))`, whose consent shows as for any manager install. After an install from a link that was read this way, the channel is followed as `install_link` follows it (`follow_fetched`); a read that leads to no install follows nothing. Without a link, or with a link of a channel already read, dist fetches only through the bases it already holds (dist 5.11). |
+| `Install { release, link }` | If `link` is set and names a channel that dist does not already read (own, followed, or a chosen index), first `Request::Read` (17.4), with no network request before the answer (host Q30, answered b). A deny ends the request `Denied` and reads nothing. On approve, the app reads the link with `node.read_link`, retaining its verified `Fetched` and link for planning and `follow_fetched`. Unlike `open_link`, this does not follow before the install. The existing dist checks for listed locations still apply. Then, for every request, the path of `install_release` (7), with a pick request (9.7) when a provider is missing, and `host.install(plan, Requester::Mod(by))`, whose consent shows as for any manager install. After an install from a link that was read this way, the channel is followed as `install_link` follows it (`follow_fetched`); a read that leads to no changed release follows nothing. In a mixed plan, only fetched releases whose plan entry is changed can follow a publisher. Without a link, or with a link of a channel already read, dist fetches only through the bases it already holds (dist 5.11). |
 | `Update(local)` | The offer of that mod (`ModView.offer`, 9.5); none gives `Failed("no update is offered for <name>")`. Else install it as `Install` does, with `Requester::Mod(by)`. |
 | `Enable(local)` | `Request::Manage` with `Enable`; on approve, `host.enable`. |
 | `Grant { local, grant }` | `Request::Manage` with `Grant` and the grant line; on approve, `host.grant`. |
@@ -2450,7 +2453,7 @@ Stage J is listed in section 12; its row is repeated here for reference:
 
 | Property | Enforced by | Test |
 |---|---|---|
-| A manager adds nothing without the participant | every `Ask` goes through the broker; an install with `Requester::Mod` always asks (host 12.1); a `Manage` or `Read` request takes only `Approve` or `Deny` | S45 to S48, `consent::tests` |
+| A manager adds nothing without the participant | every `Ask` goes through the broker; a changed install with `Requester::Mod` asks (host 12.1); a `Manage` or `Read` request takes only `Approve` or `Deny` | S45 to S48, `consent::tests` |
 | The participant sees who asks | `asked_by` and `Manage.asked_by`, from the host's `by`, never from the manager's arguments | S45, `gui_shell` |
 | A manager's install reads no new host without the participant | a `link` of a channel dist does not read waits for an approved `Read` request (17.4); otherwise dist fetches through known bases only | S45, S82 Read asked |
 | A manager cannot open a window over a consent | `OpenPage` opens nothing while `Broker::current` is some | S82 Open page |
