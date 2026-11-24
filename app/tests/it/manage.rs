@@ -688,6 +688,45 @@ fn ac3_s82_read_asked_before_fetch_then_install_and_follow() {
 }
 
 #[test]
+fn adv_s113_unchanged_managed_install_refollows_without_install_consent() {
+    let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
+    let f = Fixture::new();
+    let home = tempfile::tempdir().unwrap();
+    let app = App::start(home.path(), &[("WATANE_DRIVER_LISTED_LOCAL", "1")]);
+    f.install(&app);
+
+    f.ask_install(&app);
+    assert!(consent_text(&app).contains(&format!("Desk asks to read {}", f.link)));
+    approve(&app);
+    assert!(consent_text(&app).contains("Install Book club"));
+    approve(&app);
+    outcome(&app, "approved");
+
+    let publisher = f.ivy.identity().unwrap().to_string();
+    invoke(&app, "channel_unfollow", json!({"channel":publisher}));
+    app.eval(
+        DESK,
+        "document.querySelector('#result').textContent = ''; null",
+    );
+    f.ask_install(&app);
+    assert!(consent_text(&app).contains(&format!("Desk asks to read {}", f.link)));
+    approve(&app);
+    outcome(&app, "approved");
+    no_window(&app, "consent");
+
+    let channels = invoke(&app, "channels_list", json!({}));
+    assert!(
+        channels
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["channel"] != publisher),
+        "repeating an unchanged install followed the publisher: {channels}"
+    );
+    assert!(app.quit().success());
+}
+
+#[test]
 fn ac4_s82_stop_asks_withdraws_manage_until_given_back() {
     let _gui = GUI.lock().unwrap_or_else(|e| e.into_inner());
     let f = Fixture::new();
