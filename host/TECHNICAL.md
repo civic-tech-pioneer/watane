@@ -492,7 +492,8 @@ which `Host::open` creates (3.1 step 6).
    `runs.<random>.gone`, so `runs/` is free at once whatever it holds, and each
    `runs.*.gone` is then removed by a walk without recursion, which never follows a
    link, never climbs by `..` (it keeps the open folders from the root down),
-   opens at most 256 levels and stops at 10 000 entries; what is left (too deep, too many, not
+   opens at most 256 levels and stops at 10 000 entries inside the gone folders (each
+   top-level name costs one removal, in step with what was planted); what is left (too deep, too many, not
    removable) is logged once and tried again at the next open (adversary S100
    pass 15). A leader is
    verified as a leader: on Linux, with the pidfd open, field 5 (`pgrp`) of
@@ -1828,8 +1829,9 @@ Not protected (spec §6): another program of the same user, which can read
 the home and call `/call` or `/events` with a forged `Origin`, and can write
 `runs/pids` naming a live group leader of that user with its true start time
 and boot id, which the host then kills at open, or plant `runs/` as a link to a
-folder it controls after the cleanup (3.1 step 3; adversary S100 passes 13
-and 14); a
+folder it controls after the cleanup, or mount a file system under `runs/`
+that the cleanup walks or that stalls it (3.1 step 3; adversary S100 passes 13,
+14 and 16); a
 compromised OS; a fault in Wasmtime; a privileged network change that adds
 `::1` after a host started without it (8.1): `[::1]:<port>` is then free for
 another program until the host restarts. Step 11 (agentic-harness TECHNICAL
