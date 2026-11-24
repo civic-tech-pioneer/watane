@@ -284,6 +284,38 @@ fn still_run(record: &Record, boot: &str, start_of: impl Fn(i32) -> Option<Strin
 const PIDS_CAP: u64 = 64 * 1024;
 const BAD_LOGGED: usize = 16;
 
+thread_local! {
+    /// The cleanup's log: how many lines it has said, and (in tests) which.
+    static CLEANUP_LOG: std::cell::RefCell<(usize, Vec<String>)> = const { std::cell::RefCell::new((0, Vec::new())) };
+}
+
+/// Says one line of the cleanup: the first `BAD_LOGGED` go to stderr, the rest are only counted
+/// (`say_rest` logs the count), so no planted `runs/` makes a startup log without end.
+fn say(line: String) {
+    CLEANUP_LOG.with_borrow_mut(|(n, kept)| {
+        *n += 1;
+        if *n <= BAD_LOGGED {
+            eprintln!("{line}");
+            if cfg!(test) {
+                kept.push(line);
+            }
+        }
+    });
+}
+
+/// Ends the cleanup's log with one count line when `say` held lines back, and starts the next.
+fn say_rest() {
+    let n = CLEANUP_LOG.with_borrow_mut(|(n, _)| std::mem::take(n));
+    if n > BAD_LOGGED {
+        eprintln!(
+            "watane: {} more lines of this cleanup are not logged",
+            n - BAD_LOGGED
+        );
+        #[cfg(test)]
+        CLEANUP_LOG.with_borrow_mut(|(_, kept)| kept.push("rest".to_owned()));
+    }
+}
+
 /// A bad line for the log: its first 64 bytes, escaped after the cut.
 fn bad_line(line: &[u8]) -> String {
     format!("{:?}", String::from_utf8_lossy(&line[..line.len().min(64)]))
@@ -302,12 +334,15 @@ fn read_pids(path: &Path) -> Option<(Vec<u8>, bool)> {
         Ok(file) if file.metadata().is_ok_and(|m| m.is_file()) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
         _ => {
-            eprintln!("watane: runs/pids is not a regular file: it is not read");
+            say("watane: runs/pids is not a regular file: it is not read".to_owned());
             return None;
         }
     };
     let mut bytes = vec![];
-    file.take(PIDS_CAP + 1).read_to_end(&mut bytes).ok()?;
+    if let Err(e) = file.take(PIDS_CAP + 1).read_to_end(&mut bytes) {
+        say(format!("watane: runs/pids cannot be read: {e}"));
+        return None;
+    }
     let over = bytes.len() as u64 > PIDS_CAP;
     if over {
         bytes.truncate(PIDS_CAP as usize);
@@ -317,8 +352,8 @@ fn read_pids(path: &Path) -> Option<(Vec<u8>, bool)> {
     Some((bytes, over))
 }
 
-/// Handles every line of the contents of `runs/pids`; the bad ones are logged at most
-/// `BAD_LOGGED` times, then once with the count of the rest.
+/// Handles every line of the contents of `runs/pids`, a repeated line once; the bad ones are
+/// logged through `say`.
 fn clean_lines<H>(
     bytes: &[u8],
     boot: &str,
@@ -326,24 +361,15 @@ fn clean_lines<H>(
     start_of: impl Fn(i32) -> Option<String>,
     signal: impl Fn(&H),
 ) {
-    let mut bad = 0usize;
+    let mut seen = std::collections::HashSet::new();
     // An empty piece (after the last newline, or a blank line) is no record and not logged.
     for line in bytes.split(|b| *b == b'\n').filter(|l| !l.is_empty()) {
-        if !clean_line(line, boot, &hold, &start_of, &signal) {
-            bad += 1;
-            if bad <= BAD_LOGGED {
-                eprintln!(
-                    "watane: a bad record in runs/pids is dropped: {}",
-                    bad_line(line)
-                );
-            }
+        if seen.insert(line) && !clean_line(line, boot, &hold, &start_of, &signal) {
+            say(format!(
+                "watane: a bad record in runs/pids is dropped: {}",
+                bad_line(line)
+            ));
         }
-    }
-    if bad > BAD_LOGGED {
-        eprintln!(
-            "watane: {} more bad records in runs/pids are dropped",
-            bad - BAD_LOGGED
-        );
     }
 }
 
@@ -368,13 +394,13 @@ fn clean_line<H>(
     match (still_run(&record, boot, start_of), held) {
         (true, Some(held)) => {
             signal(&held);
-            eprintln!(
+            say(format!(
                 "watane: the other processes of a claude group (pgid {pgid}) of an earlier run may be left running"
-            );
+            ));
         }
-        (true, None) => {
-            eprintln!("watane: a claude group (pgid {pgid}) of an earlier run may be left running")
-        }
+        (true, None) => say(format!(
+            "watane: a claude group (pgid {pgid}) of an earlier run may be left running"
+        )),
         (false, _) => {}
     }
     true
@@ -408,10 +434,23 @@ pub(crate) fn clean_runs(home: &Path) {
     if let (Some((bytes, over)), Some(boot)) = (read_pids(&runs.join("pids")), boot_id()) {
         clean_lines(&bytes, &boot, hold_leader, leader_start_time, kill_held);
         if over {
-            eprintln!("watane: runs/pids is over {PIDS_CAP} bytes: the rest is not read");
+            say(format!(
+                "watane: runs/pids is over {PIDS_CAP} bytes: the rest is not read"
+            ));
         }
     }
-    let _ = std::fs::remove_dir_all(&runs);
+    say_rest();
+    // `runs` that is a directory is emptied with its content; anything else (a file, a FIFO, a
+    // link) is removed itself, and a link's target is kept.
+    match runs.symlink_metadata() {
+        Ok(m) if m.is_dir() => {
+            let _ = std::fs::remove_dir_all(&runs);
+        }
+        Ok(_) => {
+            let _ = std::fs::remove_file(&runs);
+        }
+        Err(_) => {}
+    }
 }
 
 /// Kills the group of `child`, then reaps the child: the pid is held until the kill is sent, so
@@ -1931,18 +1970,21 @@ mod fix21_tests {
         }
         let home = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(home.path().join("runs")).unwrap();
-        let mut file = format!("{}\n", "x".repeat(200)).repeat(20).into_bytes();
+        // Distinct lines: a repeated line is handled once (3.1 step 3, pass 14).
+        let mut file: Vec<u8> = (0..20)
+            .flat_map(|i| format!("{}{i:02}\n", "x".repeat(198)).into_bytes())
+            .collect();
         file.resize(70_000, b'\n');
         std::fs::write(home.path().join("runs/pids"), file).unwrap();
         let ours = log_of(home.path());
-        assert_eq!(ours.len(), 18, "{ours:?}");
+        // One cap covers the bad lines and the over line (3.1 step 3, pass 14).
+        assert_eq!(ours.len(), 17, "{ours:?}");
         assert!(
             ours[0].ends_with(&format!("\"{}\"", "x".repeat(64))),
             "{}",
             ours[0]
         );
-        assert!(ours[16].contains("4 more"), "{}", ours[16]);
-        assert!(ours[17].contains("over 65536 bytes"), "{}", ours[17]);
+        assert!(ours[16].contains("5 more"), "{}", ours[16]);
         std::fs::create_dir_all(home.path().join("runs")).unwrap();
         std::os::unix::fs::symlink("/dev/null", home.path().join("runs/pids")).unwrap();
         let ours = log_of(home.path());
@@ -1984,5 +2026,58 @@ mod adv_s100_p14 {
             !file_left && !fifo_left,
             "runs/ left: file {file_left}, fifo {fifo_left}"
         );
+    }
+
+    /// One cap covers every cleanup log line, and a repeated record is handled once.
+    #[test]
+    fn s100_fix22_ac2_a_repeated_record_is_handled_once_and_the_log_is_capped() {
+        let Some(boot) = boot_id() else { return };
+        let mut leader = Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pgid = i32::try_from(leader.id()).unwrap();
+        let record = pid_record(pgid).expect("the leader is alive");
+        let kills = std::cell::Cell::new(0);
+        let mut bytes = vec![];
+        for _ in 0..1000 {
+            bytes.extend_from_slice(record.as_bytes());
+            bytes.push(b'\n');
+        }
+        clean_lines(
+            &bytes,
+            &boot,
+            |_| Some(()),
+            leader_start_time,
+            |_: &()| kills.set(kills.get() + 1),
+        );
+        say_rest();
+        let lines = CLEANUP_LOG.with_borrow_mut(|(_, kept)| std::mem::take(kept));
+        leader.kill().unwrap();
+        leader.wait().unwrap();
+        assert_eq!(kills.get(), 1);
+        assert!(lines.len() <= 17, "{}", lines.len());
+
+        let mut distinct = vec![];
+        for i in 0..1000 {
+            distinct.extend_from_slice(format!("bad {i}\n").as_bytes());
+        }
+        clean_lines(&distinct, &boot, |_| None::<()>, |_| None, |_: &()| {});
+        say_rest();
+        let lines = CLEANUP_LOG.with_borrow_mut(|(_, kept)| std::mem::take(kept));
+        assert_eq!(lines.len(), 17, "{lines:?}");
+    }
+
+    /// A link at `runs` is removed itself; its target is kept.
+    #[test]
+    fn s100_fix22_ac1_a_link_at_runs_is_removed_and_its_target_kept() {
+        let home = tempfile::tempdir().unwrap();
+        let target = tempfile::tempdir().unwrap();
+        std::fs::write(target.path().join("keep"), "x").unwrap();
+        std::os::unix::fs::symlink(target.path(), home.path().join("runs")).unwrap();
+        clean_runs(home.path());
+        assert!(!home.path().join("runs").exists());
+        assert!(target.path().join("keep").exists());
     }
 }
