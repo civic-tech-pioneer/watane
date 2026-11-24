@@ -123,9 +123,22 @@ fn ac3_listener_counts_connections_and_stops_on_drop() {
     );
     assert_eq!(listener.count(), 4);
     let port = listener.port;
+    let counted = listener.counter();
     drop(listener);
     drop(idle);
-    std::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port)).unwrap_err();
+    // Other tests of this binary bind ephemeral ports in parallel, so the freed port may
+    // already serve one of them (CI of S103): a connection alone proves nothing. A listener
+    // that still ran would count this connection before it replied, so ask, wait for the
+    // answer or the close, and check that the dropped listener counted nothing more.
+    if let Ok(mut stream) = std::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port)) {
+        use std::io::{Read, Write};
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let _ = stream.write_all(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+        let _ = stream.read_to_end(&mut Vec::new());
+    }
+    assert_eq!(counted.load(std::sync::atomic::Ordering::SeqCst), 4);
 }
 
 #[test]
