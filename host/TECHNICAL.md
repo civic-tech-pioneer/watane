@@ -482,7 +482,11 @@ which `Host::open` creates (3.1 step 6).
    when it is a regular file, at most 64 KiB; anything else, or the part past
    64 KiB, is dropped with one log line. A bad line is logged as at most its
    first 64 bytes, and at most 16 bad lines are logged at one open; one more
-   line gives the count of the rest (adversary S100 pass 13). A leader is
+   line gives the count of the rest (adversary S100 pass 13). The 16 lines are
+   shared by every log line of the cleanup (bad lines, leftovers, a read error),
+   and a repeated record is handled once. A `runs` that is not a directory (a
+   file, a FIFO, a link) is removed as a file, so a later run can make its
+   folder (adversary S100 pass 14). A leader is
    verified as a leader: on Linux, with the pidfd open, field 5 (`pgrp`) of
    `/proc/<pid>/stat` must equal the pid, read with the start time. The check and the signal are one step
    (review r6, F6.3; the deputy's ruling): on Linux the host opens a pidfd of
@@ -1815,8 +1819,9 @@ run on the preview install path.
 Not protected (spec §6): another program of the same user, which can read
 the home and call `/call` or `/events` with a forged `Origin`, and can write
 `runs/pids` naming a live group leader of that user with its true start time
-and boot id, which the host then kills at open (3.1 step 3; adversary S100
-pass 13); a
+and boot id, which the host then kills at open, or plant `runs/` as a link to a
+folder it controls after the cleanup (3.1 step 3; adversary S100 passes 13
+and 14); a
 compromised OS; a fault in Wasmtime; a privileged network change that adds
 `::1` after a host started without it (8.1): `[::1]:<port>` is then free for
 another program until the host restarts. Step 11 (agentic-harness TECHNICAL
