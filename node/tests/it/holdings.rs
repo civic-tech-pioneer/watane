@@ -141,3 +141,25 @@ fn s107_a_derived_follow_through_node_gives_no_base() {
     bob.follow(&alice.link()).unwrap();
     assert_eq!(record(), serde_json::json!([alice.link().base()]));
 }
+
+#[test]
+fn s107_a_derived_index_through_node_gives_no_base() {
+    let alice = Alice::new();
+    let dir = tempfile::tempdir().unwrap();
+    let options = Options {
+        dist: watane_dist::Options {
+            listed_local: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let bob = Node::open_keyless(dir.path(), options).unwrap();
+    bob.choose_index_derived(&alice.link()).unwrap();
+    assert!(bob.dist().channel(&alice.key).unwrap().index);
+    let file: serde_json::Value =
+        serde_json::from_slice(&fs::read(dir.path().join("dist/follows.json")).unwrap()).unwrap();
+    assert_eq!(
+        file["channels"][alice.key.to_string()]["explicit_given"],
+        serde_json::Value::Null
+    );
+}

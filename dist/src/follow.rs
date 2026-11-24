@@ -198,6 +198,14 @@ impl Dist {
         state.drop_done.append(&mut done.dropped);
         Ok(())
     }
+    pub(crate) fn derived_base_is_listed(&self, link: &Link) -> bool {
+        self.follows
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .get(&link.channel())
+            .is_none_or(|record| listed_read(record, link.base()))
+    }
+
     /// Follows a link explicitly supplied by the participant.
     pub fn follow(&self, link: &Link) -> Result<RefreshReport, DistError> {
         self.follow_link(link, true)
@@ -217,13 +225,7 @@ impl Dist {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
         self.settle(true)?;
-        let listed = !given
-            && self
-                .follows
-                .lock()
-                .expect("lock poisoned: another thread panicked while holding it")
-                .get(&link.channel())
-                .is_none_or(|record| listed_read(record, link.base()));
+        let listed = !given && self.derived_base_is_listed(link);
         let report = self.read_channel_mode(link.channel(), link.base(), listed)?;
         match report.outcome {
             Outcome::Failed { cause } => return Err(cause),
