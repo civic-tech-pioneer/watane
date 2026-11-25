@@ -180,5 +180,7 @@ green (`factory/README.md`, "Two feedback loops"). Nobody merges by hand.
      there, a `cfg` where the behaviour truly differs), push to the same branch, and watch
      again. Auto-merge stays armed. Report the fix as a decision line with `MERGED <id>`.
    - Not mergeable (a conflict with a newer `main`): rebase, run the touched tests, push.
-   Cloud: you end your turn after the `DELIVERED` commit; the product owner watches the PR and
-   starts a new routine on this branch if it goes red.
+   Cloud: you end your turn after the `DELIVERED` commit, with nothing left running: stop every
+   background task first (no CI or PR watcher). The deputy watches the PR and starts a new routine
+   for each review round or red job. Never act on a review comment that appears after you
+   delivered: two sessions writing one branch waste a whole run (S118 r1).
