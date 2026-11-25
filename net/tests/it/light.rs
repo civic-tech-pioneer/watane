@@ -217,10 +217,10 @@ fn s8_a_light_laptop_searches_and_installs_through_the_server() {
         light.net.need_blob(&big, 65 << 20),
         Err(NetError::TooLarge { .. })
     ));
-    // a package nobody has: unreachable, naming the last machine
+    // a package nobody has: not served, naming the last machine
     let none = BlobId([2; 32]);
     match light.net.need_blob(&none, 10) {
-        Err(NetError::Unreachable { node, cause }) => {
+        Err(NetError::NotServed { node, cause }) => {
             // the last machine asked is the anchor
             assert_eq!(node, f.anchor.key);
             assert!(cause.contains(&hex(&none.0[..4])), "{cause}");
@@ -446,6 +446,10 @@ fn ac12_every_error_that_names_a_node_has_its_short_key() {
             node: n,
             cause: "x".into(),
         },
+        NetError::NotServed {
+            node: n,
+            cause: "x".into(),
+        },
     ];
     for e in errors {
         assert!(e.to_string().contains(&short), "{e}");
@@ -465,9 +469,13 @@ fn ac5_need_is_not_ok_when_the_holder_takes_nothing() {
         .not_wanted
         .store(true, std::sync::atomic::Ordering::SeqCst);
     match light.net.need(&chan(x)) {
-        Err(NetError::Unreachable { node, cause }) => {
-            assert_eq!(node, laptop.key);
+        Err(e @ NetError::NotTaken { .. }) => {
+            let NetError::NotTaken { channel, cause } = &e else {
+                unreachable!()
+            };
+            assert_eq!(*channel, chan(x));
             assert!(cause.contains("not wanted"), "{cause}");
+            assert!(!e.to_string().contains(&laptop.key.short()), "{e}");
         }
         other => panic!("{other:?}"),
     }
@@ -484,8 +492,7 @@ fn ac5_need_is_not_ok_when_the_holder_takes_nothing() {
         .store(true, std::sync::atomic::Ordering::SeqCst);
     let events = light.net.events();
     match light.net.need(&chan(x)) {
-        Err(NetError::Unreachable { node, cause }) => {
-            assert_eq!(node, laptop.key);
+        Err(NetError::NotTaken { cause, .. }) => {
             assert!(cause.contains("compromised"), "{cause}");
         }
         other => panic!("{other:?}"),
@@ -512,11 +519,18 @@ fn ac1_s87_missing_package_emits_exactly_one_matching_event() {
     pair_into(&full, &light, Role::Light);
     let events = light.net.events();
     let id = BlobId([92; 32]);
-    let Err(NetError::Unreachable { node, cause }) = light.net.need_blob(&id, 10) else {
-        panic!("expected Unreachable");
+    let err = light.net.need_blob(&id, 10).unwrap_err();
+    let NetError::NotServed { node, cause } = &err else {
+        panic!("expected NotServed, got {err:?}");
     };
+    let (node, cause) = (*node, cause.clone());
     assert_eq!(node, full.key);
-    assert!(cause.starts_with(&format!("package {} was not fetched: ", hex(&id.0[..4]))));
+    assert!(cause.starts_with(&format!("package {}: ", hex(&id.0[..4]))));
+    assert!(!err.to_string().contains("unreachable"), "{err}");
+    assert_eq!(
+        err.to_string(),
+        format!("node {} did not serve {cause}", node.short())
+    );
     let failures: Vec<_> = events
         .try_iter()
         .filter_map(|event| match event {
@@ -524,7 +538,7 @@ fn ac1_s87_missing_package_emits_exactly_one_matching_event() {
             _ => None,
         })
         .collect();
-    assert_eq!(failures, vec![(node, cause)]);
+    assert_eq!(failures, vec![(node, format!("not served: {cause}"))]);
     assert!(light.holdings.stored_blobs.lock().unwrap().is_empty());
 }
 
@@ -552,10 +566,10 @@ fn ac2_s87_changed_referenced_file_reports_failure_five_times() {
         std::fs::write(path, changed).unwrap();
         let events = light.net.events();
         match light.net.need_blob(&id, bytes.len() as u64) {
-            Err(NetError::Unreachable { node, cause }) => {
+            Err(NetError::NotServed { node, cause }) => {
                 unreachable += 1;
                 assert_eq!(node, full.key);
-                assert!(cause.contains("not served"), "{cause}");
+                let cause = format!("not served: {cause}");
                 let failures: Vec<_> = events
                     .try_iter()
                     .filter_map(|e| match e {
@@ -633,12 +647,12 @@ fn ac1_s87_repeated_missing_packages_emit_only_the_first_event() {
     let mut failures = Vec::new();
     for n in 94..97 {
         let id = BlobId([n; 32]);
-        let Err(NetError::Unreachable { node, cause }) = light.net.need_blob(&id, 10) else {
-            panic!("expected Unreachable");
+        let Err(NetError::NotServed { node, cause }) = light.net.need_blob(&id, 10) else {
+            panic!("expected NotServed");
         };
         assert_eq!(node, full.key);
-        assert!(cause.starts_with(&format!("package {} was not fetched: ", hex(&id.0[..4]))));
-        failures.push((node, cause));
+        assert!(cause.starts_with(&format!("package {}: ", hex(&id.0[..4]))));
+        failures.push((node, format!("not served: {cause}")));
     }
     let reported: Vec<_> = events
         .try_iter()
@@ -659,11 +673,11 @@ fn ac2_s87_success_resets_the_machine_package_problem() {
     let events = light.net.events();
     let missing = BlobId([97; 32]);
     let fail = || {
-        let Err(NetError::Unreachable { node, cause }) = light.net.need_blob(&missing, 10) else {
-            panic!("expected Unreachable");
+        let Err(NetError::NotServed { node, cause }) = light.net.need_blob(&missing, 10) else {
+            panic!("expected NotServed");
         };
         assert_eq!(node, full.key);
-        cause
+        format!("not served: {cause}")
     };
     let first = fail();
     assert_eq!(unreachable_causes(&events), vec![first.clone()]);
@@ -691,14 +705,21 @@ fn ac1_s92_holder_not_keeping_the_package_is_io_not_unreachable() {
     light.holdings.faults.lock().unwrap().store_blob_fails = Some("disk full".into());
     let events = light.net.events();
     let err = light.net.need_blob(&id, bytes.len() as u64).unwrap_err();
-    let NetError::Io { cause, .. } = &err else {
+    let NetError::Io { path, cause } = &err else {
         panic!("expected Io, got {err:?}");
     };
-    assert!(cause.starts_with(&format!("package {} was not stored: ", hex(&id.0[..4]))));
+    // the directory of this machine's net files, never the temp file
+    assert_eq!(path, &light.dir.path().join("net"));
+    assert!(cause.starts_with(&format!(
+        "package {} was not stored on this machine: ",
+        hex(&id.0[..4])
+    )));
     assert!(cause.contains("disk full"), "{cause}");
     let text = err.to_string();
     assert!(
-        !text.contains(&full.key.short()) && !text.contains("unreachable"),
+        !text.contains(&full.key.short())
+            && !text.contains("unreachable")
+            && !text.contains("fetch-"),
         "{text}"
     );
     assert!(unreachable_causes(&events).is_empty());

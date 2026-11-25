@@ -3,6 +3,7 @@
 use crate::key::NodeKey;
 use std::fmt;
 use std::path::PathBuf;
+use watane_log::PublicKey;
 
 /// The error codes of the wire (TECHNICAL 4.2).
 #[expect(
@@ -69,6 +70,12 @@ pub enum NetError {
     Refused { node: NodeKey, code: Code },
     #[error("node {} did not answer in time", node.short())]
     Timeout { node: NodeKey },
+    /// A full machine answered and did not serve the package (TECHNICAL 5.9).
+    #[error("node {} did not serve {cause}", node.short())]
+    NotServed { node: NodeKey, cause: String },
+    /// The holder of this machine did not take a page `need` pulled.
+    #[error("this machine did not take channel {channel}: {cause}")]
+    NotTaken { channel: PublicKey, cause: String },
     #[error("a message of node {} is over its byte limit", node.short())]
     TooLarge { node: NodeKey },
     #[error("node {} sent a bad object: {cause}", node.short())]
@@ -101,6 +108,7 @@ impl NetError {
             NetError::Unreachable { cause, .. } => cause.clone(),
             NetError::Refused { code, .. } => format!("refused: {code}"),
             NetError::Timeout { .. } => "did not answer in time".to_owned(),
+            NetError::NotServed { cause, .. } => format!("did not serve {cause}"),
             NetError::TooLarge { .. } => "a message is over its byte limit".to_owned(),
             NetError::BadObject { cause, .. } => format!("sent a bad object: {cause}"),
             other => other.to_string(),
@@ -132,6 +140,10 @@ mod tests {
                 node,
                 cause: "y".into(),
             },
+            NetError::NotServed {
+                node,
+                cause: "package ab12cd34: z".into(),
+            },
         ] {
             assert!(!e.cause_text().contains(&short), "{e:?}");
         }
@@ -142,6 +154,46 @@ mod tests {
             }
             .cause_text(),
             "refused: not_allowed"
+        );
+    }
+
+    /// AC2, AC3, AC5: the texts of the two variants.
+    #[test]
+    fn ac5_not_served_and_not_taken_texts() {
+        let node = NodeKey::from_bytes([3; 32]);
+        let served = NetError::NotServed {
+            node,
+            cause: "package ab12cd34: it does not have it".into(),
+        };
+        assert_eq!(
+            served.to_string(),
+            format!(
+                "node {} did not serve package ab12cd34: it does not have it",
+                node.short()
+            )
+        );
+        assert_eq!(
+            served.cause_text(),
+            "did not serve package ab12cd34: it does not have it"
+        );
+        assert!(!served.to_string().contains("unreachable"));
+        let channel = PublicKey::from_bytes(
+            &ed25519_dalek::SigningKey::from_bytes(&[4; 32])
+                .verifying_key()
+                .to_bytes(),
+        )
+        .unwrap();
+        let taken = NetError::NotTaken {
+            channel,
+            cause: "not wanted".into(),
+        };
+        assert_eq!(
+            taken.to_string(),
+            format!("this machine did not take channel {channel}: not wanted")
+        );
+        assert_eq!(
+            NetError::NoFullMachine.to_string(),
+            "no full machine is reachable"
         );
     }
 }

@@ -14,7 +14,7 @@ fn regress_s67_a_missing_package_has_a_cause_in_watanes_words() {
     pair_into(&anchor, &light, Role::Light);
     let none = BlobId([7; 32]);
     match light.net.need_blob(&none, 10) {
-        Err(NetError::Unreachable { node, cause }) => {
+        Err(NetError::NotServed { node, cause }) => {
             assert_eq!(node, anchor.key);
             assert!(cause.contains(&hex(&none.0[..4])), "{cause}");
             // S80 AC4: the cause names neither the node nor the package twice

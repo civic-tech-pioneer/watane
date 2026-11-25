@@ -33,6 +33,22 @@ async fn ask(conn: &Connection, request: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
+/// The code of a `hello` on `conn` while streams are held open on it. The
+/// server counts a held stream when it accepts it, a moment after the client
+/// wrote: when `refused` is expected, an `ok` may only mean the count was
+/// short, so ask again (the held streams time out in the end, so not for a
+/// caller that is served).
+async fn hello_beside_held(conn: &Connection, refused: bool) -> String {
+    let end = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let code = code_of(ask(conn, &hello_request()).await);
+        if code != "ok" || !refused || std::time::Instant::now() >= end {
+            return code;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 fn code_of(answer: Option<Vec<u8>>) -> String {
     match answer {
         Some(a) => err_of(&a).map_or_else(|| "ok".to_owned(), |(c, _)| c),
@@ -111,12 +127,66 @@ fn s112_oversized_requests_are_refused_before_decoding() {
     });
 }
 
+/// The counts of the default budget, with a byte bucket that the QUIC
+/// overhead of a loaded machine cannot drain: a test of the counts alone.
+fn counts_only() -> Limits {
+    Limits {
+        unknown_bytes_per_sec: 16 << 20,
+        ..Limits::default()
+    }
+}
+
+/// The production (default) budget refuses what is beyond it, with a fresh
+/// key for each probe. Only refusals are asserted: a drained byte bucket
+/// refuses too, so no timing can turn them into a pass or a flake.
+#[test]
+fn s9_the_default_budget_refuses_an_unknown_key_beyond_it() {
+    let (conns, streams, bytes) = (
+        node(MemHoldings::new(fixture()), None),
+        node(MemHoldings::new(fixture()), None),
+        node(MemHoldings::new(fixture()), None),
+    );
+    runtime().block_on(async {
+        // a third connection of one key is closed on it
+        let ep = endpoint(130).await;
+        let held = [connect(&ep, &conns).await, connect(&ep, &conns).await];
+        // any answer shows the server has taken the connection in
+        for c in &held {
+            assert!(ask(c, &hello_request()).await.is_some());
+        }
+        let third = connect(&ep, &conns).await;
+        let closed = tokio::time::timeout(Duration::from_secs(5), third.closed()).await;
+        assert!(closed.is_ok(), "the third connection was kept");
+
+        // a third stream of one key is over_budget (two stay open)
+        let ep = endpoint(131).await;
+        let conn = connect(&ep, &streams).await;
+        let mut held = Vec::new();
+        for _ in 0..2 {
+            let (mut send, recv) = conn.open_bi().await.unwrap();
+            send.write_all(&[0x82]).await.unwrap();
+            held.push((send, recv));
+        }
+        assert_eq!(hello_beside_held(&conn, true).await, "over_budget");
+
+        // more bytes than 64 KiB in a second: the next request is over_budget
+        let ep = endpoint(132).await;
+        let conn = connect(&ep, &bytes).await;
+        let big = code_of(ask(&conn, &vec![0xff; 200_000]).await);
+        assert!(big == "bad_request" || big == "over_budget", "{big}");
+        assert_eq!(code_of(ask(&conn, &hello_request()).await), "over_budget");
+        for server in [&conns, &streams, &bytes] {
+            assert_eq!(server.holdings.calls(), 0);
+        }
+    });
+}
+
 #[test]
 fn s9_connections_and_streams_over_budget_are_refused_before_work() {
-    let plain: Vec<_> = (0..2).map(|_| servers(Limits::default())).collect();
+    let plain: Vec<_> = (0..2).map(|_| servers(counts_only())).collect();
     let pooled = servers(Limits {
         unknown_conns: 3,
-        ..Limits::default()
+        ..counts_only()
     });
     let rt = runtime();
     rt.block_on(async {
@@ -144,9 +214,8 @@ fn s9_connections_and_streams_over_budget_are_refused_before_work() {
                 send.write_all(&[0x82]).await.unwrap(); // the start of a request
                 held.push((send, recv));
             }
-            tokio::time::sleep(Duration::from_millis(200)).await;
             assert_eq!(
-                code_of(ask(&conn, &hello_request()).await),
+                hello_beside_held(&conn, expect == "over_budget").await,
                 expect,
                 "seed {seed}"
             );

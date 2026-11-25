@@ -127,16 +127,13 @@ pub(crate) fn need(net: &Net, channel: &PublicKey) -> Result<(), NetError> {
                 // a compromised channel is the author's fork (dist: "now or
                 // earlier"), not the machine's lie, so it is not dropped.
                 Ok(Some(why)) => {
-                    return Err(NetError::Unreachable {
-                        node,
-                        cause: format!(
-                            "the holder did not take channel {channel}: {}",
-                            match why {
-                                Ingested::Failed(cause) => cause,
-                                Ingested::Compromised => "compromised".to_owned(),
-                                _ => "not wanted".to_owned(),
-                            }
-                        ),
+                    return Err(NetError::NotTaken {
+                        channel,
+                        cause: match why {
+                            Ingested::Failed(cause) => cause,
+                            Ingested::Compromised => "compromised".to_owned(),
+                            _ => "not wanted".to_owned(),
+                        },
                     });
                 }
                 Err(e) => {
@@ -203,18 +200,29 @@ pub(crate) fn need_blob(net: &Net, id: &BlobId, size: u64) -> Result<(), NetErro
         }
         match last {
             Some((node, e)) => {
-                let cause = format!(
-                    "package {} was not fetched: {}",
-                    blobs::hex8(&id),
-                    e.cause_text()
-                );
+                // the event keeps the "not served" words the app quotes
+                let cause = match &e {
+                    NetError::NotServed { cause, .. } => format!("not served: {cause}"),
+                    e => format!(
+                        "package {} was not fetched: {}",
+                        blobs::hex8(&id),
+                        e.cause_text()
+                    ),
+                };
                 if lock(&core.blob_unreachable).insert(node) {
-                    core.emit(crate::Event::Unreachable {
-                        node,
-                        cause: cause.clone(),
-                    });
+                    core.emit(crate::Event::Unreachable { node, cause });
                 }
-                Err(NetError::Unreachable { node, cause })
+                Err(match e {
+                    e @ NetError::NotServed { .. } => e,
+                    e => NetError::Unreachable {
+                        node,
+                        cause: format!(
+                            "package {} was not fetched: {}",
+                            blobs::hex8(&id),
+                            e.cause_text()
+                        ),
+                    },
+                })
             }
             None => Err(NetError::NoFullMachine),
         }

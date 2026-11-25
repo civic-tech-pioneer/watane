@@ -192,6 +192,8 @@ pub enum NetError {
     Timeout { node: NodeKey },
     TooLarge { node: NodeKey },
     BadObject { node: NodeKey, cause: String },     // NET-F-24
+    NotServed { node: NodeKey, cause: String },     // a full machine answered and did not serve the package
+    NotTaken { channel: PublicKey, cause: String }, // this machine's holder did not take a page `need` pulled
     NotAnchor,                                      // pair_code, remove_device on a replica
     NoFullMachine,                                  // need, query on a light machine with no full one reachable
     BadCode, CodeSpent, Declined,                   // pairing (NET-F-8)
@@ -202,8 +204,13 @@ pub enum NetError {
 }
 ```
 
-Every message names the node in its short form (NET-F-32). `Unreachable`
-also covers a connection that failed or broke, with the cause. A cause that
+Every message names the node in its short form (NET-F-32), except the ones
+about this machine. `Unreachable`
+also covers a connection that failed or broke, with the cause. `NotServed`
+reads `node <short> did not serve package <hex8>: <why>` (the machine
+answered; it lacks the package, or its copy failed its check); `NotTaken`
+reads `this machine did not take channel <channel>: <cause>`; `Io` names this
+machine too and never a temp file. A cause that
 nests another error never repeats the node's short key, or a phrase the outer
 text has (`NetError::cause_text` gives an error without its `node <short>`).
 `CodeSpent` reads "the pairing code was used or has expired; make a new one
@@ -669,18 +676,20 @@ a full machine.
   page), `Asked`; a forked head as 5.6 step 3; `Pulled` once. `Ok` when the
   holder's head is the remote's or the remote has nothing newer. A page the
   holder does not take gives an error, not `Ok`: `NotWanted`, `Compromised`
-  and `Failed` are `Unreachable { node, cause }` with the holder's cause, no
-  drop (a compromised channel is its author's fork, not the machine's lie);
-  no other machine is asked then. A bad
+  and `Failed` are `NotTaken { channel, cause }` with the holder's cause: it
+  names this machine, not the full one; no drop (a compromised channel is its
+  author's fork, not the machine's lie); no other machine is asked then. A bad
   object is `BadObject`, with 5.6's drop and `Refused`. A full machine may
   call it too (it asks another full machine).
 - `need_blob(id, size)`: fetch as 5.8 (a package over `limits.blob` is
   `TooLarge` with no transfer; a hash mismatch is `BadObject`) and call
   `holdings.store_blob`. A machine that is not reached, or that does not
   have it, gives way to the next candidate; none connected is
-  `NoFullMachine`; some connected and none had it is `Unreachable` naming the
-  last of them and why, and the same `Event::Unreachable { node, cause }` (the
-  error's node and cause) is emitted, so Machines shows it: at most once for a
+  `NoFullMachine`; some connected and none had it is `NotServed` naming the
+  last of them (not "unreachable": it answered), or `Unreachable` when the
+  last failure was a connection that broke, and `Event::Unreachable { node,
+  cause }` is emitted for either (for `NotServed` the cause reads "not
+  served: ..."), so Machines shows it: at most once for a
   machine until a package fetch from it succeeds, like the keeper's (5.10), so
   failed fetches cannot push a refusal out of Machines' 20 problems.
   A full machine whose own file no longer matches the hash never sends it:
@@ -689,7 +698,9 @@ a full machine.
   as a cut stream, `BadObject` and `Refused`; which one is timing (S87).
   A local failure (this machine's temp file, or the holder not keeping the
   package) is `Io`, returned as it is: it names no machine, emits no event,
-  marks none, and ends the tries.
+  marks none, and ends the tries; its path is `<home>/net`, never the temp
+  file, and its text reads "package <hex8> was not stored on this machine:
+  <step>".
   `node` calls these before `dist` reads, so a `dist`
   fetch then finds the bytes in its own store.
 
@@ -907,10 +918,10 @@ N4 part 1 notes (built, S67):
 
 - A fetch that fails gives a cause in watane's words (NET-F-32), never iroh's
   text: a request the serving machine cut or refused reads "not served: it
-  does not have it, or its copy failed its check"; any other transport
-  failure reads "could not be read: the connection failed" (`failed()` in
-  `blobs.rs`); `need_blob` puts "package <hex8> was not fetched: " before
-  it, and the error names the machine (S80). A connection the machine closed
+  does not have it, or its copy failed its check" (`NotServed`); any other
+  transport failure reads "could not be read: the connection failed"
+  (`failed()` in `blobs.rs`, `Unreachable`; `need_blob` puts "package <hex8>
+  was not fetched: " before it), and the error names the machine (S80). A connection the machine closed
   as "not allowed" is `Refused { code: NotAllowed }`.
 
 - Light machines (5.9): `light.rs` holds the choice of a full machine (`order`,
