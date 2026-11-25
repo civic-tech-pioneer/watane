@@ -392,7 +392,10 @@ async function channelsView() {
   const signature = JSON.stringify([channels, mods, canSign, channels.map(c => c.readAt == null ? null : ago(c.readAt))]); if (signature === lastChannels) return;
   lastChannels = signature; $('#channels').replaceChildren();
   for (const [i, channel] of channels.entries()) {
-    const state = channel.status === 'ok' ? (channel.readAt == null ? '' : `Read ${ago(channel.readAt)}`) : channel.status === 'failed' ? `Couldn't read: ${channel.cause}` : channel.cause ? `Compromised: ${channel.cause}` : 'Compromised';
+    let state = '';
+    if (channel.status === 'compromised') state = 'Compromised';
+    else if (channel.status === 'failed') state = `Couldn't read: ${channel.readProblem}`;
+    else if (channel.readAt != null) state = `Read ${ago(channel.readAt)}`;
     const row = element('div', `${[partyLabel(channel), state].filter(Boolean).join(' · ')} `, $('#channels'), 'card channel-card');
     row.title = channel.base || '';
     row.dataset.channel = channel.channel;

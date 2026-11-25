@@ -380,14 +380,15 @@ if (which === 's90-busy') {
 if (which === 's90-channels') {
   context.canSign=false;
   vm.runInContext(source.slice(source.indexOf('let lastChannels ='),source.indexOf('let query =')),context);
-  for (const [status,expected] of [['ok','Read 3 min ago'],['failed',"Couldn't read: whole: nested cause"],['compromised','Compromised: whole: nested cause']]) {
-    const channel={channel:'key',name:'Alice',fingerprint:'fp',base:'https://transport.test',status,cause:status==='ok' ? null : 'whole: nested cause',readAt:Date.now()-180000};
+  for (const [status,expected] of [['ok','Read 3 min ago'],['failed',"Couldn't read: Could not connect to the publisher's site"],['compromised','Compromised']]) {
+    const channel={channel:'key',name:'Alice',fingerprint:'fp',base:'https://transport.test',status,cause:status==='ok' ? null : 'network error at https://transport.test/head: os error 61',readProblem:"Could not connect to the publisher's site",readAt:Date.now()-180000};
     context.call=async cmd=>cmd==='channels_list' ? [channel] : [];
     await vm.runInContext('channelsView()',context);
     const row=$('#channels .channel-card');
     assert.ok(row.textContent.includes('Alice (fp)'));
     assert.ok(row.textContent.includes(expected),row.textContent);
     assert.ok(!row.textContent.includes(channel.base));
+    assert.ok(!row.textContent.includes('os error 61'));
     assert.ok(!/\b(ok|failed|compromised)\b/.test(row.textContent));
   }
   let chosen;

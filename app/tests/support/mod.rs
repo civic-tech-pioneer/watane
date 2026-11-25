@@ -50,12 +50,8 @@ pub mod manage;
 #[cfg(feature = "driver")]
 pub static GUI: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-#[cfg(feature = "driver")]
-#[allow(
-    dead_code,
-    reason = "Only the Find and build-on scenarios seed app homes"
-)]
 /// An empty app home with its marker, so the test can seed Eve's dist before the app starts.
+#[cfg(feature = "driver")]
 pub fn app_home() -> tempfile::TempDir {
     let home = tempfile::tempdir().expect("create temporary app home");
     drop(

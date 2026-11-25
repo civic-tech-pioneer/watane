@@ -1075,6 +1075,7 @@ ModView    {local, name, summary, slug, version, release: null | string (Release
             links: [{kind: "call" | "subscribe", provider: string (local), granted: bool}]} // stage I: InstalledMod.links
 ChannelRow {channel (key text), fingerprint, name: null | string, base: null | string,
             status: "ok" | "compromised" | "failed", cause: null | string,
+            readProblem: null | string,
             readAt: null | number}  // W37: ms, the last refresh in this run that read it; memory only
 IndexRow   {channel (key text), fingerprint, name: null | string, base: null | string,
             status: "ok" | "compromised" | "failed", cause: null | string,
@@ -1376,6 +1377,9 @@ pub(crate) struct DistConfirm { pub broker: Arc<Broker>, pub parties: Arc<Partie
   the app never reads `listed_by` from a memoized view.
   `cache_channels`, followed views and installed origins share this memo.
   The followed key list comes from dist again whenever the follow stamp changes.
+  Party lookups during the manager poll reuse the same followed, own and related channel views.
+  The installed-mod snapshot also shares its followed views with the related-channel walk
+  and looks up origins in that snapshot when rendering the rows.
   Every render still traverses the related channels and remembers their profiles,
   using memoized views where valid. `Core::mods()` reads `host.mods()` once and
   shares that snapshot's names across all rows.
@@ -1403,10 +1407,17 @@ pub(crate) struct DistConfirm { pub broker: Arc<Broker>, pub parties: Arc<Partie
 
 The row shows `partyLabel(channel)`, then `Read <ago>` from `readAt`
 (the serialized `read_at`) for `ok` (nothing while `readAt` is null: only
-`refresh` sets it, not `channel_follow`), `Couldn't read: <cause>` for `failed`,
-or `Compromised: <cause>` for `compromised` (`Compromised` with no cause). The cause is the same complete
-text as the Updates failed-channel card. The base URL may be the row's
-`title`, never its text; raw status tokens are not shown.
+`refresh` sets it, not `channel_follow`), `Couldn't read: <readProblem>` for `failed`,
+or `Compromised` for `compromised`. For a failure, the row uses the
+`readProblem` words in place of the technical cause:
+- Network error: `Could not connect to the publisher's site`.
+- Timeout: `The publisher's site took too long to respond`.
+- Not found: `The publisher's site did not have the channel`.
+- Other HTTP status: `The publisher's site returned an error (HTTP <status>)`.
+- Other failure: `Could not read the channel data`.
+
+Updates keeps the complete cause in its failed-channel card. The base URL
+may be the row's `title`; the visible row text uses the party and status words.
 
 ### 9.4 Install from a link
 
