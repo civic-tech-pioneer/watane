@@ -18,6 +18,7 @@ mod harness;
 mod host_info;
 mod https_stream;
 mod json;
+mod kept_state;
 mod manage;
 mod mcp;
 mod program;

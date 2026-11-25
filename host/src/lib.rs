@@ -312,6 +312,7 @@ impl Host {
                 self.home(),
                 &sources,
                 &self.engine,
+                &self.state,
                 self.is_preview(),
                 false,
                 &binds,

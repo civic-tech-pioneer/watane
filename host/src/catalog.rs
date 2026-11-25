@@ -1,6 +1,7 @@
 //! The catalog (TECHNICAL 4): sources, plans, install, update, remove, grants,
 //! binds and `installed.json`, the record of what this home has installed.
 
+use crate::state::State;
 use crate::{HostError, LocalName, VerifyCheck, home};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -54,6 +55,7 @@ pub struct PlanEntry {
     pub new_grants: Vec<Grant>,
     pub providers: Vec<LocalName>,
     pub binds: Vec<Bind>,
+    pub kept_state: bool,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MissingProvider {
@@ -427,17 +429,23 @@ impl Catalog {
         home: &Path,
         sources: &[Source],
         engine: &wasmtime::Engine,
+        state: &State,
         preview: bool,
         harness: bool,
     ) -> Result<Plan, HostError> {
-        self.plan_with(home, sources, engine, preview, harness, &[])
+        self.plan_with(home, sources, engine, state, preview, harness, &[])
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the planning inputs of one call, with the state database for kept_state"
+    )]
     pub fn plan_with(
         &mut self,
         home: &Path,
         sources: &[Source],
         engine: &wasmtime::Engine,
+        state: &State,
         preview: bool,
         harness: bool,
         binds: &[Bind],
@@ -540,6 +548,7 @@ impl Catalog {
                     from_version: old.version.clone(),
                 },
             };
+            let kept_state = old.is_none() && state.has_table(&identity)?;
             let grants = m.grants();
             let new_grants = grants
                 .iter()
@@ -567,6 +576,7 @@ impl Catalog {
                 new_grants,
                 providers: vec![],
                 binds: vec![],
+                kept_state,
             });
             prepared.push(Prepared(staging, installed, unchanged, component));
         }
@@ -627,6 +637,7 @@ impl Catalog {
                     new_grants: vec![],
                     providers: vec![],
                     binds: vec![],
+                    kept_state: false,
                 });
                 prepared.push(Prepared(
                     Stage::new(home)?,
