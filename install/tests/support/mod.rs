@@ -7,7 +7,7 @@ pub mod unit;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::{PermissionsExt, symlink};
+use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -223,19 +223,87 @@ fn shared_fakes() -> &'static Path {
 /// binary, starts no process to make them again. Its name holds a hash of everything their content
 /// depends on (`install.sh`, this file, the folder of the fakes), so a stale one is never read.
 fn cache_dir() -> &'static Path {
-    static DIR: OnceLock<PathBuf> = OnceLock::new();
-    DIR.get_or_init(|| {
+    static DIR: OnceLock<(PathBuf, fs::File)> = OnceLock::new();
+    &DIR.get_or_init(|| {
         let mut h = std::hash::DefaultHasher::new();
         std::hash::Hash::hash(&fs::read(checkout_script()).expect("install.sh"), &mut h);
         std::hash::Hash::hash(include_str!("mod.rs"), &mut h);
         std::hash::Hash::hash(&shared_fakes().display().to_string(), &mut h);
-        let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        let base = Path::new(env!("CARGO_TARGET_TMPDIR"));
+        let dir = base.join(format!(
             "install-cache-{:016x}",
             std::hash::Hasher::finish(&h)
         ));
+        // Serialize opening a generation with pruning it. Keep a shared directory
+        // lock for the lifetime of the test binary so an old but active generation
+        // is never removed under a concurrent reader or writer.
+        let gate = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(base.join(".install-cache.lock"))
+            .expect("cache gate");
+        gate.lock().expect("lock cache gate");
         fs::create_dir_all(&dir).expect("cache dir");
-        dir
+        let active = fs::File::open(&dir).expect("open cache directory");
+        active.lock_shared().expect("lock cache directory");
+        prune_install_caches(base, &dir, Duration::from_secs(7 * 24 * 60 * 60));
+        (dir, active)
     })
+    .0
+}
+
+fn prune_install_caches(base: &Path, active: &Path, max_age: Duration) {
+    for entry in fs::read_dir(base).expect("cache parent").flatten() {
+        if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        let name = entry.file_name();
+        let Some(hash) = name
+            .to_str()
+            .and_then(|name| name.strip_prefix("install-cache-"))
+        else {
+            continue;
+        };
+        let path = entry.path();
+        if path == active || hash.len() != 16 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            continue;
+        }
+        let Ok(dir) = fs::File::open(&path) else {
+            continue;
+        };
+        if dir.try_lock().is_ok()
+            && dir
+                .metadata()
+                .and_then(|meta| meta.modified())
+                .ok()
+                .and_then(|mtime| mtime.elapsed().ok())
+                .is_some_and(|age| age >= max_age)
+        {
+            let _ = fs::remove_dir_all(path);
+        }
+    }
+}
+
+#[test]
+fn cache_pruning_keeps_current_busy_and_unrelated_directories() {
+    let base = tempfile::tempdir().expect("cache parent");
+    let make = |name| {
+        let path = base.path().join(name);
+        fs::create_dir(&path).expect("cache directory");
+        path
+    };
+    let active = make("install-cache-0000000000000001");
+    let busy = make("install-cache-0000000000000002");
+    let stale = make("install-cache-0000000000000003");
+    let unrelated = make("install-cache-not-a-hash");
+    let lock = fs::File::open(&busy).expect("busy directory");
+    lock.lock_shared().expect("busy reader");
+
+    prune_install_caches(base.path(), &active, Duration::ZERO);
+    assert!(active.is_dir() && busy.is_dir() && unrelated.is_dir());
+    assert!(!stale.exists());
 }
 
 /// The archive of `version` with these vendored crates and its sum, from the cache or made now.
@@ -297,9 +365,9 @@ const FAULT_FILES: [(&str, &str); 4] = [
     ("chmod_wait", "chmod"),
 ];
 
-const TOOLS: [&str; 22] = [
+const TOOLS: [&str; 24] = [
     "sh", "curl", "tar", "mktemp", "mkdir", "cp", "rmdir", "ls", "cat", "chmod", "grep", "sed",
-    "awk", "tr", "head", "dirname", "readlink", "dd", "od", "mv", "rm",
+    "awk", "tr", "head", "tail", "tee", "dirname", "readlink", "dd", "od", "mv", "rm",
     // GNU tar runs gzip; macOS tar has it built in, so the script does not name it
     "gzip",
 ];
@@ -811,7 +879,22 @@ fn write_installed(tmpl: &Template, home: &Path) {
     for (from, to) in &swaps {
         text = text.replace(from.as_str(), to);
     }
-    fs::write(&p, text).expect("write receipt");
+    let mut receipt = String::new();
+    for line in text.lines() {
+        if let Some((folder, _)) = line
+            .strip_prefix("created ")
+            .and_then(|line| line.rsplit_once(' '))
+        {
+            let inode = fs::metadata(home.join(folder))
+                .expect("created directory")
+                .ino();
+            receipt.push_str(&format!("created {folder} {inode}\n"));
+        } else {
+            receipt.push_str(line);
+            receipt.push('\n');
+        }
+    }
+    fs::write(&p, receipt).expect("write receipt");
 }
 
 /// One node of a home, as `tree_entries` records it.

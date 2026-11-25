@@ -37,7 +37,7 @@ fn ac1_int_after_the_commit_says_watane_is_installed() {
     signal_group(child.id(), "INT");
     let out = finish(child);
     assert_eq!(out.code, 130, "{out:?}");
-    assert_eq!(lines(&out.stderr), HINT, "{out:?}");
+    assert_eq!(lines(&out.stderr), ["", HINT[0], HINT[1]], "{out:?}");
     fx.assert_installed("0.1.0");
     assert!(fx.tmp_tree().is_empty());
 }
@@ -151,7 +151,7 @@ fn ac4_paths_in_a_linked_home_print_as_tilde() {
     assert!(!out.stderr.contains(&real.display().to_string()), "{out:?}");
     assert!(!out.stderr.contains(&h), "{out:?}");
     assert!(out.has_line(
-        "partially uninstalled watane 0.1.0 (some entries were skipped or could not be removed)"
+        "partly uninstalled watane 0.1.0 (some entries were skipped or could not be removed)"
     ));
     assert!(!out.has_line("uninstalled watane 0.1.0"));
 }
@@ -208,7 +208,10 @@ fn ac2_uninstall_with_an_old_receipt_keeps_top_level_folders() {
     let out = fx.run(&["--uninstall"]);
     assert_eq!(out.code, 0, "{out:?}");
     assert!(out.has_line("uninstalled watane 0.1.0"), "{out:?}");
-    assert_eq!(fx.home_tree(), vec![".local/", "Applications/"]);
+    assert_eq!(
+        fx.home_tree(),
+        vec![".local/", ".local/bin/", ".local/share/", "Applications/"]
+    );
 }
 
 /// TECHNICAL 8.4: a creation record does not authorize removing a relinked root.
@@ -230,11 +233,48 @@ fn ac2_uninstall_keeps_a_relinked_created_folder() {
     assert!(original.is_dir(), "{out:?}");
 }
 
+/// TECHNICAL 8.1: a reinstall must drop creation records for relinked folders.
+#[test]
+fn ac2_reinstall_drops_creation_records_for_relinked_folders() {
+    let fx = Fx::installed();
+    let before = fx.read(&fx.receipt());
+    assert!(before.contains("\ncreated Applications "));
+    assert!(before.contains("\ncreated .local/bin "));
+
+    // Relink a leaf and a parent. Only the former is itself a symlink.
+    fs::remove_dir_all(fx.app()).expect("empty applications");
+    let apps = fx.home.join("other-apps");
+    fs::rename(fx.home.join("Applications"), &apps).expect("move applications");
+    symlink(&apps, fx.home.join("Applications")).expect("relink applications");
+
+    // Leave the recorded inode in place under a different physical path.
+    for entry in ["watane", "watane-dev", "watane-node"] {
+        fs::remove_file(fx.bin(entry)).expect("empty bin");
+    }
+    for entry in ["watane", "watane-dev"] {
+        fs::remove_dir_all(fx.share(entry)).expect("empty share");
+    }
+    let local = fx.home.join("other-local");
+    // Retain the old receipt so the reinstall can try to carry its ownership records.
+    write_file(&fx.receipt(), &before);
+    fs::rename(fx.home.join(".local"), &local).expect("move local");
+    symlink(&local, fx.home.join(".local")).expect("relink local");
+
+    let out = fx.run(&["--no-toolchain"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(
+        !fx.read(&fx.receipt())
+            .lines()
+            .any(|line| line.starts_with("created "))
+    );
+}
+
 /// TECHNICAL 8.4: uninstall leaves empty user folders and a replacement at the same path.
 #[test]
 fn ac2_uninstall_keeps_preexisting_and_replaced_folders() {
     let fx = Fx::new();
-    fs::create_dir(fx.home.join(".local")).expect("pre-existing .local");
+    fs::create_dir_all(fx.home.join(".local/bin")).expect("pre-existing bin");
+    fs::create_dir_all(fx.home.join(".local/share")).expect("pre-existing share");
     assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
     let app_folder = fx.home.join("Applications");
     let original = fx.home.join("old-applications");
@@ -242,7 +282,8 @@ fn ac2_uninstall_keeps_preexisting_and_replaced_folders() {
     fs::create_dir(&app_folder).expect("create an empty replacement");
     let out = fx.run(&["--uninstall"]);
     assert_eq!(out.code, 0, "{out:?}");
-    assert!(fx.home.join(".local").is_dir());
+    assert!(fx.home.join(".local/bin").is_dir());
+    assert!(fx.home.join(".local/share").is_dir());
     assert!(app_folder.is_dir());
     assert!(original.join("watane.app").is_dir());
 
@@ -296,7 +337,7 @@ fn ac7_rustups_output_is_set_apart() {
     fs::write(
         path,
         body.replacen("#!/bin/sh\n", "#!/bin/sh\necho 'info: from rustup'\n", 1)
-            + "printf 'warn: also rustup' >&2\n",
+            + "echo 'warn: also rustup' >&2\n",
     )
     .expect("installer");
     let out = fx.run_pty(&[], &[("WATANE_RUSTUP_URL", &url)], &[("[y/N] ", "y")]);
@@ -310,7 +351,7 @@ fn ac7_rustups_output_is_set_apart() {
     let begin = at("--- rustup's own output follows ---");
     let end = at("--- end of rustup's output ---");
     assert!(begin < at("info: from rustup") && at("info: from rustup") < end);
-    assert!(begin < at("warn: also rustup") && at("warn: also rustup") < end);
+    assert_eq!(at("warn: also rustup") + 1, end, "{out:?}");
     assert!(end < at("toolchain: installed"), "{out:?}");
     assert!(at(&format!("using WATANE_RUSTUP_URL={url}")) < begin);
 }

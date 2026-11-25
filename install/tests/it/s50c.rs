@@ -23,7 +23,7 @@ fn ac1_resolved_folders_guard_receipt_removals() {
             );
         }
         let lines: Vec<&str> = receipt.lines().collect();
-        assert_eq!(lines.len(), 16, "{receipt}");
+        assert_eq!(lines.len(), 18, "{receipt}");
         assert!(
             lines[3..10].iter().all(|l| l.starts_with("path ")),
             "{receipt}"
@@ -33,7 +33,9 @@ fn ac1_resolved_folders_guard_receipt_removals() {
             "{receipt}"
         );
         assert!(lines[14].starts_with("created .local "), "{receipt}");
-        assert!(lines[15].starts_with("created Applications "), "{receipt}");
+        assert!(lines[15].starts_with("created .local/bin "), "{receipt}");
+        assert!(lines[16].starts_with("created .local/share "), "{receipt}");
+        assert!(lines[17].starts_with("created Applications "), "{receipt}");
         if recorded {
             fs::rename(fx.share("watane-dev"), fx.home.join("old-dev")).unwrap();
             write_file(&fx.home.join("Documents/vendor/marker"), "mine");
@@ -268,6 +270,37 @@ fn ac5_status_reads_receipt_while_lock_is_held() {
     assert_eq!(out.code, 0, "{out:?}");
     assert!(out.has_line("watane 0.1.0 (aarch64-apple-darwin)"));
     assert_eq!(snapshot(&fx.home), before);
+}
+
+/// TECHNICAL 8.1: status recovers stale entries under its lock and prints only install paths.
+#[test]
+fn ac5_status_cleans_dead_staging_and_filters_receipt_paths() {
+    let fx = Fx::installed();
+    let dead = dead_pid();
+    let stale = fx.home.join(format!(".local/bin/watane.old.{dead}"));
+    let unrelated = fx.home.join(".local/bin/watane.old.mine");
+    let journal = fx.share(&format!("watane/journal.{dead}"));
+    let staged_receipt = fx.share(&format!("watane/receipt.new.{dead}"));
+    write_file(&journal, "");
+    write_file(&staged_receipt, "staged");
+    write_file(&stale, "stale");
+    write_file(&unrelated, "unrelated");
+    let receipt = fx.read(&fx.receipt());
+    write_file(&fx.receipt(), &format!("{receipt}path /outside/watane\n"));
+    let lock = fx.home.join(".watane-install.lock");
+    fs::create_dir(&lock).expect("another run owns the lock");
+    assert_eq!(fx.run(&["--status"]).code, 0);
+    assert!(stale.is_file());
+
+    fs::remove_dir(&lock).expect("release lock");
+    let out = fx.run(&["--status"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(out.stderr.is_empty(), "{out:?}");
+    assert!(out.has_line("~/.local/bin/watane"), "{out:?}");
+    assert!(!out.stdout.contains("/outside/"), "{out:?}");
+    assert!(!stale.exists() && !lock.exists());
+    assert!(!journal.exists() && !staged_receipt.exists());
+    assert!(unrelated.is_file());
 }
 
 /// 3.6.2: an uninstall at a planted lock removes nothing of an installed home.

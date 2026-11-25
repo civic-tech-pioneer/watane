@@ -712,7 +712,7 @@ fn inst_s31_an_install_folder_outside_the_home() {
         assert_eq!(out.code, 2, "{out:?}");
         assert_eq!(
             out.first_err(),
-            format!("watane install: {folder} resolves to {target}, outside your home folder ~")
+            format!("watane install: {folder} resolves to {target}, outside your home folder")
         );
         assert_eq!(
             out.stderr.lines().nth(1),
@@ -755,7 +755,7 @@ fn inst_s31_every_install_folder_outside_the_home_and_a_link_inside_it() {
         assert_eq!(out.code, 2, "{out:?}");
         assert_eq!(
             out.first_err(),
-            format!("watane install: {folder} resolves to {target}, outside your home folder ~")
+            format!("watane install: {folder} resolves to {target}, outside your home folder")
         );
         assert_eq!(
             out.stderr.lines().nth(1),
@@ -836,8 +836,9 @@ fn inst_s31_every_install_folder_outside_the_home_and_a_link_inside_it() {
     assert_eq!(out.code, 0, "{out:?}");
     assert!(out.has_line("uninstalled watane 0.2.0"), "{out:?}");
     assert_uninstalled(&fx);
-    assert!(!fx.home.join("real_local/bin").exists());
-    assert!(!fx.home.join("real_local/share").exists());
+    // A folder reached through a linked parent has no creation record.
+    assert!(fx.home.join("real_local/bin").is_dir());
+    assert!(fx.home.join("real_local/share").is_dir());
     assert!(!fx.receipt().exists());
 }
 

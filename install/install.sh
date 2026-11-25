@@ -2,6 +2,8 @@
 # install.sh: installs, upgrades, reports and removes watane (install/TECHNICAL 3).
 # POSIX sh, only the tools of TECHNICAL 3.3. The whole body is the function `main`,
 # called on the last line, so that a download cut off half way runs nothing.
+# A streamed download can pause before main is defined. This trap uses only builtins.
+trap 'printf "\nwatane setup was interrupted. Run the same command to try again.\n" >&2; exit 130' INT
 set -eu
 umask 022
 
@@ -33,6 +35,7 @@ UPGRADED=0
 SIGNAL=0
 LOCK_OWNED=0
 CLEANUP_ACTIVE=0
+EXITING=0
 COMMITTED=0
 PROMPT=""
 TC_DOWNLOADING=0
@@ -312,7 +315,7 @@ EOF
   return 0
 }
 
-# take_lock: never break a lock, even when its pid is dead (3.6.2).
+# take_lock [status]: never break a lock, even when its pid is dead (3.6.2).
 take_lock() {
   LOCK=$HOME/.watane-install.lock
   if mkdir "$LOCK" 2>/dev/null; then
@@ -324,6 +327,7 @@ take_lock() {
   else
     check_signal "$?"
   fi
+  if [ "${1:-}" = status ]; then return 1; fi
   tl_suffix=""
   if [ -f "$LOCK/pid" ] && [ ! -L "$LOCK/pid" ]; then
     tl_pid=""
@@ -356,6 +360,8 @@ undo_swap() {
     # The cleanup phase belongs to the parent, not this undo subshell.
     # shellcheck disable=SC2030
     CLEANUP_ACTIVE=0
+    # shellcheck disable=SC2030
+    EXITING=0
     set +e
     ub_j=$SHAREW/journal.$1
     if [ -f "$ub_j" ] && [ ! -L "$ub_j" ]; then
@@ -497,7 +503,7 @@ on_signal() {
   SIGNAL=$1
   trap '' HUP INT TERM PIPE
   rollback || :
-  exit "$1"
+  check_signal "$1"
 }
 
 # A subshell gives bash 3.2 a pending-trap dispatch point before any diagnosis.
@@ -520,6 +526,9 @@ check_signal() {
       CLEANUP_ACTIVE=0
       release_files || { check_signal "$?"; }
     fi
+    # Once EXIT handling has started, no later exit trap can report the signal.
+    # shellcheck disable=SC2031
+    if [ "$EXITING" = 1 ]; then signal_hint "$SIGNAL"; fi
     exit "$SIGNAL"
   fi
   return 0
@@ -533,6 +542,7 @@ release_files() {
     # shellcheck disable=SC2030
     SIGNAL=0
     CLEANUP_ACTIVE=0
+    EXITING=0
     if [ "$LOCK_OWNED" = 1 ]; then
       rm -f "$LOCK/pid" || { check_signal "$?"; }
       rmdir "$LOCK" || { check_signal "$?"; }
@@ -556,9 +566,29 @@ interrupted_hint() {
   return 0
 }
 
+signal_hint() {
+  sh_signal=$1
+  set +e
+  # Formatting a quoted mirror URL performs its own signal checks.
+  SIGNAL=0
+  if [ "$sh_signal" = 130 ] || [ -n "$PROMPT" ] || { [ "$COMMITTED" = 1 ] && [ "$TC_RUNNING" = 1 ]; }; then
+    printf '\n' >&2
+  fi
+  if [ "$COMMITTED" = 1 ]; then
+    interrupted_hint
+  elif [ "$PROMPT" = uninstall ]; then
+    printf '%s; the watane home was kept.\n' "$du_outcome" >&2
+  elif [ "$sh_signal" = 130 ]; then
+    printf 'watane setup was interrupted. Run the same command to try again.\n' >&2
+  fi
+  # Keep the exit status selected before formatting the hint.
+  SIGNAL=$sh_signal
+}
+
 cleanup() {
   cl_rc=$?
   trap - EXIT
+  EXITING=1
   CLEANUP_ACTIVE=1
   ( : ) || true
   rollback || { check_signal "$?"; }
@@ -567,20 +597,9 @@ cleanup() {
   release_files || { check_signal "$?"; }
   # release_files checks cleanup commands with a separate, local signal flag.
   # shellcheck disable=SC2031
-  if [ "$SIGNAL" != 0 ]; then cl_rc=$SIGNAL; fi
-  # shellcheck disable=SC2031
   if [ "$SIGNAL" != 0 ]; then
-    set +e
-    # cl_rc retains the signal; formatting a quoted mirror URL performs its own checks.
-    SIGNAL=0
-    if [ -n "$PROMPT" ] || { [ "$COMMITTED" = 1 ] && [ "$TC_RUNNING" = 1 ]; }; then
-      printf '\n' >&2
-    fi
-    if [ "$COMMITTED" = 1 ]; then
-      interrupted_hint
-    elif [ "$PROMPT" = uninstall ]; then
-      printf '%s; the watane home was kept.\n' "$du_outcome" >&2
-    fi
+    cl_rc=$SIGNAL
+    signal_hint "$cl_rc"
   fi
   exit "$cl_rc"
 }
@@ -664,7 +683,7 @@ check_folders() {
   FOLDERS_RESOLVED=""
   for ch_f in "$HOME/.local/bin" "$HOME/.local/share/watane" "$HOME/.local/share/watane-dev" "$HOME/Applications"; do
     if ! resolve_dir "$ch_f" || ! below_home "$RES"; then
-      ch_m="resolves to $(tilde_r "$RES"), outside your home folder ~"
+      ch_m="resolves to $(tilde_r "$RES"), outside your home folder"
       [ "$RES" != "$HOME_R" ] || ch_m="resolves to your home folder itself"
       die 2 "$(tilde "$ch_f") $ch_m" \
         "watane writes only under your home folder. Make it a real folder there, then run this again."
@@ -870,8 +889,8 @@ remove_created() {
   return 0
 }
 
-# Root folders are uninstalled only when the current directory matches the one in the receipt.
-# Both callers pass one of the same two literal names, never a path from the receipt.
+# These folders are uninstalled only when the current directory matches the receipt.
+# Both callers pass fixed relative names, never a path from the receipt.
 root_folder_receipt_line() {
   rf_path=$HOME/$1
   [ -d "$rf_path" ] && [ ! -L "$rf_path" ] || return 1
@@ -891,7 +910,7 @@ keep_created_roots() {
   CREATED_ROOTS=""
   R_CREATED=""
   if allowed "$RECEIPT"; then read_receipt "$RECEIPT"; fi
-  for kc_name in .local Applications; do
+  for kc_name in .local .local/bin .local/share Applications; do
     if root_folder_receipt_line "$kc_name"; then
       if in_list "$CREATED" "$HOME/$kc_name" || in_list "$R_CREATED" "$ROOT_FOLDER_LINE"; then
         CREATED_ROOTS=$CREATED_ROOTS$NL$ROOT_FOLDER_LINE
@@ -1174,12 +1193,23 @@ print_commands() {
 rustup_step() {
   rs_step=$1
   shift
-  rs_rc=0
   say "--- rustup's own output follows ---"
   TC_RUNNING=1
-  ( cd "$HOME" 2>/dev/null || cd /; RUSTUP_AUTO_INSTALL=0; export RUSTUP_AUTO_INSTALL; "$@" ) || rs_rc=$?
+  : >"$TMP/rustup-status" || { check_signal "$?"; return 1; }
+  # Stream both descriptors together. POSIX pipelines return the last command's
+  # status, so the producer records rustup's status separately.
+  (
+    rs_rc=0
+    ( cd "$HOME" 2>/dev/null || cd /; RUSTUP_AUTO_INSTALL=0; export RUSTUP_AUTO_INSTALL; "$@" ) || rs_rc=$?
+    printf '%s\n' "$rs_rc" >"$TMP/rustup-status"
+  ) 2>&1 | tee "$TMP/rustup-output" || { check_signal "$?"; return 1; }
+  check_signal
+  IFS= read -r rs_rc <"$TMP/rustup-status" || { check_signal "$?"; return 1; }
   check_signal "$rs_rc"
-  say "$NL--- end of rustup's output ---"
+  rs_last=$(tail -c 1 "$TMP/rustup-output") || { check_signal "$?"; return 1; }
+  check_signal "$?"
+  if [ -n "$rs_last" ]; then say ''; fi
+  say "--- end of rustup's output ---"
   TC_RUNNING=0
   if [ "$rs_rc" != 0 ]; then
     warn "the toolchain step failed: $rs_step (rustup exited $rs_rc)"
@@ -1376,11 +1406,21 @@ do_install() {
 }
 
 do_status() {
+  if take_lock status; then
+    recover
+  else
+    check_signal "$?"
+  fi
   read_receipt "$RECEIPT"
   [ "$R_OK" = 1 ] || die 7 "not installed: no receipt at $(tilde "$RECEIPT")"
   say "watane $R_VERSION ($R_TARGET)"
   while IFS= read -r ds_l; do
-    case $ds_l in 'path '*) say "$(tilde "${ds_l#path }")" ;; esac
+    ds_p=${ds_l#path }
+    if valid_entry "$ds_p"; then
+      say "$(tilde "$ds_p")"
+    else
+      check_signal "$?"
+    fi
   done <<EOF
 $R_LINES
 EOF
@@ -1435,10 +1475,10 @@ EOF
     check_signal "$?"
     du_partial=1
   fi
-  for du_d in "$SHAREW" "$PREFIX/share/watane-dev" "$PREFIX/share" "$PREFIX/bin"; do
+  for du_d in "$SHAREW" "$PREFIX/share/watane-dev"; do
     if resolve_dir "$du_d" && below_home "$RES"; then rmdir "$du_d" 2>/dev/null || { check_signal "$?"; }; fi
   done
-  for du_name in .local Applications; do
+  for du_name in .local/share .local/bin .local Applications; do
     if root_folder_receipt_line "$du_name" && in_list "$R_CREATED" "$ROOT_FOLDER_LINE"; then
       rmdir "$HOME_R/$du_name" 2>/dev/null || { check_signal "$?"; }
     else
@@ -1446,8 +1486,8 @@ EOF
     fi
   done
   if [ "$du_partial" = 1 ]; then
-    du_outcome="watane $du_ver was partially uninstalled"
-    say "partially uninstalled watane $du_ver (some entries were skipped or could not be removed)"
+    du_outcome="watane $du_ver was partly uninstalled"
+    say "partly uninstalled watane $du_ver (some entries were skipped or could not be removed)"
   else
     du_outcome="watane $du_ver was uninstalled"
     say "uninstalled watane $du_ver"
@@ -1542,7 +1582,7 @@ main() {
   # step 3: tools
   check_tools "uname id mkdir mv cp rm rmdir ls cat chmod grep awk tr readlink kill dd od mktemp"
   if [ "$MODE" = install ]; then
-    check_tools "curl tar"
+    check_tools "curl tar tail tee"
     command -v shasum >/dev/null 2>&1 || check_tools sha256sum
   fi
   # step 4: platform, home, folders
