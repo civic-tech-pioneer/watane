@@ -493,8 +493,8 @@ mod tests {
                     .mode()
                     & 0o777,
                 0o700
-            );
-        }
+            )
+        };
         fs::write(path.with_extension("json.tmp"), "interrupted").unwrap();
         assert_eq!(source.judge("local/checked").unwrap().key, "test key");
         for other in [
