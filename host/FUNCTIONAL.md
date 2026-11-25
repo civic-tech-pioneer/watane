@@ -421,12 +421,13 @@ otherwise `relay` holds no grant beyond storage and its call of `latch`.
   in `extra-workspaces`) ends `gone` within 1 s, also mid-turn, and a stream in another
   folder goes on. `Refused`, a dropped answer or 600 s end the stream
   `consent-refused("workspace:<via>:<folder>")` and the next start asks again.
-- **S59 Accounts** (HOST-F-69, 71, 72). A request with `account: "judge"` from
-  another mod, by `GET`, to another origin, to an origin not in `[http]`, or
-  with an `account` of `"other"`, fails `destination`, and the scripted judge
-  server (dev 18) counts no request; a URL `https://JUDGE.example:443/v` for
-  the entered origin `https://judge.example` is sent; with no key it ends
-  `no-account`; a redirect is not followed; `account_changed(Judge)` ends a
+- **S59 Accounts** (HOST-F-69, 71, 72). A request with `account: "judge"` ends
+  `no-account` without a key for the executing mod's exact identity or in a
+  preview. A bound request by `GET`, to another origin, or to an origin not
+  in `[http]` fails `destination`, as does an `account` of `"other"`. The
+  scripted judge server (dev 18) counts no request in these cases. A URL
+  `https://JUDGE.example:443/v` for the entered origin `https://judge.example`
+  is sent, a redirect is not followed, and `account_changed(Judge)` ends a
   live judge stream `gone`. `judge_origin("https://Judge.Example:443/")` is
   `"https://judge.example"`, and with `/v1` or `?q` it fails `bad_request`. In
   a preview with `--fake-claude`, a `claude-code` start runs that program; with
