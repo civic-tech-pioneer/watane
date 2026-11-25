@@ -1379,7 +1379,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   related channel view on each 2 s refresh (memoize or read on change), with a test that counts the reads; (3) S58:
   channel rows show words, not raw transport text, with words in app TECHNICAL first. Touches: `app/`, `dist/`, `log/`,
   `net/`, never `host/` or `dev/`. No boundary moves (adversary not run unless one does). Protects: *polish*.
-- [~] **S114 A maker previews an OpenAI-backed mod on scripted responses (stage D, dev 18; F-MAKE-4).** (in flight,
+- [x] **S114 A maker previews an OpenAI-backed mod on scripted responses (stage D, dev 18; F-MAKE-4).** DONE 2026-11-25: PR #30 merged by the deputy (squash fdecf1d, no bypass); builder codex, reviewer claude, 3 rounds (4/5, 1/6, 0/3); ~4.5 h in flight. `watane-dev serve` routes api.openai.com to `scripted-responses` on a development host; release hosts and real homes refuse it; a refusing host is remembered. R2.1 to R2.3 accepted; P3.1 to P3.3 in Leftovers. (Was: (in flight,
   cloud, builder codex, reviewer claude; rule 3: last two S40 claude, S113 codex; main line, sketched 2026-11-24 by
   deputy-3: F-MAKE-4 promises a scripted OpenAI stream in a preview from stage D, and dev TECHNICAL question 15 recommends
   option (a); it unblocks agentic-harness S40's run on `serve`. It builds against `scripted-responses` as on `slice/s111`
@@ -1651,6 +1651,10 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 - [S44] an unknown `/api` route answers 404 `bad_request` (host/src/server.rs:107, 245).
 
 ### dev
+
+- [S114 r3] (polish) `dev/src/preview/openai.rs:68,196`: pin that `fallback` rejects the plain scripted marker and a `Refusal::Scripted` round trip (`Refusal::tag`); pin or delete the `automatic()` check at lines 189-191.
+- [S114 r3] (polish) `dev/src/preview/openai.rs:74-80`: the reuse warning for `Refusal::Scripted` says "Use a development build", drops the cause, and should name `watane-dev serve --stop` (the refusal stays until the port changes).
+- [S114 r3] (polish) `dev/TECHNICAL.md:2993`: "program fingerprint" hashes the program path (plus script bytes), not its contents; say so.
 
 - [S111 r1] P1.6 to P1.10, P1.12, P1.13: `scripted-responses` refuses unknown script fields, JSON error bodies, chunked-body and drop tests, key order, and dev TECHNICAL's stale test names and dependency block.
 
