@@ -1158,6 +1158,7 @@ mod tests {
             new_grants: vec![],
             providers: vec![],
             binds: vec![],
+            kept_state: false,
         };
         let request = InstallRequest {
             entries: vec![
@@ -1216,6 +1217,7 @@ mod tests {
             new_grants: vec![grant],
             providers: vec![LocalName::parse("ratings").unwrap()],
             binds: vec![bind.clone()],
+            kept_state: false,
         };
         let provider_entry = PlanEntry {
             local: LocalName::parse("ratings").unwrap(),
@@ -1233,6 +1235,7 @@ mod tests {
             new_grants: vec![],
             providers: vec![],
             binds: vec![],
+            kept_state: false,
         };
         let request = InstallRequest {
             entries: vec![provider_entry, entry],
@@ -1530,6 +1533,7 @@ mod tests {
             grants: grants.clone(),
             new_grants: grants,
             binds: vec![],
+            kept_state: false,
             providers: vec![],
         };
         let mut first = entry("reading-list", vec![storage.clone()]);

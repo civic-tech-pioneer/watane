@@ -68,6 +68,7 @@ impl Harness {
                 host.home(),
                 &[crate::Source::Folder(built_mod.to_path_buf())],
                 &host.engine,
+                &host.state,
                 true,
                 true,
             )?;

@@ -437,6 +437,24 @@ impl State {
             .map_err(|e| HostError::Internal(e.to_string()))?;
         Ok(())
     }
+    /// Whether the table `s/<id>` of the identity exists: data that a remove kept (7).
+    pub fn has_table(&self, identity: &str) -> Result<bool, HostError> {
+        let Some(db) = self
+            .database(false)
+            .map_err(|e| HostError::Internal(e.message))?
+        else {
+            return Ok(false);
+        };
+        let read = db
+            .begin_read()
+            .map_err(|e| HostError::Internal(e.to_string()))?;
+        let name = format!("s/{}", mod_id(identity));
+        match read.open_table(TableDefinition::<&str, &[u8]>::new(&name)) {
+            Ok(_) => Ok(true),
+            Err(TableError::TableDoesNotExist(_)) => Ok(false),
+            Err(e) => Err(HostError::Internal(e.to_string())),
+        }
+    }
     pub fn transaction(&self, identity: &str, limits: &Limits) -> Result<Transaction, CallError> {
         let db = self.database(true)?.expect("created database");
         Ok(Transaction {
