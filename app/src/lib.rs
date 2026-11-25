@@ -290,6 +290,9 @@ pub fn run(config: Config) -> Result<(), AppError> {
             commands::chatgpt_sign_out,
             commands::claude_binary_pick,
             commands::claude_binary_clear,
+            commands::judge_origin,
+            commands::judge_set,
+            commands::judge_remove,
             commands::consent_withdraw,
             commands::mods_list,
             commands::mod_open,
@@ -362,6 +365,7 @@ pub fn run(config: Config) -> Result<(), AppError> {
                         Arc::clone(&parties),
                         Arc::clone(&state.broker),
                         Arc::clone(&confirm.notices),
+                        Arc::clone(&state.accounts),
                     ) {
                         Ok(core) => Arc::new(core),
                         Err(error) => {

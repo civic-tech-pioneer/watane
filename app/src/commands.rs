@@ -156,6 +156,41 @@ pub(crate) async fn claude_binary_clear(
 }
 
 #[tauri::command]
+pub(crate) fn judge_origin(webview: tauri::Webview, origin: String) -> Result<Value, CmdError> {
+    record(&webview, "judge_origin");
+    let origin = watane_host::judge_origin(&origin)
+        .map_err(|error| CmdError::new(error.code(), crate::words::judge_origin(None)))?;
+    Ok(json!({"text": crate::words::judge_origin(Some(&origin)), "origin": origin}))
+}
+
+#[tauri::command]
+pub(crate) async fn judge_set(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    local: String,
+    key: String,
+    origin: String,
+) -> Result<(), CmdError> {
+    #[cfg(feature = "driver")]
+    state.driver.judge_set(webview.label());
+    #[cfg(not(feature = "driver"))]
+    let _ = webview;
+    let core = Arc::clone(core(&state)?);
+    blocking(move || core.judge_set(&local, &key, &origin)).await
+}
+
+#[tauri::command]
+pub(crate) async fn judge_remove(
+    webview: tauri::Webview,
+    state: tauri::State<'_, AppState>,
+    local: String,
+) -> Result<(), CmdError> {
+    record(&webview, "judge_remove");
+    let core = Arc::clone(core(&state)?);
+    blocking(move || core.judge_remove(&local)).await
+}
+
+#[tauri::command]
 pub(crate) async fn mods_list(
     webview: tauri::Webview,
     state: tauri::State<'_, AppState>,

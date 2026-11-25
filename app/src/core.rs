@@ -30,10 +30,34 @@ pub(crate) struct ModView {
     pub error: Option<String>,
     pub grants: Vec<GrantLine>,
     pub consents: Vec<crate::consent::ConsentLine>,
+    pub judge: Option<JudgeView>,
     pub notice: Option<String>,
     pub offer: Option<String>,
     pub offer_grants: Vec<GrantLine>,
 }
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct JudgeView {
+    kept: bool,
+    origin: Option<String>,
+    hosts: Vec<String>,
+}
+
+fn judge_hosts(grants: &[GrantState]) -> Option<Vec<String>> {
+    if !grants.iter().any(|state| {
+        state.granted && matches!(state.grant, Grant::ClaudeCode | Grant::ClaudeCodeShell)
+    }) {
+        return None;
+    }
+    let hosts: Vec<_> = grants
+        .iter()
+        .filter_map(|state| match &state.grant {
+            Grant::Http { host } if state.granted => Some(host.to_string()),
+            _ => None,
+        })
+        .collect();
+    (!hosts.is_empty()).then_some(hosts)
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ModLink {
     kind: String,
@@ -128,6 +152,8 @@ pub(crate) struct Core {
     pub broker: Arc<crate::consent::Broker>,
     pub main: Arc<crate::main_mod::MainMod>,
     pub host: Arc<Host>,
+    accounts: Arc<crate::accounts::Accounts>,
+    judge_changes: Mutex<()>,
     pub dist: Arc<watane_dist::Dist>,
     failures: Mutex<ChannelFailures>,
     refresh_times: Mutex<RefreshTimes>,
@@ -254,9 +280,14 @@ impl Core {
         parties: Arc<Parties>,
         broker: Arc<crate::consent::Broker>,
         manager_notices: Arc<crate::confirm::ManagerNotices>,
+        accounts: Arc<crate::accounts::Accounts>,
     ) -> Result<Self, CmdError> {
+        let installed = host.mods();
+        accounts.prune_judges(installed.iter().map(|m| m.identity.as_str()))?;
         Ok(Self {
             manager_notices,
+            accounts,
+            judge_changes: Mutex::new(()),
             main: Arc::new(crate::main_mod::MainMod::open(&host)?),
             app,
             host,
@@ -398,7 +429,16 @@ impl Core {
             .iter()
             .map(|c| words::consent_line(c, &m.name, &self.parties))
             .collect();
+        let judge = judge_hosts(&m.grants).map(|hosts| {
+            let origin = self.accounts.kept_judge_origin(&m.identity);
+            JudgeView {
+                kept: origin.is_some(),
+                origin,
+                hosts,
+            }
+        });
         ModView {
+            judge,
             main: self.main.get().as_deref() == Some(m.local.as_ref()),
             proposes_main: metadata.as_ref().is_some_and(|m| m.main()),
             summary: metadata
@@ -535,10 +575,67 @@ impl Core {
     pub fn remove(&self, local: &str, delete_data: bool) -> Result<(), CmdError> {
         let name = LocalName::parse(local)?;
         views::close_mod(&self.app, local)?;
+        let _judge = self
+            .judge_changes
+            .lock()
+            .expect("judge account changes lock");
+        let provider = self
+            .host
+            .get(&name)
+            .ok_or_else(|| watane_host::HostError::NoSuchMod(local.into()))?;
+        self.accounts.revoke_judge(&self.host, provider.identity)?;
         self.host.remove(&name, delete_data)?;
         self.main.removed(local)?;
         Ok(())
     }
+    pub fn judge_set(&self, local: &str, key: &str, origin: &str) -> Result<(), CmdError> {
+        let name = LocalName::parse(local)?;
+        let origin = watane_host::judge_origin(origin)?;
+        let _judge = self
+            .judge_changes
+            .lock()
+            .expect("judge account changes lock");
+        let provider = self
+            .host
+            .get(&name)
+            .ok_or_else(|| watane_host::HostError::NoSuchMod(local.into()))?;
+        let hosts = judge_hosts(&provider.grants)
+            .ok_or_else(|| CmdError::new("bad_input", "This mod cannot use a judge key."))?;
+        if !hosts
+            .iter()
+            .any(|host| origin.strip_prefix("https://") == Some(host))
+        {
+            return Err(CmdError::new(
+                "bad_input",
+                "This provider cannot reach the judge origin.",
+            ));
+        }
+        let replacing = self
+            .accounts
+            .kept_judge_origin(&provider.identity)
+            .is_some();
+        self.accounts.keep_judge(&provider.identity, key, &origin)?;
+        if replacing {
+            self.host.account_changed(&watane_host::Account::Judge {
+                provider: provider.identity,
+            });
+        }
+        Ok(())
+    }
+
+    pub fn judge_remove(&self, local: &str) -> Result<(), CmdError> {
+        let name = LocalName::parse(local)?;
+        let _judge = self
+            .judge_changes
+            .lock()
+            .expect("judge account changes lock");
+        let provider = self
+            .host
+            .get(&name)
+            .ok_or_else(|| watane_host::HostError::NoSuchMod(local.into()))?;
+        self.accounts.revoke_judge(&self.host, provider.identity)
+    }
+
     pub fn grant(&self, local: &str, key: &str, give: bool) -> Result<(), CmdError> {
         let local = LocalName::parse(local)?;
         let m = self
@@ -1723,6 +1820,7 @@ mod stage_d_more_tests {
                 offer: offer.map(str::to_string),
                 offer_grants: vec![],
                 consents: vec![],
+                judge: None,
             };
             let value = serde_json::to_value(row).unwrap();
             assert_eq!(value["notice"], serde_json::json!(notice));

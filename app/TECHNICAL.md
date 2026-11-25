@@ -1023,7 +1023,7 @@ An error is `CmdError { code, message }` (section 13). Each command takes
 | `toolset_save` | main | `name`, `entries: [string]` | `null` | B |
 | `toolset_remove` | main | `name` | `null` | B |
 | `tokens_list` | main | — | `[{id, toolset, handle}]` | B |
-| `chatgpt_sign_in`, `chatgpt_sign_out`, `claude_binary_pick`, `claude_binary_clear`, `judge_set`, `judge_remove`, `consent_withdraw` | main | 19.5 | 19.5 | L (step 11) |
+| `chatgpt_sign_in`, `chatgpt_sign_out`, `claude_binary_pick`, `claude_binary_clear`, `judge_origin`, `judge_set`, `judge_remove`, `consent_withdraw` | main | 19.5 | 19.5 | L (step 11) |
 | `token_issue` | main | `toolset`, `handle` | `{token, mcpUrl}` | B |
 | `token_end` | main | `id` | `null` | B |
 | `install_link` | main | `link` | `{installed: [local], followed: [label]}` | C |
@@ -1990,7 +1990,7 @@ every deletion retains the `minmax-fund/watane-j-` prefix guard.
 | I Manager (W36) | 5.3 from stage I, 5.4; the stage I commands and `ModView` fields; the menu; the drop handler on `main`; `tests/it/manager.rs` with a fixture `desk` (`main = true`, a page) | pkg stage 10 (`Mod::main`) | `proposesMain` false until pkg stage 10 | S37 to S42 pass; every earlier suite passes; `static_config` lists the new commands |
 | J Own manager (step 10) | 17.2 to 17.4; `HostConfirm::{manage, reduced}`; the consent page's `manage` request and `asked_by` line; `tests/it/manage.rs`, `tests/it/j10.rs`, the fixture `desk-ui` | host stage 11 (and through it pkg stage 11); app stage I (S74: the main mod, the menu); app stage D (a chosen index) | none: the `Manage` request is tested in stage A style through the driver's `ask` | S43 to S48 and J10 pass; every earlier suite passes |
 | K Look (W37) | 5.3 from W37 (5.3.1 to 5.3.7) in `ui/` (`index.html`, `app.js`, `manager.js`, `words.js`, `style.css`); section 4's short form (`GrantLine.short`, `grant_short`); `Status.checkedAt`, `ChannelRow.readAt`; 5.4's `HostConfirm::installed`, separators and the `Edit` and `Window` menus; the drag-drop handler's `dropping` scripts (5.3.2); the driver ops `menu_items` and `theme`; `tests/it/look.rs`, `tests/it/static_style.rs`, the W37 rows of `manager.rs`; the changed window tests | host stage 12 (`Confirm::installed`) for S51 only | until host stage 12: the stage I per-command adoption stays, and S51 is `#[ignore = "waits for host stage 12"]` | every W37 row passes; every earlier suite passes; a screenshot of each view (Library with the panel, the confirm panel, the installed note, first start, Find, Updates, Settings) in light and dark sits in `spec/design/manager/` beside its board |
-| L Agent layer (step 11) | 19.1 to 19.5: `src/accounts.rs`, `src/chatgpt.rs`, `src/claude_bin.rs`, `ui/settings-agents.js`; the `AccountSource` implementation; `Request::Agent` and its words; `ModView.consents`, `.judge`, `PlanMod.agents_via`; the two grant rows of 4; the seven commands of 19.5; `tests/it/agent.rs` | host stages A3 (consents), A4 (`openai`), A5 (`judge`) (host 19); pkg for `Grant::ClaudeCode` and `Grant::ClaudeCodeShell`; dev 18 (`ScriptedResponses`, `fake-claude`) for S65 | the host's `AccountSource` and `Confirm::consent` are test doubles until host A3 to A5 land; the issuer, the browser and `claude --version` are stand-ins (19.6) | S54 to S68 pass; every earlier suite passes; `static_config` lists the seven commands |
+| L Agent layer (step 11) | 19.1 to 19.5: `src/accounts.rs`, `src/chatgpt.rs`, `src/claude_bin.rs`, `ui/settings-agents.js`; the `AccountSource` implementation; `Request::Agent` and its words; `ModView.consents`, `.judge`, `PlanMod.agents_via`; the two grant rows of 4; the commands of 19.5; `tests/it/agent.rs` | host stages A3 (consents), A4 (`openai`), A5 (`judge`) (host 19); pkg for `Grant::ClaudeCode` and `Grant::ClaudeCodeShell`; dev 18 (`ScriptedResponses`, `fake-claude`) for S65 | the host's `AccountSource` and `Confirm::consent` are test doubles until host A3 to A5 land; the issuer, the browser and `claude --version` are stand-ins (19.6) | S54 to S68 pass; every earlier suite passes; `static_config` lists the commands |
 | H Extension points (step 9) | the step 9 text of the subscription row (4); `tests/it/j9.rs` with the host fixtures `menu` and `item-*` (host 13.1) | host stage 10; dev stage 12 to build the fixtures | none | J9 passes |
 | F Linux | arm64 Linux in Docker (Debian, GTK 3, WebKitGTK 4.1), via `scripts/linux-test.sh` under `xvfb-run` | Docker | — | default and driver suites, including J2, pass; front tests compile but do not run; hidden scheduling and `*.localhost` resolution findings in `NOTES.md`; x86_64 only if arm64 hides a gap (deputy decision) |
 
@@ -2068,7 +2068,7 @@ The app stays open to show this; it never chooses another port by itself.
 | No imitation | the mark is only in `<home>/app/mark` and in two commands; mods have no file access | S1, S6 |
 | No script injection into app views | untrusted text only through `textContent`; the CSP below; `freezePrototype` | gui_shell |
 | No secret in app assets | the `tauri://` handler answers CORS to any origin (colos finding); `ui/` holds no secret; tokens and the mark come only from commands | review rule |
-| No mod sees a credential (step 11) | the ChatGPT tokens, the judge keys and the `claude` path are app files that reach the host only through the in-process `AccountSource`; the seven commands of 19.5 are `main` only; no `ModView`, `Status` or event holds one | S67, 19.8 |
+| No mod sees a credential (step 11) | the ChatGPT tokens, the judge keys and the `claude` path are app files that reach the host only through the in-process `AccountSource`; the commands of 19.5 are `main` only; no `ModView`, `Status` or event holds one | S67, 19.8 |
 | A judge key goes only to its provider and origin (step 11) | the key file is named by the provider's identity, compared exactly; the origin is entered by the participant, parsed once, never prefilled; the host adds the key only to that provider's `POST` to that origin (host 19.4) | S63, S64, S65, S66 |
 | No driver in a release | the `compile_error!` of section 10 | `cargo build --release --features driver` fails |
 
@@ -2764,16 +2764,16 @@ N10).
   that provider and origin: no consent request is asked (agentic-harness 8).
 - **Showing.** The page shows `A key is kept for <origin>` and the buttons
   `Replace key` and `Remove key`; it never shows or returns the key: no command
-  returns it, and `ModView.judge` holds only `kept` and `origin`.
+  returns it, and `ModView.judge` holds only `kept`, `origin` and `hosts`.
 - **Removing.** `judge_remove({local})` deletes the file, then tells the host
   that the account changed with `Host::account_changed(&Account::Judge {
-  provider })` (host 19.4); the host ends
-  the provider's live judge streams. The deletion and the notice happen in that
+  provider })` (host 19.4). The host ends the provider's live judge streams.
+  A replacement sends the same notice after publishing the new key. The deletion and the notice happen in that
   order, and the notice is sent also when no file existed.
 - **Uninstalling.** `mod_remove` of a mod that has a key file deletes it before
   it calls `host.remove` (the order of APP-F-11), with the same notice; a
-  later mod with the same identity starts with no key. A crash between the two
-  leaves a file with no mod: the next start deletes each file of
+  later mod with the same identity starts with no key. Startup also cleans up
+  orphaned files. The next start deletes each file of
   `<home>/app/accounts/judge/` whose identity no installed mod has
   (startup step 6.3).
 - **`AccountSource::judge(provider)`** returns the stored `{key, origin}` for
@@ -2791,6 +2791,7 @@ log (the arguments `key` of `judge_set` are logged as `<redacted>`).
 | `chatgpt_sign_out` | none | `null` |
 | `claude_binary_pick` | none | `{path, version}`, or `null` when the dialog is cancelled |
 | `claude_binary_clear` | none | `null` |
+| `judge_origin` | `origin` | `{origin, text}` for the manager input, or `bad_request` |
 | `judge_set` | `local`, `key`, `origin` | `null` |
 | `judge_remove` | `local` | `null` |
 | `consent_withdraw` | `local`, `key` | `null` |
@@ -2798,7 +2799,7 @@ log (the arguments `key` of `judge_set` are logged as `<redacted>`).
 `Status` gains `chatgpt: {signedIn, plan, error}` and `claude: {path, version, error?} |
 null` (19.3). `CmdError.code` gains no value: a failed check is `bad_input`, an
 unreachable OpenAI is `unavailable`, an I/O error is `io`. `build.rs` and
-`capabilities/main.json` list the seven commands in stage L (section 14).
+`capabilities/main.json` list the commands in stage L (section 14).
 
 ### 19.6 Tests
 
@@ -2882,7 +2883,7 @@ Stage L is listed in section 12; its row is repeated here for reference:
 
 | Stage | Builds | Needs | Fake until then | Done when |
 |---|---|---|---|---|
-| L Agent layer (step 11) | 19.1 to 19.5; the `AccountSource` implementation; `Request::Agent`; `ModView.consents`, `.judge`, `PlanMod.agents_via`; the two grant rows; Settings groups `ChatGPT` and `Claude Code`; `tests/it/agent.rs` and the rows of 19.6 | host stages A3 (consents), A4 (`openai`), A5 (`judge`) of host 19; pkg for the two grants; dev 18 for S65 | the host's `AccountSource` and `Confirm::consent` are driven by test doubles until host A3 to A5 land | S54 to S68 pass; every earlier suite passes; `static_config` lists the seven commands |
+| L Agent layer (step 11) | 19.1 to 19.5; the `AccountSource` implementation; `Request::Agent`; `ModView.consents`, `.judge`, `PlanMod.agents_via`; the two grant rows; Settings groups `ChatGPT` and `Claude Code`; `tests/it/agent.rs` and the rows of 19.6 | host stages A3 (consents), A4 (`openai`), A5 (`judge`) of host 19; pkg for the two grants; dev 18 for S65 | the host's `AccountSource` and `Confirm::consent` are driven by test doubles until host A3 to A5 land | S54 to S68 pass; every earlier suite passes; `static_config` lists the commands |
 
 ### 19.8 Security properties
 

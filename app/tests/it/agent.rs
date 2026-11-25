@@ -425,3 +425,103 @@ fn s60_consent_in_the_details_and_its_withdrawal() {
     deny(&c.app);
     assert!(c.app.quit().success());
 }
+
+#[test]
+#[ignore = "slow: real manager window with installed provider fixtures and an app restart"]
+fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
+    let _gui = GUI.lock().unwrap_or_else(|error| error.into_inner());
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let provider = work.path().join("claude");
+    copy_dir(&host_fixture("claude"), &provider);
+    let manifest = provider.join("mod.toml");
+    let mut text = fs::read_to_string(&manifest).unwrap();
+    text.push_str("\n[http]\nhosts = [\"judge.test\"]\n");
+    fs::write(manifest, text).unwrap();
+
+    let app = App::start(home.path(), &[]);
+    assert!(app.wait("main", TIMEOUT));
+    until(&app, "main", "document.body.dataset.ready === 'true'");
+    begin_install(&app, &[provider, host_fixture("claude-front")]);
+    approve(&app);
+    installed(&app, "claude");
+    installed(&app, "claude-front");
+    let query = "s => document.querySelector('section[data-local=claude] .judge ' + s)";
+    click(&app, "[data-tile=claude]");
+    let evaluate = |script: &str| app.eval("main", &format!("(q => {script})({query})"));
+    assert_eq!(evaluate("q('.label').textContent"), "Judge key");
+    assert_eq!(evaluate("q('.judge-origin').value"), "");
+    assert_eq!(evaluate("q('.judge-key').type"), "password");
+    assert_eq!(evaluate("q('.judge-key').autocomplete"), "off");
+    assert_eq!(
+        app.eval(
+            "main",
+            "!!document.querySelector('section[data-local=claude-front] .judge')"
+        ),
+        false
+    );
+    let enter = |field: &str, value: &str| {
+        app.eval("main", &format!(
+            "(q => {{const i = q({}); i.value = {}; i.dispatchEvent(new Event('input')); return null}})({query})",
+            json!(field), json!(value)
+        ));
+    };
+    enter(".judge-key", "test-key-only");
+    enter(".judge-origin", "https://judge.test/v1");
+    until(
+        &app,
+        "main",
+        &format!("({query})('.judge-feedback').textContent === 'Not an https origin.'"),
+    );
+    assert_eq!(evaluate("q('.judge-save').disabled"), true);
+    enter(".judge-origin", "https://unlisted.test");
+    until(
+        &app,
+        "main",
+        &format!("({query})('.judge-feedback').textContent.includes('cannot reach unlisted.test')"),
+    );
+    assert_eq!(evaluate("q('.judge-save').disabled"), true);
+    enter(".judge-origin", "https://Judge.Test:443/");
+    until(
+        &app,
+        "main",
+        &format!(
+            "!({query})('.judge-save').disabled && ({query})('.judge-feedback').textContent === 'The key will go only to https://judge.test.'"
+        ),
+    );
+    click(&app, "section[data-local=claude] .judge-save");
+    until(&app, "main", &format!("!!({query})('.judge-replace')"));
+    let directory = home.path().join("app/accounts/judge");
+    let path = directory.join("local__claude.json");
+    assert_eq!(
+        fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&fs::read(&path).unwrap()).unwrap(),
+        json!({"version":1,"key":"test-key-only","origin":"https://judge.test"})
+    );
+    let view = invoke(&app, "mods_list", json!({}));
+    assert!(!view.to_string().contains("test-key-only"));
+    let log = app.log();
+    assert!(!log.to_string().contains("test-key-only"));
+    assert!(log["commands"].as_array().unwrap().contains(&json!({
+        "label":"main","cmd":"judge_set","args":{"key":"<redacted>"}
+    })));
+    assert!(app.quit().success());
+
+    let stray = directory.join("local__absent.json");
+    fs::copy(&path, &stray).unwrap();
+    let app = App::start(home.path(), &[]);
+    assert!(app.wait("main", TIMEOUT));
+    until(&app, "main", &format!("!!({query})('.judge-replace')"));
+    assert!(path.exists());
+    assert!(!stray.exists());
+    invoke(
+        &app,
+        "mod_remove",
+        json!({"local":"claude","deleteData":false}),
+    );
+    assert!(!path.exists());
+    assert!(app.quit().success());
+}

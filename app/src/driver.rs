@@ -58,6 +58,12 @@ impl DriverState {
             .expect("lock poisoned: another thread panicked while holding it")
             .push(json!({"label":label,"cmd":cmd}));
     }
+    pub fn judge_set(&self, label: &str) {
+        self.commands
+            .lock()
+            .expect("driver command lock")
+            .push(json!({"label":label,"cmd":"judge_set","args":{"key":"<redacted>"}}));
+    }
     pub fn open_url(&self, url: &tauri::Url) {
         self.opened_urls
             .lock()
