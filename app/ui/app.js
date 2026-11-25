@@ -122,15 +122,20 @@ function makeSwitch(parent, label, checked, className, callback) {
 function judgeView(mod, entry) {
   const section = element('div', '', entry, 'grants judge');
   element('div', 'Judge key', section, 'label');
-  element('p', `This provider can reach: ${mod.judge.hosts.join(', ')}.`, section, 'hint');
-  const editor = element('div', '', section, 'judge-editor');
-  editor.hidden = mod.judge.kept;
-  if (mod.judge.kept) {
-    element('p', `A key is kept for ${mod.judge.origin}`, section);
-    button(section, 'Replace key', 'judge-replace', () => { editor.hidden = false; origin.focus(); });
+  const {kept, hosts} = mod.judge;
+  if (hosts.length) element('p', `This provider can reach: ${hosts.join(', ')}.`, section, 'hint');
+  if (kept) {
+    element('p', `A key is kept for ${mod.judge.origin}`, section, 'judge-kept');
+    if (hosts.length) button(section, 'Replace key', 'judge-replace', () => { editor.hidden = false; origin.focus(); });
     button(section, 'Remove key', 'judge-remove danger quiet', () => action('judge_remove', {local:mod.local}));
   }
+  if (!hosts.length) {
+    element('p', 'This provider needs Claude Code and HTTP grants to replace the key.', section, 'hint');
+    return;
+  }
 
+  const editor = element('div', '', section, 'judge-editor');
+  editor.hidden = kept;
   const originLabel = element('label', 'Judge origin', editor);
   const origin = element('input', '', originLabel, 'judge-origin');
   origin.type = 'text'; origin.placeholder = 'https://host[:port]';
@@ -140,8 +145,15 @@ function judgeView(mod, entry) {
   const feedback = element('p', '', editor, 'judge-feedback hint');
   feedback.setAttribute('aria-live', 'polite');
 
+  const saveHint = element('p', '', editor, 'judge-save-hint judge-feedback hint');
+  saveHint.setAttribute('aria-live', 'polite');
   let parsed = null, revision = 0, busy = false;
-  const updateSave = () => { save.disabled = busy || !parsed || !key.value.trim(); };
+  const updateSave = () => {
+    const hasOrigin = Boolean(origin.value.trim()), hasKey = Boolean(key.value.trim());
+    save.disabled = busy || !parsed || !hasKey;
+    saveHint.textContent = !hasOrigin ? 'Enter a judge origin.' : parsed && !hasKey ? 'Enter a judge key.' : '';
+    saveHint.hidden = !saveHint.textContent;
+  };
   const save = button(editor, 'Save key', 'judge-save primary', async () => {
     if (save.disabled) return;
     const args = {local:mod.local, key:key.value, origin:origin.value};
@@ -163,20 +175,21 @@ function judgeView(mod, entry) {
     const current = ++revision;
     parsed = null; updateSave();
     const value = origin.value;
-    if (!value) { feedback.textContent = ''; return; }
+    if (!value.trim()) { feedback.textContent = ''; return; }
+    feedback.textContent = 'Checking origin…';
     try {
       const result = await call('judge_origin', {origin:value});
       if (current !== revision) return;
       const host = result.origin.slice('https://'.length);
-      if (!mod.judge.hosts.includes(host)) {
-        feedback.textContent = `This provider cannot reach ${host}; the key would never be used.`;
+      if (!hosts.includes(host)) {
+        feedback.textContent = `This provider cannot reach ${result.origin}. Choose an origin at one of its granted hosts (${hosts.join(', ')}).`;
         return;
       }
       parsed = result.origin;
       feedback.textContent = result.text;
       updateSave();
     } catch (error) {
-      if (current === revision) feedback.textContent = error.message || 'Not an https origin.';
+      if (current === revision) feedback.textContent = error.message || 'Could not check the judge origin.';
     }
   });
 }

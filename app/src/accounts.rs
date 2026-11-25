@@ -220,6 +220,21 @@ impl Accounts {
         .map_err(io_error)
     }
 
+    pub fn save_judge(
+        &self,
+        host: &watane_host::Host,
+        provider: String,
+        key: &str,
+        origin: &str,
+    ) -> Result<(), CmdError> {
+        let replacing = self.kept_judge_origin(&provider).is_some();
+        self.keep_judge(&provider, key, origin)?;
+        if replacing {
+            host.account_changed(&watane_host::Account::Judge { provider });
+        }
+        Ok(())
+    }
+
     fn remove_judge(&self, identity: &str) -> Result<(), CmdError> {
         let filename = judge_filename(identity)
             .ok_or_else(|| CmdError::new("bad_input", "Invalid provider identity."))?;
@@ -611,7 +626,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ac3_removing_the_app_key_ends_a_live_scripted_judge_stream() {
+    async fn ac3_replacing_and_removing_the_app_key_ends_live_scripted_judge_streams() {
         use std::pin::Pin;
         use std::time::{Duration, Instant};
         use watane_dev::scripted::{Play, ScriptedResponses};
@@ -688,44 +703,63 @@ hosts = ["judge.test"]
             json!({"request":json!({"url":"https://judge.test/verdict","method":"POST","account":"judge"}).to_string()})
         )
         };
-        let stream = start().await.unwrap().as_str().unwrap().to_owned();
-        let deadline = Instant::now() + Duration::from_secs(20);
-        while scripted.judge().count() == 0 {
-            assert!(
-                Instant::now() < deadline,
-                "judge never received the request"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        assert!(
-            scripted.judge().requests()[0]
-                .headers
-                .iter()
-                .any(|(name, value)| name.eq_ignore_ascii_case("authorization")
-                    && value == "Bearer test judge key")
-        );
-        accounts.revoke_judge(&host, identity.clone()).unwrap();
-        assert!(accounts.kept_judge_origin(&identity).is_none());
-        let no_key = start().await.unwrap().as_str().unwrap().to_owned();
-        let deadline = Instant::now() + Duration::from_secs(20);
-        loop {
-            let ended = host
-                .call_async(Caller::Page, local.clone(), "api.ended".into(), Value::Null)
-                .await
-                .unwrap();
-            let ended = ended.as_array().unwrap();
-            if ended.contains(&json!(format!("{stream} gone")))
-                && ended.contains(&json!(format!("{no_key} no-account")))
-            {
-                break;
+        let until_request = async |index: usize, bearer: &str| {
+            let deadline = Instant::now() + Duration::from_secs(20);
+            while scripted.judge().count() <= index {
+                assert!(
+                    Instant::now() < deadline,
+                    "judge never received request {index}"
+                );
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
             assert!(
-                Instant::now() < deadline,
-                "judge stream outcomes: {ended:?}"
+                scripted.judge().requests()[index]
+                    .headers
+                    .iter()
+                    .any(|(name, value)| name.eq_ignore_ascii_case("authorization")
+                        && value == bearer)
             );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        assert_eq!(scripted.judge().count(), 1);
+        };
+        let until_ended = async |expected: String| {
+            let deadline = Instant::now() + Duration::from_secs(20);
+            loop {
+                let ended = host
+                    .call_async(Caller::Page, local.clone(), "api.ended".into(), Value::Null)
+                    .await
+                    .unwrap();
+                if ended.as_array().unwrap().contains(&json!(&expected)) {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "judge stream outcomes: {ended:?}; wanted {expected}"
+                );
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        };
+
+        let stream = start().await.unwrap();
+        until_request(0, "Bearer test judge key").await;
+        accounts
+            .save_judge(
+                &host,
+                identity.clone(),
+                "new judge key",
+                &scripted.judge_origin(),
+            )
+            .unwrap();
+        until_ended(format!("{} gone", stream.as_str().unwrap())).await;
+
+        scripted.judge().expect_key("new judge key");
+        let stream = start().await.unwrap();
+        until_request(1, "Bearer new judge key").await;
+        accounts.revoke_judge(&host, identity.clone()).unwrap();
+        assert!(accounts.kept_judge_origin(&identity).is_none());
+        until_ended(format!("{} gone", stream.as_str().unwrap())).await;
+
+        let no_key = start().await.unwrap();
+        until_ended(format!("{} no-account", no_key.as_str().unwrap())).await;
+        assert_eq!(scripted.judge().count(), 2);
     }
 
     #[tokio::test]

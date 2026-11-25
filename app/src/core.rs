@@ -58,6 +58,18 @@ fn judge_hosts(grants: &[GrantState]) -> Option<Vec<String>> {
     (!hosts.is_empty()).then_some(hosts)
 }
 
+fn judge_view(grants: &[GrantState], origin: Option<String>) -> Option<JudgeView> {
+    let hosts = judge_hosts(grants);
+    if hosts.is_none() && origin.is_none() {
+        return None;
+    }
+    Some(JudgeView {
+        kept: origin.is_some(),
+        origin,
+        hosts: hosts.unwrap_or_default(),
+    })
+}
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ModLink {
     kind: String,
@@ -429,14 +441,7 @@ impl Core {
             .iter()
             .map(|c| words::consent_line(c, &m.name, &self.parties))
             .collect();
-        let judge = judge_hosts(&m.grants).map(|hosts| {
-            let origin = self.accounts.kept_judge_origin(&m.identity);
-            JudgeView {
-                kept: origin.is_some(),
-                origin,
-                hosts,
-            }
-        });
+        let judge = judge_view(&m.grants, self.accounts.kept_judge_origin(&m.identity));
         ModView {
             judge,
             main: self.main.get().as_deref() == Some(m.local.as_ref()),
@@ -607,20 +612,14 @@ impl Core {
         {
             return Err(CmdError::new(
                 "bad_input",
-                "This provider cannot reach the judge origin.",
+                format!(
+                    "This provider cannot reach {origin}. Choose an origin at one of its granted hosts ({}).",
+                    hosts.join(", ")
+                ),
             ));
         }
-        let replacing = self
-            .accounts
-            .kept_judge_origin(&provider.identity)
-            .is_some();
-        self.accounts.keep_judge(&provider.identity, key, &origin)?;
-        if replacing {
-            self.host.account_changed(&watane_host::Account::Judge {
-                provider: provider.identity,
-            });
-        }
-        Ok(())
+        self.accounts
+            .save_judge(&self.host, provider.identity, key, &origin)
     }
 
     pub fn judge_remove(&self, local: &str) -> Result<(), CmdError> {
@@ -1327,6 +1326,39 @@ fn follow_installed_links(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ac1_judge_view_keeps_the_origin_without_granted_hosts() {
+        let mut grants = [
+            GrantState {
+                grant: Grant::ClaudeCode,
+                granted: true,
+            },
+            GrantState {
+                grant: Grant::Http {
+                    host: "judge.test".parse().unwrap(),
+                },
+                granted: true,
+            },
+            GrantState {
+                grant: Grant::Http {
+                    host: "withheld.test".parse().unwrap(),
+                },
+                granted: false,
+            },
+        ];
+        let origin = Some("https://judge.test".to_owned());
+        assert_eq!(
+            serde_json::to_value(judge_view(&grants, origin.clone())).unwrap(),
+            serde_json::json!({"kept": true, "origin": "https://judge.test", "hosts": ["judge.test"]})
+        );
+        grants[0].granted = false;
+        assert_eq!(
+            serde_json::to_value(judge_view(&grants, origin)).unwrap(),
+            serde_json::json!({"kept": true, "origin": "https://judge.test", "hosts": []})
+        );
+        assert!(judge_view(&grants, None).is_none());
+    }
+
     #[test]
     fn ac1_s75_status_tracks_whether_identity_signed() {
         struct Approve;

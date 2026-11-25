@@ -110,19 +110,22 @@ async fn ac5_committed_fixtures_call_subscribe_and_keep_state() {
         .unwrap(),
         json!(["Dune"])
     );
-    drop(host);
-    let host = open();
-    assert_eq!(
-        host.call_async(
-            watane_host::Caller::Page,
-            reading,
-            "books.list".into(),
-            json!({})
-        )
-        .await
-        .unwrap(),
-        json!(["Dune"])
-    );
+    let mut host = host;
+    for _ in 0..20 {
+        drop(host);
+        host = open();
+        assert_eq!(
+            host.call_async(
+                watane_host::Caller::Page,
+                reading.clone(),
+                "books.list".into(),
+                json!({})
+            )
+            .await
+            .unwrap(),
+            json!(["Dune"])
+        );
+    }
     assert_eq!(
         host.call_async(
             watane_host::Caller::Page,

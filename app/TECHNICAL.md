@@ -2720,31 +2720,34 @@ The key of a checked provider's judge is entered on the page that the manager
 shows for that provider, never in the provider's own page (agentic-harness 5;
 N10).
 
-- **Which mods.** A mod has the section when it holds `Grant::ClaudeCode` or
-  `Grant::ClaudeCodeShell` and at least one `Http` grant (a checked provider
-  needs a judge host in its `[http]`, agentic-harness 10; the rule is the
-  answer of Q13 in section 16, as agentic-harness gives none). `ModView.judge` is `null` for every other mod, and
-  otherwise `{kept: bool, origin: string | null, hosts: [string]}`: whether a
-  key is kept, its origin when it is, and the provider's own `Http` hosts. The
-  section sits in the details of 5.3.4, after `Agents`, headed `Judge key`.
+- **Which mods.** A mod can enter or replace a key when it holds
+  `Grant::ClaudeCode` or `Grant::ClaudeCodeShell` and at least one `Http`
+  grant (see section 16, Q13). A mod with a kept key always has the section.
+  `ModView.judge` is `null` when neither condition applies. Otherwise it is
+  `{kept: bool, origin: string | null, hosts: [string]}`: whether a key is
+  kept, its origin when it is, and the granted `Http` hosts when it can enter
+  or replace a key. An empty `hosts` list means the page offers removal only.
+  The section sits in the details of 5.3.4, after `Agents`, headed `Judge key`.
 - **Entering.** Two fields, `Judge origin` (text, `https://host[:port]`) and
   `Key` (password type, `autocomplete=off`), and the button `Save key`. The
   origin field starts empty: it is never filled from the provider's state,
   its page, its plan or its `Http` grants. Next to the key, before saving, a
   line shows the origin as the app will use it, parsed from the field on each
   input (`words::judge_origin`): `The key will go only to <origin>.`; an
-  origin that does not parse shows `Not an https origin.` and `Save key` is
-  disabled. `hosts` is shown as `This provider can reach: <hosts>.` and a
-  parsed origin whose host is not in it shows `This provider cannot reach <host>;
-  the key would never be used.` and keeps `Save key` disabled.
+  invalid origin shows `Enter an HTTPS origin, for example https://judge.example,
+  without a path, query or fragment.` and `Save key` is disabled. `hosts` is
+  shown as `This provider can reach: <hosts>.` An origin outside that list
+  disables `Save key`, and the refusal names the origin and the granted hosts.
+  The editor also shows which field needs input when it is empty.
 - **Origin parse.** One parse, the one host 19.4 uses for the same check:
   scheme `https`, no userinfo, no path other than a lone trailing `/` (any other path, a query or a
-  fragment is refused), host lower-cased without a trailing dot, the port with 443 as the default and
-  left out of the text; the stored origin is that text (agentic-harness 5).
+  fragment is refused), a lower-cased host, and a port of 443 omitted from the
+  text. A trailing dot in the host is refused. The stored origin is the
+  canonical text (agentic-harness 5).
   The app applies no rule of its own: for the
   page's line and for `judge_set` it calls `watane_host::judge_origin(text)`
   (host 19.4), and what it shows and stores is its result (`words::judge_origin`
-  only maps the error to `Not an https origin.`). The host parses the stored origin again at
+  maps the error to the editor's origin hint). The host parses the stored origin again at
   each binding check (host 19.4), so the app's parse decides only what is
   shown and stored, never where a key goes.
 - **Storing.** `judge_set({local, key, origin})` stores
@@ -2762,9 +2765,10 @@ N10).
   inside, only at its ends, at most 4 KiB; an empty key is `bad_input`. A second
   `Save key` replaces the file. Entering the key is the participant's consent for
   that provider and origin: no consent request is asked (agentic-harness 8).
-- **Showing.** The page shows `A key is kept for <origin>` and the buttons
-  `Replace key` and `Remove key`; it never shows or returns the key: no command
-  returns it, and `ModView.judge` holds only `kept`, `origin` and `hosts`.
+- **Showing.** The page shows `A key is kept for <origin>` and `Remove key`
+  even after a grant is withdrawn. While the required grants are held, it also
+  shows `Replace key`. `ModView.judge` holds `kept`, `origin` and `hosts`.
+  Commands and views keep the key private.
 - **Removing.** `judge_remove({local})` deletes the file, then tells the host
   that the account changed with `Host::account_changed(&Account::Judge {
   provider })` (host 19.4). The host ends the provider's live judge streams.
@@ -2860,7 +2864,9 @@ Scenarios of `tests/it/agent.rs`:
   `Judge key` section with empty fields; the parsed origin line shows under
   the key before saving; a typed `https://Judge.example:443/` and `https://Judge.example:443` each show
   `https://judge.example`, and `https://judge.example/v1` is refused for its path;
-  after `Save key` the file exists, 0600, and `judge(<id>)` returns it.
+  after `Save key` the file exists, 0600, and `judge(<id>)` returns it. After
+  withdrawing Claude Code, the page still shows the origin and `Remove key`.
+  Removing the key then deletes the file and the section disappears.
 - **S64 Never prefilled** (APP-F-86). A provider whose state and `Http`
   grants name `https://judge.example` still shows an empty origin field; the
   fixture's page cannot change it (it has no command, section 14).

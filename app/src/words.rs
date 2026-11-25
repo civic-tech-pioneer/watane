@@ -403,7 +403,7 @@ pub(crate) const CHATGPT_CALLBACK_PAGE: &str = "You can return to watane.";
 pub(crate) fn judge_origin(origin: Option<&str>) -> String {
     match origin {
         Some(origin) => format!("The key will go only to {origin}."),
-        None => "Not an https origin.".into(),
+        None => "Enter an HTTPS origin, for example https://judge.example, without a path, query or fragment.".into(),
     }
 }
 
@@ -466,6 +466,31 @@ pub(crate) fn sign_denied(kind: &str, target: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn judge_origin_explains_the_canonical_destination_and_invalid_input() {
+        for text in ["https://Judge.Example:443", "https://Judge.Example:443/"] {
+            let parsed = watane_host::judge_origin(text).expect("valid judge origin");
+            assert_eq!(
+                judge_origin(Some(&parsed)),
+                "The key will go only to https://judge.example."
+            );
+        }
+        for text in [
+            "https://judge.example/a",
+            "https://judge.example/?query",
+            "https://judge.example/#anchor",
+            "https://alice@judge.example",
+            "http://judge.example",
+            "https://judge.example.",
+        ] {
+            assert!(watane_host::judge_origin(text).is_err(), "{text}");
+            assert_eq!(
+                judge_origin(None),
+                "Enter an HTTPS origin, for example https://judge.example, without a path, query or fragment."
+            );
+        }
+    }
+
     #[test]
     fn channel_read_problem_uses_plain_words() {
         use watane_dist::DistError;
