@@ -176,3 +176,70 @@ fn ac4_the_reinstall_commits_reads_old_state_and_the_app_is_told() {
     assert!(requests[0][0].kept_state);
     assert_eq!(w.call("api.get").unwrap(), json!(1));
 }
+
+/// AC1 (F1.2): a plan made after the removal's catalog commit never says `kept_state` for data
+/// that the same removal deletes. Without a seam: a planner thread plans in a tight loop while
+/// `remove(local, true)` runs. A plan with `kept_state == true` has no mod of the name, so it was
+/// made after the commit and `install` would not refuse it as `stale_plan`.
+#[test]
+fn ac1_a_plan_during_a_delete_data_removal_never_keeps_state_that_goes() {
+    for round in 0..6 {
+        let w = written();
+        let host = Arc::clone(&w.host);
+        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let planned = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let planner = {
+            let (done, planned) = (Arc::clone(&done), Arc::clone(&planned));
+            std::thread::Builder::new()
+                .stack_size(16 << 20)
+                .spawn(move || {
+                    let mut kept = vec![];
+                    while !done.load(std::sync::atomic::Ordering::SeqCst) {
+                        let plan = host.plan(vec![Source::Folder(fixture("counter"))]).unwrap();
+                        planned.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        if plan.entries()[0].kept_state {
+                            kept.push(plan);
+                        }
+                    }
+                    kept
+                })
+                .unwrap()
+        };
+        while planned.load(std::sync::atomic::Ordering::SeqCst) < 2 {
+            std::thread::yield_now();
+        }
+        w.host.remove(&local("counter"), true).unwrap();
+        done.store(true, std::sync::atomic::Ordering::SeqCst);
+        let kept = planner.join().unwrap();
+        for plan in kept {
+            // Made after the commit: installing it is not refused as stale.
+            let result = w.runtime.block_on(w.host.install(plan, Requester::App));
+            assert!(
+                matches!(result, Err(watane_host::HostError::StalePlan)),
+                "round {round}: a live plan claims kept_state for deleted data"
+            );
+        }
+    }
+}
+
+/// AC3 (P1.1): a table with no record is no kept data.
+#[test]
+fn ac3_a_table_emptied_before_a_keep_data_removal_is_not_kept_state() {
+    let w = World::new();
+    w.install("echo");
+    let call = |function: &str, args: serde_json::Value| {
+        let host = Arc::clone(&w.host);
+        let function = function.to_owned();
+        std::thread::Builder::new()
+            .stack_size(16 << 20)
+            .spawn(move || host.call(&Caller::Page, &local("echo"), &function, args))
+            .unwrap()
+            .join()
+            .unwrap()
+            .unwrap()
+    };
+    call("api.put", json!(["k", [1]]));
+    call("api.delete", json!(["k"]));
+    w.host.remove(&local("echo"), false).unwrap();
+    assert!(!w.kept("echo"));
+}

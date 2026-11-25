@@ -548,7 +548,7 @@ impl Catalog {
                     from_version: old.version.clone(),
                 },
             };
-            let kept_state = old.is_none() && state.has_table(&identity)?;
+            let kept_state = old.is_none() && state.has_records(&identity)?;
             let grants = m.grants();
             let new_grants = grants
                 .iter()
