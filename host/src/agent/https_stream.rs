@@ -169,9 +169,14 @@ impl Request {
                 }
                 Some(RequestAccount::OpenAi)
             }
-            Some("judge") => Some(RequestAccount::Judge(JudgeAtCall::Missing(
-                JudgeUnavailable::NoAccount,
-            ))),
+            Some("judge") => {
+                if endpoint.grant == OPENAI_HOST {
+                    return Err(Refusal::Destination);
+                }
+                Some(RequestAccount::Judge(JudgeAtCall::Missing(
+                    JudgeUnavailable::NoAccount,
+                )))
+            }
             Some(_) => return Err(Refusal::Destination),
         };
         Ok(Self {

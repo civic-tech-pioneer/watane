@@ -3546,7 +3546,9 @@ checks of the table above are made at the call.
     publisher's mod or a preview gets `no-account`.
   - Value: `account` is exactly `openai` or `judge`; any other value is
     refused `destination`.
-  - Binding: the key is looked up by the caller's identity (`AccountSource::judge`),
+  - Binding: the OpenAI account origin `https://api.openai.com` is refused
+    for `account: "judge"` at the call, before account lookup. Otherwise the
+    key is looked up by the caller's identity (`AccountSource::judge`),
     so a caller with no key of its own gets `no-account`. A request with
     `account: "judge"` is refused before a byte leaves (`destination`) unless
     the caller is the provider the key was entered for, the method is `POST`,
