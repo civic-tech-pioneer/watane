@@ -4,11 +4,11 @@
 use crate::support::*;
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
-use std::process::Stdio;
+use std::process::{Command, Stdio};
 
 const HINT: [&str; 2] = [
     "watane 0.1.0 is installed; the run was interrupted before it finished.",
-    "Run watane-dev doctor to check the maker tools.",
+    "Run ~/.local/bin/watane-dev doctor to check the maker tools.",
 ];
 
 fn fake_tool(fx: &Fx, name: &str, body: &str) {
@@ -47,7 +47,8 @@ fn ac1_int_after_the_commit_says_watane_is_installed() {
 #[ignore = "slow: needs a pseudo-terminal from script(1)"]
 fn ac2_int_at_the_toolchain_question_says_watane_is_installed() {
     let fx = Fx::new();
-    let out = fx.run_pty(&[], &[], &[("[y/N] ", "\x03")]);
+    let url = fx.rustup_installer();
+    let out = fx.run_pty(&[], &[("WATANE_RUSTUP_URL", &url)], &[("[y/N] ", "\x03")]);
     assert_eq!(out.code, 130, "{out:?}");
     let all = lines(&out.stdout);
     let at = all
@@ -58,11 +59,13 @@ fn ac2_int_at_the_toolchain_question_says_watane_is_installed() {
     assert_eq!(all[at + 2], "To install it later, run:", "{out:?}");
     assert_eq!(
         all[at + 3],
-        "  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2",
+        format!(
+            "  curl --tlsv1.2 -sSf '{url}' | sh -s -- -y --profile minimal --no-modify-path -t wasm32-wasip2"
+        ),
         "{out:?}"
     );
     assert!(
-        !out.stdout.contains("is installed.\n"),
+        !out.has_line("watane 0.1.0 is installed."),
         "no success block: {out:?}"
     );
     fx.assert_installed("0.1.0");
@@ -85,6 +88,28 @@ fn ac3_status_to_a_closed_reader_is_quiet() {
         assert_eq!(out.stderr, "", "{out:?}");
         assert!(out.code == 141 || out.code == 0, "{out:?}");
     }
+}
+
+/// TECHNICAL 3.9: a reader can consume one status line and close the pipe quietly.
+#[test]
+fn ac3_status_piped_to_head_is_quiet() {
+    let fx = Fx::installed();
+    let mut child = spawn_run(
+        fx.cmd(&["--status"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped()),
+    );
+    let head = Command::new("head")
+        .arg("-1")
+        .stdin(child.stdout.take().expect("status stdout"))
+        .output()
+        .expect("head");
+    assert!(head.status.success(), "{head:?}");
+    assert_eq!(head.stdout, format!("watane 0.1.0 ({TARGET})\n").as_bytes());
+    let out = finish(child);
+    assert_eq!(out.stderr, "", "{out:?}");
+    assert!(out.code == 141 || out.code == 0, "{out:?}");
 }
 
 /// TECHNICAL 8.1, 8.5 (IN-47): paths in a linked home print as `~` and never as the physical path.
@@ -125,6 +150,10 @@ fn ac4_paths_in_a_linked_home_print_as_tilde() {
     );
     assert!(!out.stderr.contains(&real.display().to_string()), "{out:?}");
     assert!(!out.stderr.contains(&h), "{out:?}");
+    assert!(out.has_line(
+        "partially uninstalled watane 0.1.0 (some entries were skipped or could not be removed)"
+    ));
+    assert!(!out.has_line("uninstalled watane 0.1.0"));
 }
 
 /// TECHNICAL 3.6 step 4, 3.8 (IN-47): an INT or TERM in the swap of a fresh install leaves no folder the run made.
@@ -147,6 +176,43 @@ fn ac6_an_interrupted_fresh_install_leaves_no_folder_it_made() {
         assert_eq!(fx.home_tree(), Vec::<String>::new(), "{sig}: {out:?}");
         assert!(!out.stderr.contains("is installed"), "{out:?}");
     }
+}
+
+/// TECHNICAL 8.4: ownership of empty top-level folders survives a later upgrade.
+#[test]
+fn ac2_uninstall_removes_the_folders_the_install_created() {
+    let fx = Fx::new();
+    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    fx.rel.set_version("0.2.0", &["new-crate-1.0.0"]);
+    assert_eq!(fx.run(&["--release", "0.2.0", "--no-toolchain"]).code, 0);
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(out.has_line("uninstalled watane 0.2.0"), "{out:?}");
+    assert!(fx.home_tree().is_empty(), "{:?}", fx.home_tree());
+}
+
+/// TECHNICAL 8.4: uninstall leaves empty user folders and a replacement at the same path.
+#[test]
+fn ac2_uninstall_keeps_preexisting_and_replaced_folders() {
+    let fx = Fx::new();
+    fs::create_dir(fx.home.join(".local")).expect("pre-existing .local");
+    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let app_folder = fx.home.join("Applications");
+    let original = fx.home.join("old-applications");
+    fs::rename(&app_folder, &original).expect("move the original aside");
+    fs::create_dir(&app_folder).expect("create an empty replacement");
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(fx.home.join(".local").is_dir());
+    assert!(app_folder.is_dir());
+    assert!(original.join("watane.app").is_dir());
+
+    let fx = Fx::new();
+    fs::create_dir(fx.home.join("Applications")).expect("pre-existing Applications");
+    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert_eq!(fx.home_tree(), vec!["Applications/"]);
 }
 
 /// TECHNICAL 3.6 step 4 (IN-47): a failed swap of a fresh install leaves no folder the run made.
@@ -230,9 +296,113 @@ fn ac7_a_failing_rustup_still_decides_exit_6() {
         .unwrap_or_else(|| panic!("no end line: {out:?}"));
     assert_eq!(all[end - 1], "oops");
     assert!(
-        all[end + 1].starts_with("watane install: the toolchain step failed (rustup exited 3)"),
+        all[end + 1]
+            == "watane install: the toolchain step failed: install Rust with rustup (rustup exited 3)",
         "{out:?}"
     );
+    assert!(
+        all.iter()
+            .any(|l| l.contains("~/.local/bin/watane-dev doctor")),
+        "{out:?}"
+    );
+}
+
+/// TECHNICAL 3.7: an existing rustup needs no bootstrap URL and names its failed command.
+#[test]
+#[ignore = "slow: needs a pseudo-terminal to accept the existing rustup offer"]
+fn ac4_existing_rustup_names_the_failing_default_step() {
+    let fx = Fx::new();
+    fake_tool(
+        &fx,
+        "rustup",
+        r#"case "$1" in
+  which) exit 1 ;;
+  toolchain) echo 'stable toolchain installed' ;;
+  default) exit 4 ;;
+esac"#,
+    );
+    let out = fx.run_pty(&[], &[], &[("[y/N] ", "y")]);
+    assert_eq!(out.code, 6, "{out:?}");
+    assert!(
+        out.stdout
+            .contains("Install it with rustup (a few hundred MB, into"),
+        "{out:?}"
+    );
+    assert!(!out.stdout.contains("sh.rustup.rs"), "{out:?}");
+    assert!(out.has_line("stable toolchain installed"), "{out:?}");
+    assert!(
+        out.has_line(
+            "watane install: the toolchain step failed: rustup default stable (rustup exited 4)"
+        ),
+        "{out:?}"
+    );
+    assert!(out.has_line("  rustup default stable"), "{out:?}");
+    fx.assert_installed("0.1.0");
+}
+
+/// TECHNICAL 3.8, 3.7: a rustup download that fails or is interrupted leaves the mirror retry command.
+#[test]
+#[ignore = "slow: needs a pseudo-terminal to consent and to interrupt the running download"]
+fn ac4_the_rustup_download_names_its_step_and_mirror_on_retry() {
+    for (outcome, code) in [("fail", 3), ("wait", 130)] {
+        let fx = Fx::new();
+        symlink(which("curl"), fx.real.join("curl")).expect("link real curl");
+        let url = "https://example.invalid/rustup-init.sh";
+        fake_tool(
+            &fx,
+            "curl",
+            &format!(
+                r#"case "$*" in
+  *example.invalid*)
+    if [ {outcome} = fail ]; then
+      printf '%s\n' 'could not fetch the installer' >&2
+      exit 22
+    fi
+    printf '%s\n' 'waiting for the rustup installer' >/dev/tty
+    exec "$FAKE_REAL/sleep" 600
+    ;;
+esac
+exec "$FAKE_REAL/curl" "$@""#
+            ),
+        );
+        let steps = if outcome == "wait" {
+            vec![
+                ("[y/N] ", "y"),
+                ("waiting for the rustup installer", "\x03"),
+            ]
+        } else {
+            vec![("[y/N] ", "y")]
+        };
+        let out = fx.run_pty(&[], &[("WATANE_RUSTUP_URL", url)], &steps);
+        assert_eq!(out.code, code, "{out:?}");
+        assert!(out.stdout.contains("watane 0.1.0 is installed"), "{out:?}");
+        assert!(
+            out.stdout
+                .contains(&format!("  curl --tlsv1.2 -sSf {url} | sh")),
+            "{out:?}"
+        );
+        if outcome == "fail" {
+            assert!(out.stdout.contains("cannot download the rustup installer from https://example.invalid/rustup-init.sh"), "{out:?}");
+            assert!(out.has_line("could not fetch the installer"), "{out:?}");
+        }
+        fx.assert_installed("0.1.0");
+    }
+}
+
+/// TECHNICAL 8.4: Ctrl-C at the uninstall question leaves the data and confirms removal on a fresh line.
+#[test]
+#[ignore = "slow: needs a pseudo-terminal to interrupt the uninstall question"]
+fn ac1_int_at_the_uninstall_question_says_watane_was_uninstalled() {
+    let fx = Fx::installed();
+    write_file(&fx.home.join(".watane/identity"), "kept identity");
+    let out = fx.run_pty(&["--uninstall"], &[], &[("keep it: ", "\x03")]);
+    assert_eq!(out.code, 130, "{out:?}");
+    assert!(
+        out.has_line("watane 0.1.0 was uninstalled; the watane home was kept."),
+        "{out:?}"
+    );
+    assert!(!fx.bin("watane").exists());
+    assert_eq!(fx.read(&fx.home.join(".watane/identity")), "kept identity");
 }
 
 /// TECHNICAL 3.8, 3.7 (IN-45): an INT after the typed yes prints the hint and no install-it-later lines.
@@ -374,7 +544,7 @@ fn fix2_a_reinstall_failing_while_staging_says_nothing_was_changed() {
         lines(&out.stderr),
         [
             "watane install: could not put the files in place",
-            "Nothing was changed: the version that was installed still works."
+            "Nothing was changed."
         ],
         "{out:?}"
     );

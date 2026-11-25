@@ -491,6 +491,6 @@ fn ac3_scan_scope_and_exit5_texts_are_documented() {
     }
     let output = spec.split("### 3.9").nth(1).expect("3.9");
     assert!(output.contains("entry the run moved is missing"));
-    assert!(output.contains("Nothing was changed:"));
+    assert!(output.contains("Nothing was changed."));
     assert!(output.contains("The files could not be put back."));
 }

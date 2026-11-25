@@ -21,6 +21,7 @@ R_VERSION=""
 R_TARGET=""
 R_LINES=""
 R_RESOLVED=""
+R_CREATED=""
 J_OLD=""
 J_NEW=""
 J_MOVED=""
@@ -33,7 +34,8 @@ SIGNAL=0
 LOCK_OWNED=0
 CLEANUP_ACTIVE=0
 COMMITTED=0
-TC_ASKING=0
+PROMPT=""
+TC_DOWNLOADING=0
 CREATED=""
 
 usage() {
@@ -219,13 +221,14 @@ set_entries() {
 
 valid_entry() { in_list "$ENTRIES_ALL" "$1" && allowed "$1"; }
 
-# read_receipt <file>: R_OK, R_VERSION, R_TARGET, R_LINES and R_RESOLVED (raw lines)
+# read_receipt <file>: R_OK, R_VERSION, R_TARGET and the raw path, resolved and created lines
 read_receipt() {
   R_OK=0
   R_VERSION=""
   R_TARGET=""
   R_LINES=""
   R_RESOLVED=""
+  R_CREATED=""
   [ -f "$1" ] && [ ! -L "$1" ] || return 0
   rr_first=1
   while IFS= read -r rr_l; do
@@ -239,6 +242,7 @@ read_receipt() {
       'version '*) R_VERSION=${rr_l#version } ;;
       'target '*) R_TARGET=${rr_l#target } ;;
       'resolved '*) R_RESOLVED=$(add_item "$R_RESOLVED" "$rr_l") ;;
+      'created '*) R_CREATED=$(add_item "$R_CREATED" "$rr_l") ;;
       'path '*) R_LINES=$(add_item "$R_LINES" "$rr_l") ;;
     esac
   done <"$1"
@@ -300,7 +304,7 @@ check_no_live_install() {
     [ -n "$cn_n" ] || continue
     pid_gone "$cn_n" && continue
     die 5 "another install is running (pid $cn_n)" \
-      "If no install is running, that number now belongs to another program; remove $SHAREW/journal.$cn_n and run this again."
+      "If no install is running, that number now belongs to another program; remove $(tilde "$SHAREW/journal.$cn_n") and run this again."
   done <<EOF
 $JOURNALS
 EOF
@@ -332,16 +336,14 @@ take_lock() {
       *) if [ "$tl_lines" = 1 ]; then tl_suffix=" (pid $tl_pid)"; fi ;;
     esac
   fi
-  tl_quoted=$(shell_quote "$LOCK")
-  check_signal "$?"
   die 5 "another install may be running$tl_suffix" \
     "If no install is running, remove its lock and run this again:" \
-    "  rm -rf $tl_quoted"
+    '  rm -rf ~/.watane-install.lock'
 }
 
 # rm_path <path>: rm -rf with a warning
 rm_path() {
-  rm -rf "$1" || { check_signal "$?"; warn "could not remove $1"; return 1; }
+  rm -rf "$1" || { check_signal "$?"; warn "could not remove $(tilde "$1")"; return 1; }
   return 0
 }
 
@@ -542,12 +544,14 @@ release_files() {
 
 # interrupted_hint: a signal after the commit left watane installed (3.8, 3.9)
 interrupted_hint() {
+  doctor_command
   if [ "${1:-}" = failed ]; then
-    printf 'watane %s is installed.\nRun watane-dev doctor to check the maker tools.\n' "$RELEASE" >&2
+    printf 'watane %s is installed.\n' "$RELEASE" >&2
   else
-    printf 'watane %s is installed; the run was interrupted before it finished.\nRun watane-dev doctor to check the maker tools.\n' "$RELEASE" >&2
+    printf 'watane %s is installed; the run was interrupted before it finished.\n' "$RELEASE" >&2
   fi
-  if [ "$TC_ASKING" = 1 ]; then print_commands >&2; fi
+  printf 'Run %s to check the maker tools.\n' "$DOCTOR" >&2
+  if [ "$PROMPT" = toolchain ] || [ "$TC_DOWNLOADING" = 1 ]; then print_commands >&2; fi
   return 0
 }
 
@@ -564,9 +568,16 @@ cleanup() {
   # shellcheck disable=SC2031
   if [ "$SIGNAL" != 0 ]; then cl_rc=$SIGNAL; fi
   # shellcheck disable=SC2031
-  if [ "$SIGNAL" != 0 ] && [ "$COMMITTED" = 1 ]; then
+  if [ "$SIGNAL" != 0 ]; then
     set +e
-    interrupted_hint
+    # cl_rc retains the signal; formatting a quoted mirror URL performs its own checks.
+    SIGNAL=0
+    if [ -n "$PROMPT" ]; then printf '\n' >&2; fi
+    if [ "$COMMITTED" = 1 ]; then
+      interrupted_hint
+    elif [ "$PROMPT" = uninstall ]; then
+      printf '%s; the watane home was kept.\n' "$du_outcome" >&2
+    fi
   fi
   exit "$cl_rc"
 }
@@ -650,7 +661,7 @@ check_folders() {
   FOLDERS_RESOLVED=""
   for ch_f in "$HOME/.local/bin" "$HOME/.local/share/watane" "$HOME/.local/share/watane-dev" "$HOME/Applications"; do
     if ! resolve_dir "$ch_f" || ! below_home "$RES"; then
-      ch_m="resolves to $RES, outside your home folder $HOME_R"
+      ch_m="resolves to $(tilde_r "$RES"), outside your home folder ~"
       [ "$RES" != "$HOME_R" ] || ch_m="resolves to your home folder itself"
       die 2 "$(tilde "$ch_f") $ch_m" \
         "watane writes only under your home folder. Make it a real folder there, then run this again."
@@ -669,8 +680,16 @@ download() {
   fi
   dl_rc=$?
   check_signal "$dl_rc"
-  printf 'watane install: cannot download %s\n' "$1" >&2
+  if [ "$TC_DOWNLOADING" = 1 ]; then
+    warn "cannot download the rustup installer from $1"
+  else
+    warn "cannot download $1"
+  fi
   cat "$TMP/curl.err" >&2
+  if [ "$TC_DOWNLOADING" = 1 ]; then
+    printf 'watane %s is installed.\n' "$RELEASE" >&2
+    print_commands >&2
+  fi
   exit 3
 }
 
@@ -848,6 +867,38 @@ remove_created() {
   return 0
 }
 
+# Root folders are uninstalled only when the current directory matches the one in the receipt.
+# Both callers pass one of the same two literal names, never a path from the receipt.
+root_folder_receipt_line() {
+  rf_path=$HOME/$1
+  [ -d "$rf_path" ] && [ ! -L "$rf_path" ] || return 1
+  if resolve_dir "$rf_path"; then :; else check_signal "$?"; return 1; fi
+  [ "$RES" = "$HOME_R/$1" ] || return 1
+  rf_info=$(LC_ALL=C ls -di "$RES" 2>/dev/null) || { check_signal "$?"; return 1; }
+  check_signal "$?"
+  IFS=' ' read -r rf_inode _ <<EOF
+$rf_info
+EOF
+  case $rf_inode in '' | *[!0-9]*) return 1 ;; esac
+  ROOT_FOLDER_LINE="created $1 $rf_inode"
+  return 0
+}
+
+keep_created_roots() {
+  CREATED_ROOTS=""
+  R_CREATED=""
+  if allowed "$RECEIPT"; then read_receipt "$RECEIPT"; fi
+  for kc_name in .local Applications; do
+    if root_folder_receipt_line "$kc_name"; then
+      if in_list "$CREATED" "$HOME/$kc_name" || in_list "$R_CREATED" "$ROOT_FOLDER_LINE"; then
+        CREATED_ROOTS=$CREATED_ROOTS$NL$ROOT_FOLDER_LINE
+      fi
+    else
+      check_signal "$?"
+    fi
+  done
+}
+
 stage_files() {
   note_created
   for sf_r in $RELS; do
@@ -859,6 +910,7 @@ stage_files() {
     esac
   done
   mkdir -p "$SHAREW" || return
+  keep_created_roots
   # a file the script creates is created new: nothing, a link included, may be at the name
   # (noclobber on top of the check, for a link planted in between; 3.6 step 2)
   ! exists "$RECEIPT.new.$$" || return 1
@@ -868,7 +920,7 @@ stage_files() {
     while IFS= read -r sf_p; do printf 'path %s\n' "$sf_p"; done <<EOF
 $ENTRIES
 EOF
-    printf '%s\n' "$FOLDERS_RESOLVED"
+    printf '%s\n' "$FOLDERS_RESOLVED$CREATED_ROOTS"
   } >"$RECEIPT.new.$$"; then sf_rc=0; else sf_rc=$?; fi
   set +C
   return $sf_rc
@@ -929,7 +981,7 @@ install_files() {
   while IFS= read -r if_p; do
     for if_k in new old; do
       if exists "$if_p.$if_k.$$"; then
-        die 5 "$if_p.$if_k.$$ is in the way" "Remove it, then run this again."
+        die 5 "$(tilde "$if_p.$if_k.$$") is in the way" "Remove it, then run this again."
       fi
     done
   done <<EOF
@@ -990,7 +1042,7 @@ EOF
     done <<EOF
 $if_old
 EOF
-    if_msg="Nothing was changed: the version that was installed still works."
+    if_msg="Nothing was changed."
     if [ "$if_fresh" = 1 ]; then if_msg="Nothing was installed."; fi
     if [ -n "$SWAP_CHANGED" ]; then
       die 5 "$SWAP_CHANGED" "$if_msg"
@@ -1004,6 +1056,7 @@ EOF
 # Encode before shell substitution: macOS sh's read silently drops NUL bytes.
 read_answer() {
   ANSWER=""
+  ANSWER_EOF=0
   ra_bad=0
   while :; do
     # Keep both statuses: a pipeline would hide dd's signal status behind od.
@@ -1020,7 +1073,7 @@ read_answer() {
     # shellcheck disable=SC2086
     set -- $ra_byte
     case ${1:-} in
-      '') ANSWER=""; return 0 ;;
+      '') ANSWER=""; ANSWER_EOF=1; return 0 ;;
       012) break ;;
       000) ra_bad=1 ;;
       *)
@@ -1078,6 +1131,14 @@ rustup_src() {
   return 0
 }
 
+doctor_command() {
+  case ":${PATH:-}:" in
+    *":$PREFIX/bin:"*) DOCTOR='watane-dev doctor' ;;
+    # shellcheck disable=SC2088 # Print the home shorthand.
+    *) DOCTOR='~/.local/bin/watane-dev doctor' ;;
+  esac
+}
+
 print_commands() {
   say 'To install it later, run:'
   case $TC_STATE in
@@ -1101,21 +1162,25 @@ print_commands() {
       say '  rustup default stable'
       ;;
   esac
-  # Print the command literally.
-  # shellcheck disable=SC2016
-  say 'Then `watane-dev doctor` checks it again.'
+  doctor_command
+  say "Then \`$DOCTOR\` checks it again."
   return 0
 }
 
-# rustup_step <command...>: run it, or end with exit 6
+# rustup_step <step description> <command...>: run it, or end with exit 6
 rustup_step() {
+  rs_step=$1
+  shift
   rs_rc=0
   say "--- rustup's own output follows ---"
   ( cd "$HOME" 2>/dev/null || cd /; RUSTUP_AUTO_INSTALL=0; export RUSTUP_AUTO_INSTALL; "$@" ) || rs_rc=$?
   if [ "$rs_rc" != 0 ]; then
     check_signal "$rs_rc"
     say "--- end of rustup's output ---"
-    die 6 "the toolchain step failed (rustup exited $rs_rc)" "watane is installed; run the step yourself, then \`watane-dev doctor\`."
+    warn "the toolchain step failed: $rs_step (rustup exited $rs_rc)"
+    printf 'watane %s is installed.\n' "$RELEASE" >&2
+    print_commands >&2
+    exit 6
   fi
   say "--- end of rustup's output ---"
   return 0
@@ -1140,29 +1205,30 @@ toolchain_step() {
     print_commands
     return 0
   fi
-  ts_src=https://sh.rustup.rs
-  if [ "$TC_STATE" = none_a ]; then
-    rustup_src
-    ts_src=$RUSTUP_SRC
-  fi
+  rustup_src
+  PROMPT=toolchain
   case $TC_STATE in
     target)
       printf '%s\n%s [y/N] ' \
         'watane-dev needs the wasm32-wasip2 target to build mods, and it is missing.' \
         'Add the wasm32-wasip2 target with rustup?'
       ;;
+    none_b)
+      printf '%s\n%s [y/N] ' \
+        'watane-dev needs the Rust toolchain with the wasm32-wasip2 target to build mods, and it is not installed.' \
+        'Install it with rustup (a few hundred MB, into ~/.rustup and ~/.cargo)?'
+      ;;
     *)
       printf '%s\n%s [y/N] ' \
         'watane-dev needs the Rust toolchain with the wasm32-wasip2 target to build mods, and it is not installed.' \
-        "Install it with rustup (a few hundred MB, from $ts_src, into ~/.rustup and ~/.cargo)?"
+        "Install it with rustup (a few hundred MB, from $RUSTUP_SRC, into ~/.rustup and ~/.cargo)?"
       ;;
   esac
-  ts_ans=""
-  TC_ASKING=1
+  ANSWER_EOF=1
   read_answer </dev/tty || { check_signal "$?"; ANSWER=""; }
-  TC_ASKING=0
-  ts_ans=$ANSWER
-  case $ts_ans in
+  PROMPT=""
+  if [ "$ANSWER_EOF" = 1 ]; then say ''; fi
+  case $ANSWER in
     [Yy] | [Yy][Ee][Ss]) ;;
     *)
       say 'toolchain: not installed'
@@ -1172,21 +1238,23 @@ toolchain_step() {
   esac
   case $TC_STATE in
     none_a)
+      TC_DOWNLOADING=1
       if [ -n "${WATANE_RUSTUP_URL:-}" ]; then
         say "using WATANE_RUSTUP_URL=$WATANE_RUSTUP_URL"
-        download "$WATANE_RUSTUP_URL" "$TMP/rustup-init.sh" plain
+        download "$RUSTUP_SRC" "$TMP/rustup-init.sh" plain
       else
-        download https://sh.rustup.rs "$TMP/rustup-init.sh" secure
+        download "$RUSTUP_SRC" "$TMP/rustup-init.sh" secure
       fi
-      rustup_step sh "$TMP/rustup-init.sh" -y --profile minimal --no-modify-path -t wasm32-wasip2 </dev/null
+      TC_DOWNLOADING=0
+      rustup_step 'install Rust with rustup' sh "$TMP/rustup-init.sh" -y --profile minimal --no-modify-path -t wasm32-wasip2 </dev/null
       say 'rustup put its programs in ~/.cargo/bin; watane-dev finds them there. To use cargo yourself, add that folder to your PATH.'
       ;;
     target)
-      rustup_step "$RUSTUP" target add wasm32-wasip2
+      rustup_step 'rustup target add wasm32-wasip2' "$RUSTUP" target add wasm32-wasip2
       ;;
     none_b)
-      rustup_step "$RUSTUP" toolchain install stable --profile minimal -t wasm32-wasip2
-      rustup_step "$RUSTUP" default stable
+      rustup_step 'rustup toolchain install stable --profile minimal -t wasm32-wasip2' "$RUSTUP" toolchain install stable --profile minimal -t wasm32-wasip2
+      rustup_step 'rustup default stable' "$RUSTUP" default stable
       ;;
   esac
   say 'toolchain: installed'
@@ -1343,27 +1411,43 @@ do_uninstall() {
   read_receipt "$RECEIPT"
   [ "$R_OK" = 1 ] || die 7 "nothing to uninstall: no receipt at $(tilde "$RECEIPT")"
   du_ver=$R_VERSION
+  du_partial=0
   while IFS= read -r du_l; do
     case $du_l in 'path '*) ;; *) continue ;; esac
     du_p=${du_l#path }
     if receipt_allowed "$du_p"; then
-      if exists "$du_p"; then rm_path "$du_p" || { check_signal "$?"; }; fi
+      if exists "$du_p"; then rm_path "$du_p" || { check_signal "$?"; du_partial=1; }; fi
     else
       check_signal "$?"
+      du_partial=1
     fi
   done <<EOF
 $R_LINES
 EOF
-  if allowed "$RECEIPT"; then clean_stale || { check_signal "$?"; }; fi
+  if allowed "$RECEIPT"; then clean_stale || { check_signal "$?"; du_partial=1; }; fi
   if receipt_allowed "$RECEIPT"; then
-    rm -f "$RECEIPT" || { check_signal "$?"; warn "could not remove $RECEIPT"; }
+    rm -f "$RECEIPT" || { check_signal "$?"; warn "could not remove $(tilde "$RECEIPT")"; du_partial=1; }
   else
     check_signal "$?"
+    du_partial=1
   fi
   for du_d in "$SHAREW" "$PREFIX/share/watane-dev" "$PREFIX/share" "$PREFIX/bin"; do
     if resolve_dir "$du_d" && below_home "$RES"; then rmdir "$du_d" 2>/dev/null || { check_signal "$?"; }; fi
   done
-  say "uninstalled watane $du_ver"
+  for du_name in .local Applications; do
+    if root_folder_receipt_line "$du_name" && in_list "$R_CREATED" "$ROOT_FOLDER_LINE"; then
+      rmdir "$HOME_R/$du_name" 2>/dev/null || { check_signal "$?"; }
+    else
+      check_signal "$?"
+    fi
+  done
+  if [ "$du_partial" = 1 ]; then
+    du_outcome="watane $du_ver was partially uninstalled"
+    say "partially uninstalled watane $du_ver (some entries were skipped or could not be removed)"
+  else
+    du_outcome="watane $du_ver was uninstalled"
+    say "uninstalled watane $du_ver"
+  fi
   if exists "$HOME/Library/Caches/watane-dev"; then
     say 'kept: ~/Library/Caches/watane-dev (maker cache; safe to delete)'
   fi
@@ -1386,11 +1470,13 @@ EOF
     return 0
   fi
   if ( : </dev/tty ) 2>/dev/null; then
+    PROMPT=uninstall
     printf 'Delete the watane home %s? It holds your identity and your mods, and cannot be restored without a backup. Type delete to delete it, or press Enter to keep it: ' "$(tilde_r "$HOME_DEL")"
-    du_a=""
+    ANSWER_EOF=1
     read_answer </dev/tty || { check_signal "$?"; ANSWER=""; }
-    du_a=$ANSWER
-    if [ "$du_a" = delete ]; then
+    PROMPT=""
+    if [ "$ANSWER_EOF" = 1 ]; then say ''; fi
+    if [ "$ANSWER" = delete ]; then
       rm -rf -- "$HOME_DEL"
       check_signal "$?"
       if [ -L "$du_h" ]; then rm -f -- "$du_h"; check_signal "$?"; fi
@@ -1450,7 +1536,7 @@ main() {
   check_signal "$?"
   [ "$main_uid" != 0 ] || die 1 "do not run this as root or with sudo" "watane installs into your own home folder and needs no password."
   # step 3: tools
-  check_tools "uname id mkdir mv cp rm rmdir cat chmod grep awk tr readlink kill dd od mktemp"
+  check_tools "uname id mkdir mv cp rm rmdir ls cat chmod grep awk tr readlink kill dd od mktemp"
   if [ "$MODE" = install ]; then
     check_tools "curl tar"
     command -v shasum >/dev/null 2>&1 || check_tools sha256sum

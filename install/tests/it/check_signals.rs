@@ -250,7 +250,7 @@ fn ac3_signalled_download_and_toolchain_have_no_cause() {
                 format!(
                     "TMP=$TMPDIR\ncurl() {{ return {code}; }}\ndownload fixture \"$TMP/archive\" plain"
                 ),
-                format!("rustup_step /bin/sh -c 'exit {code}'"),
+                format!("rustup_step fixture /bin/sh -c 'exit {code}'"),
             ] {
                 let out = fixture(shell, &format!("trap cleanup EXIT\n{body}"));
                 assert_eq!(out.code, code, "{shell}: {body}: {out:?}");

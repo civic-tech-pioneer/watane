@@ -308,7 +308,6 @@ fn unit_check_folders_refuses_an_install_folder_outside_the_home() {
     let tail = "watane writes only under your home folder. Make it a real folder there, then run this again.\n";
     // (home, the link to make, target, the folder named, where it resolves)
     struct Out {
-        home: PathBuf,
         folder: &'static str,
         shown: String,
         name: String,
@@ -333,7 +332,6 @@ fn unit_check_folders_refuses_an_install_folder_outside_the_home() {
         symlink(&target, home.join(link)).expect("link");
         let shown = format!("{}{suffix}", other.display());
         outs.push(Out {
-            home,
             folder,
             shown,
             name: name.to_string(),
@@ -421,15 +419,12 @@ fn unit_check_folders_refuses_an_install_folder_outside_the_home() {
     let units = table(&fx, "", &cases);
     for o in &outs {
         let u = case(&units, &o.name);
-        let home_r = fs::canonicalize(&o.home).expect("canonical");
         assert_eq!(u.code, 2, "{}: {u:?}", o.name);
         assert_eq!(
             u.err,
             format!(
-                "watane install: {} resolves to {}, outside your home folder {}\n{tail}",
-                o.folder,
-                o.shown,
-                home_r.display()
+                "watane install: {} resolves to {}, outside your home folder ~\n{tail}",
+                o.folder, o.shown
             ),
             "{}",
             o.name
@@ -1015,7 +1010,6 @@ fn unit_take_lock_and_the_live_journal_stop_a_second_run() {
         .expect("sleep");
     let live_pid = live.id();
     let dead = dead_pid();
-    let lock_of = |name: &str| format!("{}/{name}/.watane-install.lock", fx.root.path().display());
     let mut cases: Vec<(String, String)> = Vec::new();
     // the lock: the first run takes it, the second stops, the lock stays the first run's
     let twice = home_named(&fx, "twice");
@@ -1097,8 +1091,7 @@ fn unit_take_lock_and_the_live_journal_stop_a_second_run() {
     assert_eq!(
         u.err,
         format!(
-            "watane install: another install may be running (pid {pid})\nIf no install is running, remove its lock and run this again:\n  rm -rf '{}'\n",
-            lock_of("twice")
+            "watane install: another install may be running (pid {pid})\nIf no install is running, remove its lock and run this again:\n  rm -rf ~/.watane-install.lock\n"
         )
     );
     assert!(
@@ -1117,8 +1110,7 @@ fn unit_take_lock_and_the_live_journal_stop_a_second_run() {
         assert_eq!(
             u.err,
             format!(
-                "watane install: another install may be running{suffix}\nIf no install is running, remove its lock and run this again:\n  rm -rf '{}'\n",
-                lock_of(name)
+                "watane install: another install may be running{suffix}\nIf no install is running, remove its lock and run this again:\n  rm -rf ~/.watane-install.lock\n"
             ),
             "{name}"
         );
@@ -1362,7 +1354,7 @@ fn unit_what_the_end_of_an_install_says() {
     let u = case(&units, "a_default");
     assert_eq!(u.out.lines().next(), Some("To install it later, run:"));
     l(u, &curl("--proto '=https' ", "https://sh.rustup.rs"));
-    l(u, "Then `watane-dev doctor` checks it again.");
+    l(u, "Then `~/.local/bin/watane-dev doctor` checks it again.");
     l(
         case(&units, "a_url"),
         &curl("", "https://example.invalid/rustup-init.sh"),
@@ -1786,6 +1778,33 @@ fn unit_ac3b_a_moved_entry_with_its_staging_name_left_is_not_proven_installed() 
     foreign_lines(u, &["~/.local/bin/watane"]);
     let u = case(&units, "unstaged");
     assert_eq!((u.code, u.err.as_str()), (0, ""), "{u:?}");
+}
+
+/// TECHNICAL 3.4.2: a live PID's journal is skipped, even when it would otherwise prove the entry.
+#[test]
+fn ac5_check_foreign_uses_only_a_dead_runs_journal() {
+    let fx = Fx::new();
+    for (name, pid) in [("live", 99_999_998), ("dead", 99_999_999)] {
+        let home = home_named(&fx, name);
+        let bin = home.join(".local/bin/watane");
+        write_file(&bin, "an existing program");
+        write_file(
+            &home.join(format!(".local/share/watane/journal.{pid}")),
+            &format!("new {0}\nmoved {0}\n", bin.display()),
+        );
+    }
+    let cases = ["live", "dead"].map(|name| {
+        (
+            name.to_string(),
+            format!("HOME=$ROOT/{name}; check_home; set_entries; check_foreign"),
+        )
+    });
+    let units = table(&fx, r#"kill() { [ "$*" = "-0 99999998" ]; }"#, &cases);
+    let live = case(&units, "live");
+    assert_eq!(live.code, 8, "{live:?}");
+    foreign_lines(live, &["~/.local/bin/watane"]);
+    let dead = case(&units, "dead");
+    assert_eq!((dead.code, dead.err.as_str()), (0, ""), "{dead:?}");
 }
 
 /// TECHNICAL 3.5, 8.4 (`read_receipt`): a receipt that is a link is not read, whatever it leads

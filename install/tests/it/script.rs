@@ -117,6 +117,7 @@ fn kill_at_checking(fx: &Fx, tool: &str, glob: &str, args: &[&str], check_lock: 
     assert!(
         Command::new("/bin/sh")
             .args(["-c", command])
+            .env("HOME", &fx.home)
             .status()
             .expect("run printed lock removal")
             .success()
@@ -476,9 +477,12 @@ fn inst_s17_s27_an_uninstall_removes_only_what_the_install_wrote() {
 #[test]
 fn ac1_toolchain_matches_the_raw_answer() {
     let script = fs::read_to_string(checkout_script()).expect("script");
-    let step = script.split("  ts_ans=\"\"").nth(1).expect("answer step");
+    let step = script
+        .split("  read_answer </dev/tty")
+        .nth(1)
+        .expect("answer step");
     let decision = step.split("  case $TC_STATE in").next().expect("decision");
-    assert!(decision.contains("case $ts_ans in\n    [Yy] | [Yy][Ee][Ss])"));
+    assert!(decision.contains("case $ANSWER in\n    [Yy] | [Yy][Ee][Ss])"));
     assert!(!decision.contains("tr "));
 }
 
@@ -504,16 +508,30 @@ fn inst_s14_failed_upgrade_rolls_back() {
     let out = fx.run(&["--release", "0.2.0"]);
     assert_eq!(out.code, 5, "{out:?}");
     // 3.9: only an undo that ended well says nothing changed
-    assert!(
-        out.stderr
-            .contains("Nothing was changed: the version that was installed still works."),
-        "{out:?}"
-    );
+    assert!(out.stderr.contains("Nothing was changed."), "{out:?}");
     assert!(!out.stderr.contains("could not be put back"), "{out:?}");
     fx.assert_installed("0.1.0");
     assert!(leftovers(&fx).is_empty(), "{:?}", leftovers(&fx));
     assert_eq!(snapshot(&fx.home), before);
     assert!(fx.tmp_tree().is_empty());
+}
+
+/// TECHNICAL 3.9: undo restores what was there, including an already missing program.
+#[test]
+fn ac1_undo_does_not_say_an_incomplete_install_still_works() {
+    let fx = installed();
+    fs::remove_file(fx.bin("watane-node")).expect("remove one installed program");
+    let before = snapshot(&fx.home);
+    fx.rel.set_version("0.2.0", &["new-crate-1.0.0"]);
+    fx.state_write("mv_fault", "fail\n*watane.app.new.*\n");
+    let out = fx.run(&["--release", "0.2.0"]);
+    assert_eq!(out.code, 5, "{out:?}");
+    assert!(
+        out.stderr.lines().any(|l| l == "Nothing was changed."),
+        "{out:?}"
+    );
+    assert!(!out.stderr.contains("still works"), "{out:?}");
+    assert_eq!(snapshot(&fx.home), before);
 }
 
 /// INST-S-14 and TECHNICAL 3.6 step 4, 3.9 (IN-46, IN-47): a swap that fails in a fresh install removes
@@ -692,15 +710,9 @@ fn inst_s31_an_install_folder_outside_the_home() {
     let check = |fx: &Fx, other: &Path, folder: &str, target: &str| {
         let out = fx.run(&[]);
         assert_eq!(out.code, 2, "{out:?}");
-        let home = fs::canonicalize(&fx.home)
-            .expect("canon")
-            .display()
-            .to_string();
         assert_eq!(
             out.first_err(),
-            format!(
-                "watane install: {folder} resolves to {target}, outside your home folder {home}"
-            )
+            format!("watane install: {folder} resolves to {target}, outside your home folder ~")
         );
         assert_eq!(
             out.stderr.lines().nth(1),
@@ -741,15 +753,9 @@ fn inst_s31_every_install_folder_outside_the_home_and_a_link_inside_it() {
     let check = |fx: &Fx, other: &Path, folder: &str, target: &str| {
         let out = fx.run(&[]);
         assert_eq!(out.code, 2, "{out:?}");
-        let home = fs::canonicalize(&fx.home)
-            .expect("canon")
-            .display()
-            .to_string();
         assert_eq!(
             out.first_err(),
-            format!(
-                "watane install: {folder} resolves to {target}, outside your home folder {home}"
-            )
+            format!("watane install: {folder} resolves to {target}, outside your home folder ~")
         );
         assert_eq!(
             out.stderr.lines().nth(1),

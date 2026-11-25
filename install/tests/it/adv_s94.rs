@@ -297,13 +297,11 @@ fn adv_s94_a_dangling_install_folder_link_out_of_the_home_exits_2() {
     symlink(o.join("bin"), fx.home.join(".local/bin")).expect("link");
     let out = fx.run(&[]);
     assert_eq!(out.code, 2, "{out:?}");
-    let home = fs::canonicalize(&fx.home).expect("canon");
     assert_eq!(
         out.first_err(),
         format!(
-            "watane install: ~/.local/bin resolves to {}/bin, outside your home folder {}",
-            o.display(),
-            home.display()
+            "watane install: ~/.local/bin resolves to {}/bin, outside your home folder ~",
+            o.display()
         )
     );
     assert!(fx.rel.requests().is_empty());
