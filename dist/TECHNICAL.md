@@ -722,7 +722,7 @@ default). Both `http` and `https` are allowed (decision DD-6).
 (`http::follow_hops`): on 300, 301, 302, 303, 307 or 308 with a `Location`,
 the target is that `Location` resolved against the current URL. A target whose
 scheme is not `http` or `https` (`socks5`, `ftp`, ...) is refused before any
-request to it, for every read, with `BadUrl { url: <original request URL>, cause:
+request to it, for every read, with `BadUrl { url: <redirecting URL>, cause:
 "redirects to a scheme other than http or https" }` (ureq would read a proxy
 scheme as a direct connection, past the local rule). At most 5 redirects are
 followed, the 6th gives `Network { cause: "too many redirects" }`; the one
@@ -730,9 +730,13 @@ deadline of the read covers every hop. A redirect without a `Location` is `Http`
 A read whose base came from a listing or a provider hint (a listed read: 5.9,
 5.11, `read_link`) also checks each target: unless `Options::listed_local` is
 set, a target whose host is local (`index::local_base`, 5.9) is refused before
-any request to it with `BadUrl { url: <original request URL>, cause: "redirects
-to a local address" }`. A followed or chosen channel's base the participant gave
-(`explicit_given`, 4.4) follows redirects to any http or https host. A base
+any request to it with `BadUrl { url: <redirecting URL>, cause: "redirects
+to a local address" }`. The redirecting URL is the one whose response gave the
+refused redirect: the base that issued it, which is not the base first asked
+when an earlier redirect moved the read (A redirects to B, B's redirect is
+refused: the error names B; S105 P5.4, S121). A followed or chosen channel's
+base the participant gave (`explicit_given`, 4.4) follows redirects to any http
+or https host. A base
 absent from `explicit_given` is read as listed (DD-47). The body limit applies to
 the final response. The 5xx retry above repeats the whole chain.
 

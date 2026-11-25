@@ -18,7 +18,8 @@ pub(crate) enum Hop<T> {
 
 /// Follow up to `MAX_REDIRECTS` redirects by hand: each `Location` is resolved against
 /// the current URL, must be http or https, and passes `check` before any request to it
-/// (TECHNICAL 4.5). A refused scheme is `BadUrl` with `first`, the URL the caller asked.
+/// (TECHNICAL 4.5). A refused target is `BadUrl` naming the URL whose response gave
+/// that redirect: after an earlier hop moved the read to another base, that base.
 pub(crate) fn follow_hops<T>(
     first: &str,
     check: &Check<'_>,
@@ -41,11 +42,17 @@ pub(crate) fn follow_hops<T>(
             })?;
         if !matches!(target.scheme(), "http" | "https") {
             return Err(DistError::BadUrl {
-                url: first.to_owned(),
+                url: current,
                 cause: "redirects to a scheme other than http or https",
             });
         }
-        check(target.as_str())?;
+        check(target.as_str()).map_err(|error| match error {
+            DistError::BadUrl { cause, .. } => DistError::BadUrl {
+                url: current.clone(),
+                cause,
+            },
+            other => other,
+        })?;
         current = target.into();
     }
     Err(DistError::Network {
@@ -79,10 +86,11 @@ impl Dist {
         head: bool,
         listed: bool,
     ) -> Result<Vec<u8>, DistError> {
+        // `follow_hops` puts the URL that redirected into a refusal's `url`.
         let check = |target: &str| {
             self.check_listed_base(target).map_err(|error| match error {
-                DistError::BadUrl { .. } => DistError::BadUrl {
-                    url: url.into(),
+                DistError::BadUrl { url, .. } => DistError::BadUrl {
+                    url,
                     cause: "redirects to a local address",
                 },
                 other => other,
@@ -275,7 +283,10 @@ mod tests {
         });
         match result {
             Err(DistError::BadUrl { url, cause }) => {
-                assert_eq!(url, "http://127.0.0.1:9/head");
+                assert_eq!(
+                    url, "http://example.org/head",
+                    "names the URL that redirected"
+                );
                 assert_eq!(cause, "local address");
             }
             other => panic!("{other:?}"),
@@ -605,32 +616,45 @@ mod tests {
         );
         assert_eq!(*seen.lock().unwrap(), ["/a"]);
     }
+    /// S105 P5.4 (deputy ruling, S121 r1): a refused redirect names the base that issued
+    /// it. Base A redirects to base B; B's redirect is refused; the error names B's URL,
+    /// not the A URL first asked. Both refusals: another scheme, and a local target.
     #[test]
-    fn s116_second_redirect_refusal_names_the_asked_url() {
+    fn s121_a_refused_redirect_names_the_base_that_issued_it() {
         let dir = tempfile::tempdir().unwrap();
-        let allowed = Host::serve(dir.path());
-        let refused = Host::serve(dir.path());
-        allowed.redirect("/asked", "/intermediate");
-        let non_http_target = refused.url.replacen("http://", "ftp://", 1) + "secret";
-        allowed.redirect("/intermediate", &non_http_target);
+        let a = Host::serve(dir.path());
+        let b = Host::serve(dir.path());
+        let victim = Host::serve(dir.path());
+        let non_http_target = victim.url.replacen("http://", "ftp://", 1) + "secret";
+        let local_target = format!("{}secret", victim.url);
+        let cases = [
+            (
+                "scheme",
+                &non_http_target,
+                "redirects to a scheme other than http or https",
+            ),
+            ("local", &local_target, "redirects to a local address"),
+        ];
         let (_home, dist) = home("Eve", false);
-        exempt(&dist, &[&allowed]);
-        let asked = format!("{}asked", allowed.url);
-
-        let error = dist
-            .get(&asked, 100, Duration::from_secs(5), false, true)
-            .unwrap_err();
-
-        assert_bad_url(
-            Some(error),
-            &asked,
-            "redirects to a scheme other than http or https",
-        );
-        assert_eq!(
-            *allowed.requests.lock().unwrap(),
-            ["/asked", "/intermediate"]
-        );
-        assert_eq!(refused.count(), 0);
+        // A and B pass the local rule; the victim does not.
+        exempt(&dist, &[&a, &b]);
+        for (path, target, cause) in cases {
+            a.redirect(&format!("/{path}"), &format!("{}{path}", b.url));
+            b.redirect(&format!("/{path}"), target);
+            let error = dist
+                .get(
+                    &format!("{}{path}", a.url),
+                    100,
+                    Duration::from_secs(5),
+                    false,
+                    true,
+                )
+                .unwrap_err();
+            assert_bad_url(Some(error), &format!("{}{path}", b.url), cause);
+        }
+        assert_eq!(*a.requests.lock().unwrap(), ["/scheme", "/local"]);
+        assert_eq!(*b.requests.lock().unwrap(), ["/scheme", "/local"]);
+        assert_eq!(victim.count(), 0, "a refused target gets no request");
     }
     #[test]
     fn ac3_unlisted_get_follows_a_local_redirect() {
@@ -788,7 +812,8 @@ mod tests {
     fn assert_refused(cause: Option<DistError>, target: &str) {
         assert_bad_url(cause, target, "local address");
     }
-    /// A refused redirect names the URL asked for, and says the redirect was local.
+    /// A refused redirect names the URL that redirected (here the one asked for, a single
+    /// hop), and says the redirect was local.
     fn assert_redirect_refused(cause: Option<DistError>, target: &str) {
         assert_bad_url(cause, target, "redirects to a local address");
     }
@@ -1494,16 +1519,36 @@ mod tests {
         assert!(eve.follows.lock().unwrap().get(&w.key).unwrap().followed);
     }
 
+    /// S105 P6.3 (S121 r1): a refresh whose settlement fails reports `Failed` and reads no
+    /// base: neither the chosen index nor the base a listing gave, and the listing's
+    /// record is left as it was, in memory and in `follows.json`.
     #[test]
     fn s112_refresh_stops_at_the_first_settlement_failure() {
-        let (w, _dir, eve) = unsynced_world(true);
+        let w = world();
+        let (dir, eve) = w.eve(&[&w.a, &w.b]);
+        let (_zdir, zed, zhost) = listed_record(&w, &eve);
+        let zed_key = zed.identity().unwrap();
+        let record = |eve: &Dist| {
+            let follows = eve.follows.lock().unwrap();
+            let listed = follows
+                .get(&w.key)
+                .expect("a listed record for the publisher");
+            assert!(!listed.followed && !listed.index, "{listed:?}");
+            serde_json::to_value(listed).unwrap()
+        };
+        let listed_before = record(&eve);
+        let file_before = follows_file(dir.path());
+        let before = (requests_before(&w), zhost.count());
+        eve.unsynced.lock().unwrap().dirty = true;
         sync_fails(1);
-        let before = requests_before(&w);
         let reports = eve.refresh();
-        assert_eq!(requests_before(&w), before);
+        sync_fails(0);
+        assert_eq!((requests_before(&w), zhost.count()), before, "a request");
+        assert_eq!(record(&eve), listed_before);
+        assert_eq!(follows_file(dir.path()), file_before);
         assert_eq!(reports.len(), 1);
         for report in reports {
-            assert_eq!(report.channel, w.key);
+            assert_eq!(report.channel, zed_key);
             match report.outcome {
                 crate::Outcome::Failed { cause } => assert_eio(Err(cause)),
                 other => panic!("{other:?}"),
