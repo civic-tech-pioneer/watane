@@ -1913,8 +1913,6 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 - (2026-11-25, deputy-5, S122 merged: agentic-harness stage E's watane half is done) **A real judge account for V7.** Stage E's checked provider (agentic-harness) needs a judge service the provider can call with a key Alice enters; nothing in the factory can open one (an account is the human's). Which judge (Jev or another), and may the factory use a key of yours in its cloud tests? Blocks agentic-harness stage E, so step 6's JF1. **N5 revisit** (agentic-harness PLAN, "N5 The factory's implementer needs a shell"): you asked to revisit it when stage E starts, leaning (b); it blocks stage F.
 
-- (2026-11-25 11:20 UTC, deputy-5) The browser pane is signed out of chatgpt.com: sign in there (or import the chatgpt.com cookie). Held: agentic-harness S40's r5 result (its Codex task https://chatgpt.com/local/6b05eeef-aae8-83eb-85bf-a60c3e428074) and every Codex round (S124's review).
-
 - (2026-11-25, deputy-4, from S120) **Where the factory mods live (Door H, `spec/design/factory/TECHNICAL.md` 5, first row).** W29 gives each mod with source its own repository, so a planning mod and a foreman mod are two new projects; one combined factory mod is one new project. Options, consequences and the recommendation are in that row. Not blocking: JF1 waits on agentic-harness stages E and F first. The 8 Door C rows go to deliberation when a build slice first depends on one.
 
 - (2026-11-24) The human rotates the secrets of the Codex `watane` environment (S112's build transcript held credential fragments; nothing reached GitHub).
