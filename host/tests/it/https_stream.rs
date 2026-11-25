@@ -1846,6 +1846,22 @@ fn ac2_judge_requires_the_exact_provider_and_a_post_to_its_origin() {
 }
 
 #[test]
+fn ac6_a_nested_judge_call_uses_the_executing_providers_key() {
+    let mut rig = Rig::new(None);
+    let judge = rig.serve("second.test", answer_one("verdict"));
+    enter_judge(&rig, "local/https", "https://second.test");
+
+    let id = rig.start_via(&judge_request());
+    rig.wait_ended(&id, "closed");
+    let requests = judge.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].header("authorization"),
+        ["Bearer test-judge-key"]
+    );
+}
+
+#[test]
 fn ac2_judge_key_is_scoped_to_the_signed_publisher() {
     use watane_host::watane_log::Log;
     use watane_host::watane_pkg::{self as pkg, Mod, RELEASE_KIND, Release};

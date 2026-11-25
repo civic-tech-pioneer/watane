@@ -58,7 +58,6 @@ pub fn judge_origin(text: &str) -> Result<String, crate::HostError> {
     if !scheme.eq_ignore_ascii_case("https")
         || authority.is_empty()
         || authority.ends_with(':')
-        || host.ends_with('.')
         || authority.contains(['/', '\\', '?', '#', '@'])
         || authority.chars().any(char::is_whitespace)
         || authority.chars().any(char::is_control)
@@ -69,7 +68,16 @@ pub fn judge_origin(text: &str) -> Result<String, crate::HostError> {
     let url = url::Url::parse(text).map_err(|_| bad_origin())?;
     let name = match url.host() {
         Some(url::Host::Domain(name)) if !name.ends_with('.') => name.to_owned(),
-        Some(url::Host::Ipv4(address)) => address.to_string(),
+        // URL parsing discards a trailing dot on IPv4. Appending a nonnumeric label
+        // makes the host parser preserve the separator after percent decoding and IDNA.
+        Some(url::Host::Ipv4(address))
+            if !matches!(
+                url::Host::parse(&format!("{host}watane")),
+                Ok(url::Host::Domain(name)) if name.ends_with(".watane")
+            ) =>
+        {
+            address.to_string()
+        }
         _ => return Err(bad_origin()),
     };
     match url.port() {
@@ -94,10 +102,19 @@ mod tests {
             judge_origin("https://Judge.Example:8443").unwrap(),
             "https://judge.example:8443"
         );
+        assert_eq!(
+            judge_origin("https://127.0.0.1").unwrap(),
+            "https://127.0.0.1"
+        );
         for text in [
             "http://judge.example",
             "https://judge.example.",
             "https://127.0.0.1.:443",
+            "https://127.0.0.1%2E",
+            "https://127.0.0.1。:443",
+            "https://127.0.0.1%EF%BC%8E",
+            "https://judge.example%2e",
+            "https://judge.example\u{0001}",
             "https://judge.example:",
             "https://judge.example:0",
             "https://judge.example/v1",

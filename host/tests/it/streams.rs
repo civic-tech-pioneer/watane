@@ -627,40 +627,56 @@ async fn ac4_s51_a_page_connection_past_16_mib_ends_and_its_streams_end_lagging(
 #[test]
 fn ac10_hand_off_moves_a_host_stream_to_a_mod_that_exports_stream_sink() {
     let env = Env::relay();
-    let s = test_stream(&env.host);
-    defer_first(&env.host, &s, b"a");
-    s.push(b"b").unwrap();
-    let hand_off = |caller: Caller| {
-        call_as(
-            &env.host,
-            caller,
-            "relay",
-            "api.hand-off",
-            json!({"s": s.id()}),
-        )
-        .unwrap()
-    };
-    // The page, and a mod without `stream-sink`, are `not-yours`; the stream stays.
-    assert_eq!(hand_off(Caller::Page), json!({"err":"not-yours"}));
-    assert_eq!(
-        hand_off(Caller::Mod(local("relay-front"))),
-        json!({"err":"not-yours"})
-    );
-    assert_eq!(hand_off(Caller::Mod(local("relay"))), json!({"ok":null}));
-    // Once only.
-    assert_eq!(
-        hand_off(Caller::Mod(local("relay"))),
-        json!({"err":"not-yours"})
-    );
-    // The queued items go with it and the numbering goes on.
-    set_mode(&env.host, "taken");
-    resume(&env.host, &s);
-    s.push(b"c").unwrap();
-    wait("all three", Duration::from_secs(10), || {
-        lines(&env.host, "api.received") == ["a", "b", "c"]
-    });
-    let numbers: Vec<u64> = s.deliveries().iter().flat_map(|d| d.seqs.clone()).collect();
-    assert_eq!(numbers.last(), Some(&3));
+    for round in 0..20 {
+        let s = test_stream(&env.host);
+        let payloads = ["a", "b", "c"].map(|item| format!("{round}:{item}"));
+        defer_first(&env.host, &s, payloads[0].as_bytes());
+        s.push(payloads[1].as_bytes()).unwrap();
+        let hand_off = |caller: Caller| {
+            call_as(
+                &env.host,
+                caller,
+                "relay",
+                "api.hand-off",
+                json!({"s": s.id()}),
+            )
+            .unwrap()
+        };
+        // The page, and a mod without `stream-sink`, are `not-yours`; the stream stays.
+        assert_eq!(hand_off(Caller::Page), json!({"err":"not-yours"}));
+        assert_eq!(
+            hand_off(Caller::Mod(local("relay-front"))),
+            json!({"err":"not-yours"})
+        );
+        assert_eq!(hand_off(Caller::Mod(local("relay"))), json!({"ok":null}));
+        // Once only.
+        assert_eq!(
+            hand_off(Caller::Mod(local("relay"))),
+            json!({"err":"not-yours"})
+        );
+        // The queued items go with it and the numbering goes on.
+        set_mode(&env.host, "taken");
+        resume(&env.host, &s);
+        s.push(payloads[2].as_bytes()).unwrap();
+        let prefix = format!("{round}:");
+        wait("all three", Duration::from_secs(10), || {
+            lines(&env.host, "api.received")
+                .into_iter()
+                .filter(|item| item.starts_with(&prefix))
+                .eq(payloads.iter().cloned())
+        });
+        // The callback commits its state before the stream driver records the delivery.
+        wait("delivery of sequence 3", Duration::from_secs(10), || {
+            s.deliveries()
+                .last()
+                .and_then(|delivery| delivery.seqs.last())
+                == Some(&3)
+        });
+        s.close("closed");
+        wait("stream closed", Duration::from_secs(10), || {
+            s.ended().is_some()
+        });
+    }
     // A mod stream cannot be handed off.
     let own = call_as(
         &env.host,
