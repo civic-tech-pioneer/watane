@@ -145,7 +145,7 @@ pub(crate) struct Done {
 const DEFERRED: &str = "the consumer deferred the batch";
 const IGNORED: &str = "the timer was cancelled or replaced while its firing waited";
 
-pub(super) fn lock_until<T>(
+pub(crate) fn lock_until<T>(
     lock: &Mutex<T>,
     deadline: Instant,
 ) -> Result<MutexGuard<'_, T>, CallError> {
@@ -168,10 +168,21 @@ pub(super) fn lock_until<T>(
         }
     }
 }
-fn deadline(host: &Host) -> Result<Instant, CallError> {
+pub(crate) fn deadline(host: &Host) -> Result<Instant, CallError> {
     Instant::now()
         .checked_add(host.limits.time)
         .ok_or_else(|| CallError::internal("time limit is too large"))
+}
+
+fn timer_ops(catalog: &crate::catalog::Catalog, log: &[Effect]) -> Vec<crate::state::TimerOp> {
+    crate::agent::timer_ops(log, |origin, generation| {
+        catalog.mods.iter().any(|m| {
+            m.identity == origin
+                && m.enabled
+                && m.error.is_none()
+                && generation.is_some_and(|g| catalog.install_of(&m.local) == Some(g))
+        })
+    })
 }
 
 pub(crate) fn run(
@@ -1061,14 +1072,7 @@ impl Invocation {
                 .catalog
                 .lock()
                 .expect("lock poisoned: another thread panicked while holding it");
-            ops.extend(crate::agent::timer_ops(&log, |origin, generation| {
-                catalog.mods.iter().any(|m| {
-                    m.identity == origin
-                        && m.enabled
-                        && m.error.is_none()
-                        && generation.is_some_and(|g| catalog.install_of(&m.local) == Some(g))
-                })
-            }));
+            ops.extend(timer_ops(&catalog, &log));
             ops
         };
         let changed = ctx.state.commit(&timers, has_timers)?;
@@ -1390,6 +1394,45 @@ mod tests {
     use crate::{Limits, Mode};
     use std::path::Path;
     use std::time::Duration;
+
+    #[test]
+    fn s126_timer_commit_uses_the_current_origin_install() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let fixture = |name| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures/mods")
+                .join(name)
+        };
+        host.install_folders(&[fixture("counter"), fixture("shelf")], 0)
+            .unwrap();
+        let origin = LocalName::parse("shelf").unwrap();
+        let mut catalog = host.catalog.lock().unwrap();
+        let origin_gen = catalog.install_of(&origin);
+        assert!(origin_gen.is_some());
+        let effect = [Effect::TimerAfter {
+            owner: crate::agent::ModRef {
+                local: LocalName::parse("counter").unwrap(),
+                identity: "local/counter".into(),
+            },
+            id: "tick".into(),
+            due: 100,
+            delay_ms: 10,
+            origin: "local/shelf".into(),
+            origin_gen,
+        }];
+        let committed_origin = |catalog: &crate::catalog::Catalog| {
+            let ops = timer_ops(catalog, &effect);
+            let [crate::state::TimerOp::After { origin, .. }] = ops.as_slice() else {
+                panic!("expected one timer write, got {ops:?}");
+            };
+            origin.clone()
+        };
+        assert_eq!(committed_origin(&catalog), "local/shelf");
+        catalog.bump_install(&origin);
+        assert_ne!(catalog.install_of(&origin), origin_gen);
+        assert_eq!(committed_origin(&catalog), "local/counter");
+    }
 
     #[test]
     fn ac7_s12a_subscription_rechecks_grant_after_waiting_for_its_lock() {

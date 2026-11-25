@@ -575,9 +575,10 @@ impl Host {
                 .entry(identity.clone())
                 .or_default(),
         );
-        let _call = lock
-            .lock()
-            .expect("lock poisoned: another thread panicked while holding it");
+        let deadline = runtime::call::deadline(self).map_err(|e| HostError::Internal(e.message))?;
+        let _call = runtime::call::lock_until(&lock, deadline).map_err(|_| {
+            HostError::Internal(format!("timed out waiting for {local} to finish a call"))
+        })?;
         // Lock order: the redb write transaction, then the catalog (a timer commit takes them in
         // this order). The catalog lock is kept until the data is deleted, so a plan that sees
         // the new generation never finds the data (4.2 step 6, 4.4).
@@ -865,6 +866,39 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/mods")
             .join(name)
+    }
+
+    #[test]
+    fn s126_remove_times_out_while_the_mod_call_lock_is_held() {
+        let dir = tempfile::tempdir().unwrap();
+        let limits = Limits {
+            time: std::time::Duration::from_millis(20),
+            ..Limits::default()
+        };
+        let host = Host::open(dir.path(), Mode::Preview, limits).unwrap();
+        host.install_folders(&[fixture("counter")], 0).unwrap();
+        let local = LocalName::parse("counter").unwrap();
+        let lock = Arc::new(Mutex::new(()));
+        host.call_locks
+            .lock()
+            .unwrap()
+            .insert("local/counter".into(), Arc::clone(&lock));
+        let held = lock.lock().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = Arc::clone(&host);
+        let removing = std::thread::spawn(move || tx.send(worker.remove(&local, true)).unwrap());
+        let result = rx.recv_timeout(std::time::Duration::from_secs(10));
+        drop(held);
+        removing.join().unwrap();
+        let error = result.expect("remove did not return").unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "timed out waiting for counter to finish a call"
+        );
+        let local = LocalName::parse("counter").unwrap();
+        assert!(host.get(&local).is_some());
+        host.remove(&local, true).unwrap();
+        assert!(host.get(&local).is_none());
     }
 
     #[test]
