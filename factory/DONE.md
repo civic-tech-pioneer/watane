@@ -67,3 +67,18 @@ Sketches of merged slices, moved out of PLAN.md (deputy skill, section 6). Newes
   `host/src/agent/`, `app/` (accounts, the judge page), `dev/` only if the scripted judge needs it; never `dist/`, `log/`,
   `pkg/` (S121). Boundary: W39, "a judge key goes only to its judge" (host 18, app 2072): adversary on. Leaves out: the
   checked provider itself and V7 (agentic-harness, needs a real judge account). Protects: *core*.
+
+- [~] **S124 (upkeep) a failed fetch blames the true cause (net, node, dist), and net's budget flake.**
+  (in flight, cloud, builder claude, reviewer codex; rule 3: last two S122 codex, S123 codex; the upkeep lane, sketched
+  2026-11-25 by deputy-5 from Leftovers outside S122's host/, app/, dev/; spec-check not run: error text and tests only; routine `trig_01S1fjM2MXnYjYVirKm928Le`, fires 11:21 UTC.; DELIVERED ~12:48 UTC as PR #43 at b08f7ea (+723/-124, dist, net, node); r1: Codex review https://chatgpt.com/local/6b06d9d5-a524-83eb-8120-942a8b00d07b, dispatched 12:53 UTC; r1 (12:59): 3/2, changes (3), validator FAIL, adversary HELD, user-sim REJECTED; Windows CI red on the slice's own dist test (F1.ci); rulings: F1.1, F1.2 stand, F1.3 regraded polish (a shutdown in a narrow window); answer r1: Claude routine `trig_01C1eDEYf3zyHCToLdDiPCRN`, fires 13:31 UTC.)
+  Outcomes, each item's check, on the real programs with a test per item: (1) (guard) [S100 CI] net's tests that share
+  the connection budget (`budget::s9...`, and each like it) no longer flake on timing: 20 runs green per OS in CI, as
+  S106 fixed `pair::s4`; (2) [S87 adversary, S87 user-sim] a local I/O or holder error during a download reads as local
+  (no "unreachable <full machine>", no temp path), and a failed install whose real cause is the full machine's bad copy
+  says so instead of "channel ... is not followed" (net 5.9 gains the sentence); (3) [S92] with every full machine off,
+  a light fetch says no full machine is reachable, not "is not followed"; a holder refusing a channel, a bad copy from a
+  machine that answered, and `DistError::Io`'s top line each name the true party; a local unpack failure is not
+  `BadPackage`; the full-disk text names the temp path once. Touches: `net/`, `node/`, `dist/` (error text and their
+  tests); never `host/`, `app/`, `dev/` (S122). App words that quote these errors are left for the next app upkeep.
+  Leaves out the S92 mutant gaps and node's two chain helpers. Protects: *polish* (2, 3), *guard* (1). Remove the
+  items from Leftovers when it merges; drop the stale [S111 CI] reach line (S115 fixed it).

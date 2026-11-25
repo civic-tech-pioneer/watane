@@ -1215,20 +1215,7 @@ names the same interface in its sketch and fakes it until this one merges.
   Protects: *core*.
 
 - [x] **S122 Alice gives a checked provider its judge key (host A5, app 19.4; agentic-harness stage E, watane half).** DONE 2026-11-25: PR #42 rebase-merged by deputy-5 (13597bf2, no bypass); builder codex, reviewer claude, 1 round (0/8); ~3.8 h in flight. On a checked provider's manager page Alice saves, replaces and removes a judge key and its https origin; the host sends it only with that provider's granted POSTs to that origin (no redirects); removing it ends the provider's live judge streams `gone`; startup deletes key files of uninstalled mods. Adversary HELD, user-sim ACCEPTED, validator PASS. R1.1 to R1.4 accepted (Deputy decisions); P1.1 to P1.8 and R1.1's spec question in Leftovers. Sketch in factory/DONE.md.
-- [~] **S124 (upkeep) a failed fetch blames the true cause (net, node, dist), and net's budget flake.**
-  (in flight, cloud, builder claude, reviewer codex; rule 3: last two S122 codex, S123 codex; the upkeep lane, sketched
-  2026-11-25 by deputy-5 from Leftovers outside S122's host/, app/, dev/; spec-check not run: error text and tests only; routine `trig_01S1fjM2MXnYjYVirKm928Le`, fires 11:21 UTC.; DELIVERED ~12:48 UTC as PR #43 at b08f7ea (+723/-124, dist, net, node); r1: Codex review https://chatgpt.com/local/6b06d9d5-a524-83eb-8120-942a8b00d07b, dispatched 12:53 UTC; r1 (12:59): 3/2, changes (3), validator FAIL, adversary HELD, user-sim REJECTED; Windows CI red on the slice's own dist test (F1.ci); rulings: F1.1, F1.2 stand, F1.3 regraded polish (a shutdown in a narrow window); answer r1: Claude routine `trig_01C1eDEYf3zyHCToLdDiPCRN`, fires 13:31 UTC.)
-  Outcomes, each item's check, on the real programs with a test per item: (1) (guard) [S100 CI] net's tests that share
-  the connection budget (`budget::s9...`, and each like it) no longer flake on timing: 20 runs green per OS in CI, as
-  S106 fixed `pair::s4`; (2) [S87 adversary, S87 user-sim] a local I/O or holder error during a download reads as local
-  (no "unreachable <full machine>", no temp path), and a failed install whose real cause is the full machine's bad copy
-  says so instead of "channel ... is not followed" (net 5.9 gains the sentence); (3) [S92] with every full machine off,
-  a light fetch says no full machine is reachable, not "is not followed"; a holder refusing a channel, a bad copy from a
-  machine that answered, and `DistError::Io`'s top line each name the true party; a local unpack failure is not
-  `BadPackage`; the full-disk text names the temp path once. Touches: `net/`, `node/`, `dist/` (error text and their
-  tests); never `host/`, `app/`, `dev/` (S122). App words that quote these errors are left for the next app upkeep.
-  Leaves out the S92 mutant gaps and node's two chain helpers. Protects: *polish* (2, 3), *guard* (1). Remove the
-  items from Leftovers when it merges; drop the stale [S111 CI] reach line (S115 fixed it).
+- [x] **S124 (upkeep) a failed fetch blames the true cause (net, node, dist), and net's budget flake.** DONE 2026-11-25: PR #43 rebase-merged by deputy-5 (e76d1682, no bypass); builder claude, reviewer codex, 2 rounds (3/2, 0/0); ~3.5 h in flight. A local I/O or holder failure during a fetch reads as this machine's, with no temp path; a bad copy on a full machine and every full machine being off each say so instead of 'not followed'; a close before the download is Unreachable; net's budget probes no longer race the refill clock. F1.3 regraded polish (fixed anyway); R2.1 accepted; P1.1, P1.2 in Leftovers. Sketch in factory/DONE.md.
 
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
@@ -1640,9 +1627,6 @@ These are true but are now what the specs say. Acting on any of them is a spec c
   rule there; `watane-dev add` drops the provider's `Mod::read` error (both dev).
 - [S109 review] (guard) the log directory's owner is never checked: root running over a 0700 log dir another user owns
   lets that user swap or roll back the identity key. A check that the dir is owned by the effective user.
-- [S100 CI] (guard) flake: `net/tests/it/budget.rs:98` `budget::s9_requests_over_limits_and_budgets_are_refused_before_work`
-  got `over_budget` for `too_large` on macOS (fdb3d9a, an empty commit over green code): the same connection-budget
-  timing class S106 fixed in `pair::s4`. Next net upkeep: check every net test that shares that budget.
 - [S37] `{"release"}` in a home with no record answers 200 from dist's cache
   (app/src/api.rs:321, dist/src/fetch.rs:68). Documented as deliberate; no app test covers the
   link-then-release sequence.
@@ -1796,22 +1780,10 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### net / node
 
+- [S124 r1] (polish) P1.1 dist: a write failure after the temp file exists has no test (needs fault injection). P1.2 app: pin the failed-install message at the app entry point (the regression test calls `Node::fetch`). The 20-runs-per-OS budget check ran 20/20 on Linux only; macOS and Windows passed CI once each.
 
-- [S111 CI] (guard) possible Windows flake: `net/tests/it/reach.rs:193` `reach::s11_machines_on_different_networks_connect_through_the_servers_relay` failed once on windows-latest with `database error: Database already open. Cannot acquire lock.` (net's redb reopen on Windows) at watane 3e8d788 (slice/s111, no net change); green on the head before. Second time on the same head 3e8d788 (attempt 1): a real flake; give it to the next upkeep slice as a guard (Windows is required, so it blocks merges).
 
-- From S92: with every full machine off, a light fetch still says "channel ... is not followed"
-  after ~22 s (NoFullMachine dropped by design; the most common case); a holder refusing a
-  channel reads Unreachable { server } though the cause may be local; a bad copy reads "node X is
-  unreachable" for a machine that answered; DistError::Io's top line is a bare "the server";
-  dist calls a local unpack failure BadPackage; the full-disk text repeats the temp path; the
-  server's run output says nothing about its bad copy; two chain helpers in node; mutants show
-  light-path gaps (need_channel, need_latest, choose_index).
-- From S87's adversary (older than S87): a local I/O or holder error during a download reads
-  "unreachable <full machine>: package ... not fetched: <local io error, temp path>", blaming the
-  remote machine; net 5.9 is silent on it.
-- From S87's user-sim: a failed install tells Alice "channel ... is not followed; follow the
-  publisher's link" while the real cause, her full machine's bad copy, shows only in Machines (node
-  drops the blob error before dist's no-base fallback; app TECHNICAL notes it).
+
 
 ### Unsettled
 
@@ -1981,6 +1953,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - 2026-11-24 host 18 **Q38: (b)**, the human ("b is fine for q38"). A workspace or account consent is kept per (origin client, `via` = the provider's identity, folder or account); a new provider asks again. S103 built (b); its next answer round writes host 18 Q38 as decided by the human, 2026-11-24, and the 19.7 rows to match. agentic-harness TECHNICAL 8 already cites 19.7.
 
 ## Deputy decisions
+- 2026-11-25 (S124 r2) accepted: R2.1 net's byte-budget test can still fail if the bucket refills before the probe on all five attempts (a guard test, not product behaviour). Undo: a test clock in net's budget.
 - 2026-11-25 (S122 r1) accepted: R1.1 a kept judge key stays in use, its section hidden, after `claude-code` is withdrawn (W39 holds: it still goes only to its judge; the section fix in Leftovers); R1.2 local folders with one slug share one identity and so one key (host 4.1, by design, confirmed at install); R1.3 a judge folder with too-wide modes, or a prune I/O error, starts the app failed (fails closed; only a local program can cause it); R1.4 a caller holding a key learns which granted host is its judge origin (low value). Undo: the Leftovers item; a host refusal of `judge` without the grant.
 - 2026-11-25 (S118 r1) accepted: the existing unsigned `local/<slug>` identity rule stands; a different local package with the same slug can recover retained records after Alice approves Storage.
 - 2026-11-25 (S117 r1) accepted: R1.1 net's `cfg(test)` 200 ms STORE_WAIT applies to every net unit test; a store shutdown over 200 ms on a slow Windows runner could bring back `Database already open` in `no_default_services` and `ac2_the_book_decides_the_switches` only (fix then: give the wait only to the forced test).
