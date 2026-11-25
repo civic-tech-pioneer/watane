@@ -1832,6 +1832,8 @@ fn ac2_judge_requires_the_exact_provider_and_a_post_to_its_origin() {
     let wrong_method = with(judge_request(), "method", json!("GET"));
     assert_eq!(rig.start(&wrong_origin), "destination");
     assert_eq!(rig.start(&wrong_method), "destination");
+    enter_judge(&rig, "local/https", "https://api.openai.com");
+    assert_eq!(rig.start(&wrong_origin), "destination");
     enter_judge(&rig, "local/https", "https://second.test:8443");
     let ungranted = with(
         post("https://second.test:8443/verdict"),
