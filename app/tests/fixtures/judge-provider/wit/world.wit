@@ -1,0 +1,12 @@
+package mods:judge-provider@0.1.0;
+
+interface api {
+  claude: func(launch: string) -> bool;
+  judge: func(request: string) -> bool;
+}
+
+world judge-provider {
+  import watane:host/claude-code@0.1.0;
+  import watane:host/https-stream@0.1.0;
+  export api;
+}

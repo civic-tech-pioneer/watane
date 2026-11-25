@@ -17,7 +17,7 @@ mod issuer;
 use crate::support::GUI;
 use crate::support::driver::App;
 use crate::support::journey::{
-    TIMEOUT, approve, begin_install, copy_dir, deny, installed, invoke, open, until,
+    TIMEOUT, approve, begin_install, copy_dir, deny, fixture, installed, invoke, open, until,
 };
 use crate::support::manage::host_fixture;
 use serde_json::{Value, json};
@@ -431,23 +431,15 @@ fn s60_consent_in_the_details_and_its_withdrawal() {
 fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
     let _gui = GUI.lock().unwrap_or_else(|error| error.into_inner());
     let home = tempfile::tempdir().unwrap();
-    let work = tempfile::tempdir().unwrap();
-    let provider = work.path().join("claude");
-    copy_dir(&host_fixture("claude"), &provider);
-    let manifest = provider.join("mod.toml");
-    let mut text = fs::read_to_string(&manifest).unwrap();
-    text.push_str("\n[http]\nhosts = [\"judge.test\"]\n");
-    fs::write(manifest, text).unwrap();
-
     let app = App::start(home.path(), &[]);
     assert!(app.wait("main", TIMEOUT));
     until(&app, "main", "document.body.dataset.ready === 'true'");
-    begin_install(&app, &[provider, host_fixture("claude-front")]);
+    begin_install(&app, &[fixture("judge-provider"), host_fixture("claude")]);
     approve(&app);
     installed(&app, "claude");
-    installed(&app, "claude-front");
-    let query = "s => document.querySelector('section[data-local=claude] .judge ' + s)";
-    click(&app, "[data-tile=claude]");
+    installed(&app, "judge-provider");
+    let query = "s => document.querySelector('section[data-local=judge-provider] .judge ' + s)";
+    click(&app, "[data-tile=judge-provider]");
     let evaluate = |script: &str| app.eval("main", &format!("(q => {script})({query})"));
     assert_eq!(evaluate("q('.label').textContent"), "Judge key");
     assert_eq!(evaluate("q('.judge-origin').value"), "");
@@ -456,7 +448,7 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
     assert_eq!(
         app.eval(
             "main",
-            "!!document.querySelector('section[data-local=claude-front] .judge')"
+            "!!document.querySelector('section[data-local=claude] .judge')"
         ),
         false
     );
@@ -466,7 +458,7 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
             json!(field), json!(value)
         ));
     };
-    app.eval("main", "window.__badJudge = null; window.__TAURI_INTERNALS__.invoke('judge_set', {local:'claude', key:'test-key-only', origin:'https://judge.test/v1'}).then(() => window.__badJudge = 'success', error => window.__badJudge = error.code); null");
+    app.eval("main", "window.__badJudge = null; window.__TAURI_INTERNALS__.invoke('judge_set', {local:'judge-provider', key:'test-key-only', origin:'https://judge.test/v1'}).then(() => window.__badJudge = 'success', error => window.__badJudge = error.code); null");
     until(&app, "main", "window.__badJudge !== null");
     assert_eq!(app.eval("main", "window.__badJudge"), "bad_request");
     enter(".judge-key", "test-key-only");
@@ -492,10 +484,10 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
             "!({query})('.judge-save').disabled && ({query})('.judge-feedback').textContent === 'The key will go only to https://judge.test.'"
         ),
     );
-    click(&app, "section[data-local=claude] .judge-save");
+    click(&app, "section[data-local=judge-provider] .judge-save");
     until(&app, "main", &format!("!!({query})('.judge-replace')"));
     let directory = home.path().join("app/accounts/judge");
-    let path = directory.join("local__claude.json");
+    let path = directory.join("local__judge-provider.json");
     assert_eq!(
         fs::metadata(&path).unwrap().permissions().mode() & 0o777,
         0o600
@@ -520,19 +512,19 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
     until(&app, "main", &format!("!!({query})('.judge-replace')"));
     assert!(path.exists());
     assert!(!stray.exists());
-    click(&app, "section[data-local=claude] .judge-remove");
+    click(&app, "section[data-local=judge-provider] .judge-remove");
     until(&app, "main", &format!("!({query})('.judge-replace')"));
     assert!(!path.exists());
     invoke(
         &app,
         "judge_set",
-        json!({"local":"claude","key":"fresh","origin":"https://judge.test"}),
+        json!({"local":"judge-provider","key":"fresh","origin":"https://judge.test"}),
     );
     assert!(path.exists());
     invoke(
         &app,
         "mod_remove",
-        json!({"local":"claude","deleteData":false}),
+        json!({"local":"judge-provider","deleteData":false}),
     );
     assert!(!path.exists());
     assert!(app.quit().success());

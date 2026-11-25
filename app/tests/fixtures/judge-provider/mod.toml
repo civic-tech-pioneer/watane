@@ -1,0 +1,5 @@
+name = "Judge provider"
+summary = "S122 fixture for the manager's judge key panel."
+
+[http]
+hosts = ["judge.test"]
