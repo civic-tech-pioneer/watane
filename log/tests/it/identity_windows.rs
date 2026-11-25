@@ -56,10 +56,10 @@ fn assert_private_acl(path: &Path, acl_path: &Path, directory: bool) {
             $descriptor = [System.Security.AccessControl.RawSecurityDescriptor]::new($lines[1])
             $dacl = $descriptor.DiscretionaryAcl
             $protected = [System.Security.AccessControl.ControlFlags]::DiscretionaryAclProtected
-            $flags = [System.Security.AccessControl.AceFlags]::None
+            $flags = 0
             if ($env:WATANE_TEST_IS_DIRECTORY -eq 'true') {
-                $flags = [System.Security.AccessControl.AceFlags]::ObjectInherit -bor
-                    [System.Security.AccessControl.AceFlags]::ContainerInherit
+                # ObjectInherit (1) and ContainerInherit (2) in the saved DACL.
+                $flags = 3
                 $acl = [System.IO.Directory]::GetAccessControl($env:WATANE_TEST_PRIVATE_PATH)
             } else {
                 $acl = [System.IO.File]::GetAccessControl($env:WATANE_TEST_PRIVATE_PATH)
@@ -68,7 +68,7 @@ fn assert_private_acl(path: &Path, acl_path: &Path, directory: bool) {
                 $dacl.Count -ne 1 -or
                 $dacl[0].AceType -ne 'AccessAllowed' -or
                 $dacl[0].SecurityIdentifier.Value -ne $sid -or
-                $dacl[0].AceFlags -ne $flags) {
+                [int]$dacl[0].AceFlags -ne $flags) {
                 throw 'The path must have a protected owner-only DACL with the expected ACE flags'
             }
             if ($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid) {

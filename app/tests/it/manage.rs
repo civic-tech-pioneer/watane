@@ -306,11 +306,20 @@ fn ac2_s47_removal_deletes_state_and_names_users() {
         "mod-recommendations",
         "document.querySelector('#books').textContent.includes('Before deletion')",
     );
-    app.eval("mod-recommendations", "window.receivedBefore = null; watane.call('api.received').then(v => window.receivedBefore = v); null");
+    // The page can render the provider's list before Notes saves the event.
     until(
         &app,
         "mod-recommendations",
-        "window.receivedBefore !== null",
+        r"(() => {
+            if (window.receivedBefore?.includes('Before deletion')) return true;
+            if (!window.readingReceived) {
+                window.readingReceived = true;
+                watane.call('api.received')
+                    .then(books => window.receivedBefore = books)
+                    .finally(() => window.readingReceived = false);
+            }
+            return false;
+        })()",
     );
     assert_eq!(
         app.eval("mod-recommendations", "window.receivedBefore"),
