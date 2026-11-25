@@ -191,13 +191,13 @@ impl ScriptedResponses {
         let (side, models_for_route, ids) = (Arc::clone(&responses), Arc::clone(&models), call_ids);
         accept_loop(rl, rcfg, Arc::clone(&stop), Arc::clone(&side), move |r| {
             if !side.authorized(r) {
-                return status_out(401, "unauthorized");
+                return error_out(401, "unauthorized");
             }
             let path = r.path.split('?').next().unwrap_or("");
             match (r.method.as_str(), path) {
                 ("POST", "/v1/responses") => side
                     .next()
-                    .map_or_else(|| status_out(500, "no script"), |rep| reply_out(&rep, &ids)),
+                    .map_or_else(|| error_out(500, "no script"), |rep| reply_out(&rep, &ids)),
                 ("GET", "/v1/models") => {
                     let data: Vec<_> = lock(&models_for_route)
                             .iter()
@@ -205,17 +205,17 @@ impl ScriptedResponses {
                             .collect();
                     json_out(200, &serde_json::json!({"object": "list", "data": data}))
                 }
-                _ => status_out(404, "not found"),
+                _ => error_out(404, "not found"),
             }
         });
         let jside = Arc::clone(&judge_side);
         accept_loop(jl, jcfg, Arc::clone(&stop), Arc::clone(&jside), move |r| {
             if !jside.authorized(r) {
-                return status_out(401, "unauthorized");
+                return error_out(401, "unauthorized");
             }
             jside
                 .next()
-                .map_or_else(|| status_out(500, "no script"), |p| play_out(&p))
+                .map_or_else(|| error_out(500, "no script"), |p| play_out(&p))
         });
 
         Ok(ScriptedResponses {
@@ -511,8 +511,8 @@ fn full(code: u16, content_type: &str, extra: &[(&str, String)], body: &[u8]) ->
     Out::Write(vec![bytes])
 }
 
-fn status_out(code: u16, body: &str) -> Out {
-    full(code, "application/json", &[], body.as_bytes())
+fn error_out(code: u16, message: &str) -> Out {
+    json_out(code, &serde_json::json!({"error": {"message": message}}))
 }
 
 fn json_out(code: u16, v: &serde_json::Value) -> Out {
@@ -624,6 +624,16 @@ fn play_out(play: &Play) -> Out {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ac4_chunk_extensions_and_split_reads_preserve_the_body() {
+        let head = &b"POST /v1/responses HTTP/1.1\r\nTransfer-Encoding: Chunked\r\n\r\n"[..];
+        let chunks = &b"5;part=1\r\nhello\r\n6\r\n world\r\n0\r\n\r\n"[..];
+        let request = read_request(&mut head.chain(chunks)).unwrap();
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.path, "/v1/responses");
+        assert_eq!(request.body, b"hello world");
+    }
 
     #[test]
     fn ac7_listens_on_loopback_only() {

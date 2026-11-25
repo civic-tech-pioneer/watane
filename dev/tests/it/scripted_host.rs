@@ -116,20 +116,24 @@ impl Rig {
             .unwrap()
             .to_owned()
     }
-    /// The items the mod recorded, without the `consent-pending` item that the first account
-    /// request of an origin client gets before the participant's answer (host 19.7).
     fn items(&self, s: &str) -> Vec<String> {
-        let mut all: Vec<String> =
-            serde_json::from_value(self.call("api.items", json!({"s": s}))).unwrap();
-        let pending = |i: &String| i.starts_with(r#"{"type":"consent-pending""#);
-        if all.first().is_some_and(pending) {
-            all.remove(0);
-        }
-        assert!(
-            !all.iter().any(pending),
-            "consent-pending after the first item: {all:?}"
+        serde_json::from_value(self.call("api.items", json!({"s": s}))).unwrap()
+    }
+    /// The remaining items after checking the first account request's consent notice.
+    fn after_consent(&self, s: &str) -> Vec<String> {
+        let mut items = self.items(s);
+        assert_eq!(
+            items.first().map(|item| json_of(item)),
+            Some(json!({"type":"consent-pending","what":"account:local/https:openai"})),
+            "{items:?}"
         );
-        all
+        items.remove(0);
+        assert!(
+            items
+                .iter()
+                .all(|item| !item.starts_with(r#"{"type":"consent-pending""#))
+        );
+        items
     }
     fn ended(&self) -> Vec<String> {
         serde_json::from_value(self.call("api.ended", Value::Null)).unwrap()
@@ -186,7 +190,7 @@ fn ac1_case_3_a_scripted_turn_streams_into_the_mod_with_the_accounts_token() {
     let body = r#"{"model":"gpt-5","input":[{"role":"user","content":"hi"}],"stream":true}"#;
     let s = rig.start(&account_post(body));
     assert_eq!(rig.outcome(&s), "closed");
-    let items = rig.items(&s);
+    let items = rig.after_consent(&s);
     assert_eq!(items.len(), 4, "{items:?}");
     let head = json_of(&items[0]);
     assert_eq!(head["status"], 200);
@@ -239,7 +243,7 @@ fn ac2_case_19_models_with_the_account_streams_the_models_answer() {
                               "account": "openai"}),
     );
     assert_eq!(rig.outcome(&s), "closed");
-    let items = rig.items(&s);
+    let items = rig.after_consent(&s);
     assert_eq!(items.len(), 2, "{items:?}");
     assert_eq!(json_of(&items[0])["status"], 200);
     let model = |id: &str| json!({"id": id, "object": "model", "created": 0, "owned_by": "openai"});
@@ -311,7 +315,7 @@ fn run(rig: &Rig, reply: Reply, idle_s: u64) -> (Vec<String>, String) {
     request["idle-s"] = json!(idle_s);
     let s = rig.start(&request);
     let outcome = rig.outcome(&s);
-    (rig.items(&s), outcome)
+    (rig.after_consent(&s), outcome)
 }
 
 #[test]
@@ -378,7 +382,10 @@ fn ac2_case_19_stall_ends_idle_timeout_cut_ends_closed_and_reset_ends_failed() {
 
     let rig = Rig::new();
     let (items, outcome) = run(&rig, Reply::Reset, 30);
-    assert!(outcome.starts_with("failed(HTTP: "), "{outcome}");
+    assert!(
+        outcome.starts_with("failed(HTTP: connection ended before the response head:"),
+        "{outcome}"
+    );
     assert!(items.is_empty(), "{items:?}");
     assert!(!outcome.contains(TOKEN));
 }
@@ -397,8 +404,12 @@ fn ac3_the_token_reaches_no_byte_the_mod_recorded_or_stored() {
     assert_eq!(rig.outcome(&a), "closed");
     let b = rig.start(&account_post("{}"));
     assert_eq!(rig.outcome(&b), "closed");
-    let mut seen = rig.items(&a).concat();
-    seen.push_str(&rig.items(&b).concat());
+    let mut seen = rig.after_consent(&a).concat();
+    let second = rig.items(&b);
+    assert_eq!(second.len(), 2, "{second:?}");
+    assert_eq!(json_of(&second[0])["status"], 401);
+    assert_eq!(second[1], "no");
+    seen.push_str(&second.concat());
     seen.push_str(&rig.ended().concat());
     assert!(!seen.is_empty() && !seen.contains(TOKEN), "{seen}");
     // The mod's state and every other file of the home, after the host is gone.
@@ -445,7 +456,10 @@ fn ac3_a_sign_out_during_a_stall_ends_the_stream_gone() {
     rig.wait("the request at the server", || {
         !rig.server.requests().is_empty()
     });
+    rig.wait("the consent notice at the mod", || {
+        !rig.items(&s).is_empty()
+    });
     rig.host().account_changed(&Account::OpenAi);
     assert_eq!(rig.outcome(&s), "gone");
-    assert!(rig.items(&s).is_empty());
+    assert!(rig.after_consent(&s).is_empty());
 }

@@ -1,6 +1,7 @@
 //! Tests of `ScriptedResponses` and the program `scripted-responses` (TECHNICAL 18.3).
 #![cfg(feature = "fake-claude")]
 #![allow(clippy::unwrap_used, reason = "tests may panic")]
+use serde_json::{Value, json};
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -102,14 +103,12 @@ fn ac2_default_script_models_and_404() {
             {"id":"gpt-x","object":"model","created":0,"owned_by":"openai"},
             {"id":"gpt-y","object":"model","created":0,"owned_by":"openai"}]})
     );
-    assert_eq!(
-        c.get("https://api.openai.com/v1/other")
-            .send()
-            .unwrap()
-            .status(),
-        404
+    assert_json_error(
+        c.get("https://api.openai.com/v1/other").send().unwrap(),
+        404,
+        "not found",
     );
-    assert_eq!(c.put(R).send().unwrap().status(), 404);
+    assert_json_error(c.put(R).send().unwrap(), 404, "not found");
     let reqs = s.requests();
     assert_eq!(reqs.len(), 4);
     assert_eq!(
@@ -255,7 +254,7 @@ fn ac4_token_and_whole_requests() {
     let s = ScriptedResponses::start().unwrap();
     s.expect_token("t");
     let c = client(&s);
-    assert_eq!(post(&c, "{}").status(), 401);
+    assert_json_error(post(&c, "{}"), 401, "unauthorized");
     assert_eq!(
         c.post(R)
             .header("authorization", "Bearer u")
@@ -295,6 +294,26 @@ fn ac4_token_and_whole_requests() {
 }
 
 #[test]
+fn ac4_chunked_body_is_recorded_whole() {
+    let s = ScriptedResponses::start().unwrap();
+    let body = vec![b'x'; 32 * 1024];
+    let response = client(&s)
+        .post(R)
+        .body(reqwest::blocking::Body::new(std::io::Cursor::new(
+            body.clone(),
+        )))
+        .send()
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let requests = s.requests();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].headers.iter().any(|(name, value)| {
+        name.eq_ignore_ascii_case("transfer-encoding") && value == "chunked"
+    }));
+    assert_eq!(requests[0].body, body);
+}
+
+#[test]
 fn ac5_judge_plays() {
     let s = ScriptedResponses::start().unwrap();
     let j = s.judge();
@@ -317,24 +336,30 @@ fn ac5_judge_plays() {
     ]);
     let c = client(&s);
     let get = || c.post("https://judge.test/v1/judge").body("q").send();
-    let v = |r: reqwest::blocking::Response| r.text().unwrap();
-    assert_eq!(v(get().unwrap()), r#"{"reasons":[],"verdict":"safe"}"#);
+    let v = |r: reqwest::blocking::Response| r.json::<Value>().unwrap();
+    assert_eq!(v(get().unwrap()), json!({"reasons":[],"verdict":"safe"}));
     assert_eq!(
         v(get().unwrap()),
-        r#"{"reasons":["a","b"],"verdict":"unsafe"}"#
+        json!({"reasons":["a","b"],"verdict":"unsafe"})
     );
-    assert_eq!(v(get().unwrap()), r#"{"reasons":["c"],"verdict":"unsure"}"#);
+    assert_eq!(
+        v(get().unwrap()),
+        json!({"reasons":["c"],"verdict":"unsure"})
+    );
     get().unwrap_err();
     let t = std::time::Instant::now();
-    assert_eq!(v(get().unwrap()), r#"{"reasons":[],"verdict":"safe"}"#);
+    assert_eq!(v(get().unwrap()), json!({"reasons":[],"verdict":"safe"}));
     assert!(t.elapsed() >= Duration::from_millis(300));
     let r = get().unwrap();
     assert_eq!(r.status(), 200);
-    serde_json::from_str::<serde_json::Value>(&v(r)).unwrap_err();
+    r.json::<Value>().unwrap_err();
     let r = get().unwrap();
     assert_eq!(r.status(), 307);
     let r = get().unwrap();
-    assert_eq!((r.status().as_u16(), v(r).as_str()), (202, "raw"));
+    assert_eq!(
+        (r.status().as_u16(), r.text().unwrap().as_str()),
+        (202, "raw")
+    );
     assert_eq!(j.count(), 8);
     assert_eq!(j.requests().len(), 8);
     assert_eq!(j.requests()[0].body, b"q");
@@ -347,7 +372,11 @@ fn ac5_judge_key_and_repeat() {
     s.judge().expect_key("k");
     s.judge().script(vec![Play::Unsafe(vec![])]);
     let c = client(&s);
-    assert_eq!(c.post("https://judge.test/").send().unwrap().status(), 401);
+    assert_json_error(
+        c.post("https://judge.test/").send().unwrap(),
+        401,
+        "unauthorized",
+    );
     assert_eq!(
         c.post("https://judge.test/")
             .header("authorization", "Bearer z")
@@ -362,7 +391,10 @@ fn ac5_judge_key_and_repeat() {
             .header("authorization", "Bearer k")
             .send()
             .unwrap();
-        assert_eq!(r.text().unwrap(), r#"{"reasons":[],"verdict":"unsafe"}"#);
+        assert_eq!(
+            r.json::<Value>().unwrap(),
+            json!({"reasons":[],"verdict":"unsafe"})
+        );
     }
     assert_eq!(s.judge().count(), 4);
 }
@@ -400,6 +432,18 @@ fn program_client(v: &serde_json::Value) -> reqwest::blocking::Client {
 fn ac6_program_default_and_log() {
     let dir = tempfile::tempdir().unwrap();
     let (_p, v) = start_program(&["--log", dir.path().to_str().unwrap()]);
+    let mut keys: Vec<_> = v.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "ca_pem",
+            "judge_addr",
+            "judge_origin",
+            "responses_addr",
+            "scripted"
+        ]
+    );
     assert_eq!(v["scripted"], 1);
     assert_eq!(v["judge_origin"], "https://judge.test");
     assert!(
@@ -417,9 +461,9 @@ fn ac6_program_default_and_log() {
             .body("q")
             .send()
             .unwrap()
-            .text()
+            .json::<Value>()
             .unwrap(),
-        r#"{"reasons":[],"verdict":"safe"}"#
+        json!({"reasons":[],"verdict":"safe"})
     );
     let one: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(dir.path().join("responses").join("1.json")).unwrap(),
@@ -453,7 +497,7 @@ fn ac6_program_script_file() {
     .unwrap();
     let (_p, v) = start_program(&["--script", f.to_str().unwrap()]);
     let c = program_client(&v);
-    assert_eq!(post(&c, "{}").status(), 401);
+    assert_json_error(post(&c, "{}"), 401, "unauthorized");
     let r = c
         .post(R)
         .header("authorization", "Bearer t")
@@ -471,11 +515,150 @@ fn ac6_program_script_file() {
         .send()
         .unwrap();
     assert!(r.text().unwrap().contains(r#""id":"m1""#));
-    assert_eq!(c.post("https://judge.test/").send().unwrap().status(), 401);
+    assert_json_error(
+        c.post("https://judge.test/").send().unwrap(),
+        401,
+        "unauthorized",
+    );
     let r = c
         .post("https://judge.test/")
         .header("authorization", "Bearer k")
         .send()
         .unwrap();
-    assert_eq!(r.text().unwrap(), r#"{"reasons":["r"],"verdict":"unsure"}"#);
+    assert_eq!(
+        r.json::<Value>().unwrap(),
+        json!({"reasons":["r"],"verdict":"unsure"})
+    );
+}
+
+fn assert_json_error(response: reqwest::blocking::Response, status: u16, message: &str) {
+    assert_eq!(response.status(), status);
+    assert_eq!(response.headers()["content-type"], "application/json");
+    assert_eq!(
+        response.json::<Value>().unwrap(),
+        json!({"error":{"message":message}})
+    );
+}
+
+#[test]
+fn ac2_empty_scripts_return_json_errors() {
+    let s = ScriptedResponses::start().unwrap();
+    s.script(vec![]);
+    s.judge().script(vec![]);
+    let c = client(&s);
+    assert_json_error(post(&c, "{}"), 500, "no script");
+    assert_json_error(
+        c.post("https://judge.test/").send().unwrap(),
+        500,
+        "no script",
+    );
+}
+
+#[test]
+fn ac7_dropping_the_server_closes_both_listeners() {
+    use std::io::ErrorKind;
+    use std::net::TcpStream;
+    use std::time::Instant;
+
+    let s = ScriptedResponses::start().unwrap();
+    let addrs = [s.responses_addr(), s.judge_addr()];
+    for addr in addrs {
+        TcpStream::connect_timeout(&addr, Duration::from_secs(1)).unwrap();
+    }
+    drop(s);
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    for addr in addrs {
+        loop {
+            match TcpStream::connect_timeout(&addr, Duration::from_millis(200)) {
+                Err(e) if e.kind() == ErrorKind::ConnectionRefused => break,
+                result => assert!(
+                    Instant::now() < deadline,
+                    "listener {addr} after drop: {result:?}"
+                ),
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+}
+
+#[test]
+fn ac6_program_refuses_unknown_script_fields() {
+    use std::io::Read;
+
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("script.json");
+    for (script, field) in [
+        (r#"{"replise":[]}"#, "replise"),
+        (
+            r#"{"replies":[{"usage-limit":{"resets_in_s":60,"extra":0}}]}"#,
+            "extra",
+        ),
+        (
+            r#"{"replies":[{"sse":[{"completed":{"input_tokens":1,"output_tokens":1,"extra":0}}]}]}"#,
+            "extra",
+        ),
+        (
+            r#"{"plays":[{"slow":{"ms":1,"then":"down","extra":0}}]}"#,
+            "extra",
+        ),
+    ] {
+        std::fs::write(&file, script).unwrap();
+        let mut process = Program(
+            Command::new(env!("CARGO_BIN_EXE_scripted-responses"))
+                .arg("--script")
+                .arg(&file)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap(),
+        );
+        let mut line = String::new();
+        assert_eq!(
+            BufReader::new(process.0.stdout.take().unwrap())
+                .read_line(&mut line)
+                .unwrap(),
+            0,
+            "{line}"
+        );
+        let mut error = String::new();
+        process
+            .0
+            .stderr
+            .take()
+            .unwrap()
+            .read_to_string(&mut error)
+            .unwrap();
+        assert_eq!(process.0.wait().unwrap().code(), Some(1), "{error}");
+        assert!(
+            error.contains(&format!("unknown field `{field}`")),
+            "{error}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn ac6_program_ends_on_sigterm() {
+    use std::os::unix::process::ExitStatusExt;
+    use std::time::Instant;
+
+    let (mut program, _) = start_program(&[]);
+    let signal = Command::new("kill")
+        .args(["-TERM", &program.0.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(signal.success(), "{signal}");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(status) = program.0.try_wait().unwrap() {
+            assert_eq!(status.signal(), Some(15), "{status}");
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "scripted-responses ignored SIGTERM"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
