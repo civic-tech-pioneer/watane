@@ -1835,6 +1835,64 @@ fn ac2_judge_requires_the_exact_provider_and_a_post_to_its_origin() {
 }
 
 #[test]
+fn ac2_judge_key_is_scoped_to_the_signed_publisher() {
+    use watane_host::watane_log::Log;
+    use watane_host::watane_pkg::{self as pkg, Mod, RELEASE_KIND, Release};
+    use watane_host::{Requester, Source};
+
+    let mut rig = Rig::new(None);
+    let judge = rig.serve("second.test", answer_one("verdict"));
+    let folder = fixture("https");
+    let package = pkg::pack(&folder, false).unwrap();
+    let body = Release::new(&Mod::read(&folder).unwrap(), &package).unwrap();
+    let sources = ["first-publisher", "second-publisher"]
+        .map(|name| {
+            let log = Log::open(&rig.dir.path().join(name)).unwrap();
+            let entry = log.append(RELEASE_KIND, &body.encode()).unwrap();
+            Source::Release {
+                package: package.clone(),
+                entry,
+            }
+        })
+        .to_vec();
+    let plan = rig.host().plan(sources).unwrap();
+    let mods = rig
+        .rt
+        .block_on(rig.host().install(plan, Requester::App))
+        .unwrap();
+    let [first, second] = mods.as_slice() else {
+        panic!("expected two installed providers");
+    };
+    assert_eq!(first.slug, second.slug);
+    assert_ne!(first.identity, second.identity);
+    enter_judge(&rig, &first.identity, "https://second.test");
+
+    let request = json!({"request": judge_request().to_string()});
+    let start = |target| {
+        rig.call(Caller::Page, target, "api.start", request.clone())
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let ends = |target, expected: String| {
+        wait(&expected, Duration::from_secs(20), || {
+            rig.call(Caller::Page, target, "api.ended", Value::Null) == json!([expected])
+        });
+    };
+    let second_stream = start(second.local.as_str());
+    ends(second.local.as_str(), format!("{second_stream} no-account"));
+    assert_eq!(judge.connections.load(Ordering::SeqCst), 0);
+    let first_stream = start(first.local.as_str());
+    ends(first.local.as_str(), format!("{first_stream} closed"));
+    let requests = judge.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].header("authorization"),
+        ["Bearer test-judge-key"]
+    );
+}
+
+#[test]
 fn ac2_judge_without_an_app_account_source_is_no_app() {
     let mut rig = Rig::new(None);
     let judge = rig.serve("second.test", |c| async move { c.finish().await });
