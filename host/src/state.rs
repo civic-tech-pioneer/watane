@@ -365,6 +365,28 @@ impl State {
         self.commit_host(txn).map_err(CallError::internal)?;
         Ok(())
     }
+    /// Recover the timer table after a removal whose catalog save survived (3.1, 19.6).
+    /// Called under the home lock before any worker can access the state.
+    pub fn sweep_timers(&self, owners: &BTreeMap<String, &str>) -> Result<(), CallError> {
+        let installed: std::collections::BTreeSet<_> = owners.values().copied().collect();
+        let mut ops = Vec::new();
+        for (key, due, origin) in self.timer_rows()? {
+            let owner = key.split_once('/').and_then(|(id, _)| owners.get(id));
+            match owner {
+                None => ops.push(TimerOp::DeleteIfDue { key, due }),
+                Some(&owner) if !installed.contains(origin.as_str()) => ops.push(TimerOp::After {
+                    key,
+                    due,
+                    origin: owner.to_owned(),
+                }),
+                Some(_) => {}
+            }
+        }
+        if !ops.is_empty() {
+            self.timer_write(&ops)?;
+        }
+        Ok(())
+    }
     /// Removal of a mod (4.4, 19.6): deletes its timers; every other timer that carries it as
     /// origin client gets its own mod's identity, `owners` mapping a mod id to its identity
     /// (`""`, which no mod has, when the owner is not installed).
