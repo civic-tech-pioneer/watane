@@ -852,3 +852,49 @@ impl TestStream {
             .unwrap_or_default()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/mods")
+            .join(name)
+    }
+
+    #[test]
+    fn s126_restart_reconciles_timers_with_the_committed_catalog() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        host.install_folders(&[fixture("counter"), fixture("shelf")], 0)
+            .unwrap();
+        let due = u64::MAX;
+        let timer = |owner, id, origin: &str| state::TimerOp::After {
+            key: state::timer_key(owner, id),
+            due,
+            origin: origin.into(),
+        };
+        // The catalog save survived. The old timer table is still on disk.
+        host.state
+            .timer_write(&[
+                timer("local/gone", "owned", "local/shelf"),
+                timer("local/counter", "borrowed", "local/gone"),
+                timer("local/counter", "kept", "local/shelf"),
+            ])
+            .unwrap();
+        drop(host);
+
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let row = |owner, id| host.state.timer_row(&state::timer_key(owner, id)).unwrap();
+        assert_eq!(row("local/gone", "owned"), None);
+        assert_eq!(
+            row("local/counter", "borrowed"),
+            Some((due, "local/counter".into()))
+        );
+        assert_eq!(
+            row("local/counter", "kept"),
+            Some((due, "local/shelf".into()))
+        );
+    }
+}
