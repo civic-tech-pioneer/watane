@@ -810,7 +810,8 @@ mod tests {
             }]
         );
     }
-    #[cfg(unix)]
+    // O_PATH is Linux-only (rustix has no `OFlags::PATH` on macOS).
+    #[cfg(target_os = "linux")]
     #[test]
     fn ac1_s121_list_entries_other_error_is_io_naming_directory() {
         use rustix::fs::{Mode, OFlags, open};
