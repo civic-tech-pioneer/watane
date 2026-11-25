@@ -265,8 +265,8 @@ in its place, as the cause of a `DistError::Io` (NO-14). Its path is `your full 
 when the net error names a full machine or none (`Refused`, `Unreachable`, `Timeout`,
 `TooLarge`, `BadObject`, `NotServed`, `NoFullMachine`; `node <short> refused: not_allowed`,
 `no full machine is reachable`) and `this machine` for any other (`NotTaken`, `Io`,
-`Corrupt`, ...), whose cause is net's text as it is, without a node's key or a temporary's
-path. A web host that has the release still wins: the fetch then succeeds. The package's
+`Corrupt`, ...), whose cause is net's text as it is (`NotTaken`'s without its leading
+`this machine`), without a node's key or a temporary's path. A web host that has the release still wins: the fetch then succeeds. The package's
 error comes before the channel's. Any other dist error (`Compromised`, `Withdrawn`,
 `BadKey`, `NoIdentity`, a web host's `Network`/`Http`/`BadLink`) is returned as it is.
 

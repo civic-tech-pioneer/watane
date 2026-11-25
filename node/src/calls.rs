@@ -40,11 +40,13 @@ fn cause_or(cause: NetCause, error: DistError) -> DistError {
                     | NetError::NotServed { .. }
                     | NetError::NoFullMachine
             );
+            // the path already names this machine: NotTaken's text without its own prefix
             let text = net.to_string();
             let text = match net {
                 NetError::NotTaken { .. } => text
                     .strip_prefix("this machine ")
-                    .map_or(text.clone(), str::to_owned),
+                    .unwrap_or(&text)
+                    .to_owned(),
                 _ => text,
             };
             DistError::Io {
@@ -409,10 +411,12 @@ mod tests {
             path: "p".into(),
             cause: "x".into(),
         };
-        assert_eq!(
-            path(cause_or(kept(Err(io)), none())),
-            std::path::Path::new("this machine")
-        );
+        let io_text = io.to_string();
+        let got = cause_or(kept(Err(io)), none());
+        // net's text as it is: node adds no key and no path (AC4)
+        let source = std::error::Error::source(&got).unwrap().to_string();
+        assert_eq!(source, io_text);
+        assert_eq!(path(got), std::path::Path::new("this machine"));
         let taken = NetError::NotTaken {
             channel,
             cause: "no room".into(),
