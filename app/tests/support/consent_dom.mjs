@@ -111,6 +111,16 @@ if (process.argv[2] === 's82') {
     target:{name:'Notes',version:'1.0.0',publisher:null},users:[],grant:{short,text:exact}});
   assert.ok(main.textContent.includes(short));
   assert.ok(main.textContent.includes(exact));
+} else if (process.argv[2] === 's118') {
+  const storage = 'Keep its own data on this device';
+  await load({kind:'install',mods:[{name:'Notes',version:'1.0.0',local:'notes',publisher:null,uses:[],
+    grants:[{key:'storage',kind:'storage',text:storage,granted:true,new:false,kept:true},
+      {key:'http:example.com',kind:'http',text:'Connect to example.com',granted:true,new:true}]}]});
+  const labels = all(main).filter(node => node.tagName === 'label');
+  assert.equal(labels.length, 2);
+  assert.equal(labels[0].textContent.trim(), `Allow: ${storage} · data kept from before`);
+  assert.ok(!labels[0].textContent.includes('· new'));
+  assert.equal(labels[1].textContent.trim(), 'Allow: Connect to example.com · new');
 } else if (process.argv[2] === 'main') {
   for (const becomes_main of [true, false, undefined]) {
     await load({kind:'install',by_program:false,mods:[{name:'Desk',version:'1.0.0',local:'desk',publisher:null,

@@ -447,6 +447,11 @@ fn ac1_s81_library_main_marker_dom() {
 }
 
 #[test]
+fn ac3_s118_install_consent_labels_kept_data_dom() {
+    dom_test("tests/support/consent_dom.mjs", "s118");
+}
+
+#[test]
 fn ac2_s81_install_main_explanation_dom() {
     dom_test("tests/support/consent_dom.mjs", "main");
 }

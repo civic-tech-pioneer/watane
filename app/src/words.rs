@@ -219,6 +219,7 @@ pub fn grant_line_bound(
         text,
         granted,
         new,
+        kept: false,
     }
 }
 
