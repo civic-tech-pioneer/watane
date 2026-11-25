@@ -1,13 +1,12 @@
-//! The loopback transport for a checked OpenAI request in a dev preview (TECHNICAL 19.9).
+//! The loopback transport for a checked scripted request in a dev preview (TECHNICAL 19.9).
 
-use super::{Bytes, End, Full, Job, ServerName, TokioIo, failed, token_header};
+use super::{Bytes, End, Full, Job, RequestAccount, ServerName, TokioIo, failed, token_header};
 use crate::Mode;
+use hyper::header::HeaderValue;
 
 /// The ordinary HTTPS job owns request validation, registration, cancellation and response handling.
 pub(super) fn run(job: &Job) -> bool {
-    if !matches!(job.request.account, Some(super::RequestAccount::OpenAi))
-        || !matches!(job.mode, Mode::Preview)
-    {
+    if job.request.account.is_none() || !matches!(job.mode, Mode::Preview) {
         return false;
     }
     let Some(host) = job.weak.upgrade() else {
@@ -16,9 +15,21 @@ pub(super) fn run(job: &Job) -> bool {
     let Some(fake) = host.home.scripted_openai.get() else {
         return false;
     };
-    let address = fake.address;
+    let (address, authorization) = match job.request.account {
+        Some(RequestAccount::OpenAi) => (fake.address, token_header(&fake.token)),
+        Some(RequestAccount::Judge(_)) => {
+            let Some((address, _)) = &fake.judge else {
+                return false;
+            };
+            let authorization = job
+                .judge_authorization
+                .clone()
+                .unwrap_or_else(|| Err(failed("scripted judge has no checked authorization")));
+            (*address, authorization.map_err(End::With))
+        }
+        None => return false,
+    };
     let connector = fake.connector.clone();
-    let token = fake.token.clone();
     // Do not keep the host alive for the duration of a blocked stream.
     drop(host);
 
@@ -26,7 +37,7 @@ pub(super) fn run(job: &Job) -> bool {
         .enable_all()
         .build()
     {
-        Ok(runtime) => runtime.block_on(exchange(job, address, connector, token)),
+        Ok(runtime) => runtime.block_on(exchange(job, address, connector, authorization)),
         Err(_) => Err(End::With(failed("cannot start a runtime for https-stream"))),
     };
     match outcome {
@@ -40,23 +51,27 @@ async fn exchange(
     job: &Job,
     address: std::net::SocketAddrV4,
     connector: tokio_rustls::TlsConnector,
-    token: String,
+    authorization: Result<HeaderValue, End>,
 ) -> Result<serde_json::Value, End> {
     if job.stopped() {
         return Err(End::Stop);
     }
-    let authorization = token_header(&token)?;
+    let authorization = authorization?;
+    let account = match job.request.account {
+        Some(RequestAccount::Judge(_)) => "scripted judge",
+        _ => "scripted OpenAI",
+    };
     let connect = async {
         let tcp = tokio::net::TcpStream::connect(address)
             .await
-            .map_err(|err| format!("cannot connect to scripted OpenAI: {err}"))?;
+            .map_err(|err| format!("cannot connect to {account}: {err}"))?;
         let _ = tcp.set_nodelay(true);
         let name = ServerName::try_from(job.request.name.clone())
-            .map_err(|_| "invalid scripted OpenAI TLS name".to_owned())?;
+            .map_err(|_| format!("invalid {account} TLS name"))?;
         connector
             .connect(name, tcp)
             .await
-            .map_err(|err| format!("scripted OpenAI TLS failed: {err}"))
+            .map_err(|err| format!("{account} TLS failed: {err}"))
     };
     let tls = job
         .within(connect)

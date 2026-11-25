@@ -1768,9 +1768,10 @@ writes only to stderr:
 ```
 
 In a participant home, `mcp` and `token` are `null`. `page` is `null` for a
-mod without a page. A failure before the ready line prints
+mod without a page. A scripted judge preview also gives its `judge_origin`
+(19.9). A failure before the ready line prints
 `{"watane":1,"error":<HostError JSON>}` and exits 1. `watane_host::Ready`
-(Serialize, Deserialize) is the type of the ready line, for `dev`.
+(Serialize, Deserialize) is the common part of the ready line, for `dev`.
 
 SIGINT or SIGTERM: stop accepting, let running requests end for up to 5 s
 (routers 4 s, then connections and blocking work until 5 s in all), remove
@@ -3544,7 +3545,8 @@ checks of the table above are made at the call.
   - Identity: the host uses the identity of the mod executing
     `https-stream.start` (`<publisher>/<slug>`, with the same form as
     `caller.identity()`), compared exactly. The unchecked provider, another
-    publisher's mod or a preview gets `no-account`.
+    publisher's mod gets `no-account`. A preview gets `no-account` unless
+    the scripted judge of 19.9 is configured.
   - Value: `account` is exactly `openai` or `judge`; any other value is
     refused `destination`.
   - Binding: the OpenAI account origin `https://api.openai.com` is refused
@@ -3565,6 +3567,8 @@ checks of the table above are made at the call.
     call returns the stream, which ends `no-account`. At apply the host reads
     the account again and checks the binding again; a key that was removed
     or now names another origin ends the stream `gone`, before a byte leaves.
+    A development preview reads its fixture account at the same two points
+    in place of consulting `AccountSource::judge` (19.9).
   - The parse: `judge_origin(text)` (below) parses an entered origin, and the
     host applies the same rule to the stored origin at each check. It accepts
     `https://host[:port]` and a lone trailing `/`; it refuses any other
@@ -3587,8 +3591,8 @@ checks of the table above are made at the call.
     matching, consented `Http` grant. This allows a participant to use a
     self-hosted judge.
 
-The host reaches tokens, keys and the `claude` path only through this
-in-process trait, which the app implements and hands over through
+In a participant home, the host reaches tokens, keys and the `claude` path
+only through this in-process trait, which the app implements and hands over through
 `Confirm::accounts` (12.1), on the `Confirm` it gives to `Host::open`
 (`Mode::Home { app }`); `Host::open` takes nothing new. No mod sees a
 credential.
@@ -3986,6 +3990,18 @@ review r1 of S103 a gate in place of a sleep.
   errors from configuring or starting the fake with the prefix
   `scripted OpenAI:`.
 
+  A script with at least one play also configures a preview judge account.
+  The host takes the judge's nonzero IPv4 localhost socket and its origin
+  `https://judge.test` from the same program's ready line. It takes the
+  fixture key from `judge_key` or uses `watane-preview-judge`. The installed
+  mod still needs a matching granted `Http` host and its request passes
+  19.4 at the call and at apply. Only the account lookup uses the fixture
+  instead of an app account. The request retains the checked host for
+  TLS and HTTP and uses only the program's TLS root and loopback socket.
+  A failure never falls back to a public address. The host's startup ready
+  JSON exposes `judge_origin` when this binding exists. It omits the field
+  when there are no plays and never includes the fixture key.
+
 ```rust
 #[cfg(all(unix, watane_dev_profile, debug_assertions))]
 impl Host {
@@ -3995,6 +4011,13 @@ impl Host {
         root_pem: &str,
         token: String,
     ) -> Result<(), HostError>;
+    pub fn set_scripted_responses(
+        &self,
+        address: std::net::SocketAddrV4,
+        root_pem: &str,
+        token: String,
+        judge: Option<(std::net::SocketAddrV4, JudgeAccount)>,
+    ) -> Result<Option<String>, HostError>; // the canonical judge origin, when configured
 }
 ```
 
