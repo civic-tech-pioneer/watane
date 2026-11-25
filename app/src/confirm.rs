@@ -253,7 +253,13 @@ fn request_view(
                 .grants
                 .iter()
                 .map(|g| {
-                    words::consent_grant_line(g, &e.binds, parties, true, e.new_grants.contains(g))
+                    let new = e.new_grants.contains(g);
+                    let mut line = words::consent_grant_line(g, &e.binds, parties, true, new);
+                    // S118: a reinstall after `Keep data` finds its data again.
+                    if e.kept_state && new && matches!(g, watane_host::watane_pkg::Grant::Storage) {
+                        (line.new, line.kept) = (false, true);
+                    }
+                    line
                 })
                 .collect(),
             uses: e
@@ -1133,6 +1139,54 @@ mod tests {
             .unwrap();
         host.install(plan, Requester::App).await.unwrap();
         assert!(open_page_target(&host, &broker, &LocalName::parse("echo").unwrap()).is_none());
+    }
+    #[test]
+    fn ac1_ac2_kept_state_marks_only_the_storage_line_kept() {
+        let http = Grant::Http {
+            host: "example.com".parse().unwrap(),
+        };
+        let entry = |kept_state: bool| PlanEntry {
+            local: LocalName::parse("notes").unwrap(),
+            identity: "local/notes".into(),
+            slug: "notes".parse().unwrap(),
+            name: "notes".into(),
+            summary: String::new(),
+            version: "1.0.0".parse().unwrap(),
+            publisher: None,
+            package: "00".repeat(32).parse().unwrap(),
+            release: None,
+            origin: None,
+            change: Change::New,
+            grants: vec![Grant::Storage, http.clone()],
+            new_grants: vec![Grant::Storage, http.clone()],
+            binds: vec![],
+            kept_state,
+            providers: vec![],
+        };
+        let lines = |kept_state: bool| {
+            let request = InstallRequest {
+                entries: vec![entry(kept_state)],
+                requester: Requester::LocalApi,
+            };
+            let consent::Request::Install { mut mods, .. } =
+                request_view(&request, &Parties::new(), None)
+            else {
+                panic!("install expected")
+            };
+            mods.remove(0).grants
+        };
+        let kept = lines(true);
+        assert_eq!((kept[0].new, kept[0].kept), (false, true), "AC1 storage");
+        assert_eq!((kept[1].new, kept[1].kept), (true, false), "AC1 http");
+        let fresh = lines(false);
+        assert_eq!((fresh[0].new, fresh[0].kept), (true, false), "AC2");
+        assert!(
+            serde_json::to_value(&fresh[0])
+                .unwrap()
+                .get("kept")
+                .is_none()
+        );
+        assert_eq!(serde_json::to_value(&kept[0]).unwrap()["kept"], true);
     }
     #[test]
     fn regress_s113_repeated_call_words_show_exact_grants() {

@@ -183,6 +183,8 @@ pub struct GrantLine {
     pub text: String,
     pub granted: bool,
     pub new: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub kept: bool,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

@@ -111,7 +111,7 @@ try {
           input.type = 'checkbox';
           input.checked = true;
           label.append(input);
-          text(label, 'span', `Allow: ${grantText(grant)}${grant.new ? ' · new' : ''}`);
+          text(label, 'span', `Allow: ${grantText(grant)}${grant.kept ? ' · data kept from before' : grant.new ? ' · new' : ''}`);
           section.append(label);
           grants.push({input, local: mod.local, key: grant.key});
         }
