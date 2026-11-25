@@ -188,7 +188,7 @@ mod tests {
             "\"ca_pem\"",
             "\"judge_addr\":\"unused\",\"judge_origin\":{},\"ca_pem\"",
         );
-        assert!(read_ready(format!("{unused_judge}\n").as_bytes()).is_ok());
+        read_ready(format!("{unused_judge}\n").as_bytes()).expect("unused judge fields");
         assert!(read_ready(ready.as_bytes()).is_err());
         assert!(read_ready(format!("{}\n", ready.replace(":1,", ":2,")).as_bytes()).is_err());
         assert!(read_ready(format!("{}{ready}\n", " ".repeat(64 * 1024)).as_bytes()).is_err());
