@@ -613,7 +613,7 @@ impl Core {
             return Err(CmdError::new(
                 "bad_input",
                 format!(
-                    "This provider cannot reach {origin}. Choose an origin at one of its granted hosts ({}).",
+                    "This provider cannot reach {origin}. Choose one of the addresses this provider can reach ({}). The port must match too.",
                     hosts.join(", ")
                 ),
             ));

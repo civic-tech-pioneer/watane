@@ -403,7 +403,7 @@ pub(crate) const CHATGPT_CALLBACK_PAGE: &str = "You can return to watane.";
 pub(crate) fn judge_origin(origin: Option<&str>) -> String {
     match origin {
         Some(origin) => format!("The key will go only to {origin}."),
-        None => "Enter an HTTPS origin, for example https://judge.example, without a path, query or fragment.".into(),
+        None => "Enter an HTTPS origin such as https://judge.example. Leave out the username, any trailing dot in the host, and any path, query or fragment.".into(),
     }
 }
 
@@ -484,11 +484,11 @@ mod tests {
             "https://judge.example.",
         ] {
             assert!(watane_host::judge_origin(text).is_err(), "{text}");
-            assert_eq!(
-                judge_origin(None),
-                "Enter an HTTPS origin, for example https://judge.example, without a path, query or fragment."
-            );
         }
+        assert_eq!(
+            judge_origin(None),
+            "Enter an HTTPS origin such as https://judge.example. Leave out the username, any trailing dot in the host, and any path, query or fragment."
+        );
     }
 
     #[test]
