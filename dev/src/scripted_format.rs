@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// What the Responses origin answers to `POST /v1/responses`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Reply {
     Sse(Vec<SseEvent>),
     Status {
@@ -26,7 +26,7 @@ pub enum Reply {
 
 /// One event of an event stream, sent as one write.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum SseEvent {
     Delta(String),
     ToolCalls(usize),
@@ -43,7 +43,7 @@ pub enum SseEvent {
 
 /// What the judge origin does with a request.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Play {
     Safe(Vec<String>),
     Unsafe(Vec<String>),
@@ -64,6 +64,7 @@ pub enum Play {
 
 /// The standalone program and maker preview share the same script schema.
 #[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct Script {
     pub token: Option<String>,
     pub models: Option<Vec<String>>,

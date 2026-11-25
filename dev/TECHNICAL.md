@@ -91,6 +91,8 @@ claude-codes = { version = "=2.1.330", default-features = false, features = ["ty
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls-manual-roots"] }   # the https client of the tests of 18.3 (build it with `.no_proxy()`)
 rustls-native-certs = "0.8"                                       # the system roots a test client trusts alone (DEV-S-61)
+watane-host = { path = "../host", features = ["test-net"] }        # scripted_host.rs routes the host's test connection to the fake
+tokio = { version = "1", default-features = false, features = ["rt"] }   # the runtime for Host::install
 
 [[bin]]
 name = "fake-watane"
@@ -2365,14 +2367,14 @@ rules belong to 15.1.
 | DEV-S-56 | `fake_claude::ac5_lines_no_step_awaits_exit_70`, `fake_claude::ac5_expect_user_contains_mismatch_exits_70` | child process |
 | DEV-S-57 | `fake_claude::ac6_ask_check_cancel_and_answers`, `fake_claude::ac6_sleep_exit_and_crash`, `fake_claude::ac6_hang_ignores_stdin_until_killed` | child process |
 | DEV-S-58 | `scripted::ac3_sse_events_each_one_write`, `scripted::ac4_token_and_whole_requests`; `scripted_host::ac1_case_3_a_scripted_turn_streams_into_the_mod_with_the_accounts_token` | https client |
-| DEV-S-59 | `scripted::ac2_script_in_order_last_repeats`, `scripted::ac3_status_usage_limit_redirect_raw`, `scripted::ac3_cut_has_no_completed`, `scripted::ac3_reset_and_stall`; `scripted_host::ac2_case_19_a_redirect_is_an_item_and_is_not_followed`, `ac2_case_19_a_usage_limit_and_a_server_error_arrive_as_items_and_the_stream_closes`, `ac2_case_19_stall_ends_idle_timeout_cut_ends_closed_and_reset_ends_failed`, `ac2_case_19_every_refused_form_reaches_no_server` | https client |
+| DEV-S-59 | `scripted::ac2_script_in_order_last_repeats`, `scripted::ac3_status_usage_limit_redirect_raw`, `scripted::ac3_cut_has_no_completed`, `scripted::ac3_reset_and_stall`; `scripted_host::ac2_case_19_a_redirect_is_an_item_and_is_not_followed`, `ac2_case_19_a_usage_limit_and_a_server_error_arrive_as_items_and_the_stream_closes`, `ac2_case_19_stall_ends_idle_timeout_cut_ends_closed_and_reset_ends_failed` | https client |
 | DEV-S-60 | `scripted::ac2_default_script_models_and_404`; `scripted_host::ac2_case_19_models_with_the_account_streams_the_models_answer` | https client |
 | DEV-S-61 | `scripted::ac1_two_origins_and_one_authority` | https client |
-| DEV-S-62 | `scripted::ac6_judge_plays`, `scripted::ac7_judge_counts_every_request` | https client; planned: dev stage 16 |
-| DEV-S-63 | `scripted::ac7_judge_counts_every_request`, `scripted::ac8_judge_key` | https client; planned: dev stage 16 |
+| DEV-S-62 | `scripted::ac5_judge_plays` | https client |
+| DEV-S-63 | `scripted::ac5_judge_key_and_repeat` | https client |
 | DEV-S-64 | `preview::unix::tests::ac7_link_writes_default_script_once_and_keeps_the_makers`, `preview::unix::tests::ac7_link_is_replaced_and_copied_where_linking_fails`, `preview::unix::tests::ac7_find_fake_claude_reads_the_variable`, `preview::unix::tests::ac7_spawn_arguments_with_and_without_the_fake`, `doctor::tests::ac7_fake_claude_field_and_warning`; `fake_claude::ac7_serve_passes_the_flag_to_the_host` (slow) | unit: temp folder, literal script and argument vector; slow: the full `serve` against `fake-watane` |
 | DEV-S-67 | `scripted_preview::*`, `preview::unix::tests::s114_restart_*` | CLI diagnostics, loopback scripted preview, and the home lock across shutdown |
-| DEV-S-65 | `scripted::ac6_program_default_and_log` | child process |
+| DEV-S-65 | `scripted::ac6_program_default_and_log`, `scripted::ac6_program_ends_on_sigterm` (Unix) | child process |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
 
@@ -2590,19 +2592,17 @@ lines and bytes written in the test.
 | `fake_claude::ac4_log_holds_arguments_environment_and_stdin_in_order` | `fake-claude.log` holds the arguments, the environment variables and each stdin line, in order | file compared with literal lines |
 | `preview::unix::tests::ac7_*` (4 tests), `fake_claude::ac7_serve_passes_the_flag_to_the_host` (slow) | `serve` links `<P>/claude/fake-claude` (a copy where linking fails), writes the default script once and never overwrites one that exists, and starts the host with `--fake-claude <P>/claude/fake-claude` after `--preview`; without the program, the warning `preview.fake_claude_missing` and no flag; `WATANE_FAKE_CLAUDE` set to a missing file gives the same warning | unit: temp folder, literal script and argument vector; slow: `fake-watane`'s `args.json` |
 | `doctor::tests::ac7_fake_claude_field_and_warning` | `doctor --json` has `fake_claude` set when found, and `null` with the warning `preview.fake_claude_missing` and no error when not | in-process; literal JSON |
-| `scripted::ac1_sse_and_usage` | an `Sse` reply with `Delta`, `ToolCalls(33)` and `Completed {input_tokens, output_tokens}` gives the lines of 18.3, one write each; `Failed {code: "usage_limit_reached"}` gives `response.failed`; `UsageLimit` gives status 429 with the body of a usage limit; `Cut` ends with no `response.completed` | https client; literal bytes |
-| `scripted::ac2_errors_redirect_reset_stall` | `Status 500`, `Status 429` with no usage body, `Redirect`, `Reset` and `Stall` act as written; the script is consumed in order and the last reply repeats | https client; literal statuses and timing |
-| `scripted::ac3_models_and_token` | `GET /v1/models` answers the slugs; another path or method is 404 and recorded; a wrong or missing token is 401 | https client; literal bodies |
-| `scripted::ac4_records_requests` | each request is recorded whole, in arrival order, with its headers and body bytes | https client; literal request |
-| `scripted::ac5_trust_only_ca` | a client that trusts `ca_pem()` connects; a client with the system roots refuses the certificate; the server listens on `127.0.0.1` only | https client; error class |
-| `scripted::ac6_judge_plays` | `Safe`, `Unsafe`, `Unsure` give the verdict body of 18.3; `Down` resets after the request; `Slow` waits `ms`; `Unreadable` gives status 200 and a body that is not JSON; `Redirect` gives 307; `Raw` gives the bytes | https client; literal bodies |
-| `scripted::ac7_judge_counts_every_request` | `count()` equals the requests received for each play, including a wrong key (401), `Down` and `Redirect`; a request that never connects does not count; the redirect target, the Responses origin, records nothing when a client does not follow | https client; literal numbers |
-| `scripted::ac9_program_line_and_log` | the program `scripted-responses --script f --log d` prints exactly one JSON line with both addresses, `judge_origin` and `ca_pem`; the addresses accept TLS that trusts the PEM; each request writes the file `d/responses/1.json` or `d/judge/1.json` with the fields of 18.3; SIGTERM ends it | child process; literal fields |
-| `scripted::ac8_judge_key` | a wrong or missing key is 401 and counted; a right key reaches the play; the request the server saw holds the key only as `Authorization` | https client |
+| `scripted::ac2_default_script_models_and_404`, `scripted::ac4_token_and_whole_requests`, `scripted::ac2_empty_scripts_return_json_errors` | the default stream, models, token checks, request recording, and JSON bodies for built-in 401, 404 and 500 errors | HTTPS client |
+| `scripted::ac2_script_in_order_last_repeats`, `scripted::ac3_sse_events_each_one_write`, `scripted::ac3_cut_has_no_completed`, `scripted::ac3_status_usage_limit_redirect_raw`, `scripted::ac3_reset_and_stall` | sequence and repeat, the events and statuses of 18.3, redirect, reset, and stall | HTTPS client and literal responses |
+| `scripted::tests::ac3_each_event_is_one_write_and_cut_ends_it` | each event write and the boundary of a cut | in-process |
+| `scripted::ac4_chunked_body_is_recorded_whole`, `scripted::tests::ac4_chunk_extensions_and_split_reads_preserve_the_body` | whole request bodies across chunk framing, including a chunk with an extension and a separate body read | HTTPS client and parser input |
+| `scripted::ac1_two_origins_and_one_authority`, `scripted::ac7_dropping_the_server_closes_both_listeners` | certificate trust and loopback binding on both origins, and both listeners close after drop | HTTPS client and TCP connections |
+| `scripted::ac5_judge_plays`, `scripted::ac5_judge_key_and_repeat` | verdicts, slow and failed plays, redirect, raw reply, key authorization and request counts | HTTPS client and literal JSON values |
+| `scripted::ac6_program_default_and_log`, `scripted::ac6_program_script_file`, `scripted::ac6_program_refuses_unknown_script_fields`, `scripted::ac6_program_ends_on_sigterm` (Unix) | the startup line's exact key set, both TLS origins and logs, a supplied script, unknown field errors, and termination | child process |
+| `scripted_host::ac1_case_3_a_scripted_turn_streams_into_the_mod_with_the_accounts_token`, `scripted_host::ac2_case_19_*`, `scripted_host::ac3_*` | the first consent notice and later streams under a saved consent, account binding and stream outcomes | real host and scripted Responses origin |
 
-The tests that need the host (the account binding, the judge call, a
-preview that offers the fakes) are the host's and the app's (host 19, app
-19), and the stages of agentic-harness TECHNICAL 17 B, D and E.
+Other tests that need the host or app are in their own suites (host 19,
+app 19) and in agentic-harness TECHNICAL 17 B, D and E.
 
 ## 16. Build plan
 
@@ -2630,7 +2630,7 @@ preview that offers the fakes) are the host's and the app's (host 19, app
 | 12 (step 9) | collect fakes and answers in contract tests (8.1); template `AGENTS.md` lines: an own-interface function with a `list` result is a collect, and how to fake it and answer one | host stage 10: collect fakes in `Harness` | none; the stage waits for host | S-52 passes; dev's part of J9 |
 | 13 (step 10) | the `watane:host/manage` fake key and the `manages` step field (8.1), with `manages` in the step failure report as `emits` is; the template `AGENTS.md` lines of section 9 for a manager; `check` copies the new `HOST_WIT` (4.1, 5.1) | host stage 11: manage fakes and `Outcome.manages` in `Harness` | none; the stage waits for host | S-53 passes; dev's part of J10 |
 | 14 (step 11, stage B) | the feature `fake-claude` and its manifest (1.1); `src/bin/fake-claude.rs` (18.2); the preview part of 18.4: `serve` steps of 9.3, the warning and the `doctor` field of 2.2 and 9.1 | host A2: `claude-code` start, the control protocol (host 19.3), `--fake-claude` (host 19.9); pkg stage 12 (grants) | none; the stage waits for host | DEV-S-54 to DEV-S-57 and DEV-S-64 pass; agentic-harness stage B uses it |
-| 15 (step 11, stage D) | `src/scripted.rs` (18.3): the Responses routes, usage limits, errors, tool calls, models; the test authority; the program `scripted-responses` | host A4: `https-stream`, the account `openai` (host 19.4), `test-net` (host 19.9) | none; the stage waits for host | DEV-S-58 to DEV-S-61 and DEV-S-65 pass; agentic-harness stage D uses it |
+| 15 (step 11, stage D, built in S111) | `src/scripted.rs` (18.3): the Responses routes, usage limits, errors, tool calls, models; the test authority; the program `scripted-responses` | host A4: `https-stream`, the account `openai` (host 19.4), `test-net` (host 19.9) | real host with `test-net` for `scripted_host`; HTTP clients exercise the fake directly | DEV-S-58 to DEV-S-61 and DEV-S-65; agentic-harness stage D uses it |
 | 16 (step 11, stage E) | the judge origin of `scripted.rs` and of the program (18.3) | host A5: the account `judge` (host 19.4); stage 15 | none; the stage waits for host | DEV-S-62 and DEV-S-63 pass; agentic-harness stage E uses it |
 
 ## 17. Questions for spec/
@@ -2899,7 +2899,7 @@ and serves until it is killed (SIGTERM). `--script` is a JSON file
 whose `Reply`, `SseEvent` and `Play` values are the serde forms of the types
 above (externally tagged, kebab-case names; the default script is one `Sse`
 with `Delta("ok")` and `Completed`, and one `Safe([])`). The program and
-preview validation use the same `scripted_format::Script` type. With `--log`, it
+preview validation use the same `scripted_format::Script` type and refuse unknown fields in the script and its nested objects. With `--log`, it
 writes each request it receives as `<dir>/responses/<n>.json` or
 `<dir>/judge/<n>.json` (`n` from 1: `{"method","path","headers","body_b64"}`),
 so a test reads `requests()` and `count()` as the files of the folder.
@@ -2919,8 +2919,8 @@ with kebab-case variant names and the field names as written above, e.g.
 - `Raw(line)`: the text as given, nothing added (the test writes its own `\n\n`). `Cut` ends the body there; later events are not sent.
 - `UsageLimit{resets_in_s}`: 429, `{"error":{"type":"usage_limit_reached","code":"usage_limit_reached","message":"The usage limit has been reached","plan_type":"plus","resets_in_seconds":<resets_in_s>}}`.
 - `Status{code,body}`: that status with `body` and `content-type: application/json`. `Raw{..}`: the status line, the headers and the body exactly as given (no length added: the close ends the body).
-- A verdict body is `{"reasons":[...],"verdict":"safe"}` (JSON, keys in this order).
-- The 401 of a wrong token or key, the 404 and a script gone empty are `application/json` texts without further shape.
+- A verdict body is a JSON object such as `{"verdict":"safe","reasons":[...]}`. Clients read fields by name.
+- The 401 of a wrong token or key, the 404 of an unknown route, and the 500 of an empty script use `application/json` with `{"error":{"message":"<text>"}}`.
 - The log of `--log` is `{"method","path","headers":[["name","value"],...],"body_b64"}` in the order received, written when the request is recorded.
 
 **Responses origin.** It answers `POST /v1/responses` with the next `Reply`
