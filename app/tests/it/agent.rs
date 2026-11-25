@@ -466,6 +466,9 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
             json!(field), json!(value)
         ));
     };
+    app.eval("main", "window.__badJudge = null; window.__TAURI_INTERNALS__.invoke('judge_set', {local:'claude', key:'test-key-only', origin:'https://judge.test/v1'}).then(() => window.__badJudge = 'success', error => window.__badJudge = error.code); null");
+    until(&app, "main", "window.__badJudge !== null");
+    assert_eq!(app.eval("main", "window.__badJudge"), "bad_request");
     enter(".judge-key", "test-key-only");
     enter(".judge-origin", "https://judge.test/v1");
     until(
@@ -517,6 +520,15 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
     until(&app, "main", &format!("!!({query})('.judge-replace')"));
     assert!(path.exists());
     assert!(!stray.exists());
+    click(&app, "section[data-local=claude] .judge-remove");
+    until(&app, "main", &format!("!({query})('.judge-replace')"));
+    assert!(!path.exists());
+    invoke(
+        &app,
+        "judge_set",
+        json!({"local":"claude","key":"fresh","origin":"https://judge.test"}),
+    );
+    assert!(path.exists());
     invoke(
         &app,
         "mod_remove",
