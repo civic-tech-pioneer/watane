@@ -1373,7 +1373,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Protects: *guard* (item 1), else *polish*.
 - [~] **S118 (upkeep) host's flaky consent tests, kept storage in the install plan, and S114's polish.** (in flight,
   cloud, builder claude, reviewer codex; rule 3: last two S117 codex, S116 codex; the upkeep lane, sketched 2026-11-25
-  by deputy-3 from Leftovers once S114 and S117 freed `host/` and `dev/`.) Outcomes, each item's check: (1) (guard)
+  by deputy-3 from Leftovers once S114 and S117 freed `host/` and `dev/`; routine `trig_01VFy6xjSA76FBaYDyGtKzLH`, fires 01:59 UTC.) Outcomes, each item's check: (1) (guard)
   `consent::ac5_a_consent_given_through_one_provider_is_not_used_through_another` (`host/tests/it/consent.rs:533`, seen
   twice) and `https_stream::ac5_a_refused_consent_ends_the_stream_consent_refused` stop flaking: name each race, fix it
   in host if a person could hit it, else in the test; a CI job on the branch runs both 20 times on each OS, all green;
