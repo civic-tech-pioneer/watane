@@ -482,6 +482,14 @@ fn bearer(key: &str) -> Option<HeaderValue> {
     Some(value)
 }
 
+fn token_header(token: &str) -> Result<HeaderValue, End> {
+    bearer(token).ok_or_else(|| {
+        End::With(failed(
+            "account unavailable: the token is not a header value",
+        ))
+    })
+}
+
 /// The thread of one stream (19.4).
 #[derive(Debug)]
 pub(crate) struct Job {
