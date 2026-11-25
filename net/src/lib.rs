@@ -39,7 +39,11 @@ use zeroize::Zeroizing;
 const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_millis(500);
 /// How long a teardown waits for the blob store to close its database; a
 /// longer wait than `CLOSE_WAIT`, for a reopen of the same folder follows.
+#[cfg(not(test))]
 const STORE_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+/// Let the forced unit-test stall reach the deadline quickly.
+#[cfg(test)]
+const STORE_WAIT: std::time::Duration = std::time::Duration::from_millis(200);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Class {
