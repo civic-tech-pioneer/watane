@@ -465,9 +465,9 @@ impl Core {
             .iter()
             .map(|m| (m.identity.clone(), m.name.clone()))
             .collect();
-        Ok(self
-            .host
-            .get(&name)
+        Ok(mods
+            .into_iter()
+            .find(|m| m.local == name)
             .map(|m| self.view(m, &channels, &names)))
     }
     pub fn enable(&self, local: &str) -> Result<(), CmdError> {
