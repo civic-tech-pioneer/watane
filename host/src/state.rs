@@ -406,34 +406,57 @@ impl State {
         self.commit_host(txn).map_err(CallError::internal)?;
         Ok(())
     }
-    /// Holds no lock across `begin_write`: a depth-0 commit takes the catalog lock inside its
-    /// write transaction, and a call start reads a timer row under the catalog lock (19.6).
-    pub fn delete(&self, identity: &str) -> Result<(), HostError> {
-        let Some(db) = self
-            .database(false)
-            .map_err(|e| HostError::Internal(e.message))?
-        else {
-            return Ok(());
-        };
+    /// Deletes the data of the identity and runs `change` in the same write transaction, after
+    /// the delete. Lock order, everywhere: the redb writer, then the catalog mutex (a depth-0
+    /// commit takes the catalog lock inside its write transaction, and a call start reads a
+    /// timer row under the catalog lock, 19.6), so the caller holds no lock across this call
+    /// and `change` takes the catalog lock itself and may return its guard to the caller.
+    /// The outer error is `change`'s: the transaction is dropped, nothing is deleted. The inner
+    /// result is the delete's: `change` has run and stands. Without a database `change` runs alone.
+    pub fn delete_within(
+        &self,
+        identity: &str,
+        change: &mut dyn FnMut() -> Result<(), HostError>,
+    ) -> Result<Result<(), HostError>, HostError> {
         let id = blake3::hash(identity.as_bytes()).to_hex()[..32].to_string();
-        let txn = db
-            .begin_write()
-            .map_err(|e| HostError::Internal(e.to_string()))?;
+        let opened = self
+            .database(false)
+            .map_err(|e| HostError::Internal(e.message))
+            .and_then(|db| {
+                db.map(|db| {
+                    let txn = db
+                        .begin_write()
+                        .map_err(|e| HostError::Internal(e.to_string()))?;
+                    self.delete_in(&txn, &id)?;
+                    Ok(txn)
+                })
+                .transpose()
+            });
+        match opened {
+            Ok(Some(txn)) => {
+                change()?;
+                Ok(self
+                    .commit_host(txn)
+                    .map_err(|e| HostError::Internal(e.to_string())))
+            }
+            Ok(None) => {
+                change()?;
+                Ok(Ok(()))
+            }
+            Err(e) => {
+                change()?;
+                Ok(Err(e))
+            }
+        }
+    }
+    fn delete_in(&self, txn: &redb::WriteTransaction, id: &str) -> Result<(), HostError> {
         txn.delete_table(TableDefinition::<&str, &[u8]>::new(&format!("s/{id}")))
             .map_err(|e| HostError::Internal(e.to_string()))?;
-        #[expect(
-            clippy::semicolon_outside_block,
-            reason = "the block ends the table borrow before txn.commit()"
-        )]
-        {
-            let mut sizes = txn
-                .open_table(SIZES)
-                .map_err(|e| HostError::Internal(e.to_string()))?;
-            sizes
-                .remove(id.as_str())
-                .map_err(|e| HostError::Internal(e.to_string()))?;
-        }
-        self.commit_host(txn)
+        let mut sizes = txn
+            .open_table(SIZES)
+            .map_err(|e| HostError::Internal(e.to_string()))?;
+        sizes
+            .remove(id)
             .map_err(|e| HostError::Internal(e.to_string()))?;
         Ok(())
     }
@@ -709,7 +732,7 @@ mod tests {
             .timers_removed("o", &std::collections::BTreeMap::new())
             .unwrap();
         assert_eq!(host(), 5);
-        state.delete("o").unwrap();
+        state.delete_within("o", &mut || Ok(())).unwrap().unwrap();
         assert_eq!(host(), 6);
         assert_eq!(state.stats.commits.load(Relaxed), 6);
     }

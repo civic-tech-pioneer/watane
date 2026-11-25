@@ -578,37 +578,45 @@ impl Host {
         let _call = lock
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        let mut catalog = self
-            .catalog
-            .lock()
-            .expect("lock poisoned: another thread panicked while holding it");
-        if !catalog
-            .mods
-            .iter()
-            .any(|m| &m.local == local && m.identity == identity)
-        {
-            return Err(HostError::NoSuchMod(local.to_string()));
-        }
-        let mut next = catalog.clone();
-        next.mods.retain(|m| &m.local != local);
-        next.components.remove(local);
-        next.bump_install(local);
-        for m in &mut next.mods {
-            m.binds.retain(|b| b.to != identity);
-        }
-        // A later mod under this local name reaches no agent until a new consent (4.4, S68).
-        next.drop_toolset_names(local);
-        next.relink(self.home(), self.is_preview())?;
-        next.save(self.home())?;
-        *catalog = next;
-        // The data goes before the catalog lock is released: a plan that sees the new generation
-        // never finds the data (4.2 step 6, 4.4). A failure is reported at the end.
-        let data = if delete_data {
-            self.state.delete(&identity)
-        } else {
+        // Lock order: the redb write transaction, then the catalog (a timer commit takes them in
+        // this order). The catalog lock is kept until the data is deleted, so a plan that sees
+        // the new generation never finds the data (4.2 step 6, 4.4).
+        let mut held = None;
+        let mut change = || -> Result<(), HostError> {
+            let mut catalog = self
+                .catalog
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it");
+            if !catalog
+                .mods
+                .iter()
+                .any(|m| &m.local == local && m.identity == identity)
+            {
+                return Err(HostError::NoSuchMod(local.to_string()));
+            }
+            let mut next = catalog.clone();
+            next.mods.retain(|m| &m.local != local);
+            next.components.remove(local);
+            next.bump_install(local);
+            for m in &mut next.mods {
+                m.binds.retain(|b| b.to != identity);
+            }
+            // A later mod under this local name reaches no agent until a new consent (4.4, S68).
+            next.drop_toolset_names(local);
+            next.relink(self.home(), self.is_preview())?;
+            next.save(self.home())?;
+            *catalog = next;
+            held = Some(catalog);
             Ok(())
         };
-        drop(catalog);
+        // A delete failure is reported at the end; the catalog commit stands.
+        let data = if delete_data {
+            self.state.delete_within(&identity, &mut change)?
+        } else {
+            change()?;
+            Ok(())
+        };
+        drop(held);
         // What protects authority runs first and does not depend on the folder: the streams
         // end, the timers that carry the removed mod are rewritten (4.4, 19.6). A failure is
         // reported at the end; the folder goes last.

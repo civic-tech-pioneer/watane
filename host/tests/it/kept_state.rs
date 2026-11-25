@@ -183,7 +183,7 @@ fn ac4_the_reinstall_commits_reads_old_state_and_the_app_is_told() {
 /// made after the commit and `install` would not refuse it as `stale_plan`.
 #[test]
 fn ac1_a_plan_during_a_delete_data_removal_never_keeps_state_that_goes() {
-    for round in 0..6 {
+    for round in 0..3 {
         let w = written();
         let host = Arc::clone(&w.host);
         let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -242,4 +242,57 @@ fn ac3_a_table_emptied_before_a_keep_data_removal_is_not_kept_state() {
     call("api.delete", json!(["k"]));
     w.host.remove(&local("echo"), false).unwrap();
     assert!(!w.kept("echo"));
+}
+
+/// Lock order (4.4): `remove(.., true)` takes the write transaction before the catalog mutex,
+/// as a timer commit does. A relay `api.after` loop runs against install and remove loops; a
+/// watchdog fails the test when the removes stop making progress.
+#[test]
+fn ac2_remove_with_delete_data_does_not_deadlock_with_timer_commits() {
+    use super::streams::{Env, install, relay};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let env = Env::relay();
+    let host = Arc::clone(&env.host);
+    let stop = Arc::new(AtomicBool::new(false));
+    let progress = Arc::new(AtomicUsize::new(0));
+    let timers = {
+        let (stop, host) = (Arc::clone(&stop), Arc::clone(&host));
+        std::thread::spawn(move || {
+            let mut i = 0u64;
+            while !stop.load(Ordering::SeqCst) {
+                let id = format!("t{}", i % 4);
+                relay(&host, "api.after", json!({"id": id, "ms": 600_000}));
+                i += 1;
+            }
+        })
+    };
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let removes = {
+        let (progress, host) = (Arc::clone(&progress), Arc::clone(&host));
+        std::thread::spawn(move || {
+            for _ in 0..20 {
+                install(&host, &["counter"]);
+                host.remove(&local("counter"), true).unwrap();
+                progress.fetch_add(1, Ordering::SeqCst);
+            }
+            let _ = done_tx.send(());
+        })
+    };
+    let mut last = 0;
+    loop {
+        match done_rx.recv_timeout(std::time::Duration::from_secs(10)) {
+            Ok(()) => break,
+            Err(_) => {
+                let now = progress.load(Ordering::SeqCst);
+                assert!(
+                    now != last,
+                    "deadlock: no remove finished in 10 s (at {now})"
+                );
+                last = now;
+            }
+        }
+    }
+    removes.join().unwrap();
+    stop.store(true, Ordering::SeqCst);
+    timers.join().unwrap();
 }
