@@ -3,17 +3,6 @@
 The product owner's state; only the product owner edits it, on `main`. A new session continues
 from here. Newest digest line last.
 
-## Deputy handover
-
-From deputy-5 to deputy-6, 2026-11-25 16:50 UTC (3 merges: S122, S124, S125). Run as a Desktop session (browser pane for Codex, RemoteTrigger for routines); never `claude --bg`.
-- **S40** (agentic-harness PR #54, builder claude, reviewer codex; its PLAN line has the whole trail): r7 found the r6 fix broke the automatic resume (F7.1), so the human's (b) holds: F6.1 is a known limit (agentic-harness Upkeep, guard). Answer r7: Claude routine `trig_01KGmYmFKpPqioTnJBgJxdtU` (fired 16:41 UTC) reverts to the reviewed 553c95f and adds one 9.5 line. On its push `S40 r7: answers`: check mechanically that `git diff 553c95f <head>` is that design/TECHNICAL.md line only, wait for green CI (installed-agent may flake once: rerun), then merge with no further round (ruling PR comment 7168348172). Then agentic-harness's upkeep lane frees (kernel/console items).
-- **watane lanes:** nothing in flight. Upkeep: refill from Leftovers (new: `### host` S125 guards and polish, the R1.4 judge-origin spec call; `### install`; `### pkg`; `### log`). Main line: stage E is now ready (below).
-- **Stage E (agentic-harness, `provider-checked/`):** the human chose Jev as the judge (agentic-harness Human answers, 2026-11-25). The key is `TYPESAFE_API_KEY` in the Mac's environment: never read it into a context or log, never copy it to GitHub or a cloud (the human said no). V7 (judge latency of one `pre-tool-check`, agentic-harness design/TECHNICAL 16, 'Probes named here') is a deputy probe on the Mac, before the provider is built; the typesafe-ai skill documents Jev's API. Then sketch stage E's build slice against dev's scripted judge. **No cloud test calls an external provider** (the human; Human answers in both PLANs): say so in every build brief that touches one. N5 = (a) for now, so stage F can be sketched after E.
-- **Builders (rule 3):** last two handed out S125 codex, S124 claude: Codex builds next.
-- **The human owes:** S120's Door H (where the factory mods live; deputy-5 recommended one combined mod, not blocking until stage F); the Codex `watane` environment secret rotation (housekeeping).
-- **Friction:** the Codex new-task picker can default to 'Default environment': pick `watane` (menu item, not 'watane +2') before typing. GitHub answered 500/502 to reruns for a few minutes; a retry loop worked. `.claude/factory/review-lead.md` still exists nowhere: briefs carry its rules inline (factory proposal stands).
-- **Watcher:** `git -C ../watane-mods show origin/main:factory/scripts/watch-all.sh` into your scratchpad (do not pull in the shared watane-mods or agentic-harness checkouts; edit agentic-harness's PLAN from a scratch worktree of origin/main), fresh state file.
-
 ## Slices
 
 Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
@@ -1228,6 +1217,20 @@ names the same interface in its sketch and fakes it until this one merges.
 - [x] **S122 Alice gives a checked provider its judge key (host A5, app 19.4; agentic-harness stage E, watane half).** DONE 2026-11-25: PR #42 rebase-merged by deputy-5 (13597bf2, no bypass); builder codex, reviewer claude, 1 round (0/8); ~3.8 h in flight. On a checked provider's manager page Alice saves, replaces and removes a judge key and its https origin; the host sends it only with that provider's granted POSTs to that origin (no redirects); removing it ends the provider's live judge streams `gone`; startup deletes key files of uninstalled mods. Adversary HELD, user-sim ACCEPTED, validator PASS. R1.1 to R1.4 accepted (Deputy decisions); P1.1 to P1.8 and R1.1's spec question in Leftovers. Sketch in factory/DONE.md.
 - [x] **S124 (upkeep) a failed fetch blames the true cause (net, node, dist), and net's budget flake.** DONE 2026-11-25: PR #43 rebase-merged by deputy-5 (e76d1682, no bypass); builder claude, reviewer codex, 2 rounds (3/2, 0/0); ~3.5 h in flight. A local I/O or holder failure during a fetch reads as this machine's, with no temp path; a bad copy on a full machine and every full machine being off each say so instead of 'not followed'; a close before the download is Unreachable; net's budget probes no longer race the refill clock. F1.3 regraded polish (fixed anyway); R2.1 accepted; P1.1, P1.2 in Leftovers. Sketch in factory/DONE.md.
 - [x] **S125 (upkeep, guard) host's and app's flaky tests, and S122's judge polish.** DONE 2026-11-25: PR #44 rebase-merged by deputy-5 (337a8466, no bypass); builder codex, reviewer claude, 1 round (0/10); ~2.3 h in flight. The host releases its home lock explicitly when it closes (a reopen no longer meets `Busy`); the streams hand-off and Windows timer tests wait on the right events; a kept judge key stays visible and removable after `claude-code` is withdrawn; the judge editor names what is wrong; S122's judge polish done; S118 had already fixed the consent flakes. R1.1 to R1.4 accepted (Deputy decisions); P1.1 to P1.10 and three new flake sightings in Leftovers. Windows rerun once (two host timing flakes outside the slice). Sketch in factory/DONE.md.
+- [~] **S126 (upkeep, guard) host's last flakes and its S125/S119/S118 polish.** (in flight, cloud, builder codex,
+  reviewer claude; rule 3: last two S125 codex, S124 claude; the upkeep lane, sketched 2026-11-25 by deputy-6 from
+  Leftovers `### host`.) Outcomes, each item's check: (1, guard) the three flakes of S125 r1 (Windows
+  `adv_s96_timer_set_across_remove_and_reinstall_carries_the_removed_origin` adv_s96.rs:731, `https_stream::ac7_a_consumer_that_defers...`
+  streams.rs:71, macOS `runtime::ac11_s11_restart_preserves_links_and_provider_state` runtime.rs:534): each race found and
+  fixed, no wall-clock assertion left on a loaded runner, 20 runs green per test on its OS in CI; (2, guard) S96 Q47:
+  `remove` waits for a busy mod's call lock with a deadline and says so; S96 Q48: a startup sweep of timer rows left by a
+  crash between `remove`'s catalog save and its timer rewrite (red test first); (3) R1.4 ruling (deputy, below): host 19.4
+  names judge origins with an unspecified, loopback or private literal under "Not protected" (the participant types the
+  origin and the provider needs a matching consented Http grant); no code change; (4) R1.2, R1.3 in host TECHNICAL 3.1;
+  (5) polish: S125 P1.1 to P1.10, S119 P1.1 and P1.5, S118 r2. Touches: host, app (fixtures.rs, words.rs, ui/app.js,
+  TECHNICAL 19.4). Constraints: no format or interface change; S113's kept-storage line is already done by S118 (drop it
+  from Leftovers). Protects: *guard* (1, 2), *polish* (rest). Size: an upkeep slice. spec-check: skipped (docs-only
+  wording items; no new contract).
 
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
@@ -1964,6 +1967,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - 2026-11-24 host 18 **Q38: (b)**, the human ("b is fine for q38"). A workspace or account consent is kept per (origin client, `via` = the provider's identity, folder or account); a new provider asks again. S103 built (b); its next answer round writes host 18 Q38 as decided by the human, 2026-11-24, and the 19.7 rows to match. agentic-harness TECHNICAL 8 already cites 19.7.
 
 ## Deputy decisions
+- 2026-11-25 (deputy-6, S125 R1.4) accepted, rung 1: a judge origin with an unspecified, loopback or private literal (`https://0.0.0.0`, `https://0x`) is not refused; the participant types it and the provider needs a matching consented Http grant, and a self-hosted judge on the LAN stays possible (host 19.4 judge binding; dist 5.9 guards reads, not this). S126 writes it under host 19.4 "Not protected". Undo: refuse those literals in `judge_origin`.
 - 2026-11-25 (S125 r1) accepted: R1.1 two Windows host timing flakes outside the slice (rerun green; Leftovers guard); R1.2 run threads may outlive the home lock at drop (unchanged behaviour; a live run caught at drop); R1.3 the explicit unlock assumes no fork without exec (no such path); R1.4 a judge origin of `0.0.0.0` or `0x` (needs the participant's own Http grant for it; predates S125; Leftovers spec call). Undo: the Leftovers items.
 - 2026-11-25 (S124 r2) accepted: R2.1 net's byte-budget test can still fail if the bucket refills before the probe on all five attempts (a guard test, not product behaviour). Undo: a test clock in net's budget.
 - 2026-11-25 (S122 r1) accepted: R1.1 a kept judge key stays in use, its section hidden, after `claude-code` is withdrawn (W39 holds: it still goes only to its judge; the section fix in Leftovers); R1.2 local folders with one slug share one identity and so one key (host 4.1, by design, confirmed at install); R1.3 a judge folder with too-wide modes, or a prune I/O error, starts the app failed (fails closed; only a local program can cause it); R1.4 a caller holding a key learns which granted host is its judge origin (low value). Undo: the Leftovers item; a host refusal of `judge` without the grant.
