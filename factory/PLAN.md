@@ -1234,7 +1234,7 @@ names the same interface in its sketch and fakes it until this one merges.
   No test calls an external provider. Protects: *core*.
 - [~] **S126 (upkeep, guard) host's last flakes and its S125/S119/S118 polish.** (in flight, cloud, builder codex,
   reviewer claude; rule 3: last two S125 codex, S124 claude; the upkeep lane, sketched 2026-11-25 by deputy-6 from
-  Leftovers `### host`; Codex task https://chatgpt.com/local/6b07276a-d24c-83ed-bada-23e64aa57056, 2026-11-25 ~17:25 UTC.) Outcomes, each item's check: (1, guard) the three flakes of S125 r1 (Windows
+  Leftovers `### host`; Codex task https://chatgpt.com/local/6b07276a-d24c-83ed-bada-23e64aa57056, 2026-11-25 ~17:25 UTC; DELIVERED as PR #45 (+506/-163); r1: Claude review routine `trig_01QxAbH72mt7AWxKpHQdzJYJ`, fires 19:08 UTC (the builder ran no user-sim or adversary: the review does).) Outcomes, each item's check: (1, guard) the three flakes of S125 r1 (Windows
   `adv_s96_timer_set_across_remove_and_reinstall_carries_the_removed_origin` adv_s96.rs:731, `https_stream::ac7_a_consumer_that_defers...`
   streams.rs:71, macOS `runtime::ac11_s11_restart_preserves_links_and_provider_state` runtime.rs:534): each race found and
   fixed, no wall-clock assertion left on a loaded runner, 20 runs green per test on its OS in CI; (2, guard) S96 Q47:
