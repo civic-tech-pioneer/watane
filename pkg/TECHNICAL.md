@@ -355,7 +355,7 @@ neither a regular file nor a directory is rule `path`,
 `not a regular file or a directory (a FIFO, socket or device); replace or remove it`. Both the
 reader and pack ignore hidden special files (S46).
 
-For a link inside a hidden directory, pack names the link (6.4); `Mod::read` is above.
+For a link inside a hidden directory, pack still names the link itself (6.4).
 
 Pack and `Mod::read` share refusal text for special files and violations named at the link (S57).
 A link where a file or directory may stand is `a symbolic link; replace it with a regular file or
