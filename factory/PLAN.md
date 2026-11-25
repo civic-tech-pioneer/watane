@@ -1222,7 +1222,7 @@ serious thing built on watane, and is the sharpest test of the premise: if the s
 its own factory, the premise is weaker than it looks. Not sketched; it needs its own design slice.
 
 - [~] **S120 Design: the factory as mods (VISION step 6).** (in flight, cloud, builder codex, reviewer claude; rule 3:
-  last two S119 codex, S118 claude; the main line, sketched 2026-11-25 by deputy-4; Codex task https://chatgpt.com/local/6b068ece-9e90-83ed-8b9e-480c43b7b077, dispatched 07:32 UTC; spec-check not run before the sketch: the slice writes a new draft and the review checks it against the chain.) Spec documents only, no code. The
+  last two S119 codex, S118 claude; the main line, sketched 2026-11-25 by deputy-4; Codex task https://chatgpt.com/local/6b068ece-9e90-83ed-8b9e-480c43b7b077, dispatched 07:32 UTC; DELIVERED 07:35 UTC as PR #39 at c737b8f (+269, spec only); r1: Claude review, routine `trig_011JchRYiPCWpuvBDTaeAbJp`, fires 07:38 UTC; spec-check not run before the sketch: the slice writes a new draft and the review checks it against the chain.) Spec documents only, no code. The
   story: a person steers coding agents from mods in her own host: a planning mod keeps the plan and sketches the next
   slice, a foreman mod has an implementer build it and another vendor's agent review it, she approves each merge, and the
   factory proposes changes to its own mods, which she installs like any other mod (VISION step 6, "changes itself").
