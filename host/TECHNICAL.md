@@ -3540,8 +3540,9 @@ checks of the table above are made at the call.
   key as an account `judge`, as it keeps the OpenAI tokens. The participant
   enters the key and the judge's origin (`https://host[:port]`) in the app, on
   the manager page of that checked provider (app 19.4).
-  - Identity: the provider is named by its `caller.identity()`
-    (`<publisher>/<slug>`), compared exactly. The unchecked provider, another
+  - Identity: the host uses the identity of the mod executing
+    `https-stream.start` (`<publisher>/<slug>`, with the same form as
+    `caller.identity()`), compared exactly. The unchecked provider, another
     publisher's mod or a preview gets `no-account`.
   - Value: `account` is exactly `openai` or `judge`; any other value is
     refused `destination`.
