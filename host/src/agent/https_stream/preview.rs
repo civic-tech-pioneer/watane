@@ -5,7 +5,7 @@ use crate::Mode;
 
 /// The ordinary HTTPS job owns request validation, registration, cancellation and response handling.
 pub(super) fn run(job: &Job) -> bool {
-    if job.request.account != Some(super::RequestAccount::OpenAi)
+    if !matches!(job.request.account, Some(super::RequestAccount::OpenAi))
         || !matches!(job.mode, Mode::Preview)
     {
         return false;
