@@ -572,6 +572,8 @@ fn ac7_dropping_the_server_closes_both_listeners() {
         loop {
             match TcpStream::connect_timeout(&addr, Duration::from_millis(200)) {
                 Err(e) if e.kind() == ErrorKind::ConnectionRefused => break,
+                // On Windows the probe to the closed loopback port can time out.
+                Err(e) if cfg!(windows) && e.kind() == ErrorKind::TimedOut => break,
                 result => assert!(
                     Instant::now() < deadline,
                     "listener {addr} after drop: {result:?}"
