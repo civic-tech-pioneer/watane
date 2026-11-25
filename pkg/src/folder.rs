@@ -756,6 +756,80 @@ mod tests {
         };
         assert_eq!(v[0].message, "expected a regular file");
     }
+    #[cfg(unix)]
+    fn listed(
+        handle: &crate::open::Dir,
+        relative: &str,
+    ) -> (
+        Result<Option<Vec<crate::open::Entry>>, ModError>,
+        Vec<Violation>,
+    ) {
+        let mut violations = Vec::new();
+        let result = list_entries(handle, Path::new("/mod"), relative, &mut violations);
+        (result, violations)
+    }
+    #[cfg(unix)]
+    #[test]
+    fn ac1_s121_list_entries_vanished_is_changed_at_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("gone"), b"x").unwrap();
+        let handle = crate::open::dir(dir.path(), "").map_err(|e| e.1).unwrap();
+        let path = dir.path().join("gone");
+        crate::open::BEFORE_ENTRY_STAT.with(|h| {
+            *h.borrow_mut() = Some(Box::new(move |_| {
+                let _ = fs::remove_file(&path);
+            }));
+        });
+        let (result, violations) = listed(&handle, "ui");
+        crate::open::BEFORE_ENTRY_STAT.with(|h| *h.borrow_mut() = None);
+        assert!(matches!(result, Ok(None)));
+        assert_eq!(
+            violations,
+            vec![Violation {
+                rule: Rule::Path,
+                file: "ui/gone".into(),
+                message: CHANGED.into()
+            }]
+        );
+    }
+    #[cfg(unix)]
+    #[test]
+    fn ac1_s121_list_entries_not_a_directory_is_changed_at_relative() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("f");
+        fs::write(&file, b"x").unwrap();
+        let handle = crate::open::Dir::from_file(fs::File::open(file).unwrap());
+        let (result, violations) = listed(&handle, "ui");
+        assert!(matches!(result, Ok(None)));
+        assert_eq!(
+            violations,
+            vec![Violation {
+                rule: Rule::Path,
+                file: "ui".into(),
+                message: CHANGED.into()
+            }]
+        );
+    }
+    #[cfg(unix)]
+    #[test]
+    fn ac1_s121_list_entries_other_error_is_io_naming_directory() {
+        use rustix::fs::{Mode, OFlags, open};
+        let dir = tempfile::tempdir().unwrap();
+        // An O_PATH handle cannot be read as a directory: EBADF, neither class above.
+        let fd = open(
+            dir.path(),
+            OFlags::PATH | OFlags::DIRECTORY | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+        .unwrap();
+        let handle = crate::open::Dir::from_file(fs::File::from(fd));
+        let (result, violations) = listed(&handle, "ui");
+        assert!(violations.is_empty());
+        let Err(ModError::Io { path, .. }) = result else {
+            panic!("expected Io")
+        };
+        assert_eq!(path, Path::new("/mod/ui"));
+    }
     fn hello() -> tempfile::TempDir {
         fn copy(from: &Path, to: &Path) {
             fs::create_dir_all(to).unwrap();

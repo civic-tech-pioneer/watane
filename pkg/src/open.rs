@@ -100,6 +100,14 @@ type EntryHook = Option<Box<dyn Fn(&std::ffi::OsStr)>>;
 thread_local!(pub(crate) static BEFORE_ENTRY_STAT: std::cell::RefCell<EntryHook> =
     const { std::cell::RefCell::new(None) });
 
+#[cfg(all(test, unix))]
+impl Dir {
+    /// A handle on any open file, to make listing fail in ways a directory cannot.
+    pub(crate) fn from_file(fd: File) -> Self {
+        Self { fd }
+    }
+}
+
 pub(crate) struct Entry {
     pub name: OsString,
     pub stat: Stat,

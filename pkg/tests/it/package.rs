@@ -110,6 +110,11 @@ fn s112_windows_device_segments_are_refused_during_decode() {
         "ui/lPt9.css",
     ] {
         path_error(raw(&[(path, b"")]), path);
+        let error = Package::from_bytes(raw(&[(path, b"")])).unwrap_err();
+        assert!(
+            matches!(&error, PackageError::Path { reason, .. } if *reason == "a Windows device name is reserved"),
+            "{path}: {error:?}"
+        );
     }
     for path in [
         "ui/console",
