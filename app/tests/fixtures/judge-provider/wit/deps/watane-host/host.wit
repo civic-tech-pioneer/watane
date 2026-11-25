@@ -1,0 +1,152 @@
+package watane:host@0.1.0;
+
+/// Private storage of this mod. The writes of a call become visible to
+/// other calls only when the call succeeds.
+interface state {
+  get: func(key: string) -> option<list<u8>>;
+  put: func(key: string, value: list<u8>);
+  delete: func(key: string);
+}
+
+/// Who made the current call: "page", "agent:<handle>", "mod:<local name>" or "host".
+interface caller {
+  who: func() -> string;
+  /// Step 11 (19.1): the caller's identity: "<publisher>/<slug>", "local/<slug>",
+  /// "page", "agent:<handle-name>" or "host". A pure read, no grant.
+  identity: func() -> string;
+}
+
+/// Step 10: the management of mods (W35). Importing it is the grant
+/// `manage`. Reads and reductions act when the call succeeds; anything
+/// more is a request that the participant decides in the consent view.
+/// A mod is named by its local name.
+interface manage {
+  /// A grant as pkg names it. `provider` is "<publisher key>/<slug>" or "local/<slug>".
+  record provided { %interface: string, provider: string }
+  variant grant { storage, http(string), call(provided), subscribe(provided), manage, claude-code, claude-code-shell }
+  record grant-state { grant: grant, granted: bool }
+  enum link-kind { call, subscribe }
+  /// `provider` is the local name of the linked mod; none while unbound.
+  record link { kind: link-kind, %interface: string, provider: option<string>, provider-interface: option<string> }
+  /// Identities: the consumer, the provider that deps.json names, the picked mod.
+  record bind { consumer: string, provider: string, to: string }
+  record mod-info {
+    local: string, identity: string, slug: string, name: string, summary: string,
+    version: string, publisher: option<string>, release: option<string>, origin: option<string>,
+    enabled: bool, has-page: bool, has-logic: bool,
+    grants: list<grant-state>, links: list<link>, binds: list<bind>, error: option<string>,
+  }
+  /// `code`: bad_request, no_mod, not_declared, request_open or refused.
+  record failure { code: string, message: string }
+  variant request-state { pending, approved, denied, failed(string) }
+
+  /// Every installed mod, by local name.
+  mods: func() -> list<mod-info>;
+  /// Make things do less, at once.
+  disable: func(local: string) -> result<_, failure>;
+  withdraw: func(local: string, grant: grant) -> result<_, failure>;
+  close-page: func(local: string) -> result<_, failure>;
+  /// Open or focus the page of a mod (Q31). Gives no authority.
+  open-page: func(local: string) -> result<_, failure>;
+  /// Ask the participant. Each returns the id of the request.
+  request-install: func(release: string, link: option<string>) -> result<string, failure>;
+  request-update: func(local: string) -> result<string, failure>;
+  request-enable: func(local: string) -> result<string, failure>;
+  request-grant: func(local: string, grant: grant) -> result<string, failure>;
+  request-remove: func(local: string, delete-data: bool) -> result<string, failure>;
+  /// The state of a request of this mod; none for an unknown id.
+  request: func(id: string) -> option<request-state>;
+}
+
+interface streams {                                  // no grant
+  type stream-id = string;                           // 128 random bits as 32 hex chars
+  record item { seq: u64, body: list<u8> }
+  enum sink-outcome { taken, defer }
+  record version-need { found: string, need: string }
+  /// How a stream ended. A producer's `close` may pass only `closed`, `replaced`, `lagging`
+  /// (the kernel's full owner stream, agentic-harness TECHNICAL 9.4) or `failed`; any other
+  /// case ends the stream `failed("<case> is the host's outcome")`.
+  variant outcome {
+    closed, cancelled, lagging, replaced, consumer-failed, idle-timeout,
+    gone,                       // disable, removal or update of either side, lost grant or consent, closed page connection, app quit
+    mismatch(string),           // claude disagreed with the launch: the field (19.3)
+    no-binary, version(version-need),
+    consent-refused(string),    // what (19.7)
+    no-app, no-account,         // 19.4
+    failed(string),
+  }
+  enum stream-error { not-yours, unknown-stream, full, too-large }
+  open: func() -> result<stream-id, stream-error>;
+  push: func(s: stream-id, item: list<u8>) -> result<_, stream-error>;
+  close: func(s: stream-id, outcome: outcome);
+  cancel: func(s: stream-id);
+  hand-off: func(s: stream-id) -> result<_, stream-error>;
+  /// Consumer only: lets a deferred stream go on (19.2).
+  resume: func(s: stream-id) -> result<_, stream-error>;
+}
+
+interface claude-types {                             // types only, no grant
+  record bad-launch { field: string, reason: string }
+  variant decision { allow(option<string>), deny(string), none }
+  /// `none` only for a check (19.3). `allow(some(json))`: a changed input.
+  variant start-error {
+    bad-launch(bad-launch), destination, forbidden-header(string), too-large, full,
+    not-owner, not-direct,   // the providers' (agentic-harness TECHNICAL 2.2, 10)
+  }
+  variant session-error {
+    not-yours, unknown-stream, slash-command, unknown-ask, not-allowed-here,
+    not-owner, not-direct,
+  }
+}
+interface claude-code {                              // grant: ClaudeCode
+  use claude-types.{start-error};  use streams.{stream-id};
+  start: func(launch: string) -> result<stream-id, start-error>;
+}
+interface claude-code-shell {                        // grant: ClaudeCodeShell
+  use claude-types.{start-error};  use streams.{stream-id};
+  start: func(launch: string) -> result<stream-id, start-error>;
+}
+interface claude-session {                           // no grant; the caller is the stream's consumer
+  use claude-types.{decision, session-error};  use streams.{stream-id};
+  say: func(s: stream-id, content: string) -> result<_, session-error>;
+  answer: func(s: stream-id, ask: string, d: decision) -> result<_, session-error>;
+  interrupt: func(s: stream-id) -> result<_, session-error>;
+  compact: func(s: stream-id) -> result<_, session-error>;
+}
+interface https-stream {                             // no grant; reaches only the hosts of the mod's Http grants
+  use claude-types.{start-error};  use streams.{stream-id};
+  start: func(request: string) -> result<stream-id, start-error>;
+}
+interface agent-tools {                              // no grant; a toolset needs consent (19.7)
+  use streams.{stream-id};
+  record tool { name: string, description: string, input-schema: string, parallel: bool, idempotent: bool }
+  variant tools-error { not-granted, unknown-handle, unknown-tool, consent-pending(string), consent-refused(string) }
+  open: func(toolsets: list<string>) -> result<string, tools-error>;
+  describe: func(handle: string) -> result<list<tool>, tools-error>;
+  call: func(handle: string, key: string, tool: string, args: string) -> result<stream-id, tools-error>;
+  close: func(handle: string);
+}
+interface timers {                                   // no grant
+  enum timer-error { too-many, bad-id, bad-delay }
+  after: func(id: string, delay-ms: u64) -> result<_, timer-error>;
+  cancel: func(id: string);
+}
+
+/// Step 11 (19.1): the host's start number, raised by one at each open and
+/// the same for every call until the next. A pure read, no grant.
+interface host-info {
+  generation: func() -> u64;
+}
+
+// host-only exports: a mod exports them to receive; no page, tool or mod can call them
+interface stream-sink {
+  use streams.{item, sink-outcome, outcome};
+  items: func(s: string, items: list<item>) -> sink-outcome;
+  ended: func(s: string, outcome: outcome);
+}
+interface stream-producer {
+  use streams.{outcome};
+  ready: func(s: string);
+  ended: func(s: string, outcome: outcome);
+}
+interface timer-sink { fired: func(id: string); }
