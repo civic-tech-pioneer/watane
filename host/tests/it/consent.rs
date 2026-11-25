@@ -77,8 +77,9 @@ impl Confirm for Asking {
     ) -> Pin<Box<dyn std::future::Future<Output = ConsentAnswer> + Send>> {
         let app = &self.0;
         let (tx, rx) = tokio::sync::oneshot::channel();
-        app.asked.lock().unwrap().push(request);
+        // `held` before `asked`: a test that sees a question may answer it at once (S118).
         app.held.lock().unwrap().push(Some(tx));
+        app.asked.lock().unwrap().push(request);
         let guard = Drop1(Arc::clone(app));
         Box::pin(async move {
             let _guard = guard;
@@ -530,7 +531,8 @@ fn ac5_a_consent_given_through_one_provider_is_not_used_through_another() {
     home.wait_asked(3);
     assert_eq!(home.asked()[2].origin, local("claude"));
     assert_eq!(home.asked()[2].consent, asked[0].consent);
-    assert_eq!(home.items("claude", &s3), [pending("local/claude", &f)]);
+    // The item reaches the stream's consumer after the question (S118): wait for it.
+    assert_eq!(home.wait_items(&s3, 1), [pending("local/claude", &f)]);
 }
 
 #[test]

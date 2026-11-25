@@ -307,12 +307,14 @@ impl Confirm for Asking {
         &self,
         request: ConsentRequest,
     ) -> Pin<Box<dyn Future<Output = ConsentAnswer> + Send>> {
-        self.0.asked.lock().unwrap().push(request);
         if let Some(answer) = *self.0.auto.lock().unwrap() {
+            self.0.asked.lock().unwrap().push(request);
             return Box::pin(async move { answer });
         }
         let (tx, rx) = tokio::sync::oneshot::channel();
+        // `held` before `asked`: a test that sees a question may answer it at once (S118).
         self.0.held.lock().unwrap().push(Some(tx));
+        self.0.asked.lock().unwrap().push(request);
         Box::pin(async move { rx.await.unwrap_or(ConsentAnswer::Refused) })
     }
 }
