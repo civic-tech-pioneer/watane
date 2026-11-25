@@ -40,6 +40,8 @@ workspace-hack = { version = "0.1", path = "../workspace-hack" }
 watane-log-windows-fs = { path = "../log/windows-fs" }
 
 [dev-dependencies]
+watane-host = { path = "../host", features = ["test-net"] }
+watane-dev = { path = "../dev", default-features = false, features = ["fake-claude"] }
 redb = "4.5" # J9: read the command mod's persisted click, as host/tests/it/collect.rs does.
 tokio = { version = "1", features = ["test-util"] }
 tempfile = "3"

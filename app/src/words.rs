@@ -400,6 +400,13 @@ pub(crate) const CHATGPT_REGISTRATION_REQUIRED: &str =
     "Sign in with ChatGPT needs Watane’s OpenAI client registration.";
 pub(crate) const CHATGPT_CALLBACK_PAGE: &str = "You can return to watane.";
 
+pub(crate) fn judge_origin(origin: Option<&str>) -> String {
+    match origin {
+        Some(origin) => format!("The key will go only to {origin}."),
+        None => "Not an https origin.".into(),
+    }
+}
+
 pub(crate) fn chatgpt_sign_in_refused(error: &str) -> String {
     format!("sign-in refused: {error}")
 }

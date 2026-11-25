@@ -126,6 +126,10 @@ button.sw { position: relative; width: 40px; height: 24px; border-radius: 12px; 
 .grants { display: flex; flex-direction: column; gap: 4px; }
 .grants > .label { margin: 0 0 6px; }
 .grants > .hint { margin: 6px 0 0; }
+.judge-editor { display: grid; gap: 8px; }
+.judge-editor label { display: grid; gap: 4px; font-weight: 500; }
+.judge-feedback { margin: 0; }
+.judge .btn { align-self: flex-start; justify-self: start; }
 .grant-row { padding: 10px 0; margin: 0; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; line-height: 1.4; }
 .grant-row .grant-text { flex: 1; }
 .grant-row.denied { color: var(--muted); }

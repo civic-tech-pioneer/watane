@@ -119,6 +119,67 @@ function makeSwitch(parent, label, checked, className, callback) {
   sw.setAttribute('role', 'switch'); sw.setAttribute('aria-checked', String(checked)); sw.setAttribute('aria-label', label);
   return sw;
 }
+function judgeView(mod, entry) {
+  const section = element('div', '', entry, 'grants judge');
+  element('div', 'Judge key', section, 'label');
+  element('p', `This provider can reach: ${mod.judge.hosts.join(', ')}.`, section, 'hint');
+  const editor = element('div', '', section, 'judge-editor');
+  editor.hidden = mod.judge.kept;
+  if (mod.judge.kept) {
+    element('p', `A key is kept for ${mod.judge.origin}`, section);
+    button(section, 'Replace key', 'judge-replace', () => { editor.hidden = false; origin.focus(); });
+    button(section, 'Remove key', 'judge-remove danger quiet', () => action('judge_remove', {local:mod.local}));
+  }
+
+  const originLabel = element('label', 'Judge origin', editor);
+  const origin = element('input', '', originLabel, 'judge-origin');
+  origin.type = 'text'; origin.placeholder = 'https://host[:port]';
+  const keyLabel = element('label', 'Key', editor);
+  const key = element('input', '', keyLabel, 'judge-key');
+  key.type = 'password'; key.autocomplete = 'off';
+  const feedback = element('p', '', editor, 'judge-feedback hint');
+  feedback.setAttribute('aria-live', 'polite');
+
+  let parsed = null, revision = 0, busy = false;
+  const updateSave = () => { save.disabled = busy || !parsed || !key.value.trim(); };
+  const save = button(editor, 'Save key', 'judge-save primary', async () => {
+    if (save.disabled) return;
+    const args = {local:mod.local, key:key.value, origin:origin.value};
+    busy = true; origin.disabled = true; key.disabled = true; updateSave();
+    try {
+      await action('judge_set', args);
+      key.value = '';
+      origin.value = '';
+      feedback.textContent = '';
+      editor.hidden = true;
+      parsed = null;
+    } finally {
+      busy = false; origin.disabled = false; key.disabled = false; updateSave();
+    }
+  });
+  updateSave();
+  key.addEventListener('input', updateSave);
+  origin.addEventListener('input', async () => {
+    const current = ++revision;
+    parsed = null; updateSave();
+    const value = origin.value;
+    if (!value) { feedback.textContent = ''; return; }
+    try {
+      const result = await call('judge_origin', {origin:value});
+      if (current !== revision) return;
+      const host = result.origin.slice('https://'.length);
+      if (!mod.judge.hosts.includes(host)) {
+        feedback.textContent = `This provider cannot reach ${host}; the key would never be used.`;
+        return;
+      }
+      parsed = result.origin;
+      feedback.textContent = result.text;
+      updateSave();
+    } catch (error) {
+      if (current === revision) feedback.textContent = error.message || 'Not an https origin.';
+    }
+  });
+}
 export function modsView(mods) {
   currentMods = mods;
   const signature = JSON.stringify(mods);
@@ -184,6 +245,7 @@ export function modsView(mods) {
         makeSwitch(row, consent.text, true, 'withdraw', () => action('consent_withdraw', {local:mod.local,key:consent.key}));
       }
     }
+    if (mod.judge) judgeView(mod, entry);
     element('p', 'A change here takes effect now. A mod that asks for more goes through the consent view.', grants, 'hint');
     const links = element('div', '', entry, 'connections'); element('div', 'Connections', links, 'label');
     const connected = connections(mod, mods);
