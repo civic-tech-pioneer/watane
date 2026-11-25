@@ -1391,7 +1391,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Protects: *guard* (item 1), else *polish*.
 - [~] **S123 (upkeep) Alice's install, upgrade and uninstall say the true thing (install/ polish from S89, S50b-fix,
   S50b-fix2, S50c, S94).** (in flight, cloud, builder codex, reviewer claude; rule 3: last two S122 codex, S121 claude;
-  the upkeep lane, sketched 2026-11-25 by deputy-4 from Leftovers, install.) Outcomes, each item's check (re-check each
+  the upkeep lane, sketched 2026-11-25 by deputy-4 from Leftovers, install; Codex task https://chatgpt.com/local/6b06a324-a2e4-83eb-9de4-9f96d259204d, dispatched 08:59 UTC.) Outcomes, each item's check (re-check each
   line against main first; drop one already fixed): (1) every line install.sh prints after a Ctrl-C, a refusal or a
   skipped entry is true and names `~`-relative paths: the post-undo "still works", "uninstalled" with skipped entries,
   the install-it-later line naming `WATANE_RUSTUP_URL`'s target, a Ctrl-C at each question saying whether watane is
