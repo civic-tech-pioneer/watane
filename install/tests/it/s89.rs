@@ -256,11 +256,8 @@ fn ac7_rustups_output_is_set_apart() {
     let body = fs::read_to_string(path).expect("installer");
     fs::write(
         path,
-        body.replacen(
-            "#!/bin/sh\n",
-            "#!/bin/sh\necho 'info: from rustup'\n",
-            1,
-        ) + "printf 'warn: also rustup' >&2\n",
+        body.replacen("#!/bin/sh\n", "#!/bin/sh\necho 'info: from rustup'\n", 1)
+            + "printf 'warn: also rustup' >&2\n",
     )
     .expect("installer");
     let out = fx.run_pty(&[], &[("WATANE_RUSTUP_URL", &url)], &[("[y/N] ", "y")]);

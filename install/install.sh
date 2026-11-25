@@ -573,7 +573,9 @@ cleanup() {
     set +e
     # cl_rc retains the signal; formatting a quoted mirror URL performs its own checks.
     SIGNAL=0
-    if [ -n "$PROMPT" ] || [ "$TC_RUNNING" = 1 ]; then printf '\n' >&2; fi
+    if [ -n "$PROMPT" ] || { [ "$COMMITTED" = 1 ] && [ "$TC_RUNNING" = 1 ]; }; then
+      printf '\n' >&2
+    fi
     if [ "$COMMITTED" = 1 ]; then
       interrupted_hint
     elif [ "$PROMPT" = uninstall ]; then
