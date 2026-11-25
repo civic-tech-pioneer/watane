@@ -1373,7 +1373,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Protects: *guard* (item 1), else *polish*.
 - [~] **S117 (upkeep) the app's last leftovers and S116's polish.** (in flight, cloud, builder codex, reviewer claude;
   rule 3: last two S116 codex, S115 claude; the upkeep lane, sketched 2026-11-25 by deputy-3; beside S114, which holds
-  `host/` and `dev/`.) Outcomes, each item's check: (1) S116 r1 P1.1 to P1.7 (the mixed-plan consent test, the dist
+  `host/` and `dev/`; Codex task https://chatgpt.com/local/6b062512-7874-83ed-ba16-8300d8b14068, dispatched 00:05 UTC.) Outcomes, each item's check: (1) S116 r1 P1.1 to P1.7 (the mixed-plan consent test, the dist
   redirect test that records calls, `Io` for OS failures in `check_owner_only`, the `icacls` oracle on parent and dir, a
   test-only STORE_WAIT that brings net's unit tests back near 1 s); (2) S44: `Core::mods()` stops re-reading every
   related channel view on each 2 s refresh (memoize or read on change), with a test that counts the reads; (3) S58:
