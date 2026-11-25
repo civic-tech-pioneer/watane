@@ -194,8 +194,10 @@ fn failed(node: &NodeKey, id: &BlobId, e: get::GetError) -> NetError {
             node: *node,
             code: crate::Code::NotAllowed,
         },
-        // the machine answered and gave no package
-        e if e.iroh_error_code().is_some() => NetError::NotServed {
+        // the machine answered and gave no package: it reset the stream. A code on the
+        // connection's close (the machine shut down before the stream opened) says
+        // nothing about its copy.
+        e if e.iroh_error_code().is_some() && e.open().is_none() => NetError::NotServed {
             node: *node,
             cause: format!(
                 "package {}: it does not have it, or its copy failed its check",
@@ -333,4 +335,41 @@ async fn download(
             hex8(&id)
         ),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use iroh::endpoint::{ApplicationClose, ConnectionError};
+    use iroh_blobs::get::fsm::InitialNextError;
+
+    /// The connection closed with `code` before the download stream opened.
+    fn closed_before_open(code: u32) -> get::GetError {
+        let close = ConnectionError::ApplicationClosed(ApplicationClose {
+            error_code: code.into(),
+            reason: b"bye".to_vec().into(),
+        });
+        InitialNextError::from(std::io::Error::other(close)).into()
+    }
+
+    /// S124 r1 F1.3: a full machine that shut down between the size check and the
+    /// download closed the connection; that close is not a missing or bad copy.
+    #[test]
+    fn regress_s124_a_close_before_the_download_is_unreachable() {
+        let (node, id) = (NodeKey::from_bytes([3; 32]), BlobId([1; 32]));
+        let e = closed_before_open(0);
+        assert!(e.iroh_error_code().is_some(), "the case F1.3 names");
+        assert!(
+            matches!(failed(&node, &id, e), NetError::Unreachable { .. }),
+            "a close read as not served"
+        );
+        // a close as "not allowed" is still a refusal
+        assert!(matches!(
+            failed(&node, &id, closed_before_open(403)),
+            NetError::Refused {
+                code: crate::Code::NotAllowed,
+                ..
+            }
+        ));
+    }
 }

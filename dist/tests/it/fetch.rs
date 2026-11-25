@@ -160,10 +160,8 @@ fn ac2_local_write_failure_names_temp_path_once() {
         text.push_str(&cause.to_string());
         source = cause.source();
     }
-    assert_eq!(
-        text.matches(&*tmp.display().to_string()).count(),
-        1,
-        "{text}"
-    );
+    // a message escapes its path (3.1): on Windows each `\` reads `\\`
+    let named = tmp.display().to_string().escape_debug().to_string();
+    assert_eq!(text.matches(&*named).count(), 1, "{text}");
     assert!(!text.contains("invalid package"), "{text}");
 }

@@ -357,11 +357,9 @@ mod tests {
             text.push_str(&next.to_string());
             cause = next.source();
         }
-        assert_eq!(
-            text.matches(&*parent.display().to_string()).count(),
-            1,
-            "{text}"
-        );
+        // a message escapes its path (3.1): on Windows each `\` reads `\\`
+        let named = parent.display().to_string().escape_debug().to_string();
+        assert_eq!(text.matches(&*named).count(), 1, "{text}");
         assert!(!source.to_string().contains(" at path "), "{text}");
     }
 }
