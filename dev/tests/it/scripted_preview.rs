@@ -1,4 +1,4 @@
-//! A maker's OpenAI stream through the serve command (TECHNICAL 18.4).
+//! A maker's scripted OpenAI and judge streams through the serve command (TECHNICAL 18.4).
 #![allow(clippy::unwrap_used, reason = "tests may panic")]
 
 use serde_json::{Value, json};
@@ -126,22 +126,27 @@ fn delta(result: &Value) -> (String, String) {
         }).to_string()}),
     );
     let id = id.as_str().unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    let ended = loop {
-        let ended: Vec<String> = serde_json::from_value(call("api.ended", Value::Null)).unwrap();
-        if let Some(end) = ended.iter().find(|end| end.starts_with(&format!("{id} "))) {
-            break end.clone();
-        }
-        assert!(Instant::now() < deadline, "scripted stream did not end");
-        std::thread::sleep(Duration::from_millis(20));
-    };
-    assert_eq!(ended, format!("{id} closed"));
+    assert_eq!(stream_outcome(result, id), format!("{id} closed"));
     let items: Vec<String> = serde_json::from_value(call("api.items", json!({"s": id}))).unwrap();
     let head: Value = serde_json::from_str(&items[0]).unwrap();
     assert_eq!(head["status"], 200);
     let delta: Value = serde_json::from_str(&items[1]).unwrap();
     assert_eq!(delta["type"], "response.output_text.delta");
     (id.to_owned(), delta["delta"].as_str().unwrap().to_owned())
+}
+
+fn stream_outcome(result: &Value, id: &str) -> String {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let prefix = format!("{id} ");
+    loop {
+        let ended: Vec<String> =
+            serde_json::from_value(preview_call(result, "api.ended", Value::Null)).unwrap();
+        if let Some(end) = ended.into_iter().find(|end| end.starts_with(&prefix)) {
+            return end;
+        }
+        assert!(Instant::now() < deadline, "scripted stream did not end");
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 #[test]
@@ -413,4 +418,122 @@ fn serve_delivers_default_folder_and_explicit_script_responses() {
     let stopped: Value = serde_json::from_slice(&stopped.stdout).unwrap();
     assert_eq!(stopped["result"]["stopped"], true);
     assert!(!Path::new(explicit["home"].as_str().unwrap()).exists());
+}
+
+#[test]
+#[ignore = "slow: needs development WATANE_BIN; scripted judge through serve"]
+fn serve_binds_only_a_scripted_judge_with_plays() {
+    assert!(
+        std::env::var_os("WATANE_BIN").is_some(),
+        "set WATANE_BIN to a development host"
+    );
+    let preview = Preview::new();
+    fs::write(
+        preview.mod_dir().join("mod.toml"),
+        r#"name = "https"
+summary = "A checked judge client fixture."
+
+[http]
+hosts = ["judge.test", "second.test"]
+"#,
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(
+        env!("CARGO_BIN_EXE_scripted-responses"),
+        preview.0.path().join("responses-bin"),
+    )
+    .unwrap();
+    let fake =
+        preview.host_stub(r#"dir=${0%/*}; exec "$dir/responses-bin" --log "$dir/calls" "$@""#);
+    let script = preview.mod_dir().join("scripted-responses.json");
+    fs::write(
+        &script,
+        br#"{"judge_key":"checked-fixture","plays":[{"safe":[]},{"unsafe":["blocked"]},{"redirect":"https://judge.test/redirected"}]}"#,
+    )
+    .unwrap();
+    let result = preview.started(&[], false, &fake);
+    assert_eq!(result["judge_origin"], "https://judge.test");
+    assert!(!result.to_string().contains("checked-fixture"));
+    let reused = preview.started(&[], true, &fake);
+    assert_eq!(reused["judge_origin"], "https://judge.test");
+
+    let start = |result: &Value, url: &str, method: &str, headers: Value| {
+        preview_call(
+            result,
+            "api.start",
+            json!({"request": json!({
+                "url": url,
+                "method": method,
+                "account": "judge",
+                "headers": headers,
+                "body": "{}"
+            }).to_string()}),
+        )
+    };
+    for url in [
+        "https://second.test/verdict",
+        "https://judge.test:444/verdict",
+    ] {
+        assert_eq!(start(&reused, url, "POST", Value::Null), "destination");
+    }
+    let url = "https://judge.test/verdict";
+    assert_eq!(start(&reused, url, "GET", Value::Null), "destination");
+    assert_eq!(
+        start(
+            &reused,
+            url,
+            "POST",
+            json!({"authorization": "Bearer custom"})
+        ),
+        "forbidden-header:authorization"
+    );
+    let calls = preview.0.path().join("calls");
+    assert!(!calls.join("judge/1.json").exists());
+    let exchange = |result: &Value| {
+        let id = start(result, url, "POST", Value::Null);
+        let id = id.as_str().unwrap();
+        assert_eq!(stream_outcome(result, id), format!("{id} closed"));
+        let items: Vec<String> =
+            serde_json::from_value(preview_call(result, "api.items", json!({"s": id}))).unwrap();
+        let head: Value = serde_json::from_str(&items[0]).unwrap();
+        (head, items[1..].join(""))
+    };
+    for (verdict, reasons) in [("safe", json!([])), ("unsafe", json!(["blocked"]))] {
+        let (head, body) = exchange(&reused);
+        assert_eq!(head["status"], 200);
+        assert_eq!(
+            serde_json::from_str::<Value>(&body).unwrap(),
+            json!({"verdict": verdict, "reasons": reasons})
+        );
+    }
+    let (head, _) = exchange(&reused);
+    assert_eq!(head["status"], 307);
+    assert_eq!(head["headers"]["location"], "https://judge.test/redirected");
+    assert!(calls.join("judge/3.json").exists());
+    assert!(!calls.join("judge/4.json").exists());
+    assert!(!calls.join("responses/1.json").exists());
+    fs::remove_dir_all(&calls).unwrap();
+
+    fs::write(&script, br#"{"plays":[{"safe":[]}]}"#).unwrap();
+    let result = preview.started(&[], false, &fake);
+    assert_eq!(exchange(&result).0["status"], 200);
+    let request: Value =
+        serde_json::from_slice(&fs::read(calls.join("judge/1.json")).unwrap()).unwrap();
+    assert!(
+        request["headers"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(["authorization", "Bearer watane-preview-judge"]))
+    );
+    fs::remove_dir_all(&calls).unwrap();
+
+    for script_bytes in ["{}", r#"{"judge_key":"unused"}"#, r#"{"plays":[]}"#] {
+        fs::write(&script, script_bytes).unwrap();
+        let result = preview.started(&[], false, &fake);
+        assert!(result.get("judge_origin").is_none());
+        let id = start(&result, url, "POST", Value::Null);
+        let id = id.as_str().unwrap();
+        assert_eq!(stream_outcome(&result, id), format!("{id} no-account"));
+        assert!(!calls.join("judge/1.json").exists());
+    }
 }

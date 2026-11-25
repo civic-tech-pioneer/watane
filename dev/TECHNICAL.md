@@ -454,7 +454,8 @@ dev preserves the line, column and the specific WIT file.
  "log": "/abs/cache/previews/reading-list-1a2b3c4d/watane.log"}
 ```
 `pages` lists the mod and its local providers, in install order (providers
-first); `url` is null for a mod with no page. The token reaches the tools
+first); `url` is null for a mod with no page. A preview with a scripted judge
+also reports `judge_origin` (18.4). The token reaches the tools
 as `Authorization: Bearer <token>`. On success, `next` is
 `Give the person this page: <url>`, using the served mod's own (last)
 `pages` entry, with no punctuation after the URL. With `reused: false`,
@@ -2903,6 +2904,8 @@ preview validation use the same `scripted_format::Script` type and refuse unknow
 writes each request it receives as `<dir>/responses/<n>.json` or
 `<dir>/judge/<n>.json` (`n` from 1: `{"method","path","headers","body_b64"}`),
 so a test reads `requests()` and `count()` as the files of the folder.
+The standalone program always starts both origins. A development preview binds
+its judge account only when the script contains at least one play (18.4).
 
 **Shapes** (those of OpenAI's Responses API; a test reads them as literals).
 Every response closes its connection (`connection: close`); the body of an
@@ -2983,6 +2986,19 @@ once. The maker tools offer the fake `claude` instead:
   file the program uses its built-in reply (18.3). The format is the
   standalone program's JSON from 18.3. Its optional `token` is a fixture
   value and defaults on the preview side to `watane-preview`.
+- A nonempty `plays` list enables the preview judge account at the program's
+  `https://judge.test` origin (host 19.9). The script's `judge_key` is a fixture
+  key. It defaults to `watane-preview-judge`. A test build of the provider lists
+  `judge.test` in `[http].hosts` and uses the same origin for its judge requests
+  and settings page. The app shows the origin entered for that test build when
+  it is installed in a participant home under the usual app account rules.
+  The host reports the entered origin as `judge_origin` in its ready line, and
+  dev includes it in the `serve --json` result, including on reuse. These
+  results carry only the origin. A script without plays, including one with only
+  `judge_key` or an empty `plays` list, leaves the judge account unavailable
+  and omits `judge_origin`. Dev passes the same arguments and snapshot in either
+  case. When a provider expects its judge API's own response format, use
+  `raw` plays with that format (18.3).
 - Dev finds `scripted-responses` beside `watane-dev`, on PATH, or via the
   override `WATANE_SCRIPTED_RESPONSES` (checked first). Dev passes the host
   a private, temporary snapshot of the script and removes it after startup

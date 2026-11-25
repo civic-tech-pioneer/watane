@@ -59,6 +59,14 @@ fn spawn_args(home: &Path, fake_claude: Option<&Path>) -> Vec<std::ffi::OsString
     }
     args
 }
+#[derive(serde::Deserialize, serde::Serialize)]
+struct PreviewReady {
+    #[serde(flatten)]
+    host: Ready,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    judge_origin: Option<String>,
+}
+
 struct StartFailure {
     problem: Problem,
     refusal: Option<Refusal>,
@@ -91,7 +99,7 @@ fn start(
     log: &Path,
     fake_claude: Option<&Path>,
     setting: Option<(&OpenAi, Option<Refusal>)>,
-) -> Result<Ready, StartFailure> {
+) -> Result<PreviewReady, StartFailure> {
     let binary = find_watane()?;
     fs::create_dir_all(folder).map_err(Problem::internal)?;
     let stderr = fs::OpenOptions::new()
@@ -166,11 +174,18 @@ fn start(
                 }
                 return Err(problem.into());
             }
-            serde_json::from_str::<Ready>(&line)
+            serde_json::from_str::<PreviewReady>(&line)
                 .map_err(|err| failure(format!("invalid ready line: {err}")).into())
         });
     let ready = match ready {
-        Ok(r) if r.watane == 1 && r.mode == "preview" && r.home == home && r.port != 0 => r,
+        Ok(r)
+            if r.host.watane == 1
+                && r.host.mode == "preview"
+                && r.host.home == home
+                && r.host.port != 0 =>
+        {
+            r
+        }
         invalid => {
             let _ = child.kill();
             let _ = child.wait();
@@ -180,7 +195,7 @@ fn start(
         }
     };
     if let Err(error) =
-        OpenAi::remember(setting, folder, ready.port).and_then(|()| save_ready(folder, &ready))
+        OpenAi::remember(setting, folder, ready.host.port).and_then(|()| save_ready(folder, &ready))
     {
         let _ = stop_home(home);
         let _ = child.kill();
@@ -193,7 +208,7 @@ fn start(
     });
     Ok(ready)
 }
-fn save_ready(folder: &Path, ready: &Ready) -> Result<(), Problem> {
+fn save_ready(folder: &Path, ready: &PreviewReady) -> Result<(), Problem> {
     let path = folder.join("ready.json");
     let mut file = fs::OpenOptions::new()
         .write(true)
@@ -208,21 +223,21 @@ fn save_ready(folder: &Path, ready: &Ready) -> Result<(), Problem> {
         .map_err(Problem::internal)?;
     Ok(())
 }
-fn running_preview(folder: &Path) -> Result<(Option<Client>, Option<Ready>), Problem> {
+fn running_preview(folder: &Path) -> Result<(Option<Client>, Option<PreviewReady>), Problem> {
     let home = folder.join("home");
     let running = Client::for_home(&home)?;
     let cached = fs::read(folder.join("ready.json"))
         .ok()
-        .and_then(|b| serde_json::from_slice::<Ready>(&b).ok())
+        .and_then(|b| serde_json::from_slice::<PreviewReady>(&b).ok())
         .filter(|r| {
             running.is_some()
-                && r.watane == 1
-                && r.mode == "preview"
-                && r.home == home
+                && r.host.watane == 1
+                && r.host.mode == "preview"
+                && r.host.home == home
                 && RunInfo::read(&home)
                     .ok()
                     .flatten()
-                    .is_some_and(|run| run.port == r.port)
+                    .is_some_and(|run| run.port == r.host.port)
         });
     Ok((running, cached))
 }
@@ -236,7 +251,7 @@ pub(crate) fn previous_warning(dir: &Path, env: &Env, args: &str) -> Option<Prob
                 Code::PreviewPrevious,
                 format!(
                     "the preview at {} still serves the previous build",
-                    previous_url(&ready)
+                    previous_url(&ready.host)
                 ),
             )
             .fix(format!(
@@ -265,12 +280,12 @@ pub(crate) fn serve_with_script(
         let cached = cached.filter(|ready| {
             if let Some(reason) = openai
                 .as_ref()
-                .and_then(|setting| setting.fallback(&folder, ready.port))
+                .and_then(|setting| setting.fallback(&folder, ready.host.port))
             {
                 warnings.push(reason.warning());
                 true
             } else {
-                OpenAi::matches(openai.as_ref(), &folder, ready.port)
+                OpenAi::matches(openai.as_ref(), &folder, ready.host.port)
             }
         });
         let fake_claude = match find_fake_claude() {
@@ -324,7 +339,7 @@ pub(crate) fn serve_with_script(
             })?
             .with_rerun(rerun);
         let installed = client.install(&folders)?;
-        ready.mods = installed
+        ready.host.mods = installed
             .iter()
             .map(|m| watane_host::ReadyMod {
                 local: m.local.clone(),
@@ -337,9 +352,11 @@ pub(crate) fn serve_with_script(
             .map(|m| json!({"slug":m.slug,"local":m.local,"url":m.page}))
             .collect::<Vec<_>>();
         // Construct loopback URLs from the host's port, never follow URLs supplied by files.
-        Ok(
-            json!({"home":home,"api":api_url(&ready),"reused":reuse,"pages":pages,"mcp":mcp(&ready),"log":log}),
-        )
+        let mut result = json!({"home":home,"api":api_url(&ready.host),"reused":reuse,"pages":pages,"mcp":mcp(&ready.host),"log":log});
+        if let Some(origin) = ready.judge_origin {
+            result["judge_origin"] = json!(origin);
+        }
+        Ok(result)
     };
     work().map_err(|e| vec![e])
 }
