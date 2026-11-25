@@ -625,9 +625,12 @@ identity: the second is an update of the first.
 6. `grants` = `mod.grants()`. `new_grants` = the declared grants with no
    `Grant::same_authority` match among the grants of the installed version
    (all of them for `New`). `kept_state` is true when the change is `New`
-   and the state database holds the table `s/<id>` of the identity (7):
-   data that a `remove` without `delete_data` kept (4.4), which reattaches
-   when this install commits. Otherwise it is false. It changes no grant:
+   and the state database holds the table `s/<id>` of the identity (7) with
+   at least one record: data that a `remove` without `delete_data` kept
+   (4.4), which reattaches when this install commits. Otherwise it is false.
+   A plan never sees a `remove` half done: the removal deletes the data
+   before it releases the catalog mutex (4.4), so a plan made against the
+   new catalog generation reads the state that remains. It changes no grant:
    `Storage` stays in `new_grants`, and the app says that the data is kept
    (app 6.3).
 7. Links, computed over the catalog as it would be after the install
@@ -694,7 +697,8 @@ Install checks the generation again before committing (Q24).
 - `enable`: `enabled = true`; send `reload` to its pages.
 - `remove(local, delete_data)`: wait for the mod's call lock; drop it from
   the registry; delete `mods/<local>/`; if `delete_data`, delete its state
-  (section 7). Links to it become unbound; toolset entries stay and give no
+  (section 7) while it still holds the catalog mutex, so that no plan sees
+  the new catalog without the deletion (4.2 step 6). Links to it become unbound; toolset entries stay and give no
   tool; kept state reattaches when the identity is installed again.
 - `grant` and `revoke`: only for a grant in `mod.grants()`, else
   `not_declared`; they set `granted`. The app calls them in process after
