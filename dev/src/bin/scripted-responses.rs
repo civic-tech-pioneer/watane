@@ -4,19 +4,10 @@
     clippy::print_stderr,
     reason = "a program reports on stdout and stderr"
 )]
-use serde::Deserialize;
 use std::io::Write;
 use std::path::PathBuf;
-use watane_dev::scripted::{Play, Reply, ScriptedResponses};
-
-#[derive(Deserialize, Default)]
-struct Script {
-    token: Option<String>,
-    models: Option<Vec<String>>,
-    replies: Option<Vec<Reply>>,
-    judge_key: Option<String>,
-    plays: Option<Vec<Play>>,
-}
+use watane_dev::scripted::ScriptedResponses;
+use watane_dev::scripted_format::Script;
 
 fn main() {
     if let Err(e) = run() {

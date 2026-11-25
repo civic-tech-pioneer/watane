@@ -15,6 +15,11 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use watane_host::{Ready, RunInfo};
+
+#[path = "openai.rs"]
+mod openai;
+use openai::{OpenAi, Refusal, unavailable_warning};
+pub(crate) use openai::{ScriptInput, read_script};
 const DEFAULT_SCRIPT: &str = r#"{"steps":[{"do":"expect-user"},{"do":"delta","text":"This is the fake claude."},{"do":"message","text":"This is the fake claude."},{"do":"result"},{"do":"idle"}]}"#;
 /// Links the fake into `<P>/claude/` (a copy where links fail), keeps the maker's script (TECHNICAL 18.4).
 fn link_fake_claude(folder: &Path, program: &Path) -> Result<PathBuf, Problem> {
@@ -54,12 +59,39 @@ fn spawn_args(home: &Path, fake_claude: Option<&Path>) -> Vec<std::ffi::OsString
     }
     args
 }
+struct StartFailure {
+    problem: Problem,
+    refusal: Option<Refusal>,
+}
+
+impl From<Problem> for StartFailure {
+    fn from(problem: Problem) -> Self {
+        Self {
+            problem,
+            refusal: None,
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct HostStartError {
+    watane: u32,
+    error: HostErrorDetail,
+}
+
+#[derive(serde::Deserialize)]
+struct HostErrorDetail {
+    code: String,
+    message: String,
+}
+
 fn start(
     home: &Path,
     folder: &Path,
     log: &Path,
     fake_claude: Option<&Path>,
-) -> Result<Ready, Problem> {
+    setting: Option<(&OpenAi, Option<Refusal>)>,
+) -> Result<Ready, StartFailure> {
     let binary = find_watane()?;
     fs::create_dir_all(folder).map_err(Problem::internal)?;
     let stderr = fs::OpenOptions::new()
@@ -84,8 +116,14 @@ fn start(
         )
         .fix(format!("Read {}", log.display()))
     };
-    let mut child = Command::new(binary)
-        .args(spawn_args(home, fake_claude))
+    let mut command = Command::new(binary);
+    command.args(spawn_args(home, fake_claude));
+    let openai = setting.and_then(|(openai, refusal)| refusal.is_none().then_some(openai));
+    let _snapshot = match openai {
+        Some(openai) => openai.configure(&mut command, folder)?,
+        None => None,
+    };
+    let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(stderr)
@@ -101,27 +139,58 @@ fn start(
     });
     let ready = rx
         .recv_timeout(Duration::from_secs(30))
-        .map_err(|e| e.to_string())
-        .and_then(|v| v.map_err(|e| e.to_string()))
-        .and_then(|line| serde_json::from_str::<Ready>(&line).map_err(|e| format!("{e}: {line}")));
+        .map_err(|err| err.to_string())
+        .and_then(|result| result.map_err(|err| err.to_string()))
+        .map_err(|detail| StartFailure::from(failure(detail)))
+        .and_then(|line| {
+            if let Ok(reported) = serde_json::from_str::<HostStartError>(&line)
+                && reported.watane == 1
+            {
+                let problem = Problem::new(
+                    Code::EnvPreviewStart,
+                    format!("the preview did not start: {}", reported.error.message),
+                )
+                .fix(format!("Read {}", log.display()));
+                if let Some(openai) = openai
+                    && (reported.error.code == "usage"
+                        || reported.error.message.starts_with("scripted OpenAI:"))
+                {
+                    return Err(StartFailure {
+                        problem: openai.start_failure(problem),
+                        refusal: Some(if reported.error.code == "usage" {
+                            Refusal::Usage
+                        } else {
+                            Refusal::Scripted
+                        }),
+                    });
+                }
+                return Err(problem.into());
+            }
+            serde_json::from_str::<Ready>(&line)
+                .map_err(|err| failure(format!("invalid ready line: {err}")).into())
+        });
     let ready = match ready {
         Ok(r) if r.watane == 1 && r.mode == "preview" && r.home == home && r.port != 0 => r,
-        Ok(_) => {
+        invalid => {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(failure("invalid ready line".into()));
-        }
-        Err(e) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(failure(e));
+            return Err(invalid
+                .err()
+                .unwrap_or_else(|| failure("invalid ready line".into()).into()));
         }
     };
+    if let Err(error) =
+        OpenAi::remember(setting, folder, ready.port).and_then(|()| save_ready(folder, &ready))
+    {
+        let _ = stop_home(home);
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error.into());
+    }
     // Reap this child if dev remains alive long enough; the host itself outlives dev.
     std::thread::spawn(move || {
         let _ = child.wait();
     });
-    save_ready(folder, &ready)?;
     Ok(ready)
 }
 fn save_ready(folder: &Path, ready: &Ready) -> Result<(), Problem> {
@@ -177,7 +246,13 @@ pub(crate) fn previous_warning(dir: &Path, env: &Env, args: &str) -> Option<Prob
     })
 }
 
-pub fn serve(dir: &Path, env: &Env, rerun: &str) -> Result<Value, Vec<Problem>> {
+pub(crate) fn serve_with_script(
+    dir: &Path,
+    env: &Env,
+    rerun: &str,
+    script: Option<ScriptInput>,
+    warnings: &mut Vec<Problem>,
+) -> Result<Value, Vec<Problem>> {
     let (m, _) = check::check(dir)?;
     let folders = deps::local_order(dir).map_err(|e| vec![e])?;
 
@@ -185,7 +260,19 @@ pub fn serve(dir: &Path, env: &Env, rerun: &str) -> Result<Value, Vec<Problem>> 
         let folder = folder(dir, env, m.slug().as_str());
         let home = folder.join("home");
         let log = folder.join("watane.log");
+        let openai = OpenAi::select(dir, &m, &folders, script, warnings)?;
         let (running, cached) = running_preview(&folder)?;
+        let cached = cached.filter(|ready| {
+            if let Some(reason) = openai
+                .as_ref()
+                .and_then(|setting| setting.fallback(&folder, ready.port))
+            {
+                warnings.push(reason.warning());
+                true
+            } else {
+                OpenAi::matches(openai.as_ref(), &folder, ready.port)
+            }
+        });
         let fake_claude = match find_fake_claude() {
             Ok(program) => Some(link_fake_claude(&folder, &program)?),
             Err(_) => None,
@@ -197,7 +284,35 @@ pub fn serve(dir: &Path, env: &Env, rerun: &str) -> Result<Value, Vec<Problem>> 
             if running.is_some() {
                 stop_home(&home)?;
             }
-            start(&home, &folder, &log, fake_claude.as_deref())?
+            match start(
+                &home,
+                &folder,
+                &log,
+                fake_claude.as_deref(),
+                openai.as_ref().map(|setting| (setting, None)),
+            ) {
+                Ok(ready) => ready,
+                Err(error) => {
+                    let Some((reason, setting)) = error
+                        .refusal
+                        .zip(openai.as_ref().filter(|setting| setting.automatic()))
+                    else {
+                        return Err(error.problem);
+                    };
+                    warnings.push(match reason {
+                        Refusal::Usage => reason.warning(),
+                        Refusal::Scripted => unavailable_warning(error.problem),
+                    });
+                    start(
+                        &home,
+                        &folder,
+                        &log,
+                        fake_claude.as_deref(),
+                        Some((setting, Some(reason))),
+                    )
+                    .map_err(|error| error.problem)?
+                }
+            }
         };
         let client = Client::for_home(&home)?
             .ok_or_else(|| {
@@ -271,15 +386,38 @@ fn stop_home(home: &Path) -> Result<bool, Problem> {
         if !alive.success() {
             break;
         }
-        if Instant::now() >= deadline {
-            return Err(
-                Problem::new(Code::EnvPreviewStart, "preview did not stop in 10 seconds")
-                    .fix("Read the preview watane.log and stop the host before trying again"),
-            );
-        }
-        std::thread::sleep(Duration::from_millis(100));
+        wait_for_shutdown(deadline)?;
+    }
+    // The server removes its marker before the host drops the home lock.
+    while !home_unlocked(home)? {
+        wait_for_shutdown(deadline)?;
     }
     Ok(true)
+}
+
+fn wait_for_shutdown(deadline: Instant) -> Result<(), Problem> {
+    let now = Instant::now();
+    if now >= deadline {
+        return Err(
+            Problem::new(Code::EnvPreviewStart, "preview did not stop in 10 seconds")
+                .fix("Read the preview watane.log and stop the host before trying again"),
+        );
+    }
+    std::thread::sleep((deadline - now).min(Duration::from_millis(100)));
+    Ok(())
+}
+
+fn home_unlocked(home: &Path) -> Result<bool, Problem> {
+    let lock = match fs::File::open(home.join("lock")) {
+        Ok(lock) => lock,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+        Err(err) => return Err(Problem::internal(err)),
+    };
+    match lock.try_lock() {
+        Ok(()) => Ok(true),
+        Err(fs::TryLockError::WouldBlock) => Ok(false),
+        Err(err) => Err(Problem::internal(err)),
+    }
 }
 fn preview_folders(dir: &Path, env: &Env) -> Result<Vec<PathBuf>, Problem> {
     let hash = blake3::hash(dir.as_os_str().as_encoded_bytes()).to_hex();
@@ -328,6 +466,74 @@ pub fn stop(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn s114_restart_waits_for_the_home_lock_without_a_run_marker() {
+        let home = tempfile::tempdir().expect("temporary home");
+        let lock = fs::File::create(home.path().join("lock")).expect("create lock");
+        lock.try_lock().expect("take lock");
+        assert!(!home_unlocked(home.path()).expect("check lock while held"));
+        drop(lock);
+        assert!(home_unlocked(home.path()).expect("check released lock"));
+    }
+
+    #[test]
+    fn s114_restart_waits_for_stop_home_lock_after_marker_removal() {
+        use std::io::Read;
+        use std::net::TcpListener;
+
+        let home = tempfile::tempdir().unwrap();
+        let path = home.path().canonicalize().unwrap();
+        let lock = fs::File::create(path.join("lock")).unwrap();
+        lock.try_lock().unwrap();
+        let mut child = Command::new("/bin/sleep").arg("10").spawn().unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        fs::write(
+            path.join("run.json"),
+            json!({"watane":1,"mode":"preview","pid":child.id(),"port":port}).to_string(),
+        )
+        .unwrap();
+
+        let (marker_removed, removed) = mpsc::channel();
+        let (stopped, result) = mpsc::channel();
+        std::thread::scope(|scope| {
+            let path = &path;
+            scope.spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut header = Vec::new();
+                while !header.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    stream.read_exact(&mut byte).unwrap();
+                    header.push(byte[0]);
+                }
+                assert!(header.starts_with(b"GET /api/status "));
+                let body = json!({"watane":1,"mode":"preview","home":path,"port":port}).to_string();
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+                drop(stream);
+                child.wait().unwrap();
+                fs::remove_file(path.join("run.json")).unwrap();
+                marker_removed.send(()).unwrap();
+            });
+            scope.spawn(move || stopped.send(stop_home(path)).unwrap());
+
+            removed.recv_timeout(Duration::from_secs(12)).unwrap();
+            let early = result.recv_timeout(Duration::from_millis(350));
+            drop(lock);
+            assert!(matches!(early, Err(mpsc::RecvTimeoutError::Timeout)));
+            assert!(
+                result
+                    .recv_timeout(Duration::from_secs(3))
+                    .unwrap()
+                    .unwrap()
+            );
+        });
+    }
 
     #[test]
     fn ac6_serve_posts_all_folders_once_in_provider_order() {
@@ -411,7 +617,7 @@ mod tests {
                 write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
             }
         });
-        let result = serve(&dir, &env, "watane-dev serve --json").unwrap();
+        let result = crate::preview::serve(&dir, &env, "watane-dev serve --json").unwrap();
         assert_eq!(result["reused"], true);
         assert_eq!(
             result["pages"],

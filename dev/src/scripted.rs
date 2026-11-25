@@ -8,13 +8,13 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
 
+pub use crate::scripted_format::{Play, Reply, SseEvent};
 use base64::Engine as _;
 use rcgen::{
     BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair,
     KeyUsagePurpose,
 };
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-use serde::{Deserialize, Serialize};
 
 const RESPONSES_NAME: &str = "api.openai.com";
 const JUDGE_NAME: &str = "judge.test";
@@ -26,66 +26,6 @@ pub struct Recorded {
     pub path: String,
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
-}
-
-/// What the Responses origin answers to `POST /v1/responses`.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Reply {
-    Sse(Vec<SseEvent>),
-    Status {
-        code: u16,
-        body: String,
-    },
-    UsageLimit {
-        resets_in_s: u64,
-    },
-    Redirect(String),
-    Reset,
-    Stall,
-    Raw {
-        status: u16,
-        headers: Vec<(String, String)>,
-        body: Vec<u8>,
-    },
-}
-
-/// One event of an event stream, sent as one write.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum SseEvent {
-    Delta(String),
-    ToolCalls(usize),
-    Completed {
-        input_tokens: u64,
-        output_tokens: u64,
-    },
-    Failed {
-        code: String,
-    },
-    Raw(String),
-    Cut,
-}
-
-/// What the judge origin does with a request.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Play {
-    Safe(Vec<String>),
-    Unsafe(Vec<String>),
-    Unsure(Vec<String>),
-    Down,
-    Slow {
-        ms: u64,
-        then: Box<Play>,
-    },
-    Unreadable,
-    Redirect(String),
-    Raw {
-        status: u16,
-        headers: Vec<(String, String)>,
-        body: Vec<u8>,
-    },
 }
 
 /// What a connection does after its request is read.

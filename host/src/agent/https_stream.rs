@@ -21,6 +21,9 @@ use tokio_rustls::TlsConnector;
 use url::Url;
 use wasmtime::component::Val;
 
+#[cfg(all(unix, watane_dev_profile, debug_assertions))]
+mod preview;
+
 /// The largest request body (19.4).
 const MAX_BODY: usize = 1 << 20;
 /// The idle limit when the request names none, and the largest one (19.4).
@@ -411,6 +414,10 @@ pub(crate) struct Job {
 impl Job {
     pub(crate) fn go(self) {
         let _registered = Unregister(&self.live, &self.id);
+        #[cfg(all(unix, watane_dev_profile, debug_assertions))]
+        if preview::run(&self) {
+            return;
+        }
         let outcome = match self.consent() {
             Ok(()) => self.run(),
             Err(End::With(v)) => Some(v),

@@ -75,7 +75,6 @@ impl Mode {
 
 #[derive(Debug)]
 pub struct Host {
-    home: home::Home,
     catalog: Mutex<catalog::Catalog>,
     serving: AtomicBool,
     port: std::sync::atomic::AtomicU16,
@@ -120,6 +119,9 @@ pub struct Host {
     /// Tests only: holds the runs of agent tools just before their authority is read (19.9).
     #[cfg(feature = "test-streams")]
     agent_gate: agent::tools::AgentGate,
+    // Fields drop in declaration order. Keep the home lock until all other fields,
+    // including the state database, have been dropped.
+    home: home::Home,
 }
 
 impl Host {

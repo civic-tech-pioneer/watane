@@ -151,6 +151,46 @@ impl Drop for Preview {
     }
 }
 
+#[cfg(all(unix, watane_dev_profile, debug_assertions))]
+#[test]
+fn s114_sigterm_reaps_the_scripted_responses_child() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempfile::tempdir().unwrap();
+    let home = temp.path().join("home");
+    let fake = temp.path().join("scripted-responses");
+    let ready = json!({
+        "scripted": 1,
+        "responses_addr": "127.0.0.1:1",
+        "ca_pem": crate::https_stream::scripted_preview_root(),
+    });
+    fs::write(
+        &fake,
+        format!(
+            r#"#!/bin/sh
+printf '%s\n' "$$" > "${{0%/*}}/pid"
+printf '%s\n' '{ready}'
+exec /bin/sleep 30
+"#
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&fake, fs::Permissions::from_mode(0o700)).unwrap();
+    let mut preview = Preview::start_with(&home, &["--scripted-openai".as_ref(), fake.as_os_str()]);
+    let pid = fs::read_to_string(temp.path().join("pid")).unwrap();
+    let child_alive = || {
+        Command::new("/bin/kill")
+            .args(["-0", pid.trim()])
+            .output()
+            .unwrap()
+            .status
+            .success()
+    };
+    assert!(child_alive());
+    preview.stop();
+    assert!(!child_alive(), "the scripted child was not reaped");
+}
+
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/mods")

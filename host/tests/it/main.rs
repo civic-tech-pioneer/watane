@@ -24,5 +24,7 @@ mod program;
 mod r7;
 mod requests;
 mod runtime;
+#[cfg(unix)]
+mod scripted_preview;
 mod streams;
 mod verify;

@@ -39,6 +39,7 @@ dev/
   src/bin/fake-gh.rs    step 6: a fake `gh` for tests (feature `fake-host`, 15.4)
   src/bin/fake-claude.rs  step 11: a fake `claude` (feature `fake-claude`, 18.2)
   src/bin/scripted-responses.rs  step 11: `ScriptedResponses` as a program (feature `fake-claude`, 18.3)
+  src/scripted_format.rs  step 11: script file types used by serve and the scripted program (18.3)
   src/scripted.rs       step 11: `ScriptedResponses`, the Responses server and its judge origin (feature `fake-claude`, 18.3)
 template/               the files of a new mod (section 4)
 allowlist/Cargo.toml    the allowlist: direct crates, exact versions
@@ -144,7 +145,7 @@ watane-dev [--json] [--dir <path>] <command>
   new <slug>                 --dir is the new folder; default ./<slug>
   check
   test [--home <path>]
-  serve [--stop] [--home <path>]
+  serve [--stop | --script <file>] [--home <path>]
   doctor
   add <mod folder>                                          (step 2)
   install [--home <path>] [--wait <seconds>]                (step 2)
@@ -323,7 +324,9 @@ an index that names where it is published`, fix `Ask the person to list
 the host blocks it), `ui.inline_script` (`ui/*.html` holds a `<script>`
 without `src`; the content policy blocks it), `test.uncovered` (an
 exported function is called by no contract step), `preview.fake_claude_missing` (step 11: `serve` or `doctor`
-found no `fake-claude`; message `the program fake-claude was not found (<where>); a preview cannot start Claude Code`, fix `Install watane-dev with its agent layer fakes, or set WATANE_FAKE_CLAUDE to the program`), `preview.previous` (a
+found no `fake-claude`; message `the program fake-claude was not found (<where>); a preview cannot start Claude Code`, fix `Install watane-dev with its agent layer fakes, or set WATANE_FAKE_CLAUDE to the program`),
+`preview.scripted_openai_missing` (`serve` used the ordinary preview because
+automatic scripted Responses setup was unavailable, 18.4), `preview.previous` (a
 `serve` refused by the test pipeline while a preview for that folder still
 answers; message `the preview at <page url> still serves the previous build`
 (the API URL only when the served mod has no page),
@@ -1370,7 +1373,8 @@ and the command's `next` are
 
 ### 9.3 `serve`
 
-1. Resolve `deps::local_order(dir)` (9.2), then run the whole `test` pipeline
+1. Read and validate any scripted Responses file (18.4). Resolve
+   `deps::local_order(dir)` (9.2), then run the whole `test` pipeline
    (check, build, unit, contract) for each folder, providers first.
    On any error return the test errors without starting or updating a
    preview. Look for an answering preview using the canonical-path hash
@@ -1385,8 +1389,9 @@ and the command's `next` are
    to `serve`, never `serve --stop`.
 2. Preview folder `P = <cache>/previews/<slug>-<h8>/`, home `P/home`.
    If the host of `P/home` runs (9.1) and `P/ready.json` exists: reuse it
-   (`reused` true). If it runs and `P/ready.json` is missing: stop it
-   (9.4 steps 1 to 3), then start it.
+   (`reused` true) when the scripted Responses selection still matches (18.4).
+   If the ready line is missing or the selection changed, stop the running
+   host (9.4 steps 1 to 3), then start it.
    Step 11: find `fake-claude` (9.1). If found, link it as
    `<P>/claude/fake-claude` (a symbolic link, replaced at each `serve`) and, if
    `<P>/claude/fake-claude.json` does not exist, write the default script of
@@ -1395,7 +1400,9 @@ and the command's `next` are
 3. Start: spawn `<watane> --preview <P/home>` (step 11, with `--fake-claude
    <P>/claude/fake-claude` when step 2 linked it; host 12.2, 19.9) with stdin null, stdout
    piped, stderr appended to `P/watane.log`, and on Unix
-   `process_group(0)`, so the preview outlives dev and the agent's shell. A
+   `process_group(0)`, so the preview outlives dev and the agent's shell.
+   For scripted Responses, pass `--scripted-openai <program>` and, when a
+   script was supplied, `--openai-script <snapshot>` (18.4). A
    thread reads one line of stdout and ends. dev waits up to 30 s:
    - a line that parses as `watane_host::Ready`: write it to
      `P/ready.json` with mode 0600;
@@ -1432,8 +1439,10 @@ when no preview folder matches.
 1. `RunInfo::read(P/home)`; if none, or the host does not answer with
    `home` = `P/home` in `/api/status`, go to step 4 with `stopped` false.
 2. Run `kill -TERM <pid>`.
-3. Wait up to 10 s, polling every 100 ms, until `kill -0 <pid>` fails or
-   `run.json` is gone.
+3. Poll every 100 ms until `kill -0 <pid>` fails or `run.json` is gone.
+   Then wait for the host to release the home lock before deleting the
+   folder or restarting the preview. Host TECHNICAL §3 guarantees that the
+   lock outlives the state database. The two waits share a 10 s limit.
 4. Delete `P`.
 
 ### 9.5 `add <mod folder>` (step 2)
@@ -2221,7 +2230,9 @@ headers (app 8.3); `/api/publish` adds `providers` (app 8.1).
 **host** (step 11; host 19.9, 12.2):
 - `watane --preview <dir> ... --fake-claude <path>`, which calls `Host::set_fake_claude(&self, program: &Path)` (a preview only): `serve` passes the `fake-claude` it linked (9.3, 18.4). Tests in a participant home give the path through their fake `AccountSource::claude_binary()` (host 19.4).
 - The Cargo feature `test-net` of `watane-host`, with `Host::set_test_net(&self, TestNet)` and `pub struct TestNet { pub routes: Vec<(String, SocketAddr)>, pub root_pem: String }`: a host test spawns `scripted-responses`, reads its addresses and `ca_pem` from its first line (18.3) and passes `routes` for `api.openai.com` and the judge host with that root. It is never in a release.
-- A preview refuses the two Claude Code grants and the accounts (W5; F-MAKE-4); the fake `claude` is what it offers instead.
+- A preview refuses the two Claude Code grants and participant accounts
+  (W5; F-MAKE-4). It offers fake Claude Code and, in development builds,
+  scripted OpenAI (18.4; host 19.9).
 
 **install** (step 11): the distribution of `watane-dev` must pack `fake-claude` and `scripted-responses` beside `watane-dev` (9.1 finds `fake-claude` there), built with `--features fake-claude` (1.1). This is a need of `install/`, which dev does not edit: question 14.
 
@@ -2360,6 +2371,7 @@ rules belong to 15.1.
 | DEV-S-62 | `scripted::ac6_judge_plays`, `scripted::ac7_judge_counts_every_request` | https client; planned: dev stage 16 |
 | DEV-S-63 | `scripted::ac7_judge_counts_every_request`, `scripted::ac8_judge_key` | https client; planned: dev stage 16 |
 | DEV-S-64 | `preview::unix::tests::ac7_link_writes_default_script_once_and_keeps_the_makers`, `preview::unix::tests::ac7_link_is_replaced_and_copied_where_linking_fails`, `preview::unix::tests::ac7_find_fake_claude_reads_the_variable`, `preview::unix::tests::ac7_spawn_arguments_with_and_without_the_fake`, `doctor::tests::ac7_fake_claude_field_and_warning`; `fake_claude::ac7_serve_passes_the_flag_to_the_host` (slow) | unit: temp folder, literal script and argument vector; slow: the full `serve` against `fake-watane` |
+| DEV-S-67 | `scripted_preview::*`, `preview::unix::tests::s114_restart_*` | CLI diagnostics, loopback scripted preview, and the home lock across shutdown |
 | DEV-S-65 | `scripted::ac6_program_default_and_log` | child process |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
@@ -2549,6 +2561,11 @@ Carol's. The raw URL itself appears only as text (`raw`,
 
 ### 15.5 The agent layer fakes (step 11)
 
+The scripted preview tests in `tests/it/scripted_preview.rs` cover automatic
+fallback, validation of the maker's script, and the real preview lifecycle.
+The `s114_restart_*` preview unit tests check that shutdown waits for the
+home lock after the run marker is gone.
+
 The fakes are tested without the host, by their own clients: `fake-claude`
 and `scripted-responses` as child processes that the test drives over pipes, `ScriptedResponses` by
 an https client in the test that trusts `ca_pem()`. Oracles are literal
@@ -2677,17 +2694,11 @@ Each has a proposed answer, which this specification uses.
     its build uses `--no-default-features --features fake-claude` (1.1) and
     packs both programs beside `watane-dev`. Until then `serve` warns
     `preview.fake_claude_missing`.
-15. **No scripted OpenAI stream in a release preview** (step 11): the host's
-    test routes (`test-net`) are never in a release (host 19.9), and a preview
-    refuses accounts (W5), so a preview cannot reach `scripted-responses`.
-    Decided (foreman, S95): `ScriptedResponses` serves tests as the program
-    `scripted-responses` that host and app tests spawn (no library use of
-    `watane-dev` across subsystems, spec §2). Open for stage D: spec
-    F-MAKE-4 promises a scripted OpenAI stream in a preview from stage D, which
-    needs a host preview setting outside `test-net` (host 19.9) and `serve`
-    starting `scripted-responses`; options: (a) that setting, recommended;
-    (b) drop the promise from F-MAKE-4 (the human's, since it narrows an
-    accepted requirement). Until stage D a preview offers `fake-claude` only.
+15. **Scripted OpenAI in development previews** (decided, S114, option a):
+    `serve` starts the S111 `scripted-responses` program through the host's
+    separate preview setting (host 19.9). Release hosts and the app's real
+    home have no access to the setting. Tests can still spawn the standalone
+    program and use `test-net`. Subsystems do not link `watane-dev`.
 16. **How the host trusts the fake** (step 11): `https-stream` connects to
     `api.openai.com` and to the judge's origin over TLS, and a preview must
     run `fake-claude` in place of `claude`. Decided in host 19.9: the host's
@@ -2887,7 +2898,8 @@ and serves until it is killed (SIGTERM). `--script` is a JSON file
 `{"token": string?, "models": [string]?, "replies": [Reply]?, "judge_key": string?, "plays": [Play]?}`
 whose `Reply`, `SseEvent` and `Play` values are the serde forms of the types
 above (externally tagged, kebab-case names; the default script is one `Sse`
-with `Delta("ok")` and `Completed`, and one `Safe([])`). With `--log`, it
+with `Delta("ok")` and `Completed`, and one `Safe([])`). The program and
+preview validation use the same `scripted_format::Script` type. With `--log`, it
 writes each request it receives as `<dir>/responses/<n>.json` or
 `<dir>/judge/<n>.json` (`n` from 1: `{"method","path","headers","body_b64"}`),
 so a test reads `requests()` and `count()` as the files of the folder.
@@ -2963,8 +2975,28 @@ once. The maker tools offer the fake `claude` instead:
 - If `fake-claude` is not found (9.1), `serve` and `doctor` give the warning
   `preview.fake_claude_missing` (2.2), and a start of Claude Code in that
   preview ends `no-binary` (host 19.9).
-- A scripted OpenAI stream is not offered in a preview (question 15): the
-  preview refuses the account `openai`.
+- On Linux and macOS with a development host, `watane-dev serve [--script <file>]`
+  enables scripted Responses when a served mod declares `http.hosts` with
+  `api.openai.com`, or when a script is supplied. `--script` takes a path
+  relative to the invoking directory and conflicts with `--stop`. Without it,
+  `serve` looks for `scripted-responses.json` in the root mod folder. With no
+  file the program uses its built-in reply (18.3). The format is the
+  standalone program's JSON from 18.3. Its optional `token` is a fixture
+  value and defaults on the preview side to `watane-preview`.
+- Dev finds `scripted-responses` beside `watane-dev`, on PATH, or via the
+  override `WATANE_SCRIPTED_RESPONSES` (checked first). Dev passes the host
+  a private, temporary snapshot of the script and removes it after startup
+  (host 19.9). Dev validates a supplied script against the 18.3 format
+  before testing the mod. A missing program or a host that rejects the
+  setting gives `preview.scripted_openai_missing` and starts or reuses
+  an ordinary preview when no script was supplied. A host refusal is remembered
+  for the selected program fingerprint and the live preview port, preserving
+  the API and MCP connection on the next serve without a script. With a supplied script,
+  invalid input or unavailable scripted preview support fails with
+  `env.preview_start` and names the maker's file.
+  An unchanged script reuses a live preview. Changing the script or enabling
+  or disabling scripted Responses restarts the preview and keeps its data.
+  Released tools lack the scripted server until the distribution packs it (question 14).
 - Contract tests (8) do not use the fakes: a contract test fakes the host's
   interfaces by key (8.1), and the agent layer's calls are tested with the
   kernel's own tests.

@@ -72,8 +72,25 @@ fn parse_row(text: &str) -> Option<(u64, String)> {
 pub(crate) struct State {
     path: PathBuf,
     db: Mutex<Option<Arc<Database>>>,
+    #[cfg(all(test, unix))]
+    home_lock_at_drop: std::sync::OnceLock<PathBuf>,
     pub stats: Arc<Stats>,
 }
+#[cfg(all(test, unix))]
+impl Drop for State {
+    fn drop(&mut self) {
+        if let Some(path) = self.home_lock_at_drop.get() {
+            // The drop body runs while the database is still open.
+            assert!(self.db.get_mut().expect("state mutex").is_some());
+            let lock = std::fs::File::open(path).expect("open host lock");
+            assert!(matches!(
+                lock.try_lock(),
+                Err(std::fs::TryLockError::WouldBlock)
+            ));
+        }
+    }
+}
+
 impl State {
     pub fn open(home: &Path) -> Result<Self, HostError> {
         let path = home.join("state/state.redb");
@@ -87,6 +104,8 @@ impl State {
         Ok(Self {
             path,
             db: Mutex::new(db),
+            #[cfg(all(test, unix))]
+            home_lock_at_drop: std::sync::OnceLock::new(),
             stats: Arc::default(),
         })
     }
@@ -607,6 +626,22 @@ mod tests {
     use super::{State, TimerOp};
     use crate::Limits;
     use std::sync::atomic::Ordering::Relaxed;
+
+    #[cfg(unix)]
+    #[test]
+    fn s114_home_lock_remains_held_until_state_closes() {
+        let dir = tempfile::tempdir().expect("temporary preview");
+        let host = crate::Host::open(dir.path(), crate::Mode::Preview, Limits::default())
+            .expect("open preview");
+        let path = dir.path().join("lock");
+        host.state
+            .home_lock_at_drop
+            .set(path.clone())
+            .expect("arm drop check");
+        drop(host);
+        let lock = std::fs::File::open(path).expect("open host lock");
+        lock.try_lock().expect("the host released the lock");
+    }
 
     /// The writer's counters tell the host's own commits (timer writes) from the mods'
     /// transactions: both count in `commits`, only the host's in `host_commits` (19.9).

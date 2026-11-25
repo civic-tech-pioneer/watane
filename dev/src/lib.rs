@@ -15,6 +15,7 @@ pub mod outcome;
 pub mod preview;
 #[cfg(feature = "fake-claude")]
 pub mod scripted;
+pub mod scripted_format;
 pub mod share;
 pub mod template;
 pub mod toolchain;
