@@ -3554,7 +3554,8 @@ checks of the table above are made at the call.
     the check and the connection: scheme `https`, no userinfo, host
     lower-cased without a trailing dot, the port with 443 as default; the same
     parse decides `[http]`. The host adds `Authorization: Bearer <key>`; no
-    redirects. Without an entered key: `no-account`.
+    redirects. A home with no app or no account source ends `no-app`. With
+    an account source and no entered key, the stream ends `no-account`.
   - When: `AccountSource::judge` is an in-process read, so the binding is
     checked at the call (`destination` is the `start-error`); with no key the
     call returns the stream, which ends `no-account`. At apply the host reads

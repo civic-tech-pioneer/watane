@@ -1835,6 +1835,17 @@ fn ac2_judge_requires_the_exact_provider_and_a_post_to_its_origin() {
 }
 
 #[test]
+fn ac2_judge_without_an_app_account_source_is_no_app() {
+    let mut rig = Rig::new(None);
+    let judge = rig.serve("second.test", |c| async move { c.finish().await });
+    *rig.app.tokens.lock().unwrap() = None;
+    let id = rig.start(&judge_request());
+    assert!(hex32(&id), "{id}");
+    rig.wait_ended(&id, "no-app");
+    assert_eq!(judge.connections.load(Ordering::SeqCst), 0);
+}
+
+#[test]
 fn ac2_a_preview_cannot_use_a_judge_account() {
     let dir = tempfile::tempdir().unwrap();
     let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
