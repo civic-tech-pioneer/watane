@@ -1089,6 +1089,13 @@ impl Hub {
             origin.map_or(0, |o| inner.origin_bytes.get(&o).copied().unwrap_or(0)),
         )
     }
+    #[cfg(feature = "test-streams")]
+    pub fn test_deferred_and_full(&self, id: &str) -> bool {
+        self.lock()
+            .streams
+            .get(id)
+            .is_some_and(|s| s.deferred.is_some() && s.needs_ready.is_some())
+    }
     pub fn test_paused(&self, id: &str) -> bool {
         self.lock().streams.get(id).is_some_and(|s| {
             s.deferred.is_some()

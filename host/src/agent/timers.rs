@@ -291,7 +291,8 @@ mod tests {
             .unwrap()
             .insert("local/advo".into(), Arc::clone(&lock));
 
-        for trial in 0..20 {
+        for trial in 0..=20 {
+            let cancel = trial < 20;
             let key = crate::state::timer_key("local/advo", &format!("t{trial}"));
             let due = unix_ms();
             // Arm only after taking the mod's lock, so the due timer cannot beat the cancel.
@@ -316,7 +317,9 @@ mod tests {
                 );
                 std::thread::sleep(Duration::from_millis(1));
             }
-            host.state.timer_write(&[TimerOp::Cancel { key }]).unwrap();
+            if cancel {
+                host.state.timer_write(&[TimerOp::Cancel { key }]).unwrap();
+            }
             drop(held);
             let deadline = Instant::now() + Duration::from_secs(3);
             while host.timers.lock().flight.contains(&flight) {
@@ -325,7 +328,11 @@ mod tests {
             }
 
             let mut state = host.state.transaction("local/advo", &host.limits).unwrap();
-            assert_eq!(state.get("fired").unwrap(), None, "a cancelled timer fired");
+            assert_eq!(
+                state.get("fired").unwrap(),
+                if cancel { None } else { Some(b"t20".to_vec()) },
+                "only the uncancelled control timer should fire"
+            );
         }
     }
 

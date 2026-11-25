@@ -530,6 +530,8 @@ async fn ac11_s11_restart_preserves_links_and_provider_state() {
     call(&host, "shelf", "items.add", json!(["Dune"]))
         .await
         .unwrap();
+    // On Unix the explicit unlock makes this immediate even if an unrelated child
+    // still holds a copy of the descriptor between fork and exec.
     drop(host);
     let host = Host::open(home.path(), watane_host::Mode::Preview, Limits::default()).unwrap();
     assert_eq!(

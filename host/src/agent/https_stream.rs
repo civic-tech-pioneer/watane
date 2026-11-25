@@ -114,8 +114,8 @@ pub(crate) struct Request {
 }
 
 impl Request {
-    /// Reads and checks the request text (19.4, Refused at the call). `grants` are the mod's
-    /// granted `Http` hosts. `bind_judge` resolves the provider's account in-process.
+    /// Reads and checks the request text (19.4, Refused at the call). `grants` lists hosts named
+    /// by the mod's approved `Http` grants. `bind_judge` resolves the provider's account.
     fn parse(
         text: &str,
         grants: &[String],
@@ -759,9 +759,12 @@ impl Job {
             .within(sender.send_request(built))
             .await?
             .map_err(|e| {
-                End::With(failed(format!(
-                    "HTTP: connection ended before the response head: {e}"
-                )))
+                let what = if e.is_parse() {
+                    "invalid response head"
+                } else {
+                    "connection ended before the response head"
+                };
+                End::With(failed(format!("HTTP: {what}: {e}")))
             })?;
         let (parts, mut body) = response.into_parts();
         self.push(head_item(&parts).into_bytes()).await?;
@@ -923,12 +926,13 @@ impl Sse {
             match b {
                 b'\r' => {
                     self.after_cr = true;
-                    self.end_line(&mut out);
+                    self.end_line(&mut out)?;
                 }
-                b'\n' => self.end_line(&mut out),
+                b'\n' => self.end_line(&mut out)?,
                 _ => {
                     self.line.push(b);
-                    if self.line.len() + self.data.len() > MAX_ITEM {
+                    // Budget the pending line, plus at most a BOM and the "data: " prefix.
+                    if self.line.len() + self.data.len() > MAX_ITEM + 9 {
                         return Err("a server-sent event is over 4 MiB");
                     }
                 }
@@ -936,7 +940,7 @@ impl Sse {
         }
         Ok(out)
     }
-    fn end_line(&mut self, out: &mut Vec<Vec<u8>>) {
+    fn end_line(&mut self, out: &mut Vec<Vec<u8>>) -> Result<(), &'static str> {
         let mut line = std::mem::take(&mut self.line);
         if !std::mem::replace(&mut self.started, true) && line.starts_with(&[0xef, 0xbb, 0xbf]) {
             line.drain(..3);
@@ -947,10 +951,10 @@ impl Sse {
                 data.pop();
                 out.push(data);
             }
-            return;
+            return Ok(());
         }
         if line[0] == b':' {
-            return;
+            return Ok(());
         }
         let (field, value) = match line.iter().position(|&b| b == b':') {
             Some(i) => {
@@ -960,10 +964,15 @@ impl Sse {
             None => (&*line, &[][..]),
         };
         if field == b"data" {
+            // `data` already includes the separator from the last line, if any.
+            if self.data.len() + value.len() > MAX_ITEM {
+                return Err("a server-sent event is over 4 MiB");
+            }
             self.data.extend_from_slice(value);
             self.data.push(b'\n');
             self.has_data = true;
         }
+        Ok(())
     }
 }
 
@@ -1154,6 +1163,25 @@ mod tests {
             #[cfg(feature = "test-net")]
             net: None,
         }
+    }
+
+    #[test]
+    fn s126_sse_item_limit_counts_only_event_data_and_its_separators() {
+        let event = |size| {
+            // The BOM and field prefixes are framing. The inter-line LF is part of the item.
+            let mut wire = b"\xef\xbb\xbfdata: a\r\ndata: ".to_vec();
+            wire.resize(wire.len() + size - 2, b'x');
+            wire.extend_from_slice(b"\r\n\r\n");
+            Sse::default().feed(&wire)
+        };
+        let items = event(MAX_ITEM).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].len(), MAX_ITEM);
+        assert_eq!(&items[0][..3], b"a\nx");
+        assert_eq!(
+            event(MAX_ITEM + 1).unwrap_err(),
+            "a server-sent event is over 4 MiB"
+        );
     }
 
     #[test]

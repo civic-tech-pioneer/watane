@@ -800,6 +800,10 @@ impl Host {
             host: std::sync::Weak::<Host>::clone(&self.weak),
         }
     }
+    /// A deferred consumer and a writer refused for room (19.2, 19.9).
+    pub fn test_stream_deferred_and_full(&self, id: &str) -> bool {
+        self.hub.test_deferred_and_full(id)
+    }
     pub fn set_test_clock(&self, clock: TestClock) {
         self.hub.set_clock(&clock);
     }
