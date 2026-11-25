@@ -1391,7 +1391,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Protects: *guard* (item 1), else *polish*.
 - [~] **S123 (upkeep) Alice's install, upgrade and uninstall say the true thing (install/ polish from S89, S50b-fix,
   S50b-fix2, S50c, S94).** (in flight, cloud, builder codex, reviewer claude; rule 3: last two S122 codex, S121 claude;
-  the upkeep lane, sketched 2026-11-25 by deputy-4 from Leftovers, install; Codex task https://chatgpt.com/local/6b06a324-a2e4-83eb-9de4-9f96d259204d, dispatched 08:59 UTC; DELIVERED 09:17 UTC as PR #41 at 46f8c1b (+492/-136; receipts gain a record of folders install.sh created, old receipts leave them alone); r1: Claude review, routine `trig_01DEjihs5BriDzzvy1LQxiRG`, fires 09:19 UTC; r1 (09:26): 1/6, changes (1) (F1.1 shellcheck cannot parse install.sh, ubuntu red); receipts checked: old ones still read, no folder removed that install.sh did not make; P1.1, P1.3, P1.6 taken, P1.2, P1.4, P1.5 to Leftovers; answer r1 to the same Codex task, 09:28 UTC; r1 answered at 776b61d; r2: Claude review, routine `trig_0199wSgiT94m4CPYGbPZtt6a`, fires 09:31 UTC.) Outcomes, each item's check (re-check each
+  the upkeep lane, sketched 2026-11-25 by deputy-4 from Leftovers, install; Codex task https://chatgpt.com/local/6b06a324-a2e4-83eb-9de4-9f96d259204d, dispatched 08:59 UTC; DELIVERED 09:17 UTC as PR #41 at 46f8c1b (+492/-136; receipts gain a record of folders install.sh created, old receipts leave them alone); r1: Claude review, routine `trig_01DEjihs5BriDzzvy1LQxiRG`, fires 09:19 UTC; r1 (09:26): 1/6, changes (1) (F1.1 shellcheck cannot parse install.sh, ubuntu red); receipts checked: old ones still read, no folder removed that install.sh did not make; P1.1, P1.3, P1.6 taken, P1.2, P1.4, P1.5 to Leftovers; answer r1 to the same Codex task, 09:28 UTC; r1 answered at 776b61d; r2: Claude review, routine `trig_0199wSgiT94m4CPYGbPZtt6a`, fires 09:31 UTC; r2 (09:41): 0/1, approve (P2.1 to Leftovers); ubuntu red on host's mcp::ac7 `Busy` flake, outside the slice: rerun once.) Outcomes, each item's check (re-check each
   line against main first; drop one already fixed): (1) every line install.sh prints after a Ctrl-C, a refusal or a
   skipped entry is true and names `~`-relative paths: the post-undo "still works", "uninstalled" with skipped entries,
   the install-it-later line naming `WATANE_RUSTUP_URL`'s target, a Ctrl-C at each question saying whether watane is
@@ -1678,6 +1678,7 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### host
 
+- [S123 CI] (guard, first sighting) `mcp::ac7_toolset_grammar_and_persistence` (`host/tests/it/mcp.rs:416`) failed on ubuntu with `Busy("/tmp/.tmp…")` reopening the host after `drop(host)` (the lock is still held); the same `Busy` as S121's app fixtures flake: one cause, likely the host's lock release on drop.
 - [S119 r1] (polish) P1.1 `host/src/agent/https_stream.rs:662-666`: a head that fails to parse also reads "connection ended before the response head"; P1.5 `:832` the `data: ` field name counts toward MAX_ITEM (an event of exactly 4 MiB is refused), test `Sse::feed` at the boundary.
 - [S119 r1] (guard, first sighting) P1.7 `streams::ac10_hand_off_moves_a_host_stream_to_a_mod_that_exports_stream_sink` (`host/tests/it/streams.rs:663`) failed once (`Some(2)` vs `Some(3)`); likely a race between `api.received` and the `deliveries()` snapshot.
 
@@ -1773,6 +1774,7 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### install
 
+- [S123 r2] (polish) P2.1 `ac2_uninstall_keeps_a_relinked_created_folder` passes without the `! -L` and resolved-path guards of `root_folder_receipt_line`; test them through `keep_created_roots` on a reinstall. `install/tests/clean_mac.sh:13` raises SC2015 with ShellCheck 0.9.0 (CI's passes).
 - [S123 r1] (polish) P1.2 uninstall still `rmdir`s an empty `~/.local/bin` and `~/.local/share` the person made before the install (now that receipts record who made a folder, record these too); P1.4 a blank line before `--- end of rustup's output ---` when rustup ends with a newline; P1.5 'outside your home folder ~' reads oddly (3.4.1 example and INST-S-31 with it).
 - From S94: check_foreign's `pid_gone` skip has no unit case; 39 `slow:` reasons are generic (the
   rule is only in the `///` line); `target/tmp/install-cache-*` folders pile up per install.sh
