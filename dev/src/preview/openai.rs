@@ -72,14 +72,17 @@ impl Refusal {
     }
 
     pub(super) fn warning(self) -> Problem {
-        let message = match self {
-            Self::Usage => "this watane is not a development build with scripted OpenAI support",
-            Self::Scripted => "the host previously refused scripted OpenAI for this preview",
+        let (message, fix) = match self {
+            Self::Usage => (
+                "this watane is not a development build with scripted OpenAI support",
+                "Use a development build of watane and restart the preview",
+            ),
+            Self::Scripted => (
+                "the host previously refused scripted OpenAI for this preview",
+                "Run `watane-dev serve --stop`; the refusal is remembered until the preview stops or its port changes",
+            ),
         };
-        unavailable_warning(
-            Problem::new(Code::EnvPreviewStart, message)
-                .fix("Use a development build of watane and restart the preview"),
-        )
+        unavailable_warning(Problem::new(Code::EnvPreviewStart, message).fix(fix))
     }
 }
 
@@ -369,6 +372,57 @@ mod tests {
         OpenAi::remember(None, folder, 101).expect("clear scripted marker");
         assert!(!folder.join(MARKER).exists());
         assert!(OpenAi::matches(None, folder, 101));
+    }
+
+    #[test]
+    fn ac1_fallback_reads_only_refusal_markers_and_not_with_a_script() {
+        let dir = tempfile::tempdir().expect("preview folder");
+        let folder = dir.path();
+        let openai = OpenAi {
+            program: "/fixture".into(),
+            script: None,
+            fingerprint: blake3::hash(b"default"),
+        };
+        OpenAi::remember(Some((&openai, None)), folder, 100).expect("plain marker");
+        assert!(openai.fallback(folder, 100).is_none());
+        OpenAi::remember(Some((&openai, Some(Refusal::Scripted))), folder, 100)
+            .expect("scripted refusal");
+        assert!(matches!(
+            openai.fallback(folder, 100),
+            Some(Refusal::Scripted)
+        ));
+        OpenAi::remember(Some((&openai, Some(Refusal::Usage))), folder, 100)
+            .expect("usage refusal");
+        assert!(matches!(openai.fallback(folder, 100), Some(Refusal::Usage)));
+        let supplied = OpenAi {
+            program: "/fixture".into(),
+            script: Some(ScriptInput {
+                path: "/script.json".into(),
+                bytes: b"{}".to_vec(),
+            }),
+            fingerprint: openai.fingerprint,
+        };
+        assert!(supplied.fallback(folder, 100).is_none());
+    }
+
+    #[test]
+    fn ac2_refusal_fixes_name_the_real_remedy() {
+        assert_eq!(
+            Refusal::Scripted.warning().fix.as_deref(),
+            Some(
+                "Run `watane-dev serve --stop`; the refusal is remembered until the preview stops or its port changes"
+            )
+        );
+        assert_eq!(
+            Refusal::Usage.warning().fix.as_deref(),
+            Some("Use a development build of watane and restart the preview")
+        );
+        assert!(
+            Refusal::Scripted
+                .warning()
+                .message
+                .contains("host previously refused scripted OpenAI for this preview")
+        );
     }
 
     #[test]
