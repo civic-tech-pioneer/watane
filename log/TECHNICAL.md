@@ -389,6 +389,10 @@ key work. Serialize key lookup, creation and replacement with an
 exclusive lock on a private `.identity.lock` file. The lock file remains
 in the directory. It must have exactly one link and an owner-only DACL.
 
+The shared `windows-fs::private_dir` reports OS failures in creation,
+opening or inspection as `PrivateDirError::Io`. A wrong file kind, owner
+or DACL found during validation is `PrivateDirError::Invalid`.
+
 Open the key with `FILE_FLAG_OPEN_REPARSE_POINT`. Before reading any
 seed bytes, refuse reparse points, nondisk or nonregular files, multiple
 links, a foreign owner or a DACL other than one owner-only allow entry.

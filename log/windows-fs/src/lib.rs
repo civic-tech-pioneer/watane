@@ -143,37 +143,42 @@ fn private_attributes(descriptor: &LocalAllocation) -> SECURITY_ATTRIBUTES {
 
 /// Create a directory with a protected, owner-only ACL from the first instant.
 pub fn create_dir(path: &Path) -> io::Result<()> {
-    let wide = absolute_wide(path)?;
-    let descriptor = User::current()?.descriptor(true)?;
+    create_checked_dir(path).map_err(PrivateDirError::into_io)
+}
+
+fn create_checked_dir(path: &Path) -> Result<(), PrivateDirError> {
+    let wide = absolute_wide(path).map_err(PrivateDirError::Io)?;
+    let descriptor = User::current()
+        .and_then(|user| user.descriptor(true))
+        .map_err(PrivateDirError::Io)?;
     let attributes = private_attributes(&descriptor);
     // SAFETY: The path is nul terminated and attributes borrow the live descriptor.
     if unsafe { CreateDirectoryW(wide.as_ptr(), &attributes) } == 0 {
-        return Err(io::Error::last_os_error());
+        return Err(PrivateDirError::Io(io::Error::last_os_error()));
     }
-    open_private_dir(path)
-        .map(drop)
-        .map_err(|error| match error {
-            PrivateDirError::Io(error) | PrivateDirError::Invalid(error) => error,
-        })
+    open_private_dir(path).map(drop)
 }
 
 /// Create missing directories with the same private ACL as the final directory.
 pub fn create_dir_all(path: &Path) -> io::Result<()> {
-    match create_dir(path) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(()),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+    create_checked_dirs(path).map_err(PrivateDirError::into_io)
+}
+
+fn create_checked_dirs(path: &Path) -> Result<(), PrivateDirError> {
+    match create_checked_dir(path) {
+        Err(PrivateDirError::Io(e)) if e.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+        Err(PrivateDirError::Io(e)) if e.kind() == io::ErrorKind::NotFound => {
             let parent = path
                 .parent()
                 .filter(|p| !p.as_os_str().is_empty())
-                .ok_or(e)?;
-            create_dir_all(parent)?;
-            match create_dir(path) {
-                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+                .ok_or(PrivateDirError::Io(e))?;
+            create_checked_dirs(parent)?;
+            match create_checked_dir(path) {
+                Err(PrivateDirError::Io(e)) if e.kind() == io::ErrorKind::AlreadyExists => Ok(()),
                 result => result,
             }
         }
-        Err(e) => Err(e),
+        result => result,
     }
 }
 
@@ -182,8 +187,16 @@ pub fn create_dir_all(path: &Path) -> io::Result<()> {
 pub enum PrivateDirError {
     /// An operating-system failure while creating, opening or inspecting the directory.
     Io(io::Error),
-    /// The final path has the wrong kind, ownership or access control.
+    /// A checked path has the wrong kind, ownership or access control.
     Invalid(io::Error),
+}
+
+impl PrivateDirError {
+    fn into_io(self) -> io::Error {
+        match self {
+            Self::Io(error) | Self::Invalid(error) => error,
+        }
+    }
 }
 
 impl std::fmt::Display for PrivateDirError {
@@ -204,7 +217,7 @@ impl std::error::Error for PrivateDirError {
 
 /// Create missing private directories. Return a checked handle that pins the final directory.
 pub fn private_dir(path: &Path) -> Result<File, PrivateDirError> {
-    create_dir_all(path).map_err(PrivateDirError::Io)?;
+    create_checked_dirs(path)?;
     open_private_dir(path)
 }
 
@@ -219,7 +232,7 @@ fn open_private_dir(path: &Path) -> Result<File, PrivateDirError> {
             "expected a plain Windows directory",
         )));
     }
-    check_owner_only(&directory).map_err(PrivateDirError::Invalid)?;
+    check_owner_only_current(&directory)?;
     Ok(directory)
 }
 
@@ -346,11 +359,15 @@ pub fn open_or_create_private_file(path: &Path) -> io::Result<File> {
 }
 
 pub fn check_owner_only(file: &File) -> io::Result<()> {
-    let user = User::current()?;
+    check_owner_only_current(file).map_err(PrivateDirError::into_io)
+}
+
+fn check_owner_only_current(file: &File) -> Result<(), PrivateDirError> {
+    let user = User::current().map_err(PrivateDirError::Io)?;
     check_owner_only_as(file, user.sid())
 }
 
-fn check_owner_only_as(file: &File, current: *mut c_void) -> io::Result<()> {
+fn check_owner_only_as(file: &File, current: *mut c_void) -> Result<(), PrivateDirError> {
     let mut owner = null_mut();
     let mut dacl: *mut ACL = null_mut();
     let mut descriptor = null_mut();
@@ -368,21 +385,23 @@ fn check_owner_only_as(file: &File, current: *mut c_void) -> io::Result<()> {
         )
     };
     if status != 0 {
-        return Err(io::Error::from_raw_os_error(status as i32));
+        return Err(PrivateDirError::Io(io::Error::from_raw_os_error(
+            status as i32,
+        )));
     }
     let _descriptor = LocalAllocation(descriptor);
     let refused = || {
-        io::Error::new(
+        PrivateDirError::Invalid(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "requires an owner-only Windows ACL and ownership by the current user",
-        )
+        ))
     };
     // SAFETY: Win32 supplied an owner SID if non-null. The current SID is live.
     if owner.is_null() || unsafe { EqualSid(owner, current) } == 0 {
-        return Err(io::Error::new(
+        return Err(PrivateDirError::Invalid(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "requires ownership by the current Windows user",
-        ));
+        )));
     }
     if dacl.is_null() {
         return Err(refused());
@@ -394,7 +413,7 @@ fn check_owner_only_as(file: &File, current: *mut c_void) -> io::Result<()> {
     let mut ace = null_mut();
     // SAFETY: The ACL contains one ACE and ace receives a pointer to it.
     if unsafe { GetAce(dacl, 0, &mut ace) } == 0 {
-        return Err(io::Error::last_os_error());
+        return Err(PrivateDirError::Io(io::Error::last_os_error()));
     }
     let ace = ace.cast::<ACCESS_ALLOWED_ACE>();
     // SAFETY: Every ACE starts with an ACE_HEADER. Read the SID only for an allow ACE.
@@ -429,6 +448,7 @@ pub fn publish(tmp: &Path, key: &Path, replace: bool) -> io::Result<()> {
 mod tests {
     use super::*;
     use windows_sys::Win32::Security::Authorization::ConvertStringSidToSidW;
+    use windows_sys::Win32::Storage::FileSystem::FILE_READ_ATTRIBUTES;
 
     #[test]
     fn s112_private_directory_refuses_a_different_owner_sid() {
@@ -446,16 +466,30 @@ mod tests {
         let directory = open_path(&path, false).expect("open private directory");
         let correct = check_owner_only(&directory);
         let foreign = check_owner_only_as(&directory, sid.0);
+        let attributes_only = OpenOptions::new()
+            .access_mode(FILE_READ_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(&path)
+            .expect("open directory without read-control access");
+        let unavailable = check_owner_only_current(&attributes_only);
+        drop(attributes_only);
         drop(directory);
         std::fs::remove_dir(&path).expect("remove empty test directory");
 
         correct.expect("allow the actual owner");
         let error = foreign.expect_err("refuse the different owner SID");
+        let PrivateDirError::Invalid(error) = error else {
+            panic!("wrong owner must be an invalid directory: {error}");
+        };
         assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
         assert!(
             error
                 .to_string()
                 .contains("ownership by the current Windows user")
         );
+        assert!(matches!(
+            unavailable,
+            Err(PrivateDirError::Io(error)) if error.kind() == io::ErrorKind::PermissionDenied
+        ));
     }
 }
