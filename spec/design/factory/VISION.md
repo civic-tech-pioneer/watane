@@ -13,9 +13,9 @@ uses to change any other mod.
 
 ## Goals
 
-- Alice keeps the project plan in a planning mod and chooses the next
-  slice. A foreman mod steers an implementer and brings a second vendor's
-  review back to her. She approves each merge herself.
+- Alice works with the project plan from the planning page and chooses
+  the next slice. From the foreman page she steers an implementer and
+  receives a second vendor's review. She approves each merge herself.
 - The factory can propose changes to its own source. Alice reviews the
   change, merges it, and installs a released package through the ordinary
   watane path. Each of those actions has its own authority.
