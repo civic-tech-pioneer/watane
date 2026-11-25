@@ -14,6 +14,16 @@ pub(crate) fn io(path: &Path, source: std::io::Error) -> DistError {
         source,
     }
 }
+/// `tempfile` wraps a create error with the path it tried (`<os error> at path "<p>"`), and
+/// gives no access to the inner error; the caller names the path itself, once (TECHNICAL
+/// 3.1), so only the OS text is kept. The OS text never holds ` at path `; the path may.
+pub(crate) fn bare_io(error: std::io::Error) -> std::io::Error {
+    let text = error.to_string();
+    match (error.get_ref(), text.split_once(" at path ")) {
+        (Some(_), Some((os, _))) => std::io::Error::new(error.kind(), os),
+        _ => error,
+    }
+}
 #[cfg(unix)]
 pub(crate) fn public_dir(path: &Path) -> Result<(), DistError> {
     match fs::symlink_metadata(path) {
@@ -125,12 +135,15 @@ pub(crate) fn replace_equal(
     let parent = path.parent().expect("file parent");
     // Holder writes may run alongside a web fetch. Each writer owns its temporary name.
     #[cfg(unix)]
-    let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|e| io(parent, e))?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|e| io(parent, bare_io(e)))?;
     #[cfg(windows)]
     let mut tmp = tempfile::Builder::new()
         .make_in(parent, watane_log_windows_fs::create_file)
-        .map_err(|e| io(parent, e))?;
-    tmp.write_all(bytes).map_err(|e| io(tmp.path(), e))?;
+        .map_err(|e| io(parent, bare_io(e)))?;
+    // The file itself: `NamedTempFile`'s own `Write` adds its path to the error (3.1).
+    tmp.as_file_mut()
+        .write_all(bytes)
+        .map_err(|e| io(tmp.path(), e))?;
     #[cfg(unix)]
     tmp.as_file()
         .set_permissions(fs::Permissions::from_mode(mode))
@@ -316,5 +329,39 @@ impl Dist {
             head,
             written,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, reason = "tests may panic")]
+    use super::*;
+
+    /// A temp file that cannot be made names its folder once, even a folder whose own name
+    /// holds tempfile's ` at path ` (3.1; s124-2 AC2).
+    #[test]
+    fn ac2_temp_create_failure_names_the_folder_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let parent = dir.path().join("a at path b").join("missing");
+        let Err(error) = replace_equal(&parent.join("file"), b"x", 0o600) else {
+            panic!("a write into a missing folder succeeded");
+        };
+        let DistError::Io { path, source } = &error else {
+            panic!("{error:?}");
+        };
+        assert_eq!(*path, parent);
+        let mut text = error.to_string();
+        let mut cause = std::error::Error::source(&error);
+        while let Some(next) = cause {
+            text.push_str(": ");
+            text.push_str(&next.to_string());
+            cause = next.source();
+        }
+        assert_eq!(
+            text.matches(&*parent.display().to_string()).count(),
+            1,
+            "{text}"
+        );
+        assert!(!source.to_string().contains(" at path "), "{text}");
     }
 }
