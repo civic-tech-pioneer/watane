@@ -10,15 +10,47 @@ use tempfile::TempDir;
 
 const MAX_PROVIDER_BASES: usize = 4;
 
+/// `tempfile` wraps its I/O errors with the path it tried (`<os error> at path "<p>"`); the
+/// error names that path itself, once (TECHNICAL 3.1), so the OS text alone is kept.
+fn bare_io(error: std::io::Error) -> std::io::Error {
+    let text = error.to_string();
+    match (error.get_ref(), text.rsplit_once(" at path ")) {
+        (Some(_), Some((os, _))) => std::io::Error::new(error.kind(), os),
+        _ => error,
+    }
+}
+
 impl Dist {
     pub(crate) fn unpacked(
         &self,
         package: &Package,
     ) -> Result<(TempDir, watane_pkg::Mod), PackageError> {
         let path = self.home.join("dist/tmp");
-        let tmp = TempDir::new_in(&path).map_err(|source| PackageError::Io { path, source })?;
+        let tmp = TempDir::new_in(&path).map_err(|source| PackageError::Io {
+            path,
+            source: bare_io(source),
+        })?;
         let m = package.unpack(&tmp.path().join("mod"))?;
         Ok((tmp, m))
+    }
+    /// A failure of `Package::unpack` or `from_bytes`: this machine's file errors stay local
+    /// (`Io`, `Corrupt`); only a package that does not parse or pass its checks names `url`
+    /// (5.7 step 6).
+    pub(crate) fn package_failure(url: &str, cause: PackageError) -> DistError {
+        match cause {
+            PackageError::Io { path, source }
+            | PackageError::Mod(watane_pkg::ModError::Io { path, source }) => {
+                DistError::Io { path, source }
+            }
+            PackageError::DestExists { path } => DistError::Corrupt {
+                path,
+                cause: "unpack target exists already".into(),
+            },
+            cause => DistError::BadPackage {
+                url: url.to_owned(),
+                cause,
+            },
+        }
     }
     pub(crate) fn cache_path(&self, id: &PackageId) -> PathBuf {
         self.home.join("dist/packages").join(id.to_string())
@@ -403,16 +435,11 @@ impl Dist {
                 found,
             });
         }
-        let package = Package::from_bytes(bytes).map_err(|cause| DistError::BadPackage {
-            url: url.clone(),
-            cause,
-        })?;
+        let package =
+            Package::from_bytes(bytes).map_err(|cause| Self::package_failure(&url, cause))?;
         let (_tmp, m) = self
             .unpacked(&package)
-            .map_err(|cause| DistError::BadPackage {
-                url: url.clone(),
-                cause,
-            })?;
+            .map_err(|cause| Self::package_failure(&url, cause))?;
         info.release
             .check(&m, &package)
             .map_err(|cause| DistError::PackageMismatch { url, cause })?;
@@ -557,5 +584,29 @@ mod tests {
                 ..
             })
         ));
+    }
+    #[test]
+    fn ac1_package_failure_splits_local_from_host() {
+        let io = || std::io::Error::other("disk full");
+        let local = Dist::package_failure(
+            "http://x/p",
+            PackageError::Io {
+                path: "/h/dist/tmp".into(),
+                source: io(),
+            },
+        );
+        assert!(matches!(local, DistError::Io { .. }), "{local:?}");
+        let local = Dist::package_failure(
+            "http://x/p",
+            PackageError::DestExists {
+                path: "/h/dist/tmp/mod".into(),
+            },
+        );
+        assert!(matches!(local, DistError::Corrupt { .. }), "{local:?}");
+        let remote = Dist::package_failure("http://x/p", PackageError::Format("bad".into()));
+        assert!(
+            matches!(&remote, DistError::BadPackage { url, .. } if url == "http://x/p"),
+            "{remote:?}"
+        );
     }
 }
