@@ -194,13 +194,17 @@ fn failed(node: &NodeKey, id: &BlobId, e: get::GetError) -> NetError {
             node: *node,
             code: crate::Code::NotAllowed,
         },
-        e => NetError::Unreachable {
+        // the machine answered and gave no package
+        e if e.iroh_error_code().is_some() => NetError::NotServed {
             node: *node,
-            cause: if e.iroh_error_code().is_some() {
-                "not served: it does not have it, or its copy failed its check".to_owned()
-            } else {
-                "could not be read: the connection failed".to_owned()
-            },
+            cause: format!(
+                "package {}: it does not have it, or its copy failed its check",
+                hex8(id)
+            ),
+        },
+        _ => NetError::Unreachable {
+            node: *node,
+            cause: "could not be read: the connection failed".to_owned(),
         },
     }
 }
@@ -269,9 +273,13 @@ async fn download(
         TEMPS.fetch_add(1, Ordering::SeqCst)
     ));
     let temp = Temp(path.clone());
-    let io = |e: std::io::Error| NetError::Io {
-        path: path.clone(),
-        cause: e.to_string(),
+    // a local failure names this machine's step, never the temp file
+    let io = |step: &'static str| {
+        let (dir, hex) = (core.dir.clone(), hex8(&id));
+        move |e: std::io::Error| NetError::Io {
+            path: dir.clone(),
+            cause: format!("package {hex} was not stored on this machine: {step}: {e}"),
+        }
     };
     #[cfg(unix)]
     let create = std::fs::OpenOptions::new()
@@ -281,7 +289,7 @@ async fn download(
         .open(&path);
     #[cfg(windows)]
     let create = watane_log_windows_fs::create_file(&path);
-    let mut file = create.map_err(io)?;
+    let mut file = create.map_err(io("could not create its temp file"))?;
     // the size is verified above, so this holds at most `size` bytes
     let bytes = get_blob(conn.clone(), hash)
         .bytes()
@@ -290,8 +298,10 @@ async fn download(
     if bytes.len() as u64 != size {
         return Err(bad(node, "the package is not the size that was wanted"));
     }
-    file.write_all(&bytes).map_err(io)?;
-    file.sync_all().map_err(io)?;
+    file.write_all(&bytes)
+        .map_err(io("could not write its temp file"))?;
+    file.sync_all()
+        .map_err(io("could not sync its temp file"))?;
     drop(file);
     // checked again here, whatever iroh-blobs said
     let (p, expected) = (path.clone(), id.0);
@@ -302,8 +312,14 @@ async fn download(
         Ok::<_, std::io::Error>((n, *hasher.finalize().as_bytes() == expected))
     })
     .await
-    .map_err(|_| bad(node, "the check failed"))?
-    .map_err(io)?;
+    .map_err(|_| NetError::Io {
+        path: core.dir.clone(),
+        cause: format!(
+            "package {} was not stored on this machine: the check did not finish",
+            hex8(&id)
+        ),
+    })?
+    .map_err(io("could not read its temp file"))?;
     if ok.0 != size || !ok.1 {
         return Err(mismatch(node, &id));
     }
@@ -311,7 +327,10 @@ async fn download(
     let stored = sync::holder(core, move |h| h.store_blob(&id, &store_path)).await?;
     drop(temp);
     stored.map_err(|cause| NetError::Io {
-        path,
-        cause: format!("package {} was not stored: {cause}", hex8(&id)),
+        path: core.dir.clone(),
+        cause: format!(
+            "package {} was not stored on this machine: {cause}",
+            hex8(&id)
+        ),
     })
 }

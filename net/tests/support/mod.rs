@@ -532,6 +532,20 @@ pub struct Node {
     pub holdings: Arc<MemHoldings>,
 }
 
+/// Limits whose budget of unknown peers cannot race a test: QUIC overhead
+/// can drain the default 64 KiB/s bucket, and one unknown key may hold only
+/// two connections. For a test that sends several requests from one unknown
+/// key and asserts the code of each; the production budget is shown by
+/// `budget::s9_the_default_budget_refuses_an_unknown_key_beyond_it`.
+pub fn roomy_limits() -> watane_net::Limits {
+    watane_net::Limits {
+        unknown_bytes_per_sec: 16 << 20,
+        unknown_conns_per_peer: 16,
+        unknown_streams_per_peer: 16,
+        ..watane_net::Limits::default()
+    }
+}
+
 /// A node on loopback, on, paired with nobody.
 pub fn node(holdings: Arc<MemHoldings>, limits: Option<watane_net::Limits>) -> Node {
     let dir = tempfile::tempdir().unwrap();

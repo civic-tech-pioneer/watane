@@ -91,9 +91,10 @@ fn s2_server_joins_with_a_code_and_alice_confirms() {
 #[test]
 fn s3_bad_codes_and_a_no_change_nothing() {
     let fx = fixture();
+    // the joiner is one unknown key that dials several times
     let quick = Limits {
         pair_deadline: Duration::from_millis(600),
-        ..Limits::default()
+        ..roomy_limits()
     };
     let laptop = node(MemHoldings::anchor(fx), Some(quick));
     let joiner = node(MemHoldings::new(fx), None);

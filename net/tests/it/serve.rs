@@ -138,7 +138,10 @@ fn ac5_fork() {
 #[test]
 fn ac5_an_unknown_node_gets_hello_only() {
     let fx = fixture();
-    let (a, _b) = pair(fx);
+    // one unknown key asks four times: its budget must not race the codes
+    let a = node(MemHoldings::anchor(fx), Some(roomy_limits()));
+    let b = node(MemHoldings::new(fx), None);
+    pair_into(&a, &b, watane_net::Role::Full);
     let c = node(MemHoldings::new(fx), None);
     c.net.add_addrs(&a.key, &a.net.addrs());
     let before = a.holdings.calls();
