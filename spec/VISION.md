@@ -72,6 +72,7 @@ later step needs waits until that step is next.
 6. **Factory (later).** A set of mods that steers coding agents and changes
    itself. It runs in the same host and is not part of the substrate. It
    runs its agents through step 11.
+   See the [draft factory design](design/factory/VISION.md).
 
 After the first version:
 

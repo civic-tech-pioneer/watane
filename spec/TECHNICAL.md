@@ -330,6 +330,8 @@ Each one closes a gap of the old specification. Veto any of them.
 | 10 Own manager | `pkg` (the `Manage` grant, stage 11); `host` (`watane:host/manage`, its requests to the confirmation, manage fakes in `Harness`; stage 11); `dev` (the manage fake and `manages` in contract tests; stage 13); `app` (the words of the grant and of each request, the windows a reduction closes; stage J, after stage I) | J10 passes |
 | 11 Agent layer | `pkg` (two grants); `host` (interfaces of host 19, stages A1 to A5); `dev` (`fake-claude`, `ScriptedResponses`; dev 18); `app` (accounts, consents, the `claude` setting, the judge key; stage L) | the watane parts of stages A to E of agentic-harness 17 pass; J11 passes (on the real `claude` with the consent steps at stage C) |
 
+Factory (VISION step 6) follows the agent layer. See the [draft build order](design/factory/TECHNICAL.md#6-build-order-after-this-design).
+
 A journey test drives the real programs. A step is not done on the tests of
 one subsystem alone. J1 lives in `dev/tests/`; J2, J3 and J4 live in
 `app/tests/`, because they drive the app. J5 lives in `app/tests/` too.
