@@ -1389,6 +1389,19 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Touches: `app/`, `dist/`, `log/`, `net/` and their TECHNICAL, never `host/` or `dev/`. Boundaries: dist 5.9 and log's
   key folder are touched by tests only, the managed install by item 1 (adversary on item 1). Size: an upkeep slice.
   Protects: *guard* (item 1), else *polish*.
+- [~] **S123 (upkeep) Alice's install, upgrade and uninstall say the true thing (install/ polish from S89, S50b-fix,
+  S50b-fix2, S50c, S94).** (in flight, cloud, builder codex, reviewer claude; rule 3: last two S122 codex, S121 claude;
+  the upkeep lane, sketched 2026-11-25 by deputy-4 from Leftovers, install.) Outcomes, each item's check (re-check each
+  line against main first; drop one already fixed): (1) every line install.sh prints after a Ctrl-C, a refusal or a
+  skipped entry is true and names `~`-relative paths: the post-undo "still works", "uninstalled" with skipped entries,
+  the install-it-later line naming `WATANE_RUSTUP_URL`'s target, a Ctrl-C at each question saying whether watane is
+  installed, no `^C` glued to the hint; (2) uninstall and interrupted installs leave no empty folders they made
+  (`~/.local/bin`, `share/watane-dev`, `~/Applications`); (3) `--status | head -1` exits quietly (no `printf` broken-pipe
+  text); (4) rustup's own output stays outside watane's frame and a rustup failure names its step; (5) S94's
+  `check_foreign` `pid_gone` unit case. A test per item where install's suites can run it (Linux and macOS CI).
+  Leaves out: the copied-home receipts (a spec call), the VM consent click, Windows. Touches: `install/` and its
+  TECHNICAL only. No boundary moves (messages and cleanup of folders install.sh made; adversary not run). Protects:
+  *polish*.
 - [x] **S121 (upkeep) polish in dist, log and pkg (S105 r5/r6, S108 r2, S109 r2, S119 P1.4).** DONE 2026-11-25: PR #40 rebase-merged by deputy-4 (no bypass); builder claude, reviewer codex, 2 rounds (2/1, 0/0); ~1.5 h in flight. A refused redirect names the base that issued it; tests pin the settle-failure path with a listed base, pkg's listing error classes and the Windows device-name reason; S105 P5.3, P6.1, P6.2 and S109's items were already on main. CI: one ubuntu app fixtures flake, green on rerun (Leftovers, app). Sketch in factory/DONE.md.
 - [x] **S119 (upkeep) S111's polish in host and dev, S118's, and pkg's reserved Windows names.** DONE 2026-11-25: PR #35 rebase-merged by deputy-4 (1202a7b, no bypass); builder codex, reviewer claude, 1 round (0/7); ~2 h in flight. host's https stream gives connect and TLS handshake their own idle budget, `scripted-responses` refuses unknown script fields, pkg refuses Windows device names (guard already on main from S112, red test added). Accepted R1.1 (deputy): a maker's `scripted-responses.json` with an extra key is now refused (format shipped in S111). Polish P1.1 to P1.7 in Leftovers. Sketch in factory/DONE.md.
 - [x] **S118 (upkeep) host's flaky consent tests, kept storage in the install plan, and S114's polish.** DONE 2026-11-25: PR #34 merged by the deputy (3a7999f, no bypass); builder claude, reviewer codex, 2 rounds (2/3, 0/2); ~4.2 h in flight. Both consent flakes were test-rig races; `PlanEntry.kept_state` and 'data kept from before' (needs a surviving record); a Delete data removal deletes inside one redb write holding the catalog (lock order: redb writer, then catalog); host's 'always asks' wording; S114 r3 polish. P2.1, P2.2 in Leftovers. (Was: (in flight,
