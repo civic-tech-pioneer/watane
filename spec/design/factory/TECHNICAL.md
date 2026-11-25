@@ -95,11 +95,13 @@ decision or as the other vendor's code review.
 
 The working release steers work on a separate source checkout. Alice inspects and applies the resulting
 diff from a trusted checkout before she uses repository credentials.
-No session
-gets the installed mod tree, host state, signing keys, or GitHub merge
-credentials. In the Claude shell option use the prescribed sandbox and
-protected-path rules, omit web tools and keep the network scope at the
-minimum the chosen workflow requires. Select an initial slice compatible
+The factory never selects the installed mod tree or host state as
+a workspace and never writes them through an agent. It supplies no
+signing keys or GitHub merge credentials. The Claude shell option uses
+the prescribed sandbox and protected-path rules. A separate checkout
+limits workspace selection and writes, with reads governed by the
+actual sandbox. JF1 omits web tools and needs no added shell network
+reach. Select an initial slice compatible
 with those constraints. If a required check or edit needs access outside
 them, return it to Alice. A shell command allow rule is not a sandbox
 boundary. A stopped or revoked session must not be silently replaced with
@@ -123,7 +125,7 @@ in use. S120 records these choices without settling them.
 | Door and decision | Options and consequences | Recommendation |
 |---|---|---|
 | H · Where the mods live | Use an existing mod project with the owner's agreement. This reuses its release process but couples ownership and release cadence. A dedicated repository would give the factory an independent release boundary and require creating and governing a new project. Moving later costs package and repository reference migration and may require fresh identity-linked consents. | Start in an existing mod project if the owner accepts it. Decide the home before assigning permanent publisher/slug identities or publishing anything. Keep design ownership here until then. |
-| C · N5, implementer shell | Use the existing Claude shell grant with its sandbox, folder scope and launch constraints. Review that build with OpenAI. Alternatively, adopt `codex app-server`, a third native process kind, which needs a host design for its account, protocol, grants, sandbox and recovery. A later switch changes role profiles and reopens the boundary work. | Follow agentic-harness §17's recommendation for the Claude shell grant at F, subject to a real scoped checkout proving sufficient. If the human chooses Codex, the first build waits for that backend contract and implementation. |
+| C · N5, implementer shell | Use the existing Claude shell grant with its sandbox, folder scope and launch constraints. Review that build with OpenAI. Alternatively, adopt `codex app-server`, a third native process kind, which needs a host design for its account, protocol, grants, sandbox and recovery. A later switch changes role profiles and reopens the boundary work. | Follow agentic-harness §17's recommendation for the Claude shell grant at F, subject to a real scoped checkout proving sufficient and the human resolving harness V27. V27 found that allowlisted names can resolve to local addresses (harness §§4.2, 14, 16). Keep shell network closed for JF1 and bring any required network reach back to the human. If the human chooses Codex, the first build waits for that backend contract and implementation. |
 | C · Update and authority | Propose source changes, then have Alice review, merge, publish or select the release, and install through the ordinary path. This costs explicit actions and works with existing controls. A richer update proposal could use the normal manager request path where available, but needs a separate authority review. Unattended activation or widening would change the confirmation boundary. | Use ordinary updates with explicit human control. Defer any manager grant. Keep an old release available through normal package mechanisms where possible. |
 | C · V7 statements and sequencing | Local notes and GitHub evidence suffice to exercise the draft journey but carry GitHub's trust and availability assumptions. Portable signed statements would let another person verify the slice intent and scope, reviewer verdict at a head, owner merge decision, and release provenance and requested authority against a chosen signer. This requires decisions about signers, visibility, subject identity, supersession and withdrawal. Requiring all statements first delays the real journey but avoids a migration from local evidence. | Agree which statements step 6 requires before building, and whether a supervised GitHub-backed first cut can precede them under VISION. Prefer explicit subject and revision identities and signatures made by people through approved controls. Until the human agrees, the V7 dependency stands. Never publish transcripts or credentials as statements by default. |
 
