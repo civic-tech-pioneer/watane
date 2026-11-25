@@ -1232,28 +1232,7 @@ names the same interface in its sketch and fakes it until this one merges.
   Touches: host (the 19.9 preview binding, 19.4's lookup), dev (18.3/18.4 docs, a serve test). Not: S126's files
   (adv_s96, streams/runtime tests, `remove`, timer sweep). Boundary: W39 "a judge key goes only to its judge" (adversary).
   No test calls an external provider. Protects: *core*.
-- [~] **S126 (upkeep, guard) host's last flakes and its S125/S119/S118 polish.** (in flight, cloud, builder codex,
-  reviewer claude; rule 3: last two S125 codex, S124 claude; the upkeep lane, sketched 2026-11-25 by deputy-6 from
-  Leftovers `### host`; Codex task https://chatgpt.com/local/6b07276a-d24c-83ed-bada-23e64aa57056, 2026-11-25 ~17:25 UTC; DELIVERED as PR #45 (+506/-163); r1: Claude review routine `trig_01QxAbH72mt7AWxKpHQdzJYJ`, fires 19:08 UTC (the builder ran no user-sim or adversary: the review does).) Outcomes, each item's check: (1, guard) the three flakes of S125 r1 (Windows
-  `adv_s96_timer_set_across_remove_and_reinstall_carries_the_removed_origin` adv_s96.rs:731, `https_stream::ac7_a_consumer_that_defers...`
-  streams.rs:71, macOS `runtime::ac11_s11_restart_preserves_links_and_provider_state` runtime.rs:534): each race found and
-  fixed, no wall-clock assertion left on a loaded runner, 20 runs green per test on its OS in CI; (2, guard) S96 Q47:
-  `remove` waits for a busy mod's call lock with a deadline and says so; S96 Q48: a startup sweep of timer rows left by a
-  crash between `remove`'s catalog save and its timer rewrite (red test first); (3) R1.4 ruling (deputy, below): host 19.4
-  names judge origins with an unspecified, loopback or private literal under "Not protected" (the participant types the
-  origin and the provider needs a matching consented Http grant); no code change; (4) R1.2, R1.3 in host TECHNICAL 3.1;
-  (5) polish: S125 P1.1 to P1.10, S119 P1.1 and P1.5, S118 r2. Touches: host, app (fixtures.rs, words.rs, ui/app.js,
-  TECHNICAL 19.4). Constraints: no format or interface change; S113's kept-storage line is already done by S118 (drop it
-  from Leftovers). Protects: *guard* (1, 2), *polish* (rest). Size: an upkeep slice. spec-check: skipped (docs-only
-  wording items; no new contract).
-
-After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
-host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
-hand — outside the substrate, steering coding agents and changing itself, which is what VISION
-describes except for where it runs. Moving it inside makes the thing that built watane the first
-serious thing built on watane, and is the sharpest test of the premise: if the substrate cannot host
-its own factory, the premise is weaker than it looks. Not sketched; it needs its own design slice.
-
+- [x] **S126 (upkeep, guard) host's last flakes and its S125/S119/S118 polish.** DONE 2026-11-25: PR #45 rebase-merged by deputy-6 (a610f9ba, no bypass); builder codex, reviewer claude, 1 round (0/5); ~2.3 h in flight. `remove` waits for a busy mod's call up to its deadline and names the mod; a restart sweeps timer rows left by a crash during `remove`; the three S125 flakes are fixed (one race, two test-only timing assertions removed; 20/20 per OS in CI); judge-origin limits recorded in host 19.4 and 3.1; S125/S119/S118 polish done. R1.1, R1.2 accepted (Deputy decisions); P1.1 to P1.5 in Leftovers. Sketch in factory/DONE.md.
 - [x] **S120 Design: the factory as mods (VISION step 6).** DONE 2026-11-25: PR #39 rebase-merged by deputy-4 (fb24648, no bypass); builder codex, reviewer claude, 2 rounds (4/6, 0/1); ~45 min in flight. A draft subsystem design in `spec/design/factory/` (VISION, FUNCTIONAL JF1/JF2 with FF1-FF4, TECHNICAL): today's factory mapped to mods, toolsets and consents, and 9 open decisions in its TECHNICAL 5 (1 Door H, 8 Door C), none settled. Its first build journey JF1 waits on agentic-harness stages E (V7, the judge) and F (N5): the main line has no buildable step until then. Sketch in factory/DONE.md.
 - [x] **S102 Alice connects her agent accounts in Settings (app stage L, part: 19.1, 19.3).** DONE 2026-11-23: PR #18
   merged with --admin at cdbfd4d, ~7 h in flight, 5 Claude rounds (8, 3, 1, 2 findings, then approve; validator PASS,
@@ -1679,14 +1658,11 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### host
 
-- [S125 r1] (guard) flakes outside S125: Windows `adv_s96::adv_s96_timer_set_across_remove_and_reinstall_carries_the_removed_origin` (an elapsed-time assertion, 5.4 s against 3.5 s, adv_s96.rs:731) and `https_stream::ac7_a_consumer_that_defers_stops_the_host_reading_and_resume_loses_nothing` (timed out waiting for `closed`, streams.rs:71); macOS on main e76d1682 `runtime::ac11_s11_restart_preserves_links_and_provider_state` (runtime.rs:534). Find each race; no wall-clock assertions on a loaded runner.
-- [S125 R1.4] (guard, a spec call, host 19.4) judge origins accept `https://0.0.0.0` and `https://0x` (they reach this machine on Linux; needs a matching Http grant): refuse unspecified, loopback and private addresses as judge origins?
-- [S125 R1.2, R1.3] (host 3.1 docs) `Drop for Host` does not wait for run threads before the lock is released (a second watane's `clean_runs` could race a live run caught at drop); the explicit unlock assumes no fork without exec: say both in host TECHNICAL 3.1.
-- [S125 r1] (polish) P1.1 app `fixtures.rs:113-128` 20-reopen loop costs +37% of the app default suite: cut to one or two (the host unit test proves the cause); P1.2 `app/src/words.rs:478-492` redundant loop; P1.3 app TECHNICAL 19.4 lacks the new editor strings (app/ui/app.js:133,154,179,192); P1.4 `host/src/agent/timers.rs:309-316` add a control trial that fires; P1.5 name only the missing grant; P1.6 name trailing dots and user names in the origin hint; P1.7 say the port must match the grant; P1.8 "granted hosts" is jargon; P1.9 a missing final period; P1.10 `https_stream.rs:118` doc line.
+- [S126 r1] (polish) P1.1 `host/tests/it/https_stream.rs:1674` the "host stops reading" bound weakened to `written < EVENTS`: add a buffer-sized bound; P1.2 a removal timeout answers `internal` (host 4.4 names no code; a busy-mod kind is an interface change); P1.3 `.github/workflows/ci.yml:85,104` the S126 repeat steps are dead after merge: remove; P1.4 `judge_set` with an invalid origin lacks the editor's explanation; P1.5 `app/ui/app.js:132-136` "needs ." with empty hosts (unreachable today).
+- (Leftovers, guard) S96 Q47/Q48 done by S126.
 
-- [S119 r1] (polish) P1.1 `host/src/agent/https_stream.rs:662-666`: a head that fails to parse also reads "connection ended before the response head"; P1.5 `:832` the `data: ` field name counts toward MAX_ITEM (an event of exactly 4 MiB is refused), test `Sse::feed` at the boundary.
 
-- [S118 r2] (polish) `host/src/runtime/call.rs:1032`: say that removal changes the catalog before the timer rewrite transaction; `host/tests/it/kept_state.rs:208`: bound the readiness wait.
+
 
 
 
@@ -1983,6 +1959,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - 2026-11-24 host 18 **Q38: (b)**, the human ("b is fine for q38"). A workspace or account consent is kept per (origin client, `via` = the provider's identity, folder or account); a new provider asks again. S103 built (b); its next answer round writes host 18 Q38 as decided by the human, 2026-11-24, and the 19.7 rows to match. agentic-harness TECHNICAL 8 already cites 19.7.
 
 ## Deputy decisions
+- 2026-11-25 (deputy-6, S126 r1) accepted: R1.1 a failed `timers_removed` inside a running host (a redb write fault, no crash) leaves timer rows a same-identity reinstall inherits until the next open sweeps them (no named attacker can fail the write); R1.2 `remove` can be starved by a mod that keeps its call lock busy (availability only; `disable` first lets it through). Undo: sweep or refuse an identity with rows before an install commits; a busy error kind.
 - 2026-11-25 (deputy-6, S125 R1.4) accepted, rung 1: a judge origin with an unspecified, loopback or private literal (`https://0.0.0.0`, `https://0x`) is not refused; the participant types it and the provider needs a matching consented Http grant, and a self-hosted judge on the LAN stays possible (host 19.4 judge binding; dist 5.9 guards reads, not this). S126 writes it under host 19.4 "Not protected". Undo: refuse those literals in `judge_origin`.
 - 2026-11-25 (S125 r1) accepted: R1.1 two Windows host timing flakes outside the slice (rerun green; Leftovers guard); R1.2 run threads may outlive the home lock at drop (unchanged behaviour; a live run caught at drop); R1.3 the explicit unlock assumes no fork without exec (no such path); R1.4 a judge origin of `0.0.0.0` or `0x` (needs the participant's own Http grant for it; predates S125; Leftovers spec call). Undo: the Leftovers items.
 - 2026-11-25 (S124 r2) accepted: R2.1 net's byte-budget test can still fail if the bucket refills before the probe on all five attempts (a guard test, not product behaviour). Undo: a test clock in net's budget.
