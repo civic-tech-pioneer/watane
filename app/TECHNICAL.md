@@ -858,7 +858,8 @@ pub struct PlanMod {
 pub struct Party { pub name: Option<String>, pub fingerprint: String, #[serde(default)] pub you: bool }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GrantLine { pub key: String, pub kind: GrantKind, pub text: String, pub granted: bool, pub new: bool,
-                       #[serde(default)] pub short: String }   // W37: section 4, short form
+                       #[serde(default)] pub short: String,    // W37: section 4, short form
+                       #[serde(default, skip_serializing_if = "std::ops::Not::not")] pub kept: bool } // S118: 6.3
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GrantKind { Storage, Http, Call, Subscribe }
@@ -927,7 +928,10 @@ or the fingerprint when no profile is stored. `signer` is the own identity.
   `<name> opens when watane starts, in place of the manager.` It is absent
   for every other mod, including proposals when a main mod is already set.
   Then each grant line with a checkbox `Allow`, checked at load; a new grant carries
-  the label `new`. Then `uses <provider>` lines; step 5: `made from
+  the label `new`. S118: the `Storage` line of an entry whose `kept_state`
+  is true (host 4.2 step 6, a reinstall after `Keep data`) has `new` false
+  and `kept` true, and carries the label `data kept from before` in place of
+  `new`; every other line of that entry is as before. Then `uses <provider>` lines; step 5: `made from
   <origin> (the publisher says so)` when set, and each `binds` line.
 - A pick (step 5) has the title `Choose a mod for <consumer>`, the text
   `<provider> is not available: <cause>`, and one radio button per
@@ -1389,7 +1393,8 @@ pub(crate) struct DistConfirm { pub broker: Arc<Broker>, pub parties: Arc<Partie
 - `HostConfirm::install(InstallRequest { entries, requester })` (also an
   update with new grants) gives `Request::Install` (`by_program` for
   `Requester::LocalApi`), one `PlanMod` per `PlanEntry` in order:
-  `replaces` from `Change::Update`, `new` for each of `new_grants`, `uses`
+  `replaces` from `Change::Update`, `new` for each of `new_grants` (but
+  `kept` in its place for `Storage` when `kept_state`, 6.3), `uses`
   from `providers` (looked up in `entries`, else `host.get`). It awaits
   `broker.ask`, and maps each `{local, key}` to the `(LocalName, Grant)` of
   `Answer::Approve { withhold }`.

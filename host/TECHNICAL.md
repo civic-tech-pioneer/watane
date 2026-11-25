@@ -329,6 +329,7 @@ pub struct PlanEntry {
     pub change: Change, pub grants: Vec<Grant>, pub new_grants: Vec<Grant>,
     pub providers: Vec<LocalName>,
     pub binds: Vec<Bind>,                                    // step 5: the binds in force for this entry (4.5)
+    pub kept_state: bool,                                    // 4.2 step 6: a `New` entry whose identity's state was kept (S118)
 }
 pub enum Change { New, Update { from_version: Version }, Unchanged }
 // JSON: {"kind":"new"} | {"kind":"update","from_version":"0.1.0"} | {"kind":"unchanged"}
@@ -623,7 +624,12 @@ identity: the second is an update of the first.
 5. `local`: kept for an update; derived for a new mod (section 3.2).
 6. `grants` = `mod.grants()`. `new_grants` = the declared grants with no
    `Grant::same_authority` match among the grants of the installed version
-   (all of them for `New`).
+   (all of them for `New`). `kept_state` is true when the change is `New`
+   and the state database holds the table `s/<id>` of the identity (7):
+   data that a `remove` without `delete_data` kept (4.4), which reattaches
+   when this install commits. Otherwise it is false. It changes no grant:
+   `Storage` stays in `new_grants`, and the app says that the data is kept
+   (app 6.3).
 7. Links, computed over the catalog as it would be after the install
    (installed mods, with plan entries replacing their identities). A grant
    `Call { interface, provider }` or `Subscribe { interface, provider }`
@@ -1842,7 +1848,7 @@ run on the preview install path.
 | State is private | one table per identity; host functions touch only the calling mod's table (7) | runtime |
 | A collect asks only granted subscribers, and does not name them | the set of 9.2 step 4, read from the current catalog at each collect; the answer list carries no source (9.4) | S36 |
 | A collect cannot deadlock | collect links are cycle edges (4.2 step 8) | S38 |
-| A manager only reduces on its own | reads and the three reductions are the only acting functions; each addition is an `Ask` that only the app decides; a manager-started install always asks (6.10, 12.1) | S41 to S44 |
+| A manager only reduces on its own | reads and the three reductions are the only acting functions; each addition is an `Ask` that only the app decides; a manager-started install asks whenever its plan changes a mod, and a plan of only `Unchanged` entries installs nothing, asks nothing and follows nothing (6.10, 12.1; app 17.3) | S41 to S44 |
 | A manager acts only while it holds the grant | the grant check at each function and again before each effect; pending requests dropped when it loses the grant (6.10) | S45 |
 | A failed manager call changes nothing | manage effects join the chain only on the manager's success (6.10) | S46 |
 | A manager holds at most one request in the consent view | one pending request per manager (6.10); it may ask again after an answer, until the participant withdraws `Manage` | S44 |
@@ -2420,7 +2426,9 @@ Each answer below is used in this file.
   reductions and requests apply when the manager's call succeeds, as
   events do; requests live in memory; one pending request per manager;
   the app, not the host, acts on an approved `enable`, `grant` and
-  `remove`, as for its own buttons; a manager-started install always asks.
+  `remove`, as for its own buttons; a manager-started install asks
+  whenever its plan has an entry other than `Unchanged` (12.1); a plan of
+  only `Unchanged` entries asks nothing and follows nothing (S116).
   A standalone pick of a provider is not a function: a pick arises inside
   an install request, through the app's pick view (app 9.7) with the
   manager named. A separate `request-pick` can join later as an added
