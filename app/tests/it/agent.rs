@@ -523,14 +523,22 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
         ),
     );
     assert_eq!(evaluate("q('.judge-save').disabled"), true);
+    enter(".judge-key", "");
     enter(".judge-origin", "https://Judge.Test:443/");
     until(
         &app,
         "main",
         &format!(
-            "!({query})('.judge-save').disabled && ({query})('.judge-feedback').textContent === 'The key will go only to https://judge.test.'"
+            "({query})('.judge-feedback').textContent === 'The key will go only to https://judge.test.'"
         ),
     );
+    assert_eq!(evaluate("q('.judge-save').disabled"), true);
+    assert_eq!(
+        evaluate("q('.judge-save-hint').textContent"),
+        "Enter a judge key."
+    );
+    enter(".judge-key", "test-key-only");
+    assert_eq!(evaluate("q('.judge-save').disabled"), false);
     click(&app, "section[data-local=judge-provider] .judge-save");
     until(&app, "main", &format!("!!({query})('.judge-replace')"));
     let directory = home.path().join("app/accounts/judge");
