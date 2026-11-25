@@ -1371,7 +1371,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Touches: `app/`, `dist/`, `log/`, `net/` and their TECHNICAL, never `host/` or `dev/`. Boundaries: dist 5.9 and log's
   key folder are touched by tests only, the managed install by item 1 (adversary on item 1). Size: an upkeep slice.
   Protects: *guard* (item 1), else *polish*.
-- [~] **S118 (upkeep) host's flaky consent tests, kept storage in the install plan, and S114's polish.** (in flight,
+- [x] **S118 (upkeep) host's flaky consent tests, kept storage in the install plan, and S114's polish.** DONE 2026-11-25: PR #34 merged by the deputy (3a7999f, no bypass); builder claude, reviewer codex, 2 rounds (2/3, 0/2); ~4.2 h in flight. Both consent flakes were test-rig races; `PlanEntry.kept_state` and 'data kept from before' (needs a surviving record); a Delete data removal deletes inside one redb write holding the catalog (lock order: redb writer, then catalog); host's 'always asks' wording; S114 r3 polish. P2.1, P2.2 in Leftovers. (Was: (in flight,
   cloud, builder claude, reviewer codex; rule 3: last two S117 codex, S116 codex; the upkeep lane, sketched 2026-11-25
   by deputy-3 from Leftovers once S114 and S117 freed `host/` and `dev/`; routine `trig_01VFy6xjSA76FBaYDyGtKzLH`, fires 01:59 UTC; DELIVERED ~03:05 UTC as PR #34 at 87a9ef8 (items 1 to 4 done; both flakes were test-rig races, 20/20 per OS in run 45534361465; `PlanEntry.kept_state`; leftover: an adv_s96 timer flake on Windows); r1: Codex review https://chatgpt.com/local/6b0651be-2aec-83ed-9173-a2c50a054060, dispatched 03:14 UTC (adversary and user-sim on item 2); r1 (03:17): 2/3, changes (2) (adversary HELD, user-sim ACCEPTED on the DOM); F1.1 dismissed (the `consent` module is unix-only on main, so it cannot flake on Windows); F1.2 stands, narrowed: the kept-data label must agree with what the plan validates when an install plan overlaps a Delete data removal; P1.1, P1.2 folded in; P1.3 to Leftovers; `local/<slug>` risk accepted; answer r1: Claude routine `trig_017xicAQrQ4sa1oMjgrpj3Pm`, fires 04:00 UTC; r1 answered at e2e147d (a Delete data removal deletes inside one redb write that also holds the catalog; its first form deadlocked against timer commits and the builder's validator caught it; lock order 'redb writer, then catalog' everywhere); r2: Codex focused check in the same task, dispatched 05:08 UTC (with a hunt for other reverse lock orders).) Outcomes, each item's check: (1) (guard)
   `consent::ac5_a_consent_given_through_one_provider_is_not_used_through_another` (`host/tests/it/consent.rs:533`, seen
@@ -1642,6 +1642,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 
 ### host
+
+- [S118 r2] (polish) `host/src/runtime/call.rs:1032`: say that removal changes the catalog before the timer rewrite transaction; `host/tests/it/kept_state.rs:208`: bound the readiness wait.
 
 - [S118 r1] (guard) `host/tests/it/adv_s96.rs:147` `adv_s96_timer_cancelled_while_the_firing_waits_still_fires` failed on windows-latest (PR #30 attempt 1); first sighting.
 
