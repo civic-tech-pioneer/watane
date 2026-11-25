@@ -631,7 +631,6 @@ mod tests {
         }
 
         let home = tempfile::tempdir().unwrap();
-        fs::create_dir(home.path().join("app")).unwrap();
         let accounts = Arc::new(Accounts::new(home.path()));
         let workspace = tempfile::tempdir().unwrap();
         let source = workspace.path().join("https");
@@ -664,6 +663,7 @@ hosts = ["judge.test"]
             Limits::default(),
         )
         .unwrap();
+        fs::create_dir(home.path().join("app")).unwrap();
         let plan = host
             .plan(vec![watane_host::Source::Folder(source)])
             .unwrap();
