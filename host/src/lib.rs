@@ -132,6 +132,15 @@ impl Host {
         let engine = Arc::new(runtime::engine()?);
         let catalog = catalog::Catalog::open(&home.path, &engine)?;
         let state = state::State::open(&home.path)?;
+        state
+            .sweep_timers(
+                &catalog
+                    .mods
+                    .iter()
+                    .map(|m| (state::mod_id(&m.identity), m.identity.as_str()))
+                    .collect(),
+            )
+            .map_err(|e| HostError::Internal(format!("cannot recover timers: {}", e.message)))?;
         let tools = tools::Tools::open(&home.path)?;
         let generation = state.next_generation()?;
         let host = Arc::new_cyclic(|weak| Self {
