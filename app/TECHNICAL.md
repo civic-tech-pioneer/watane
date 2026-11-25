@@ -2768,8 +2768,8 @@ N10).
 - **Removing.** `judge_remove({local})` deletes the file, then tells the host
   that the account changed with `Host::account_changed(&Account::Judge {
   provider })` (host 19.4). The host ends the provider's live judge streams.
-  A replacement sends the same notice after publishing the new key. The deletion and the notice happen in that
-  order, and the notice is sent also when no file existed.
+  The notice is sent also when no file existed. A replacement sends the same
+  notice after publishing the new key.
 - **Uninstalling.** `mod_remove` of a mod that has a key file deletes it before
   it calls `host.remove` (the order of APP-F-11), with the same notice; a
   later mod with the same identity starts with no key. Startup also cleans up
@@ -2797,8 +2797,9 @@ log (the arguments `key` of `judge_set` are logged as `<redacted>`).
 | `consent_withdraw` | `local`, `key` | `null` |
 
 `Status` gains `chatgpt: {signedIn, plan, error}` and `claude: {path, version, error?} |
-null` (19.3). `CmdError.code` gains no value: a failed check is `bad_input`, an
-unreachable OpenAI is `unavailable`, an I/O error is `io`. `build.rs` and
+null` (19.3). The shared origin parse returns `bad_request`. Other failed input
+checks use `bad_input`, an unreachable OpenAI is `unavailable`, and an I/O
+error is `io`. `build.rs` and
 `capabilities/main.json` list the commands in stage L (section 14).
 
 ### 19.6 Tests
