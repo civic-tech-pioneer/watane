@@ -3563,9 +3563,9 @@ checks of the table above are made at the call.
   - The parse: `judge_origin(text)` (below) parses an entered origin, and the
     host applies the same rule to the stored origin at each check. It accepts
     `https://host[:port]` and a lone trailing `/`; it refuses any other
-    path, a query, a fragment, userinfo and any scheme but `https`
-    (`bad_request`). Its text has the host lower-cased without a trailing dot
-    and the port only when it is not 443. The app calls it for what it shows
+    path, a query, a fragment, userinfo, a trailing dot on the host and any
+    scheme but `https` (`bad_request`). Its text has the host lower-cased and
+    the port only when it is not 443. The app calls it for what it shows
     and stores (app 19.4); the host's check at each request decides where a
     key goes.
   - Lifetime: removing the key (the app calls

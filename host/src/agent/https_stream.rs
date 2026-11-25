@@ -16,6 +16,7 @@ use hyper::header::{HeaderName, HeaderValue};
 use hyper_util::rt::TokioIo;
 use rustls::pki_types::ServerName;
 use serde_json::{Map, Value, json};
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
@@ -224,8 +225,17 @@ impl Endpoint {
     /// 19.4: `https`, no userinfo, a host that 6.8 matches (lower case, one trailing dot dropped)
     /// to one of the mod's `Http` grants. The URL crate drops the port 443.
     fn parse(text: &str, grants: &[String]) -> Result<Self, Refusal> {
-        let url = Url::parse(text).map_err(|_| bad("url", "not a URL"))?;
-        if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+        // The parsed URL drops empty userinfo, but the request contract refuses it too.
+        let userinfo = Cell::new(false);
+        let url = Url::options()
+            .syntax_violation_callback(Some(&|violation| {
+                if violation == url::SyntaxViolation::EmbeddedCredentials {
+                    userinfo.set(true);
+                }
+            }))
+            .parse(text)
+            .map_err(|_| bad("url", "not a URL"))?;
+        if url.scheme() != "https" || userinfo.get() {
             return Err(Refusal::Destination);
         }
         let host = match url.host() {
@@ -1200,6 +1210,7 @@ mod tests {
         for refused in [
             "https://api.openai.com../x",
             "https://other.test/x",
+            "https://@api.openai.com/x",
             "https://user@api.openai.com/x",
             "https://:p@api.openai.com/x",
             "https://api.openai.com:8443/x",
