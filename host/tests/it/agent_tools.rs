@@ -56,8 +56,9 @@ impl Confirm for Asking {
         request: ConsentRequest,
     ) -> Pin<Box<dyn std::future::Future<Output = ConsentAnswer> + Send>> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.0.asked.lock().unwrap().push(request);
+        // `held` before `asked`: a test that sees a question may answer it at once (S118).
         self.0.held.lock().unwrap().push(Some(tx));
+        self.0.asked.lock().unwrap().push(request);
         Box::pin(async move { rx.await.unwrap_or(ConsentAnswer::Refused) })
     }
 }
