@@ -3494,8 +3494,8 @@ checks of the table above are made at the call.
   with a control character is `bad-launch {field: "headers", ..}`. A body over 1 MiB
   (1 048 576 bytes): `too-large`. With `account: "openai"`, anything but `POST
   https://api.openai.com/v1/responses` or `GET https://api.openai.com/v1/models` (the path
-  as parsed, no query, no port): `destination`. `account` is `openai` or absent; **any other
-  value, `judge` too, is `destination` in stage A4** (A5 builds `judge`, below). At apply the
+  as parsed, no query, no port): `destination`. The `judge` account has its own
+  destination rule below. Any other account value is `destination`. At apply the
   host checks again that the mod is enabled and the hosts still granted, else the stream
   ends `gone` (19.6, At apply: the origin client too).
 - No redirects. No retries: a mod decides retries.
@@ -3607,7 +3607,6 @@ pub fn judge_origin(text: &str) -> Result<String, HostError>;
 //   fn accounts(&self) -> Option<Arc<dyn AccountSource>> { None }
 // Host gains:
 //   pub fn account_changed(&self, account: &Account);   // ends the live streams that used it, outcome `gone`
-//   (A4: `OpenAi` only; `Judge { .. }` ends nothing until A5, its streams do not exist)
 ```
 
 Without an app (`accounts()` is `None`) each use fails `no-app`; an entry that
