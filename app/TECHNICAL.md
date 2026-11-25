@@ -1378,6 +1378,7 @@ pub(crate) struct DistConfirm { pub broker: Arc<Broker>, pub parties: Arc<Partie
   `cache_channels`, followed views and installed origins share this memo.
   The followed key list comes from dist again whenever the follow stamp changes.
   Party lookups during the manager poll reuse the same followed, own and related channel views.
+  On each poll, `party_views` still reads index views through `dist.indexes()` outside the memo.
   The installed-mod snapshot also shares its followed views with the related-channel walk
   and looks up origins in that snapshot when rendering the rows.
   Every render still traverses the related channels and remembers their profiles,

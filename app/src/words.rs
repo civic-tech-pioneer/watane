@@ -459,6 +459,46 @@ pub(crate) fn sign_denied(kind: &str, target: &str) -> String {
 mod tests {
     use super::*;
     #[test]
+    fn channel_read_problem_uses_plain_words() {
+        use watane_dist::DistError;
+
+        let url = "https://publisher.example/head";
+        let cases = [
+            (
+                DistError::Network {
+                    url: url.into(),
+                    cause: "Connection refused (os error 61)".into(),
+                },
+                "Could not connect to the publisher's site",
+            ),
+            (
+                DistError::NotFound { url: url.into() },
+                "The publisher's site did not have the channel",
+            ),
+            (
+                DistError::Http {
+                    url: url.into(),
+                    status: 404,
+                },
+                "The publisher's site did not have the channel",
+            ),
+            (
+                DistError::Http {
+                    url: url.into(),
+                    status: 500,
+                },
+                "The publisher's site returned an error (HTTP 500)",
+            ),
+            (
+                DistError::HeadMismatch { url: url.into() },
+                "Could not read the channel data",
+            ),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(channel_read_problem(&error), expected, "{error}");
+        }
+    }
+    #[test]
     fn s113_bound_call_consent_keeps_exact_words_and_storage_has_no_short_form() {
         let parties = Parties::new();
         let provider = Provider {
