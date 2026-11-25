@@ -125,12 +125,15 @@ function judgeView(mod, entry) {
   const {kept, hosts} = mod.judge;
   if (hosts.length) element('p', `This provider can reach: ${hosts.join(', ')}.`, section, 'hint');
   if (kept) {
-    element('p', `A key is kept for ${mod.judge.origin}`, section, 'judge-kept');
+    element('p', `A key is kept for ${mod.judge.origin}.`, section, 'judge-kept');
     if (hosts.length) button(section, 'Replace key', 'judge-replace', () => { editor.hidden = false; origin.focus(); });
     button(section, 'Remove key', 'judge-remove danger quiet', () => action('judge_remove', {local:mod.local}));
   }
   if (!hosts.length) {
-    element('p', 'This provider needs Claude Code and HTTP grants to replace the key.', section, 'hint');
+    const hasClaude = mod.grants.some(grant => grant.granted && ['claude-code', 'claude-code-shell'].includes(grant.kind));
+    const hasHttp = mod.grants.some(grant => grant.granted && grant.kind === 'http');
+    const missing = [!hasClaude && 'permission to use Claude Code', !hasHttp && 'permission to connect to a judge'].filter(Boolean);
+    element('p', `To replace the key, this provider needs ${missing.join(' and ')}.`, section, 'hint');
     return;
   }
 
@@ -182,7 +185,7 @@ function judgeView(mod, entry) {
       if (current !== revision) return;
       const host = result.origin.slice('https://'.length);
       if (!hosts.includes(host)) {
-        feedback.textContent = `This provider cannot reach ${result.origin}. Choose an origin at one of its granted hosts (${hosts.join(', ')}).`;
+        feedback.textContent = `This provider cannot reach ${result.origin}. Choose one of the addresses this provider can reach (${hosts.join(', ')}). The port must match too.`;
         return;
       }
       parsed = result.origin;

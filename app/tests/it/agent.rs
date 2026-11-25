@@ -472,7 +472,7 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
     assert_eq!(refusal["code"], "bad_input");
     assert_eq!(
         refusal["message"],
-        "This provider cannot reach https://unlisted.test. Choose an origin at one of its granted hosts (judge.test)."
+        "This provider cannot reach https://unlisted.test. Choose one of the addresses this provider can reach (judge.test). The port must match too."
     );
     assert_eq!(
         refuse_save("claude", "https://judge.test")["code"],
@@ -490,7 +490,7 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
             .join("app/accounts/judge/local__judge-provider.json")
             .exists()
     );
-    invoke(&app, "grant_give", http);
+    invoke(&app, "grant_give", http.clone());
     until(&app, "main", &format!("!!({query})('.judge-save')"));
     assert_eq!(evaluate("q('.judge-save').disabled"), true);
     assert_eq!(
@@ -510,16 +510,16 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
         &app,
         "main",
         &format!(
-            "({query})('.judge-feedback').textContent.includes('without a path, query or fragment')"
+            "({query})('.judge-feedback').textContent.includes('any path, query or fragment')"
         ),
     );
     assert_eq!(evaluate("q('.judge-save').disabled"), true);
-    enter(".judge-origin", "https://unlisted.test");
+    enter(".judge-origin", "https://judge.test:8443");
     until(
         &app,
         "main",
         &format!(
-            "({query})('.judge-feedback').textContent.includes('cannot reach https://unlisted.test')"
+            "({query})('.judge-feedback').textContent === 'This provider cannot reach https://judge.test:8443. Choose one of the addresses this provider can reach (judge.test). The port must match too.'"
         ),
     );
     assert_eq!(evaluate("q('.judge-save').disabled"), true);
@@ -579,7 +579,7 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
     );
     assert_eq!(
         app.eval("main", &format!("({query})('.judge-kept')?.textContent")),
-        "A key is kept for https://judge.test"
+        "A key is kept for https://judge.test."
     );
     assert_eq!(
         app.eval("main", &format!("!!({query})('.judge-editor')")),
@@ -598,6 +598,27 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
             .unwrap()["judge"],
         json!({"kept":true,"origin":"https://judge.test","hosts":[]})
     );
+    let missing = |permission: &str| {
+        until(
+            &app,
+            "main",
+            &format!(
+                "({query})('.hint')?.textContent === {}",
+                json!(format!(
+                    "To replace the key, this provider needs {permission}."
+                ))
+            ),
+        );
+    };
+    missing("permission to use Claude Code");
+    invoke(&app, "grant_withdraw", http);
+    missing("permission to use Claude Code and permission to connect to a judge");
+    invoke(
+        &app,
+        "grant_give",
+        json!({"local":"judge-provider","key":"claude-code"}),
+    );
+    missing("permission to connect to a judge");
     click(&app, "section[data-local=judge-provider] .judge-remove");
     until(
         &app,
@@ -608,7 +629,7 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
     invoke(
         &app,
         "grant_give",
-        json!({"local":"judge-provider","key":"claude-code"}),
+        json!({"local":"judge-provider","key":"http judge.test"}),
     );
     invoke(
         &app,
