@@ -91,10 +91,10 @@ pub(crate) fn follow_links(
         .filter(|link| seen.insert(link.channel()))
         .collect()
 }
-pub(crate) fn follow_all(
+pub(crate) fn follow_all<E>(
     links: Vec<watane_dist::Link>,
-    mut follow: impl FnMut(&watane_dist::Link) -> Result<(), crate::CmdError>,
-    failures: &mut std::collections::BTreeMap<String, String>,
+    mut follow: impl FnMut(&watane_dist::Link) -> Result<(), E>,
+    failures: &mut std::collections::BTreeMap<String, E>,
 ) {
     for link in links {
         match follow(&link) {
@@ -102,7 +102,7 @@ pub(crate) fn follow_all(
                 failures.remove(&link.channel().to_string());
             }
             Err(error) => {
-                failures.insert(link.channel().to_string(), error.message);
+                failures.insert(link.channel().to_string(), error);
             }
         }
     }
@@ -137,7 +137,7 @@ mod tests {
             links,
             |_| {
                 calls += 1;
-                Err(crate::CmdError::new("dist", "offline"))
+                Err("offline".to_owned())
             },
             &mut failures,
         );

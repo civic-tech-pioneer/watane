@@ -105,6 +105,21 @@ pub(crate) fn wrong_channel(url: &str, expected: &str, found: &str, parties: &Pa
         party_label(&party(expected, parties))
     )
 }
+pub(crate) fn channel_read_problem(cause: &watane_dist::DistError) -> String {
+    use watane_dist::DistError;
+    match cause {
+        DistError::Network { .. } => "Could not connect to the publisher's site",
+        DistError::Timeout { .. } => "The publisher's site took too long to respond",
+        DistError::NotFound { .. } | DistError::Http { status: 404, .. } => {
+            "The publisher's site did not have the channel"
+        }
+        DistError::Http { status, .. } => {
+            return format!("The publisher's site returned an error (HTTP {status})");
+        }
+        _ => "Could not read the channel data",
+    }
+    .into()
+}
 pub(crate) fn channel_read(channel: &str, cause: &str, parties: &Parties) -> String {
     let p = party(channel, parties);
     index_read(p.name.as_deref().unwrap_or(&p.fingerprint), cause)
