@@ -5,6 +5,7 @@ name: S118 flake loop
 on:
   push:
     branches: [slice/s118]
+    paths: [host/tests/it/**, .github/workflows/s118-flake.yml]
   workflow_dispatch: {}
 
 permissions:
