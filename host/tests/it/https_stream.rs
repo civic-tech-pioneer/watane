@@ -261,7 +261,7 @@ struct Tokens {
     mode: Mutex<TokenMode>,
     program: Mutex<Option<PathBuf>>,
     judge: Mutex<Option<(String, JudgeAccount)>>,
-    judge_reads: AtomicUsize,
+    judge_after_read: Mutex<Option<JudgeAccount>>,
 }
 impl AccountSource for Tokens {
     fn openai_token(&self) -> Pin<Box<dyn Future<Output = Result<String, AccountError>> + Send>> {
@@ -274,12 +274,14 @@ impl AccountSource for Tokens {
         Box::pin(async move { answer })
     }
     fn judge(&self, identity: &str) -> Result<JudgeAccount, AccountError> {
-        let entry = self.judge.lock().unwrap();
-        self.judge_reads.fetch_add(1, Ordering::SeqCst);
+        let mut entry = self.judge.lock().unwrap();
         let (_, account) = entry
-            .as_ref()
+            .as_mut()
             .filter(|(provider, _)| provider == identity)
             .ok_or(AccountError::NoAccount)?;
+        if let Some(replacement) = self.judge_after_read.lock().unwrap().take() {
+            return Ok(std::mem::replace(account, replacement));
+        }
         Ok(JudgeAccount {
             key: account.key.clone(),
             origin: account.origin.clone(),
@@ -1935,26 +1937,15 @@ fn ac4_judge_origin_is_checked_again_at_apply() {
     let mut rig = Rig::new(None);
     enter_judge(&rig, "local/https", "https://second.test");
     let judge = rig.serve("second.test", |c| async move { c.finish().await });
-    let host = Arc::clone(rig.host());
-    let request = judge_request().to_string();
-    let chain = std::thread::spawn(move || {
-        call_as(
-            &host,
-            Caller::Page,
-            "https",
-            "api.start-then-sleep",
-            json!({"request": request, "ms": 1000}),
-        )
-        .unwrap()
+    // A fake source replaces the binding immediately after returning the first account.
+    // The start check sees the old origin and the apply check must see the new one.
+    *rig.tokens.judge_after_read.lock().unwrap() = Some(JudgeAccount {
+        key: "replacement-judge-key".into(),
+        origin: "https://api.openai.com".into(),
     });
-    wait("account read at the call", Duration::from_secs(20), || {
-        rig.tokens.judge_reads.load(Ordering::SeqCst) > 0
-    });
-    enter_judge(&rig, "local/https", "https://api.openai.com");
-    let value = chain.join().unwrap();
-    let id = value.as_str().unwrap();
-    assert!(hex32(id), "{id}");
-    rig.wait_ended(id, "gone");
+    let id = rig.start(&judge_request());
+    assert!(hex32(&id), "{id}");
+    rig.wait_ended(&id, "gone");
     assert_eq!(judge.connections.load(Ordering::SeqCst), 0);
 }
 
