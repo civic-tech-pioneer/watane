@@ -2990,7 +2990,8 @@ once. The maker tools offer the fake `claude` instead:
   before testing the mod. A missing program or a host that rejects the
   setting gives `preview.scripted_openai_missing` and starts or reuses
   an ordinary preview when no script was supplied. A host refusal is remembered
-  for the selected program fingerprint and the live preview port, preserving
+  for the selected program fingerprint (a hash of the program's path and the
+  supplied script's bytes, not of the program's contents) and the live preview port, preserving
   the API and MCP connection on the next serve without a script. With a supplied script,
   invalid input or unavailable scripted preview support fails with
   `env.preview_start` and names the maker's file.
