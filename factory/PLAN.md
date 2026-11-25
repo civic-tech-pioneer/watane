@@ -1216,20 +1216,7 @@ names the same interface in its sketch and fakes it until this one merges.
 
 - [x] **S122 Alice gives a checked provider its judge key (host A5, app 19.4; agentic-harness stage E, watane half).** DONE 2026-11-25: PR #42 rebase-merged by deputy-5 (13597bf2, no bypass); builder codex, reviewer claude, 1 round (0/8); ~3.8 h in flight. On a checked provider's manager page Alice saves, replaces and removes a judge key and its https origin; the host sends it only with that provider's granted POSTs to that origin (no redirects); removing it ends the provider's live judge streams `gone`; startup deletes key files of uninstalled mods. Adversary HELD, user-sim ACCEPTED, validator PASS. R1.1 to R1.4 accepted (Deputy decisions); P1.1 to P1.8 and R1.1's spec question in Leftovers. Sketch in factory/DONE.md.
 - [x] **S124 (upkeep) a failed fetch blames the true cause (net, node, dist), and net's budget flake.** DONE 2026-11-25: PR #43 rebase-merged by deputy-5 (e76d1682, no bypass); builder claude, reviewer codex, 2 rounds (3/2, 0/0); ~3.5 h in flight. A local I/O or holder failure during a fetch reads as this machine's, with no temp path; a bad copy on a full machine and every full machine being off each say so instead of 'not followed'; a close before the download is Unreachable; net's budget probes no longer race the refill clock. F1.3 regraded polish (fixed anyway); R2.1 accepted; P1.1, P1.2 in Leftovers. Sketch in factory/DONE.md.
-- [~] **S125 (upkeep, guard) host's and app's flaky tests, and S122's judge polish.**
-  (in flight, cloud, builder codex, reviewer claude; rule 3: last two S124 claude, S122 codex; the upkeep lane, sketched
-  2026-11-25 by deputy-5 from Leftovers `### host` and `### app`; spec-check not run: tests, one app 19.4 rule; Codex task https://chatgpt.com/local/6b06ed1f-f930-83ed-af6e-ed7b0fdab06b, dispatched 14:19 UTC; DELIVERED ~15:25 UTC as PR #44 at 19e79d5 (+606/-196, host, app); r1: Claude review routine `trig_018fU3rRBVmPYN61MLLEJ4Ui`, fires 15:31 UTC, adversary on the judge parser and the home lock.)
-  Outcomes, each item's check: (1) (guard) the `Busy("/tmp/.tmp…")` reopen after `drop(host)` (host
-  `mcp::ac7_toolset_grammar_and_persistence`, app `fixtures::ac5_committed_fixtures_call_subscribe_and_keep_state`): find
-  the one cause (the lock's release on drop) and fix it in the host or the test rig, with a test that reopens at once;
-  (2) (guard) host `streams::ac10_hand_off...` (`Some(2)` vs `Some(3)`) and `adv_s96_timer_cancelled_while_the_firing_waits_still_fires`
-  on Windows: find each race and fix it; the consent `ac5` and `https_stream::ac5` lines first check whether S118's rig fix
-  already covers them (then drop the lines); each guard: 20 runs green per OS in one CI run; (3) [S122 R1.1] app 19.4:
-  the judge section stays on the manager page while a key is kept, even after `claude-code` is withdrawn, so Alice can
-  remove it (app TECHNICAL and FUNCTIONAL say so; a test); (4) [S122 r1] P1.1 to P1.8 (Leftovers `### app`), each where
-  cheap. Touches: `host/` (tests, the lock on drop, `agent/accounts.rs`), `app/` (judge page, tests); never `dist/`,
-  `net/`, `node/`, `log/`, `pkg/`. Protects: *guard* (1, 2), *core* (3), *polish* (4). Remove the items from Leftovers
-  when it merges.
+- [x] **S125 (upkeep, guard) host's and app's flaky tests, and S122's judge polish.** DONE 2026-11-25: PR #44 rebase-merged by deputy-5 (337a8466, no bypass); builder codex, reviewer claude, 1 round (0/10); ~2.3 h in flight. The host releases its home lock explicitly when it closes (a reopen no longer meets `Busy`); the streams hand-off and Windows timer tests wait on the right events; a kept judge key stays visible and removable after `claude-code` is withdrawn; the judge editor names what is wrong; S122's judge polish done; S118 had already fixed the consent flakes. R1.1 to R1.4 accepted (Deputy decisions); P1.1 to P1.10 and three new flake sightings in Leftovers. Windows rerun once (two host timing flakes outside the slice). Sketch in factory/DONE.md.
 
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
@@ -1663,17 +1650,17 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### host
 
-- [S123 CI] (guard, first sighting) `mcp::ac7_toolset_grammar_and_persistence` (`host/tests/it/mcp.rs:416`) failed on ubuntu with `Busy("/tmp/.tmp…")` reopening the host after `drop(host)` (the lock is still held); the same `Busy` as S121's app fixtures flake: one cause, likely the host's lock release on drop.
+- [S125 r1] (guard) flakes outside S125: Windows `adv_s96::adv_s96_timer_set_across_remove_and_reinstall_carries_the_removed_origin` (an elapsed-time assertion, 5.4 s against 3.5 s, adv_s96.rs:731) and `https_stream::ac7_a_consumer_that_defers_stops_the_host_reading_and_resume_loses_nothing` (timed out waiting for `closed`, streams.rs:71); macOS on main e76d1682 `runtime::ac11_s11_restart_preserves_links_and_provider_state` (runtime.rs:534). Find each race; no wall-clock assertions on a loaded runner.
+- [S125 R1.4] (guard, a spec call, host 19.4) judge origins accept `https://0.0.0.0` and `https://0x` (they reach this machine on Linux; needs a matching Http grant): refuse unspecified, loopback and private addresses as judge origins?
+- [S125 R1.2, R1.3] (host 3.1 docs) `Drop for Host` does not wait for run threads before the lock is released (a second watane's `clean_runs` could race a live run caught at drop); the explicit unlock assumes no fork without exec: say both in host TECHNICAL 3.1.
+- [S125 r1] (polish) P1.1 app `fixtures.rs:113-128` 20-reopen loop costs +37% of the app default suite: cut to one or two (the host unit test proves the cause); P1.2 `app/src/words.rs:478-492` redundant loop; P1.3 app TECHNICAL 19.4 lacks the new editor strings (app/ui/app.js:133,154,179,192); P1.4 `host/src/agent/timers.rs:309-316` add a control trial that fires; P1.5 name only the missing grant; P1.6 name trailing dots and user names in the origin hint; P1.7 say the port must match the grant; P1.8 "granted hosts" is jargon; P1.9 a missing final period; P1.10 `https_stream.rs:118` doc line.
+
 - [S119 r1] (polish) P1.1 `host/src/agent/https_stream.rs:662-666`: a head that fails to parse also reads "connection ended before the response head"; P1.5 `:832` the `data: ` field name counts toward MAX_ITEM (an event of exactly 4 MiB is refused), test `Sse::feed` at the boundary.
-- [S119 r1] (guard, first sighting) P1.7 `streams::ac10_hand_off_moves_a_host_stream_to_a_mod_that_exports_stream_sink` (`host/tests/it/streams.rs:663`) failed once (`Some(2)` vs `Some(3)`); likely a race between `api.received` and the `deliveries()` snapshot.
 
 - [S118 r2] (polish) `host/src/runtime/call.rs:1032`: say that removal changes the catalog before the timer rewrite transaction; `host/tests/it/kept_state.rs:208`: bound the readiness wait.
 
-- [S118 r1] (guard) `host/tests/it/adv_s96.rs:147` `adv_s96_timer_cancelled_while_the_firing_waits_still_fires` failed on windows-latest (PR #30 attempt 1); first sighting.
 
-- [S114 CI] (guard) `consent::ac5_a_consent_given_through_one_provider_is_not_used_through_another` (`host/tests/it/consent.rs:533`) flaked again, on ubuntu (PR #30 attempt 1): the pending item had not arrived yet. Second sighting after S113's macOS one: give it to the next upkeep slice that may touch host.
 
-- [S113 CI] (guard) flakes seen once each on PR #29 attempt 1: `https_stream::ac5_a_refused_consent_ends_the_stream_consent_refused` (windows-latest) and `consent::ac5_a_consent_given_through_one_provider_is_not_used_through_another` (macos-26); green on rerun.
 
 - [S113] reinstall after 'Keep data' keeps the books but the consent still labels Storage `new`: the host's install plan does not report retained storage.
 
@@ -1722,10 +1709,7 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### app
 
-- [S122 r1] (polish, host and app) P1.1 `judge_origin` (`host/src/agent/accounts.rs:64,71,72`): three missed mutants (control characters, trailing-dot guard, the IPv4 arm) and `https://127.0.0.1%2E` folds to `https://127.0.0.1` though host 19.4 refuses a trailing dot; P1.2 `judge_set` refusals untested (unlisted host, ineligible mod, `judge_hosts` granted filter, `app/src/core.rs:553,603,610`); P1.3 no test of the notice on replace or uninstall (`core.rs:586,618`); P1.4 the `words::tests` row for `judge_origin` (app 19.6); P1.5 `app/TECHNICAL.md:2742` still says "lower-cased without a trailing dot"; P1.6 a host test that the key is looked up by the executing mod when another mod calls the provider (`https_stream.rs:335`); P1.7 `Request::parse`'s placeholder judge state (`https_stream.rs:177`); P1.8 the judge page's words (path or query in the origin, a disabled Save with no hint, the refusal naming neither origin nor hosts).
-- [S122 R1.1] (a spec call, app 19.4 and host 19.4) withdrawing `claude-code` while the Http grant stays hides the Judge section, so a kept key is in use with no Remove button (uninstall still deletes it). Narrowest fix: the section stays while a key is kept.
 
-- [S121 CI] (guard, first sighting) `fixtures::ac5_committed_fixtures_call_subscribe_and_keep_state` (`app/tests/it/fixtures.rs:25`) failed on ubuntu with `Busy("/tmp/.tmp…")` on a slice that does not touch `app/`; green on rerun.
 
 - [S117 r1] (polish) a channel both compromised and failing its last read: Updates says "Couldn't read … tries again" while the row says `Compromised`; nothing tells Alice why or what to do (APP-F-44 style words for followed rows).
 - [S117 r1] (polish) `app/tests/it/manage.rs:317`: the polled `api.received` promise has no `.catch`.
@@ -1969,6 +1953,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - 2026-11-24 host 18 **Q38: (b)**, the human ("b is fine for q38"). A workspace or account consent is kept per (origin client, `via` = the provider's identity, folder or account); a new provider asks again. S103 built (b); its next answer round writes host 18 Q38 as decided by the human, 2026-11-24, and the 19.7 rows to match. agentic-harness TECHNICAL 8 already cites 19.7.
 
 ## Deputy decisions
+- 2026-11-25 (S125 r1) accepted: R1.1 two Windows host timing flakes outside the slice (rerun green; Leftovers guard); R1.2 run threads may outlive the home lock at drop (unchanged behaviour; a live run caught at drop); R1.3 the explicit unlock assumes no fork without exec (no such path); R1.4 a judge origin of `0.0.0.0` or `0x` (needs the participant's own Http grant for it; predates S125; Leftovers spec call). Undo: the Leftovers items.
 - 2026-11-25 (S124 r2) accepted: R2.1 net's byte-budget test can still fail if the bucket refills before the probe on all five attempts (a guard test, not product behaviour). Undo: a test clock in net's budget.
 - 2026-11-25 (S122 r1) accepted: R1.1 a kept judge key stays in use, its section hidden, after `claude-code` is withdrawn (W39 holds: it still goes only to its judge; the section fix in Leftovers); R1.2 local folders with one slug share one identity and so one key (host 4.1, by design, confirmed at install); R1.3 a judge folder with too-wide modes, or a prune I/O error, starts the app failed (fails closed; only a local program can cause it); R1.4 a caller holding a key learns which granted host is its judge origin (low value). Undo: the Leftovers item; a host refusal of `judge` without the grant.
 - 2026-11-25 (S118 r1) accepted: the existing unsigned `local/<slug>` identity rule stands; a different local package with the same slug can recover retained records after Alice approves Storage.
