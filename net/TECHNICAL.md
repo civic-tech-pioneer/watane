@@ -172,7 +172,7 @@ pub trait Holdings: Send + Sync + 'static {
     fn blob(&self, id: &BlobId) -> Option<PathBuf>;                // a verified package a held live release names
     fn wanted_blobs(&self, role: Role) -> Vec<(BlobId, u64)>;      // Full: every live release's package it lacks; Light: those asked for
     fn ingest(&self, channel: &PublicKey, entries: Vec<Entry>, why: Why) -> Ingested;
-    fn store_blob(&self, id: &BlobId, file: &Path) -> Result<(), String>;
+    fn store_blob(&self, id: &BlobId, file: &Path) -> Result<(), String>; // Err: a cause naming no path
     fn search(&self, query: &Query) -> Vec<Hit>;
 }
 pub enum Why { Kept, Asked }                     // Kept: a full machine's copy; Asked: a light machine's need or a hit
@@ -638,7 +638,9 @@ which is what a reference needs.
   size must be `size` (and at most `limits.blob`), else the package is a bad
   object; write to a temp file under `<home>/net/`; check BLAKE3 and size
   again; `holdings.store_blob` (a holder that does not keep it gives `Io`,
-  `package <hex8> was not stored: <cause>`); the temp file is removed in every case. The
+  `package <hex8> was not stored on this machine: <cause>`, the holder's cause as it is:
+  the holder names no path in it, not the temp file it was given); the temp file is
+  removed in every case. The
   fetch does not use the store, so it keeps no second copy.
 
 ### 5.9 A light machine
@@ -686,8 +688,10 @@ a full machine.
   `holdings.store_blob`. A machine that is not reached, or that does not
   have it, gives way to the next candidate; none connected is
   `NoFullMachine`; some connected and none had it is `NotServed` naming the
-  last of them (not "unreachable": it answered), or `Unreachable` when the
-  last failure was a connection that broke, and `Event::Unreachable { node,
+  last of them (not "unreachable": it answered: it reset the download
+  stream), or `Unreachable` when the last failure was a connection that
+  broke or closed (a machine that shuts down before the download opens has
+  not shown a missing copy), and `Event::Unreachable { node,
   cause }` is emitted for either (for `NotServed` the cause reads "not
   served: ..."), so Machines shows it: at most once for a
   machine until a package fetch from it succeeds, like the keeper's (5.10), so

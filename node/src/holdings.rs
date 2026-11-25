@@ -3,7 +3,7 @@ use crate::{NodeError, convert};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
-use watane_dist::{Dist, Entry, PublicKey, Reason};
+use watane_dist::{Dist, DistError, Entry, PublicKey, Reason};
 use watane_net::{BlobId, HeadInfo, Hit, Holdings, Ingested, Query, Role, Why};
 
 /// Answers `net`'s questions only from what dist stored and verified. Made before
@@ -53,6 +53,21 @@ fn chain(e: &dyn std::error::Error) -> String {
         next = s.source();
     }
     text
+}
+
+/// A failed `store_package` as net's path-free cause (TECHNICAL 4.1): the OS's own text for a
+/// file error, what was wrong with the package for a bad one, and a fixed text for any other
+/// error, whose text may name a local path; net passes the cause on to the participant.
+fn local_cause(e: &DistError) -> String {
+    match e {
+        DistError::Io { source, .. } => chain(source),
+        DistError::Corrupt { cause, .. } => format!("a stored file is corrupt: {cause}"),
+        DistError::HashMismatch { .. } => "its bytes do not match its hash".to_owned(),
+        DistError::BadPackage { cause, .. } => format!("invalid package: {cause}"),
+        DistError::PackageMismatch { cause, .. } => format!("package mismatch: {cause}"),
+        e @ (DistError::PackageTooLarge { .. } | DistError::NotNamed { .. }) => e.to_string(),
+        _ => "its home could not be read".to_owned(),
+    }
 }
 
 impl Holdings for DistHoldings {
@@ -142,7 +157,7 @@ impl Holdings for DistHoldings {
     fn store_blob(&self, id: &BlobId, file: &Path) -> Result<(), String> {
         let dist = self.dist.get().ok_or("the home is opening")?;
         dist.store_package(&convert::package_id(id), file)
-            .map_err(|e| chain(&e))
+            .map_err(|e| local_cause(&e))
     }
 
     fn search(&self, query: &Query) -> Vec<Hit> {

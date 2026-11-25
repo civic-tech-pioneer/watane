@@ -86,6 +86,43 @@ fn s6_the_light_laptop_searches_and_installs_through_the_server() {
     assert!(fetched.link.is_none());
 }
 
+/// S124 r1 F1.1: the server sent a good copy and this machine's holder could not store it
+/// (its unpack folder is unusable). The whole error chain names this machine and the OS's
+/// cause, and no path of the light home but its `net` folder: not net's temp file, not
+/// dist's temp folder.
+#[test]
+fn regress_s124_a_holder_failure_on_a_light_fetch_names_no_temp_path() {
+    let w = world();
+    let published = w.laptop.publish(package("1.0.0")).unwrap();
+    assert!(keeps(&w, &published));
+    let home = w._dirs[2].path();
+    // a file where dist's temp folder should be: a folder in it cannot be made
+    let tmp = home.join("dist/tmp");
+    fs::remove_dir_all(&tmp).unwrap();
+    fs::write(&tmp, b"x").unwrap();
+    let os = fs::create_dir(tmp.join("x")).unwrap_err().to_string();
+    w.laptop.net().set_options(Default::default()).unwrap();
+    let error = w.light.fetch(&published.info.reference).unwrap_err();
+    let mut chain = error.to_string();
+    let mut next = std::error::Error::source(&error);
+    while let Some(cause) = next {
+        chain.push_str(": ");
+        chain.push_str(&cause.to_string());
+        next = cause.source();
+    }
+    let hex: String = published.info.release.package.as_bytes()[..4]
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    assert_eq!(
+        chain,
+        format!(
+            "this machine: {}: package {hex} was not stored on this machine: {os}",
+            home.join("net").display()
+        )
+    );
+}
+
 /// A machine whose holder answers every search with one hit that names the entry `entry`.
 struct Liar {
     hit: Hit,

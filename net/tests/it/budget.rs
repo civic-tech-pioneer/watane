@@ -77,6 +77,22 @@ async fn ok_within(conn: &Connection, secs: u64) -> bool {
     }
 }
 
+/// Drains the byte bucket with a request that is no request, then asks a `hello`:
+/// `true` once that `hello` is `over_budget`. The bucket refills within a second or
+/// two, so an `ok` can only mean a pause between the two requests outlasted it; the
+/// drain is then tried again, a few times. An `ok` never passes, so no timing turns
+/// a missing refusal into a pass, and one pause does not fail the test.
+async fn over_budget_after_drain(conn: &Connection, size: usize) -> bool {
+    for _ in 0..5 {
+        let big = code_of(ask(conn, &vec![0xff; size]).await);
+        assert!(big == "bad_request" || big == "over_budget", "{big}");
+        if code_of(ask(conn, &hello_request()).await) == "over_budget" {
+            return true;
+        }
+    }
+    false
+}
+
 /// A server of `limits` that trusts the key of seed 200, and one that trusts nobody.
 fn servers(limits: Limits) -> (Node, Node) {
     let fx = fixture();
@@ -136,15 +152,22 @@ fn counts_only() -> Limits {
     }
 }
 
-/// The production (default) budget refuses what is beyond it, with a fresh
-/// key for each probe. Only refusals are asserted: a drained byte bucket
-/// refuses too, so no timing can turn them into a pass or a flake.
+/// The production (default) budget refuses what is beyond it, with a fresh key for
+/// each probe. Each probe lifts every other limit, so its refusal is its own limit's:
+/// a connection is never refused for bytes (`admit`), a stream probe has a byte bucket
+/// that cannot drain, and the byte probe has room for any count of streams.
 #[test]
 fn s9_the_default_budget_refuses_an_unknown_key_beyond_it() {
+    let defaults = Limits::default();
+    let roomy_counts = Limits {
+        unknown_conns_per_peer: 16,
+        unknown_streams_per_peer: 16,
+        ..Limits::default()
+    };
     let (conns, streams, bytes) = (
         node(MemHoldings::new(fixture()), None),
-        node(MemHoldings::new(fixture()), None),
-        node(MemHoldings::new(fixture()), None),
+        node(MemHoldings::new(fixture()), Some(counts_only())),
+        node(MemHoldings::new(fixture()), Some(roomy_counts)),
     );
     runtime().block_on(async {
         // a third connection of one key is closed on it
@@ -158,23 +181,26 @@ fn s9_the_default_budget_refuses_an_unknown_key_beyond_it() {
         let closed = tokio::time::timeout(Duration::from_secs(5), third.closed()).await;
         assert!(closed.is_ok(), "the third connection was kept");
 
-        // a third stream of one key is over_budget (two stay open)
+        // a third stream of one key is over_budget while the default two stay open,
+        // and served once one of them ends
         let ep = endpoint(131).await;
         let conn = connect(&ep, &streams).await;
         let mut held = Vec::new();
-        for _ in 0..2 {
+        for _ in 0..defaults.unknown_streams_per_peer {
             let (mut send, recv) = conn.open_bi().await.unwrap();
             send.write_all(&[0x82]).await.unwrap();
             held.push((send, recv));
         }
         assert_eq!(hello_beside_held(&conn, true).await, "over_budget");
+        let (mut send, _recv) = held.pop().unwrap();
+        send.finish().unwrap();
+        assert!(ok_within(&conn, 5).await, "a freed stream was not served");
 
-        // more bytes than 64 KiB in a second: the next request is over_budget
+        // more bytes than the default 64 KiB a second: the next request is over_budget
+        assert_eq!(defaults.unknown_bytes_per_sec, 65_536);
         let ep = endpoint(132).await;
         let conn = connect(&ep, &bytes).await;
-        let big = code_of(ask(&conn, &vec![0xff; 200_000]).await);
-        assert!(big == "bad_request" || big == "over_budget", "{big}");
-        assert_eq!(code_of(ask(&conn, &hello_request()).await), "over_budget");
+        assert!(over_budget_after_drain(&conn, 200_000).await);
         for server in [&conns, &streams, &bytes] {
             assert_eq!(server.holdings.calls(), 0);
         }
@@ -259,22 +285,17 @@ fn s9_the_byte_budget_of_unknown_peers_empties_and_refills() {
             // like) count too: on a bucket this small they may spend it, so
             // the first hello may wait for a refill
             assert!(ok_within(&conn, 3).await, "seed {seed}: first hello");
-            // about 16 KiB of a request that is no request
-            let big = code_of(ask(&conn, &vec![0xff; 16_000]).await);
-            // most of it arrived before the stream was accepted: the unknown
-            // node may already be over budget
-            assert!(
-                big == "bad_request" || (spent && big == "over_budget"),
-                "{big}"
-            );
-            let next = code_of(ask(&conn, &hello_request()).await);
-            assert_eq!(
-                next,
-                if spent { "over_budget" } else { "ok" },
-                "seed {seed}"
-            );
             if spent {
+                // about 16 KiB of a request that is no request empties it
+                assert!(over_budget_after_drain(&conn, 16_000).await, "never spent");
                 assert!(ok_within(&conn, 3).await, "the bucket did not refill");
+            } else {
+                // a trusted key is not charged: every answer is the request's own
+                for _ in 0..3 {
+                    let big = code_of(ask(&conn, &vec![0xff; 16_000]).await);
+                    assert_eq!(big, "bad_request", "seed {seed}");
+                    assert_eq!(code_of(ask(&conn, &hello_request()).await), "ok");
+                }
             }
         }
         assert_eq!(open.holdings.calls(), 0);

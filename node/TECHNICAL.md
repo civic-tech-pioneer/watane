@@ -186,12 +186,16 @@ read from a web host (NODE-F-7).
 | `wanted_blobs(Full)` | `dist.missing_packages()` |
 | `wanted_blobs(Light)` | the packages that `need_blob` asked for (5.3) and `dist.package_file` still lacks |
 | `ingest(channel, entries, why)` | `dist.ingest(channel, entries, Reason::Kept)` for `Why::Kept` on a replica; `Reason::Asked` for `Why::Asked`, and for `Why::Kept` on the anchor (NO-8); `dist::Ingested` as `net::Ingested`, a `Compromised` without its seq, a `Failed` with the error's text |
-| `store_blob(id, file)` | `dist.store_package(&id, file)`, its error as text |
+| `store_blob(id, file)` | `dist.store_package(&id, file)`, its error as a path-free cause (below) |
 | `search(query)` | `dist.search(&q)` with `q` from 4.3, each hit as `net::Hit` (4.3) |
 
 `wanted_blobs(Light)` lists the packages that `need_blob` asked for and that `dist.package_file` still lacks (built in stage 2). A second `set` is `NodeError::HolderSet` and keeps the first `Dist`.
 
-A dist error is given as its cause chain: its text, then the text of each `source()`, joined by ": " (`store_blob` and `Ingested::Failed`).
+A dist error is given as its cause chain: its text, then the text of each `source()`, joined by ": " (`Ingested::Failed`).
+`store_blob` gives net a cause that names no local path, since net passes it to the participant
+(net 5.8): for `Io`, the cause chain of its OS error alone; for `HashMismatch`, `BadPackage`,
+`PackageMismatch` and `Corrupt`, what was wrong without the file; `PackageTooLarge` and
+`NotNamed` as their text; any other error as "its home could not be read".
 
 `DistHoldings` is made before the `Dist` exists (5.6) and holds it in a
 `OnceLock`. Until it is set, every method answers as an empty holder:
