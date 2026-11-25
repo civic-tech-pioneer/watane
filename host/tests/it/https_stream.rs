@@ -1848,6 +1848,7 @@ fn ac2_judge_key_is_scoped_to_the_signed_publisher() {
     let package = pkg::pack(&folder, false).unwrap();
     let body = Release::new(&Mod::read(&folder).unwrap(), &package).unwrap();
     let sources = ["first-publisher", "second-publisher"]
+        .into_iter()
         .map(|name| {
             let log = Log::open(&rig.dir.path().join(name)).unwrap();
             let entry = log.append(RELEASE_KIND, &body.encode()).unwrap();
@@ -1856,7 +1857,7 @@ fn ac2_judge_key_is_scoped_to_the_signed_publisher() {
                 entry,
             }
         })
-        .to_vec();
+        .collect();
     let plan = rig.host().plan(sources).unwrap();
     let mods = rig
         .rt
