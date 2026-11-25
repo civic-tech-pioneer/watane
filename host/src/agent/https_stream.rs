@@ -686,11 +686,7 @@ impl Job {
             return Err(End::Stop);
         }
         let authorization = if matches!(request.account, Some(RequestAccount::OpenAi)) {
-            Some(bearer(&self.token().await?).ok_or_else(|| {
-                End::With(failed(
-                    "account unavailable: the token is not a header value",
-                ))
-            })?)
+            Some(token_header(&self.token().await?)?)
         } else {
             self.judge_authorization
                 .clone()
