@@ -490,7 +490,7 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
             .join("app/accounts/judge/local__judge-provider.json")
             .exists()
     );
-    invoke(&app, "grant_give", http.clone());
+    invoke(&app, "grant_give", http);
     until(&app, "main", &format!("!!({query})('.judge-save')"));
     assert_eq!(evaluate("q('.judge-save').disabled"), true);
     assert_eq!(
@@ -611,12 +611,14 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
         );
     };
     missing("permission to use Claude Code");
-    invoke(&app, "grant_withdraw", http);
-    missing("permission to use Claude Code and permission to connect to a judge");
-    invoke(
+    click(
         &app,
-        "grant_give",
-        json!({"local":"judge-provider","key":"claude-code"}),
+        r#"section[data-local=judge-provider] [data-key="http judge.test"] .sw"#,
+    );
+    missing("permission to use Claude Code and permission to connect to a judge");
+    click(
+        &app,
+        "section[data-local=judge-provider] [data-key=claude-code] .sw",
     );
     missing("permission to connect to a judge");
     click(&app, "section[data-local=judge-provider] .judge-remove");
