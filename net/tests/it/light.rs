@@ -502,11 +502,18 @@ fn ac5_need_is_not_ok_when_the_holder_takes_nothing() {
             .try_iter()
             .all(|e| !matches!(e, watane_net::Event::Refused { .. }))
     );
-    // the holder takes it again: the same call is Ok, from the same machine
+    // a page the holder failed to keep: its own cause, still this machine's
     light
         .holdings
         .compromised
         .store(false, std::sync::atomic::Ordering::SeqCst);
+    *light.holdings.ingest_fails.lock().unwrap() = Some("disk full".into());
+    match light.net.need(&chan(x)) {
+        Err(NetError::NotTaken { cause, .. }) => assert_eq!(cause, "disk full"),
+        other => panic!("{other:?}"),
+    }
+    *light.holdings.ingest_fails.lock().unwrap() = None;
+    // the holder takes it again: the same call is Ok, from the same machine
     light.net.need(&chan(x)).unwrap();
     assert_eq!(light.holdings.raws(&chan(x)), raws(&cx));
 }

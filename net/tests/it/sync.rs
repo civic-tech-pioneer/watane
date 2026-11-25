@@ -581,7 +581,7 @@ fn ac6_unknown_nodes_get_nothing_on_blobs_and_gossip() {
     let target = node_trusting(
         holding(&[(chan(x), chain(x, 2))], true),
         vec![node_key_of_seed([82u8; 32])],
-        Some(roomy_limits()),
+        None,
     );
     let topic = {
         let mut input = b"watane/own/1\0".to_vec();
