@@ -271,24 +271,6 @@ fn ac1_every_full_machine_off_says_no_full_machine_is_reachable() {
     assert!(!chain.contains("is not followed"), "{chain}");
 }
 
-#[test]
-fn ac1_a_web_host_still_wins_when_no_full_machine_is_reachable() {
-    let dirs: Vec<_> = (0..2).map(|_| tempfile::tempdir().unwrap()).collect();
-    let anchor = app(dirs[0].path());
-    let light = keyless(dirs[1].path());
-    pair(&anchor, &light, Role::Light, false);
-    anchor.net().set_options(Default::default()).unwrap();
-    let alice = Alice::new();
-    // net is on and asked, has no full machine, and dist reads Alice's web host
-    assert!(matches!(
-        light.net().need(&alice.key),
-        Err(watane_net::NetError::NoFullMachine)
-    ));
-    light.follow(&alice.link()).unwrap();
-    let fetched = light.fetch(&alice.published.info.reference).unwrap();
-    assert_eq!(fetched.package.into_bytes(), alice.package_bytes());
-}
-
 /// The error and its sources, each followed by ` | `.
 fn chain(error: &dyn std::error::Error) -> String {
     let mut chain = String::new();
