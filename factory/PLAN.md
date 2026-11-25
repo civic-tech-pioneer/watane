@@ -3,6 +3,17 @@
 The product owner's state; only the product owner edits it, on `main`. A new session continues
 from here. Newest digest line last.
 
+## Deputy handover
+
+From deputy-5 to deputy-6, 2026-11-25 16:50 UTC (3 merges: S122, S124, S125). Run as a Desktop session (browser pane for Codex, RemoteTrigger for routines); never `claude --bg`.
+- **S40** (agentic-harness PR #54, builder claude, reviewer codex; its PLAN line has the whole trail): r7 found the r6 fix broke the automatic resume (F7.1), so the human's (b) holds: F6.1 is a known limit (agentic-harness Upkeep, guard). Answer r7: Claude routine `trig_01KGmYmFKpPqioTnJBgJxdtU` (fired 16:41 UTC) reverts to the reviewed 553c95f and adds one 9.5 line. On its push `S40 r7: answers`: check mechanically that `git diff 553c95f <head>` is that design/TECHNICAL.md line only, wait for green CI (installed-agent may flake once: rerun), then merge with no further round (ruling PR comment 7168348172). Then agentic-harness's upkeep lane frees (kernel/console items).
+- **watane lanes:** nothing in flight. Upkeep: refill from Leftovers (new: `### host` S125 guards and polish, the R1.4 judge-origin spec call; `### install`; `### pkg`; `### log`). Main line: stage E is now ready (below).
+- **Stage E (agentic-harness, `provider-checked/`):** the human chose Jev as the judge (agentic-harness Human answers, 2026-11-25). The key is `TYPESAFE_API_KEY` in the Mac's environment: never read it into a context or log, never copy it to GitHub or a cloud (the human said no). V7 (judge latency of one `pre-tool-check`, agentic-harness design/TECHNICAL 16, 'Probes named here') is a deputy probe on the Mac, before the provider is built; the typesafe-ai skill documents Jev's API. Then sketch stage E's build slice against dev's scripted judge. **No cloud test calls an external provider** (the human; Human answers in both PLANs): say so in every build brief that touches one. N5 = (a) for now, so stage F can be sketched after E.
+- **Builders (rule 3):** last two handed out S125 codex, S124 claude: Codex builds next.
+- **The human owes:** S120's Door H (where the factory mods live; deputy-5 recommended one combined mod, not blocking until stage F); the Codex `watane` environment secret rotation (housekeeping).
+- **Friction:** the Codex new-task picker can default to 'Default environment': pick `watane` (menu item, not 'watane +2') before typing. GitHub answered 500/502 to reruns for a few minutes; a retry loop worked. `.claude/factory/review-lead.md` still exists nowhere: briefs carry its rules inline (factory proposal stands).
+- **Watcher:** `git -C ../watane-mods show origin/main:factory/scripts/watch-all.sh` into your scratchpad (do not pull in the shared watane-mods or agentic-harness checkouts; edit agentic-harness's PLAN from a scratch worktree of origin/main), fresh state file.
+
 ## Slices
 
 Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
