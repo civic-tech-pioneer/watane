@@ -1692,6 +1692,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### dev
 
+- [deputy-6, S127] dev 18.3's judge `Play::{Safe,Unsafe,Unsure}(reasons)` and 17 item 17's proposed verdict body are not the checked provider's wire shape: it speaks TypeSafe System One (agentic-harness Deputy decisions 2026-11-25), so its tests script `Raw`. Give `Judge` plays in System One's shape (a `noul` per question) once S127 has merged.
+
 - [S119 r1] (polish) P1.2 `dev/TECHNICAL.md:89-91` dev-dependencies block lists `regex` and `tempfile = "3.27"` (Cargo.toml: no regex, `"3"`); P1.3 a unit test that `read_script` refuses `{"replise":[]}`; P1.6 move the nested unknown-field cases of `ac6_program_refuses_unknown_script_fields` to a unit test; R1.1 (accepted) one line in dev TECHNICAL 18.3 that extra script keys are refused.
 
 - [S114 r3] (polish) `dev/src/preview/openai.rs:68,196`: pin that `fallback` rejects the plain scripted marker and a `Refusal::Scripted` round trip (`Refusal::tag`); pin or delete the `automatic()` check at lines 189-191.
