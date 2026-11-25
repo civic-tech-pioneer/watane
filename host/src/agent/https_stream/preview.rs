@@ -1,6 +1,6 @@
 //! The loopback transport for a checked OpenAI request in a dev preview (TECHNICAL 19.9).
 
-use super::{Bytes, End, Full, Job, ServerName, TokioIo, failed};
+use super::{Bytes, End, Full, Job, ServerName, TokioIo, failed, token_header};
 use crate::Mode;
 
 /// The ordinary HTTPS job owns request validation, registration, cancellation and response handling.
@@ -45,6 +45,7 @@ async fn exchange(
     if job.stopped() {
         return Err(End::Stop);
     }
+    let authorization = token_header(&token)?;
     let connect = async {
         let tcp = tokio::net::TcpStream::connect(address)
             .await
@@ -70,7 +71,7 @@ async fn exchange(
     let driver = tokio::spawn(async move {
         let _ = connection.await;
     });
-    let result = job.exchange(&mut sender, Some(token)).await;
+    let result = job.exchange(&mut sender, Some(authorization)).await;
     driver.abort();
     result
 }
