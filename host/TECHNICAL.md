@@ -698,7 +698,9 @@ Install checks the generation again before committing (Q24).
 - `remove(local, delete_data)`: wait for the mod's call lock; drop it from
   the registry; delete `mods/<local>/`; if `delete_data`, delete its state
   (section 7) while it still holds the catalog mutex, so that no plan sees
-  the new catalog without the deletion (4.2 step 6). Links to it become unbound; toolset entries stay and give no
+  the new catalog without the deletion (4.2 step 6). The lock order is the
+  write transaction first, then the catalog mutex, as in a timer commit
+  (19.6). Links to it become unbound; toolset entries stay and give no
   tool; kept state reattaches when the identity is installed again.
 - `grant` and `revoke`: only for a grant in `mod.grants()`, else
   `not_declared`; they set `granted`. The app calls them in process after
