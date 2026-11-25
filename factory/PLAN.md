@@ -1214,22 +1214,7 @@ names the same interface in its sketch and fakes it until this one merges.
   to the deputy first). Touches: host, dev, pkg if a row needs it. Boundary: W39 (adversary). Cloud.
   Protects: *core*.
 
-- [~] **S122 Alice gives a checked provider its judge key (host A5, app 19.4; agentic-harness stage E, watane half).**
-  (in flight, cloud, builder codex, reviewer claude; rule 3: last two S121 claude, S120 codex; the main line, sketched
-  2026-11-25 by deputy-4: step 6's first build waits on stages E and F (S120), and E's watane half needs no real judge. Codex task https://chatgpt.com/local/6b06994d-5934-83eb-9d1f-da9025713051, dispatched 08:15 UTC; PR #42 opened ~09:28 UTC as a draft; BLOCKED 09:52 at 83b71eb: the builder held delivery on cloud reds that also fail on main (app look::windows window height, host stage A load); GitHub CI at d235a2d was red on all three OSes on dev `scripted_host::ac2_case_19_every_refused_form_reaches_no_server`, a test of this slice's area: the answer waits for CI on 83b71eb; answered 10:09 UTC; DELIVERED at cadba83 (+1814/-82, CI green on all four); r1: Claude review routine `trig_01DkHPfSzNr3as2C8c6Aapde`, fires 11:20 UTC, adversary on.)
-  The story: in the manager's page for a checked provider, Alice enters a judge key and the judge's origin; only that
-  provider's requests to that origin carry it, and removing it ends its live streams. Outcomes, on the real programs
-  with dev's scripted judge origin (dev 18.3): (1) Alice sets and removes a judge key for an installed provider in the app
-  (`judge_set`, `judge_remove`, app 19.4, 19.5); the key file is named by the provider's identity, 0600, written
-  atomically; (2) a request with `account: "judge"` from that provider reaches the scripted judge with the key, and from
-  the unchecked provider, another publisher's mod or a preview it ends `no-account` with no request counted (host 19.4,
-  S59); (3) `judge_origin` parses once (case and default port folded; a path or query refused `bad_request`), no
-  redirect is followed; (4) removing the key ends a live judge stream `gone` (HOST-F-72); at startup a key file of no
-  installed mod is deleted (app 19.4). Interface: `watane:host@0.1.0` H3 accounts as host 19 states it (no WIT change
-  expected; one goes to the deputy first); the judge's wire shape stays the checked provider's (dev 17). Touches:
-  `host/src/agent/`, `app/` (accounts, the judge page), `dev/` only if the scripted judge needs it; never `dist/`, `log/`,
-  `pkg/` (S121). Boundary: W39, "a judge key goes only to its judge" (host 18, app 2072): adversary on. Leaves out: the
-  checked provider itself and V7 (agentic-harness, needs a real judge account). Protects: *core*.
+- [x] **S122 Alice gives a checked provider its judge key (host A5, app 19.4; agentic-harness stage E, watane half).** DONE 2026-11-25: PR #42 rebase-merged by deputy-5 (13597bf2, no bypass); builder codex, reviewer claude, 1 round (0/8); ~3.8 h in flight. On a checked provider's manager page Alice saves, replaces and removes a judge key and its https origin; the host sends it only with that provider's granted POSTs to that origin (no redirects); removing it ends the provider's live judge streams `gone`; startup deletes key files of uninstalled mods. Adversary HELD, user-sim ACCEPTED, validator PASS. R1.1 to R1.4 accepted (Deputy decisions); P1.1 to P1.8 and R1.1's spec question in Leftovers. Sketch in factory/DONE.md.
 - [~] **S124 (upkeep) a failed fetch blames the true cause (net, node, dist), and net's budget flake.**
   (in flight, cloud, builder claude, reviewer codex; rule 3: last two S122 codex, S123 codex; the upkeep lane, sketched
   2026-11-25 by deputy-5 from Leftovers outside S122's host/, app/, dev/; spec-check not run: error text and tests only; routine `trig_01S1fjM2MXnYjYVirKm928Le`, fires 11:21 UTC.)
@@ -1739,6 +1724,9 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### app
 
+- [S122 r1] (polish, host and app) P1.1 `judge_origin` (`host/src/agent/accounts.rs:64,71,72`): three missed mutants (control characters, trailing-dot guard, the IPv4 arm) and `https://127.0.0.1%2E` folds to `https://127.0.0.1` though host 19.4 refuses a trailing dot; P1.2 `judge_set` refusals untested (unlisted host, ineligible mod, `judge_hosts` granted filter, `app/src/core.rs:553,603,610`); P1.3 no test of the notice on replace or uninstall (`core.rs:586,618`); P1.4 the `words::tests` row for `judge_origin` (app 19.6); P1.5 `app/TECHNICAL.md:2742` still says "lower-cased without a trailing dot"; P1.6 a host test that the key is looked up by the executing mod when another mod calls the provider (`https_stream.rs:335`); P1.7 `Request::parse`'s placeholder judge state (`https_stream.rs:177`); P1.8 the judge page's words (path or query in the origin, a disabled Save with no hint, the refusal naming neither origin nor hosts).
+- [S122 R1.1] (a spec call, app 19.4 and host 19.4) withdrawing `claude-code` while the Http grant stays hides the Judge section, so a kept key is in use with no Remove button (uninstall still deletes it). Narrowest fix: the section stays while a key is kept.
+
 - [S121 CI] (guard, first sighting) `fixtures::ac5_committed_fixtures_call_subscribe_and_keep_state` (`app/tests/it/fixtures.rs:25`) failed on ubuntu with `Busy("/tmp/.tmp…")` on a slice that does not touch `app/`; green on rerun.
 
 - [S117 r1] (polish) a channel both compromised and failing its last read: Updates says "Couldn't read … tries again" while the row says `Compromised`; nothing tells Alice why or what to do (APP-F-44 style words for followed rows).
@@ -1923,6 +1911,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
+- (2026-11-25, deputy-5, S122 merged: agentic-harness stage E's watane half is done) **A real judge account for V7.** Stage E's checked provider (agentic-harness) needs a judge service the provider can call with a key Alice enters; nothing in the factory can open one (an account is the human's). Which judge (Jev or another), and may the factory use a key of yours in its cloud tests? Blocks agentic-harness stage E, so step 6's JF1. **N5 revisit** (agentic-harness PLAN, "N5 The factory's implementer needs a shell"): you asked to revisit it when stage E starts, leaning (b); it blocks stage F.
+
 - (2026-11-25 11:20 UTC, deputy-5) The browser pane is signed out of chatgpt.com: sign in there (or import the chatgpt.com cookie). Held: agentic-harness S40's r5 result (its Codex task https://chatgpt.com/local/6b05eeef-aae8-83eb-85bf-a60c3e428074) and every Codex round (S124's review).
 
 - (2026-11-25, deputy-4, from S120) **Where the factory mods live (Door H, `spec/design/factory/TECHNICAL.md` 5, first row).** W29 gives each mod with source its own repository, so a planning mod and a foreman mod are two new projects; one combined factory mod is one new project. Options, consequences and the recommendation are in that row. Not blocking: JF1 waits on agentic-harness stages E and F first. The 8 Door C rows go to deliberation when a build slice first depends on one.
@@ -1993,6 +1983,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - 2026-11-24 host 18 **Q38: (b)**, the human ("b is fine for q38"). A workspace or account consent is kept per (origin client, `via` = the provider's identity, folder or account); a new provider asks again. S103 built (b); its next answer round writes host 18 Q38 as decided by the human, 2026-11-24, and the 19.7 rows to match. agentic-harness TECHNICAL 8 already cites 19.7.
 
 ## Deputy decisions
+- 2026-11-25 (S122 r1) accepted: R1.1 a kept judge key stays in use, its section hidden, after `claude-code` is withdrawn (W39 holds: it still goes only to its judge; the section fix in Leftovers); R1.2 local folders with one slug share one identity and so one key (host 4.1, by design, confirmed at install); R1.3 a judge folder with too-wide modes, or a prune I/O error, starts the app failed (fails closed; only a local program can cause it); R1.4 a caller holding a key learns which granted host is its judge origin (low value). Undo: the Leftovers item; a host refusal of `judge` without the grant.
 - 2026-11-25 (S118 r1) accepted: the existing unsigned `local/<slug>` identity rule stands; a different local package with the same slug can recover retained records after Alice approves Storage.
 - 2026-11-25 (S117 r1) accepted: R1.1 net's `cfg(test)` 200 ms STORE_WAIT applies to every net unit test; a store shutdown over 200 ms on a slow Windows runner could bring back `Database already open` in `no_default_services` and `ac2_the_book_decides_the_switches` only (fix then: give the wait only to the forced test).
 

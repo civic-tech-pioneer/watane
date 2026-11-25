@@ -50,3 +50,20 @@ Sketches of merged slices, moved out of PLAN.md (deputy skill, section 6). Newes
   Leaves out: the copied-home receipts (a spec call), the VM consent click, Windows. Touches: `install/` and its
   TECHNICAL only. No boundary moves (messages and cleanup of folders install.sh made; adversary not run). Protects:
   *polish*.
+
+- [~] **S122 Alice gives a checked provider its judge key (host A5, app 19.4; agentic-harness stage E, watane half).**
+  (in flight, cloud, builder codex, reviewer claude; rule 3: last two S121 claude, S120 codex; the main line, sketched
+  2026-11-25 by deputy-4: step 6's first build waits on stages E and F (S120), and E's watane half needs no real judge. Codex task https://chatgpt.com/local/6b06994d-5934-83eb-9d1f-da9025713051, dispatched 08:15 UTC; PR #42 opened ~09:28 UTC as a draft; BLOCKED 09:52 at 83b71eb: the builder held delivery on cloud reds that also fail on main (app look::windows window height, host stage A load); GitHub CI at d235a2d was red on all three OSes on dev `scripted_host::ac2_case_19_every_refused_form_reaches_no_server`, a test of this slice's area: the answer waits for CI on 83b71eb; answered 10:09 UTC; DELIVERED at cadba83 (+1814/-82, CI green on all four); r1: Claude review routine `trig_01DkHPfSzNr3as2C8c6Aapde`, fires 11:20 UTC, adversary on.)
+  The story: in the manager's page for a checked provider, Alice enters a judge key and the judge's origin; only that
+  provider's requests to that origin carry it, and removing it ends its live streams. Outcomes, on the real programs
+  with dev's scripted judge origin (dev 18.3): (1) Alice sets and removes a judge key for an installed provider in the app
+  (`judge_set`, `judge_remove`, app 19.4, 19.5); the key file is named by the provider's identity, 0600, written
+  atomically; (2) a request with `account: "judge"` from that provider reaches the scripted judge with the key, and from
+  the unchecked provider, another publisher's mod or a preview it ends `no-account` with no request counted (host 19.4,
+  S59); (3) `judge_origin` parses once (case and default port folded; a path or query refused `bad_request`), no
+  redirect is followed; (4) removing the key ends a live judge stream `gone` (HOST-F-72); at startup a key file of no
+  installed mod is deleted (app 19.4). Interface: `watane:host@0.1.0` H3 accounts as host 19 states it (no WIT change
+  expected; one goes to the deputy first); the judge's wire shape stays the checked provider's (dev 17). Touches:
+  `host/src/agent/`, `app/` (accounts, the judge page), `dev/` only if the scripted judge needs it; never `dist/`, `log/`,
+  `pkg/` (S121). Boundary: W39, "a judge key goes only to its judge" (host 18, app 2072): adversary on. Leaves out: the
+  checked provider itself and V7 (agentic-harness, needs a real judge account). Protects: *core*.
