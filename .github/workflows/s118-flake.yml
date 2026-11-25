@@ -56,7 +56,9 @@ jobs:
               echo "run $i: RED"; fail=$((fail+1))
             fi
             grep -E "^test ($a|$b) \.\.\.|test result|panicked" out.txt || true
-            grep -qE "^test $a \.\.\. ok" out.txt && grep -qE "^test $b \.\.\. ok" out.txt || { echo "run $i: a named test did not pass"; fail=$((fail+1)); }
+            # `consent` is #[cfg(unix)] (tests/it/main.rs): on Windows only the https_stream test exists.
+            if [ "$RUNNER_OS" != "Windows" ]; then grep -qE "^test $a \.\.\. ok" out.txt || { echo "run $i: $a did not pass"; fail=$((fail+1)); }; fi
+            grep -qE "^test $b \.\.\. ok" out.txt || { echo "run $i: $b did not pass"; fail=$((fail+1)); }
             echo "::endgroup::"
           done
           echo "red runs: $fail of 20"
