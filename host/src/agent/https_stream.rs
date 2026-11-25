@@ -90,10 +90,10 @@ fn bad(field: &str, reason: &str) -> Refusal {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 enum RequestAccount {
     OpenAi,
-    Judge,
+    Judge(JudgeAtCall),
 }
 
 /// A checked request of `https-stream.start` (19.4).
@@ -110,8 +110,6 @@ pub(crate) struct Request {
     headers: Vec<(HeaderName, HeaderValue)>,
     body: Vec<u8>,
     account: Option<RequestAccount>,
-    /// A judge absent at the call cannot acquire an account by the time the chain applies.
-    judge_at_call: Option<JudgeAtCall>,
     idle: Duration,
 }
 
@@ -171,7 +169,9 @@ impl Request {
                 }
                 Some(RequestAccount::OpenAi)
             }
-            Some("judge") => Some(RequestAccount::Judge),
+            Some("judge") => Some(RequestAccount::Judge(JudgeAtCall::Missing(
+                JudgeUnavailable::NoAccount,
+            ))),
             Some(_) => return Err(Refusal::Destination),
         };
         Ok(Self {
@@ -183,7 +183,6 @@ impl Request {
             headers,
             body: body.as_bytes().to_vec(),
             account,
-            judge_at_call: None,
             idle: Duration::from_secs(idle),
         })
     }
@@ -329,12 +328,13 @@ pub(crate) fn start(inv: &Invocation, args: &[Val]) -> Result<Value, CallError> 
         Err(refusal) => return Ok(refusal.value()),
     };
     let me = inv.me();
-    if request.account == Some(RequestAccount::Judge) {
-        request.judge_at_call = Some(match judge_account(&host.home.mode, &me.identity) {
+    if matches!(request.account, Some(RequestAccount::Judge(_))) {
+        let at_call = match judge_account(&host.home.mode, &me.identity) {
             Ok(account) if request.judge_matches(&account) => JudgeAtCall::Bound,
             Ok(_) => return Ok(Refusal::Destination.value()),
             Err(reason) => JudgeAtCall::Missing(reason),
-        });
+        };
+        request.account = Some(RequestAccount::Judge(at_call));
     }
     let key = Consumer::Mod(me.clone()).key().unwrap_or_default();
     let gate = inv.gate();
@@ -413,7 +413,7 @@ impl Live {
         self.lock()
             .iter()
             .filter(|(_, e)| {
-                e.account == Some(RequestAccount::OpenAi)
+                matches!(e.account, Some(RequestAccount::OpenAi))
                     && e.origin == origin
                     && e.consumer.identity == via
             })
@@ -424,9 +424,10 @@ impl Live {
         self.lock()
             .iter()
             .filter(|(_, e)| match account {
-                Account::OpenAi => e.account == Some(RequestAccount::OpenAi),
+                Account::OpenAi => matches!(e.account, Some(RequestAccount::OpenAi)),
                 Account::Judge { provider } => {
-                    e.account == Some(RequestAccount::Judge) && &e.consumer.identity == provider
+                    matches!(e.account, Some(RequestAccount::Judge(JudgeAtCall::Bound)))
+                        && &e.consumer.identity == provider
                 }
             })
             .map(|(id, _)| id.clone())
@@ -539,7 +540,7 @@ impl Job {
     /// The account consent of the origin client through `via`, before a token is asked (19.4,
     /// 19.7). A preview has no accounts; a home with no app or no accounts is `no-app`.
     fn consent(&self) -> Result<(), End> {
-        if self.request.account != Some(RequestAccount::OpenAi) {
+        if !matches!(self.request.account, Some(RequestAccount::OpenAi)) {
             return Ok(());
         }
         let with = |v: Value| Err(End::With(v));
@@ -676,7 +677,7 @@ impl Job {
         if self.stopped() {
             return Err(End::Stop);
         }
-        let authorization = if request.account == Some(RequestAccount::OpenAi) {
+        let authorization = if matches!(request.account, Some(RequestAccount::OpenAi)) {
             Some(bearer(&self.token().await?).ok_or_else(|| {
                 End::With(failed(
                     "account unavailable: the token is not a header value",
@@ -1007,14 +1008,22 @@ impl Host {
         );
         // Register before reading the key. A concurrent removal either changes that read or
         // finds this stream and stops it. The job never re-reads a key after the apply.
-        let judge_authorization = request.judge_at_call.map(|at_call| match at_call {
-            JudgeAtCall::Missing(reason) => Err(reason.outcome()),
-            JudgeAtCall::Bound => match judge_account(&self.home.mode, &consumer.identity) {
-                Ok(account) if request.judge_matches(&account) => bearer(&account.key)
-                    .ok_or_else(|| failed("account unavailable: the key is not a header value")),
-                _ => Err(json!("gone")),
-            },
-        });
+        let judge_authorization = match request.account {
+            Some(RequestAccount::Judge(JudgeAtCall::Missing(reason))) => {
+                Some(Err(reason.outcome()))
+            }
+            Some(RequestAccount::Judge(JudgeAtCall::Bound)) => {
+                let account = judge_account(&self.home.mode, &consumer.identity);
+                Some(match account {
+                    Ok(account) if request.judge_matches(&account) => bearer(&account.key)
+                        .ok_or_else(|| {
+                            failed("account unavailable: the key is not a header value")
+                        }),
+                    _ => Err(json!("gone")),
+                })
+            }
+            _ => None,
+        };
         Some(Job {
             id,
             hub: Arc::clone(&self.hub),
