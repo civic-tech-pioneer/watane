@@ -79,7 +79,8 @@ fn tree(dir: &Path) -> BTreeMap<String, Vec<u8>> {
     walk(dir, dir, &mut out);
     out
 }
-fn path_error(bytes: Vec<u8>, path: &str) {
+/// Decodes once, checks the path and the display text, and gives the error back.
+fn path_error(bytes: Vec<u8>, path: &str) -> PackageError {
     let error = std::panic::catch_unwind(|| Package::from_bytes(bytes))
         .expect("decoder must not panic")
         .unwrap_err();
@@ -88,6 +89,7 @@ fn path_error(bytes: Vec<u8>, path: &str) {
         "{error:?}"
     );
     assert!(error.to_string().contains(&path.escape_debug().to_string()));
+    error
 }
 fn format_error(bytes: Vec<u8>) {
     let error = std::panic::catch_unwind(|| Package::from_bytes(bytes))
@@ -109,8 +111,7 @@ fn s112_windows_device_segments_are_refused_during_decode() {
         "ui/LPT1",
         "ui/lPt9.css",
     ] {
-        path_error(raw(&[(path, b"")]), path);
-        let error = Package::from_bytes(raw(&[(path, b"")])).unwrap_err();
+        let error = path_error(raw(&[(path, b"")]), path);
         assert!(
             matches!(&error, PackageError::Path { reason, .. } if *reason == "a Windows device name is reserved"),
             "{path}: {error:?}"
