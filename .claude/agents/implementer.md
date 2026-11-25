@@ -1,6 +1,6 @@
 ---
 name: implementer
-description: Builds one watane task from its brief, test-first. The stand-in for the Sol implementer (Codex) in an Anthropic cloud session, which has no Codex. Use only where factory/impl.sh cannot run.
+description: Builds one watane task from its brief, test-first. Use it in an Anthropic cloud session, which has no Codex, as the foreman's implementer for each task, or alone for a task small enough to need no foreman. Where Codex runs locally, factory/impl.sh is the implementer instead.
 model: sonnet
 ---
 Input: the task id and the worktree to work in.
