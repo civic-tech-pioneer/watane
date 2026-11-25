@@ -3,6 +3,17 @@
 The product owner's state; only the product owner edits it, on `main`. A new session continues
 from here. Newest digest line last.
 
+## Deputy handover
+
+From deputy-3 to deputy-4, 2026-11-25 06:45 UTC. The new rules (mboogerd/claude-plugin#3) apply: cut stalls yourself, hand over at 3 merges, 6 h or 300k context, one watcher, one writer per branch.
+- **S119** (watane PR #35, builder codex, reviewer claude): review r1 by the Claude routine `trig_01QxsQGcSfzYy1Hjj5buRF2r` (fires 06:42 UTC) posts a PR comment. Approve with all four CI jobs green: merge it yourself (`gh pr merge 35 --rebase`, else `--squash`). Changes: the answer goes to the Codex task https://chatgpt.com/local/6b067827-da14-83ed-ab43-79bfbda7704a as a follow-up.
+- **S40** (agentic-harness PR #54, builder claude, reviewer codex): the deputy cut restart recovery (agentic-harness PLAN, S40-CUT). Answer r3 with the cut is with the Claude routine `trig_014rQUrVhYxDfSZTELMCedUR` (fired 06:37 UTC). On its `S40 r3: answers` push, review r4 goes to Codex as a reading check of the cut, a follow-up in https://chatgpt.com/local/6b05eeef-aae8-83eb-85bf-a60c3e428074.
+- **Factory PRs** waiting on CI, to be merged when green: watane #37 (foreman: one writer), watane #38 and agentic-harness #55 (cloud tools). Deputy-3 merges them if it is still running.
+- **Watcher:** `watch-all.sh` is on watane-mods main (8ba0bfe) but not yet in the shared checkout, which holds another session's uncommitted edits to factory/README.md. Do not pull there. Run it from `git -C ../watane-mods show origin/main:factory/scripts/watch-all.sh > <scratchpad>/watch-all.sh`, with a fresh state file (its first run is a baseline).
+- **Lanes:** the main line is empty: propose watane step 6 (the factory as mods), a design slice first; A5's judge waits on V7. Refill the upkeep lane from Leftovers once S119 merges.
+- **The human owes:** rotating the Codex `watane` environment secrets. Codex reported short-lived signed job-log URLs in its tool output twice (S117, S119); none were committed.
+- **Analysis:** side-session-notes/local_54d12e9a-7f72-4914-a7ce-022040acbb1c/analysis-2026-11-25.md.
+
 ## Slices
 
 Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
@@ -1373,7 +1384,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Protects: *guard* (item 1), else *polish*.
 - [~] **S119 (upkeep) S111's polish in host and dev, S118's, and pkg's reserved Windows names.** (in flight, cloud,
   builder codex, reviewer claude; rule 3: last two S118 claude, S117 codex; the upkeep lane, sketched 2026-11-25 by
-  deputy-3 from Leftovers; Codex task https://chatgpt.com/local/6b067827-da14-83ed-ab43-79bfbda7704a, dispatched 05:20 UTC.) Outcomes, each item's check: (1) S111 r1 P1.1: connect and TLS handshake each get their own
+  deputy-3 from Leftovers; Codex task https://chatgpt.com/local/6b067827-da14-83ed-ab43-79bfbda7704a, dispatched 05:20 UTC; DELIVERED 05:59 UTC as PR #35, final head 7264e38 (+640/-102, all four CI jobs green; item 4 was already on main from S112, a red test added); r1: Claude review, routine `trig_01QxsQGcSfzYy1Hjj5buRF2r`, fires 06:42 UTC.) Outcomes, each item's check: (1) S111 r1 P1.1: connect and TLS handshake each get their own
   `idle-s` in `host/src/agent/https_stream.rs`, with a test each; P1.2 to P1.5, P1.11, P1.14 (host tests, the
   reset-before-head message, one sentence each in host 19.4 for the accepted R2 and R5); (2) S111 r1 P1.6 to P1.10,
   P1.12, P1.13 in `scripted-responses` and dev TECHNICAL; (3) S118 r2 P2.1 and P2.2; (4) S110 R2: pkg's `grammar`
