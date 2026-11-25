@@ -86,18 +86,27 @@ jobs:
         run: |
           export WATANE_HOME="$RUNNER_TEMP/watane-home-s126"
           mkdir -p "$WATANE_HOME"
+          run_regression() {
+            cargo test -p watane-host --locked "$1" -- --exact "$2" | tee "$RUNNER_TEMP/s126-test.log"
+            grep -Fq 'test result: ok. 1 passed;' "$RUNNER_TEMP/s126-test.log"
+          }
           for trial in {1..20}; do
             echo "S126 trial $trial of 20"
             if [ "$RUNNER_OS" = "Windows" ]; then
-              cargo test -p watane-host --locked --lib -- \
-                --exact runtime::call::tests::s126_timer_commit_uses_the_current_origin_install
-              cargo test -p watane-host --locked --test it -- \
-                --exact https_stream::ac7_a_consumer_that_defers_stops_the_host_reading_and_resume_loses_nothing
+              run_regression --lib runtime::call::tests::s126_timer_commit_uses_the_current_origin_install
+              run_regression --test=it https_stream::ac7_a_consumer_that_defers_stops_the_host_reading_and_resume_loses_nothing
             else
-              cargo test -p watane-host --locked --test it -- \
-                --exact runtime::ac11_s11_restart_preserves_links_and_provider_state
+              run_regression --test=it runtime::ac11_s11_restart_preserves_links_and_provider_state
             fi
           done
+      - name: App judge editor regression (S126)
+        if: github.head_ref == 'slice/s126' && runner.os == 'macOS'
+        shell: bash
+        run: |
+          export WATANE_HOME="$RUNNER_TEMP/watane-home-s126-app"
+          mkdir -p "$WATANE_HOME"
+          cargo test -p watane-app --locked --features driver --test it -- --ignored --exact \
+            agent::ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details
       # S103: the agent consent view and its withdrawal on the real app (app S58, S60) need a GUI
       # session; the cloud build team has no Mac, so this job is where they are checked.
       - name: App window tests of the agent consent (S58, S60)
