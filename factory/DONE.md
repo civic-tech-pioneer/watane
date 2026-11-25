@@ -36,3 +36,17 @@ Sketches of merged slices, moved out of PLAN.md (deputy skill, section 6). Newes
   and log TECHNICAL; (3) S108 P2.1, P2.2 in `pkg/`; (4) S119 P1.4 in `pkg/tests/it/package.rs`. Leaves out S108's spec
   questions and S109's crash-before-rename items. Touches: `dist/`, `log/`, `pkg/` and their TECHNICAL; never `host/`,
   `dev/`, `spec/`. No boundary moves (tests and messages only; adversary not run). Protects: *polish*.
+
+- [~] **S123 (upkeep) Alice's install, upgrade and uninstall say the true thing (install/ polish from S89, S50b-fix,
+  S50b-fix2, S50c, S94).** (in flight, cloud, builder codex, reviewer claude; rule 3: last two S122 codex, S121 claude;
+  the upkeep lane, sketched 2026-11-25 by deputy-4 from Leftovers, install; Codex task https://chatgpt.com/local/6b06a324-a2e4-83eb-9de4-9f96d259204d, dispatched 08:59 UTC; DELIVERED 09:17 UTC as PR #41 at 46f8c1b (+492/-136; receipts gain a record of folders install.sh created, old receipts leave them alone); r1: Claude review, routine `trig_01DEjihs5BriDzzvy1LQxiRG`, fires 09:19 UTC; r1 (09:26): 1/6, changes (1) (F1.1 shellcheck cannot parse install.sh, ubuntu red); receipts checked: old ones still read, no folder removed that install.sh did not make; P1.1, P1.3, P1.6 taken, P1.2, P1.4, P1.5 to Leftovers; answer r1 to the same Codex task, 09:28 UTC; r1 answered at 776b61d; r2: Claude review, routine `trig_0199wSgiT94m4CPYGbPZtt6a`, fires 09:31 UTC; r2 (09:41): 0/1, approve (P2.1 to Leftovers); ubuntu red on host's mcp::ac7 `Busy` flake, outside the slice: rerun once.) Outcomes, each item's check (re-check each
+  line against main first; drop one already fixed): (1) every line install.sh prints after a Ctrl-C, a refusal or a
+  skipped entry is true and names `~`-relative paths: the post-undo "still works", "uninstalled" with skipped entries,
+  the install-it-later line naming `WATANE_RUSTUP_URL`'s target, a Ctrl-C at each question saying whether watane is
+  installed, no `^C` glued to the hint; (2) uninstall and interrupted installs leave no empty folders they made
+  (`~/.local/bin`, `share/watane-dev`, `~/Applications`); (3) `--status | head -1` exits quietly (no `printf` broken-pipe
+  text); (4) rustup's own output stays outside watane's frame and a rustup failure names its step; (5) S94's
+  `check_foreign` `pid_gone` unit case. A test per item where install's suites can run it (Linux and macOS CI).
+  Leaves out: the copied-home receipts (a spec call), the VM consent click, Windows. Touches: `install/` and its
+  TECHNICAL only. No boundary moves (messages and cleanup of folders install.sh made; adversary not run). Protects:
+  *polish*.
