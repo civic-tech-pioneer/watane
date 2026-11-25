@@ -205,12 +205,21 @@ fn ac1_a_plan_during_a_delete_data_removal_never_keeps_state_that_goes() {
                 })
                 .unwrap()
         };
+        let ready_by = std::time::Instant::now() + std::time::Duration::from_secs(10);
         while planned.load(std::sync::atomic::Ordering::SeqCst) < 2 {
-            std::thread::yield_now();
+            if planner.is_finished() || std::time::Instant::now() >= ready_by {
+                done.store(true, std::sync::atomic::Ordering::SeqCst);
+                if planner.is_finished() {
+                    planner.join().unwrap();
+                }
+                panic!("round {round}: planner did not finish its first two plans");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
         }
-        w.host.remove(&local("counter"), true).unwrap();
+        let removed = w.host.remove(&local("counter"), true);
         done.store(true, std::sync::atomic::Ordering::SeqCst);
         let kept = planner.join().unwrap();
+        removed.unwrap();
         for plan in kept {
             // Made after the commit: installing it is not refused as stale.
             let result = w.runtime.block_on(w.host.install(plan, Requester::App));

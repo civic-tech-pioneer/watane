@@ -1030,8 +1030,8 @@ impl Invocation {
             .collect::<Result<Vec<_>, CallError>>()?;
         let manages = ctx.manages;
         // The rows are built inside the write transaction (`State::commit`): the catalog is
-        // read for a moment there, and `remove` changes it before its own write transaction
-        // (19.6, Timers).
+        // read for a moment there. Removal changes the catalog before it opens the timer
+        // rewrite transaction (19.6, Timers).
         let has_timers = self.depth == 0
             && chain.fakes.is_none()
             && (chain.timer.is_some()

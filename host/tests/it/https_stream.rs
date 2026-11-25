@@ -326,8 +326,7 @@ struct Rig {
     host: Option<Arc<Host>>,
     app: Arc<App>,
     tokens: Arc<Tokens>,
-    /// Kept alive for the host's async work; read only by the Unix-only `tools/call` test.
-    #[cfg_attr(not(unix), expect(dead_code, reason = "read only by a Unix-only test"))]
+    /// Kept alive for the host's async work.
     rt: tokio::runtime::Runtime,
     servers: Vec<(String, Server)>,
 }
@@ -428,6 +427,12 @@ impl Rig {
     fn ended(&self) -> Vec<String> {
         serde_json::from_value(self.call(Caller::Page, "https", "api.ended", Value::Null)).unwrap()
     }
+    fn wait_ended_with_prefix(&self, s: &str, outcome: &str) {
+        let prefix = format!("{s} {outcome}");
+        wait(&prefix, Duration::from_secs(20), || {
+            self.ended().iter().any(|line| line.starts_with(&prefix))
+        });
+    }
     fn wait_ended(&self, s: &str, outcome: &str) {
         let line = format!("{s} {outcome}");
         wait(&line, Duration::from_secs(20), || {
@@ -516,6 +521,60 @@ fn ac1_a_granted_host_streams_the_head_then_one_item_per_event() {
         [SSE_HEAD, "first", "second", "l1\nl2"].map(str::to_owned)
     );
     assert_eq!(server.requests().len(), 1);
+}
+
+#[test]
+fn ac1_response_head_lowercases_and_joins_repeated_header_names() {
+    let mut rig = Rig::new(None);
+    rig.serve("api.openai.com", |mut c| async move {
+        c.head(
+            "200 OK",
+            &[
+                ("X-Sample", "first"),
+                ("x-SAMPLE", "second"),
+                ("Connection", "close"),
+            ],
+        )
+        .await;
+        c.finish().await;
+    });
+    let s = rig.start(&get("https://api.openai.com/v1/x"));
+    rig.wait_ended(&s, "closed");
+    let items = rig.items(&s);
+    assert_eq!(items.len(), 1);
+    assert_eq!(
+        serde_json::from_str::<Value>(&items[0]).unwrap(),
+        json!({"status": 200, "headers": {"x-sample": "first, second", "connection": "close"}})
+    );
+}
+
+#[test]
+fn ac1_a_connection_closed_before_the_response_head_reports_why() {
+    let mut rig = Rig::new(None);
+    let server = rig.serve("api.openai.com", Conn::finish);
+    let s = rig.start(&get("https://api.openai.com/v1/x"));
+    rig.wait_ended_with_prefix(
+        &s,
+        "failed(HTTP: connection ended before the response head:",
+    );
+    assert!(rig.items(&s).is_empty());
+    assert_eq!(server.requests().len(), 1);
+}
+
+#[test]
+fn ac1_an_event_over_four_mib_ends_the_stream() {
+    let mut rig = Rig::new(None);
+    rig.serve("api.openai.com", |mut c| async move {
+        c.head("200 OK", SSE).await;
+        let mut event = b"data: ".to_vec();
+        event.resize(event.len() + (4 << 20) + 1, b'x');
+        event.extend_from_slice(b"\n\n");
+        c.write(&event).await;
+        c.finish().await;
+    });
+    let s = rig.start(&get("https://api.openai.com/v1/x"));
+    rig.wait_ended(&s, "failed(a server-sent event is over 4 MiB)");
+    assert_eq!(rig.items(&s), [SSE_HEAD]);
 }
 
 #[test]
@@ -685,6 +744,70 @@ fn ac2_the_host_is_read_as_6_8_reads_it_and_the_request_leaves_with_the_plain_na
         assert_eq!(r.header("host"), ["api.openai.com"]);
         assert_eq!(r.header("accept-encoding"), ["identity"]);
     }
+}
+
+#[test]
+fn ac2_a_port_grant_sends_the_port_in_the_host_header() {
+    use std::fs;
+
+    let mut rig = Rig::new(None);
+    let source = fixture("https");
+    let folder = tempfile::tempdir().unwrap();
+    fs::create_dir_all(folder.path().join("wit/deps/watane-host")).unwrap();
+    for path in [
+        "logic.wasm",
+        "wit/world.wit",
+        "wit/deps/watane-host/host.wit",
+    ] {
+        fs::copy(source.join(path), folder.path().join(path)).unwrap();
+    }
+    fs::write(
+        folder.path().join("mod.toml"),
+        r#"name = "https"
+summary = "HTTPS fixture with a port-specific grant."
+[http]
+hosts = ["api.openai.com:8443"]
+"#,
+    )
+    .unwrap();
+    let plan = rig
+        .host()
+        .plan(vec![watane_host::Source::Folder(
+            folder.path().to_path_buf(),
+        )])
+        .unwrap();
+    rig.rt
+        .block_on(rig.host().install(plan, watane_host::Requester::App))
+        .unwrap();
+    let server = rig.serve("api.openai.com", |mut c| async move {
+        c.head("200 OK", SSE).await;
+        c.finish().await;
+    });
+    assert_eq!(
+        rig.start(&get("https://api.openai.com/v1/x")),
+        "destination"
+    );
+    let s = rig.start(&get("https://api.openai.com:8443/v1/x"));
+    rig.wait_ended(&s, "closed");
+    let seen = server.requests();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].header("host"), ["api.openai.com:8443"]);
+}
+
+#[test]
+fn ac2_a_trusted_certificate_for_the_wrong_name_sends_no_request() {
+    let rig = Rig::new(None);
+    let wrong_name = make_pki(&["second.test"]);
+    let server = Server::start_with_pki(&wrong_name, Conn::finish);
+    rig.host().set_test_net(TestNet {
+        routes: vec![("api.openai.com".into(), server.addr)],
+        root_pem: wrong_name.root_pem,
+    });
+    let s = rig.start(&get("https://api.openai.com/v1/x"));
+    rig.wait_ended_with_prefix(&s, "failed(TLS with api.openai.com failed:");
+    assert!(rig.items(&s).is_empty());
+    assert_eq!(server.stats.connections.load(Ordering::SeqCst), 1);
+    assert!(server.stats.requests().is_empty());
 }
 
 #[test]
@@ -894,6 +1017,18 @@ fn ac3_a_mod_disabled_while_the_stream_is_live_ends_it_gone_and_closes_the_conne
     rig.wait_items(&s, 2);
     rig.host().disable(&local("toolbox")).unwrap();
     rig.wait_ended(&s, "gone");
+    wait("the connection closed", Duration::from_secs(10), || {
+        server.closed.load(Ordering::SeqCst) == 1
+    });
+}
+
+#[test]
+fn ac3_disabling_the_consumer_closes_its_live_connection() {
+    let mut rig = Rig::new(None);
+    let server = rig.serve("api.openai.com", hold);
+    let s = rig.start_via(&get("https://api.openai.com/v1/x"));
+    rig.wait_items(&s, 2);
+    rig.host().disable(&local("https")).unwrap();
     wait("the connection closed", Duration::from_secs(10), || {
         server.closed.load(Ordering::SeqCst) == 1
     });
@@ -1286,8 +1421,10 @@ fn ac5_withdrawing_the_account_consent_ends_the_live_openai_streams_of_that_orig
     });
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(rig.ended(), [format!("{account} gone")]);
+    assert_eq!(openai.closed.load(Ordering::SeqCst), 1);
     assert_eq!(other.closed.load(Ordering::SeqCst), 0);
     assert_eq!(rig.items(&plain).len(), 2);
+    assert_eq!(rig.items(&page).len(), 3);
 }
 
 #[test]
@@ -1444,6 +1581,8 @@ fn ac6_a_tools_call_that_starts_an_https_stream_is_an_error_result() {
     });
     assert_eq!(status, 200, "{answer}");
     assert_eq!(answer["result"]["isError"], true, "{answer}");
+    let text = answer["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.starts_with("not_granted:"), "{answer}");
     assert_eq!(server.connections.load(Ordering::SeqCst), 0);
 }
 
@@ -1501,7 +1640,7 @@ fn ac7_a_consumer_that_defers_stops_the_host_reading_and_resume_loses_nothing() 
     }
     let written = server.written.load(Ordering::SeqCst);
     assert!(
-        written < EVENTS * 3 / 4,
+        written < 160,
         "the server wrote {written} of {EVENTS} events of {SIZE} bytes: the host did not stop reading"
     );
     assert_eq!(

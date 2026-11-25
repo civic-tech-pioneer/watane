@@ -569,6 +569,18 @@ impl Job {
         }
     }
 
+    /// Connect and handshake each have a fresh idle budget.
+    async fn connect<T, U, F: Future<Output = Result<U, String>>>(
+        &self,
+        tcp: impl Future<Output = Result<T, String>>,
+        tls: impl FnOnce(T) -> F,
+    ) -> Result<U, End> {
+        let tcp = self.within(tcp).await?.map_err(|m| End::With(failed(m)))?;
+        self.within(tls(tcp))
+            .await?
+            .map_err(|m| End::With(failed(m)))
+    }
+
     /// The connection, the request and the items.
     async fn stream(&self) -> Result<Value, End> {
         let request = &self.request;
@@ -584,22 +596,22 @@ impl Job {
         let connector = self.connector().map_err(|m| End::With(failed(m)))?;
         let name = ServerName::try_from(request.name.clone())
             .map_err(|_| End::With(failed("the host is not a valid TLS name")))?;
-        let connect = async {
-            let tcp = match self.target() {
+        let tcp = async {
+            match self.target() {
                 Target::Addr(a) => tokio::net::TcpStream::connect(a).await,
                 Target::Name(n, p) => tokio::net::TcpStream::connect((n.as_str(), p)).await,
             }
-            .map_err(|e| format!("cannot connect to {}: {e}", request.name))?;
-            let _ = tcp.set_nodelay(true);
-            connector
-                .connect(name, tcp)
-                .await
-                .map_err(|e| format!("TLS with {} failed: {e}", request.name))
+            .map_err(|e| format!("cannot connect to {}: {e}", request.name))
         };
         let tls = self
-            .within(connect)
-            .await?
-            .map_err(|m| End::With(failed(m)))?;
+            .connect(tcp, |tcp| async {
+                let _ = tcp.set_nodelay(true);
+                connector
+                    .connect(name, tcp)
+                    .await
+                    .map_err(|e| format!("TLS with {} failed: {e}", request.name))
+            })
+            .await?;
         let (mut sender, connection) = self
             .within(hyper::client::conn::http1::handshake::<_, Full<Bytes>>(
                 TokioIo::new(tls),
@@ -623,15 +635,10 @@ impl Job {
         if self.stopped() {
             return Err(End::Stop);
         }
-        let authority = if request.grant == request.name {
-            request.name.clone()
-        } else {
-            request.grant.clone()
-        };
         let mut built = hyper::Request::builder()
             .method(request.method.clone())
             .uri(request.target.as_str())
-            .header(hyper::header::HOST, authority)
+            .header(hyper::header::HOST, &request.grant)
             .header(hyper::header::ACCEPT_ENCODING, "identity");
         for (name, value) in &request.headers {
             built = built.header(name, value);
@@ -652,7 +659,11 @@ impl Job {
         let response = self
             .within(sender.send_request(built))
             .await?
-            .map_err(|e| End::With(failed(format!("HTTP: {e}"))))?;
+            .map_err(|e| {
+                End::With(failed(format!(
+                    "HTTP: connection ended before the response head: {e}"
+                )))
+            })?;
         let (parts, mut body) = response.into_parts();
         self.push(head_item(&parts).into_bytes()).await?;
         let sse = parts
@@ -1005,11 +1016,11 @@ mod tests {
         Request::parse(text, &grants())
     }
 
-    #[test]
-    fn ac8_without_a_test_route_a_name_connects_to_the_real_name() {
+    fn job() -> Job {
         let request =
-            parse(r#"{"url":"https://api.openai.com/v1/models","method":"GET"}"#).unwrap();
-        let job = Job {
+            parse(r#"{"url":"https://api.openai.com/v1/models","method":"GET","idle-s":1}"#)
+                .unwrap();
+        Job {
             id: "i".into(),
             hub: Hub::new(),
             weak: Weak::new(),
@@ -1025,8 +1036,60 @@ mod tests {
             mode: Mode::Preview,
             #[cfg(feature = "test-net")]
             net: None,
+        }
+    }
+
+    #[test]
+    fn ac8_without_a_test_route_a_name_connects_to_the_real_name() {
+        assert_eq!(job().target(), Target::Name("api.openai.com".into(), 443));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn tcp_connect_times_out_before_starting_tls() {
+        let start = tokio::time::Instant::now();
+        let result: Result<(), End> = job()
+            .connect(std::future::pending::<Result<(), String>>(), |()| async {
+                panic!("TLS started without a TCP connection");
+            })
+            .await;
+        assert!(matches!(result, Err(End::With(v)) if v == json!("idle-timeout")));
+        assert!(start.elapsed() < Duration::from_millis(1100));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn tls_handshake_gets_its_own_idle_budget() {
+        let start = tokio::time::Instant::now();
+        let tcp = async {
+            tokio::time::sleep(Duration::from_millis(750)).await;
+            Ok(())
         };
-        assert_eq!(job.target(), Target::Name("api.openai.com".into(), 443));
+        let result = job()
+            .connect(tcp, |()| std::future::pending::<Result<(), String>>())
+            .await;
+        assert!(matches!(result, Err(End::With(v)) if v == json!("idle-timeout")));
+        assert!(start.elapsed() >= Duration::from_millis(1750));
+        assert!(start.elapsed() < Duration::from_millis(1850));
+    }
+
+    #[test]
+    fn withdrawing_consent_only_selects_streams_through_that_provider() {
+        let live = Live::default();
+        for via in ["first", "second"] {
+            live.lock().insert(
+                via.into(),
+                Entry {
+                    origin: "local/origin".into(),
+                    consumer: ModRef {
+                        local: crate::LocalName::parse(via).unwrap(),
+                        identity: format!("local/{via}"),
+                    },
+                    host: "api.openai.com".into(),
+                    openai: true,
+                    ctl: Arc::new(Control::new()),
+                },
+            );
+        }
+        assert_eq!(live.of_account("local/origin", "local/first"), ["first"]);
     }
 
     #[test]
