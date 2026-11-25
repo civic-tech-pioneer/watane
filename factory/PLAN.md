@@ -1220,7 +1220,7 @@ names the same interface in its sketch and fakes it until this one merges.
 - [~] **S129 A maker previews a checked provider against dev's scripted judge (host 19.9, dev 18.4; agentic-harness stage E's
   "done when").** (in flight, cloud, builder codex, reviewer claude; rule 3: last two S128 codex, S127 claude, but S127
   was Claude; the main line, sketched 2026-11-25 by deputy-6 from S127's question (agentic-harness PR #56, option (a)).
-  Size: small, a reason: it closes stage E's outcome 1 on a real host.) Story: a maker runs `watane-dev serve` on a
+  Codex task https://chatgpt.com/local/6b073053-19c8-83ed-bff6-6bf7de4f307d, 19:02 UTC. Size: small, a reason: it closes stage E's outcome 1 on a real host.) Story: a maker runs `watane-dev serve` on a
   checked provider with the scripted Responses program; the preview's judge account answers from the program's judge
   origin, so a safe call runs and an unsafe one denies, with no key of the maker's and no real judge. Outcomes: (1) in a
   development preview with `--scripted-openai`, an `account: "judge"` request of an installed mod goes to the program's
