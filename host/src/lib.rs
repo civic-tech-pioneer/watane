@@ -336,7 +336,8 @@ impl Host {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
             .validate(&plan, self.home())?;
-        // Step 10 (6.10): a manager's install is always asked.
+        // Step 10 (6.10, 12.1): a manager's install asks whenever its plan has an entry other than
+        // `Unchanged`.
         let manager = match &requester {
             Requester::Mod(by) => {
                 if !self.is_manager(by) {
@@ -600,6 +601,13 @@ impl Host {
         next.relink(self.home(), self.is_preview())?;
         next.save(self.home())?;
         *catalog = next;
+        // The data goes before the catalog lock is released: a plan that sees the new generation
+        // never finds the data (4.2 step 6, 4.4). A failure is reported at the end.
+        let data = if delete_data {
+            self.state.delete(&identity)
+        } else {
+            Ok(())
+        };
         drop(catalog);
         // What protects authority runs first and does not depend on the folder: the streams
         // end, the timers that carry the removed mod are rewritten (4.4, 19.6). A failure is
@@ -631,11 +639,6 @@ impl Host {
             .state
             .timers_removed(&identity, &owners)
             .map_err(|e| HostError::Internal(e.message));
-        let data = if delete_data {
-            self.state.delete(&identity)
-        } else {
-            Ok(())
-        };
         self.bus.send(local, bus::CLOSE);
         self.catalog_written();
         let folder = std::fs::remove_dir_all(self.home().join("mods").join(local.as_ref()))

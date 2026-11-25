@@ -437,8 +437,9 @@ impl State {
             .map_err(|e| HostError::Internal(e.to_string()))?;
         Ok(())
     }
-    /// Whether the table `s/<id>` of the identity exists: data that a remove kept (7).
-    pub fn has_table(&self, identity: &str) -> Result<bool, HostError> {
+    /// Whether the table `s/<id>` of the identity holds at least one record: data that a remove
+    /// kept (7). An empty table is no data.
+    pub fn has_records(&self, identity: &str) -> Result<bool, HostError> {
         let Some(db) = self
             .database(false)
             .map_err(|e| HostError::Internal(e.message))?
@@ -450,7 +451,8 @@ impl State {
             .map_err(|e| HostError::Internal(e.to_string()))?;
         let name = format!("s/{}", mod_id(identity));
         match read.open_table(TableDefinition::<&str, &[u8]>::new(&name)) {
-            Ok(_) => Ok(true),
+            Ok(table) => Ok(!redb::ReadableTableMetadata::is_empty(&table)
+                .map_err(|e| HostError::Internal(e.to_string()))?),
             Err(TableError::TableDoesNotExist(_)) => Ok(false),
             Err(e) => Err(HostError::Internal(e.to_string())),
         }
