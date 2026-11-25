@@ -1373,7 +1373,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Protects: *guard* (item 1), else *polish*.
 - [~] **S117 (upkeep) the app's last leftovers and S116's polish.** (in flight, cloud, builder codex, reviewer claude;
   rule 3: last two S116 codex, S115 claude; the upkeep lane, sketched 2026-11-25 by deputy-3; beside S114, which holds
-  `host/` and `dev/`; Codex task https://chatgpt.com/local/6b062512-7874-83ed-ba16-8300d8b14068, dispatched 00:05 UTC; DELIVERED as PR #33 at ab6a9ca (+610/-158, all four CI jobs green after one macOS retry of an existing removal journey); r1: Claude review, fires 01:12 UTC.) Outcomes, each item's check: (1) S116 r1 P1.1 to P1.7 (the mixed-plan consent test, the dist
+  `host/` and `dev/`; Codex task https://chatgpt.com/local/6b062512-7874-83ed-ba16-8300d8b14068, dispatched 00:05 UTC; DELIVERED as PR #33 at ab6a9ca (+610/-158, all four CI jobs green after one macOS retry of an existing removal journey); r1: Claude review, fires 01:12 UTC; r1: 1/5, changes (1) (validators PASS but s117-4, user-sim REJECTED on APP-F-37 only; the macOS removal flake is a test race, fixed by s117-fix1): F1.1 app FUNCTIONAL APP-F-37 still promises `Compromised: <cause>`; ruling: amend APP-F-37 to the new words, plus P1.1 (words.rs arm tests) and P1.2 (a TECHNICAL 9.2 sentence); P1.3 to P1.5 to Leftovers; R1.1 accepted; answer r1 dispatched ~01:50 UTC.) Outcomes, each item's check: (1) S116 r1 P1.1 to P1.7 (the mixed-plan consent test, the dist
   redirect test that records calls, `Io` for OS failures in `check_owner_only`, the `icacls` oracle on parent and dir, a
   test-only STORE_WAIT that brings net's unit tests back near 1 s); (2) S44: `Core::mods()` stops re-reading every
   related channel view on each 2 s refresh (memoize or read on change), with a test that counts the reads; (3) S58:
@@ -1681,6 +1681,10 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### app
 
+- [S117 r1] (polish) a channel both compromised and failing its last read: Updates says "Couldn't read … tries again" while the row says `Compromised`; nothing tells Alice why or what to do (APP-F-44 style words for followed rows).
+- [S117 r1] (polish) `app/tests/it/manage.rs:317`: the polled `api.received` promise has no `.catch`.
+- [S117 r1] (polish) `log/tests/it/identity_windows.rs`: the ACL oracle does not check the ACE's access mask.
+
 - [S116 r1] P1.1 a mixed-plan consent test (no follow line for an Unchanged release's publisher); P1.2 the needless `#[allow(dead_code)]` on `app_home`; P1.4 the dist redirect test records calls instead of asserting inside the check; P1.5 OS failures in `check_owner_only` map to `Io`; P1.6 the `icacls` oracle on `parent` and `dir`; P1.7 a `#[cfg(test)]` STORE_WAIT of ~200 ms (net unit tests went from 1.1 s to 6.3 s); host TECHNICAL 1833 and 2411 still say a manager install 'always asks'.
 
 
@@ -1923,6 +1927,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - 2026-11-24 host 18 **Q38: (b)**, the human ("b is fine for q38"). A workspace or account consent is kept per (origin client, `via` = the provider's identity, folder or account); a new provider asks again. S103 built (b); its next answer round writes host 18 Q38 as decided by the human, 2026-11-24, and the 19.7 rows to match. agentic-harness TECHNICAL 8 already cites 19.7.
 
 ## Deputy decisions
+- 2026-11-25 (S117 r1) accepted: R1.1 net's `cfg(test)` 200 ms STORE_WAIT applies to every net unit test; a store shutdown over 200 ms on a slow Windows runner could bring back `Database already open` in `no_default_services` and `ac2_the_book_decides_the_switches` only (fix then: give the wait only to the forced test).
 
 - 2026-11-25 (S116 r1) accepted: R1.1 every `HostError::Refused` on the interactive app install path reads as a decline (the host can refuse there only because Alice declined); R1.2 a manager install with a New or Update entry follows the publisher with no follow line in its consent (app TECHNICAL by design, same class as S113 R2.1, now limited to changed releases).
 
