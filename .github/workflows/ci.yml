@@ -61,6 +61,7 @@ jobs:
         shell: bash
         run: dev/scripts/vendor.sh
       - name: Build
+        id: build
         shell: bash
         # --keep-going: every crate that does not compile shows up in one run (Windows).
         run: cargo build --workspace --locked --keep-going --features "${{ matrix.features }}"
@@ -81,7 +82,7 @@ jobs:
           rm -rf target/tmp
           cargo test --workspace --locked --features "${{ matrix.features }}" --no-fail-fast -- ${{ matrix.skip }}
       - name: Repeat the S126 host regressions
-        if: github.head_ref == 'slice/s126' && runner.os != 'Linux'
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && github.head_ref == 'slice/s126' && runner.os != 'Linux' }}
         shell: bash
         run: |
           export WATANE_HOME="$RUNNER_TEMP/watane-home-s126"
@@ -100,7 +101,7 @@ jobs:
             fi
           done
       - name: App judge editor regression (S126)
-        if: github.head_ref == 'slice/s126' && runner.os == 'macOS'
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && github.head_ref == 'slice/s126' && runner.os == 'macOS' }}
         shell: bash
         run: |
           export WATANE_HOME="$RUNNER_TEMP/watane-home-s126-app"
