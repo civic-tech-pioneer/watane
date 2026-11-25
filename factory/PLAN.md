@@ -1221,24 +1221,7 @@ describes except for where it runs. Moving it inside makes the thing that built 
 serious thing built on watane, and is the sharpest test of the premise: if the substrate cannot host
 its own factory, the premise is weaker than it looks. Not sketched; it needs its own design slice.
 
-- [~] **S120 Design: the factory as mods (VISION step 6).** (in flight, cloud, builder codex, reviewer claude; rule 3:
-  last two S119 codex, S118 claude; the main line, sketched 2026-11-25 by deputy-4; Codex task https://chatgpt.com/local/6b068ece-9e90-83ed-8b9e-480c43b7b077, dispatched 07:32 UTC; DELIVERED 07:35 UTC as PR #39 at c737b8f (+269, spec only); r1: Claude review, routine `trig_011JchRYiPCWpuvBDTaeAbJp`, fires 07:38 UTC; r1 (07:50): 4/6, changes (4), all text fixes that must name a gap and leave it open (F1.1 who writes `access/` for a mod identity, F1.2 the shell provider is not there yet, F1.3 JF1 waits on E and F, F1.4 W29: one repository per mod); deputy grade 4/6; answer r1 to the same Codex task, 07:53 UTC; r1 answered at 5e5fd89 (all 10 fixed); r2: Claude review, routine `trig_014XvUijaZ5BWfoogTczqGcZ`, fires 07:57 UTC; r2 (08:00): 0/1, approve (P2.1, this story's wording, fixed by the deputy); waits on CI; spec-check not run before the sketch: the slice writes a new draft and the review checks it against the chain.) Spec documents only, no code. The
-  story: a person steers coding agents from mods in her own host: the factory's planning role keeps the plan and sketches the next
-  slice, its foreman role has an implementer build it and another vendor's agent review it, she approves each merge, and the
-  factory proposes changes to its own mods, which she installs like any other mod (VISION step 6, "changes itself").
-  Outcomes, each checkable by reading: (1) a new subsystem design (VISION, FUNCTIONAL with journeys, TECHNICAL) under
-  `spec/design/factory/` as a draft, built only on the host and agent-layer interfaces as written (host 19, agentic-harness
-  design TECHNICAL 2.1 and 9); (2) the map from today's factory (`factory/*.sh`, `PLAN.md`, the deputy, foreman and
-  review-lead roles, routines and Codex tasks) to mods, toolsets and consents, saying what moves in and what stays out;
-  (3) every Door C or H point listed for the human with options, consequences and a recommendation: where the mods live (a
-  new repository is a new project, Door H), N5 (the implementer's shell: Codex app-server or the Claude shell grant), how
-  the factory changes itself without widening its own grants, and the V7 statements it needs; (4) the order of work after
-  it: the first build slice is the smallest journey that runs one real slice through mods, and which agentic-harness stage
-  (E, F) each later part waits on. Touches: `spec/design/factory/` (new), one line in `spec/VISION.md` step 6 and
-  `spec/TECHNICAL.md`'s order of work pointing at it; never a subsystem's code. Constraints: no change to a VISION goal or
-  boundary (that is the human's); open points stay open in the draft, not decided. Boundaries: the factory mods' grants and
-  consents are a W39 matter: the design names them; no adversary (no code). Size: a design slice. Protects: *core*.
-
+- [x] **S120 Design: the factory as mods (VISION step 6).** DONE 2026-11-25: PR #39 rebase-merged by deputy-4 (fb24648, no bypass); builder codex, reviewer claude, 2 rounds (4/6, 0/1); ~45 min in flight. A draft subsystem design in `spec/design/factory/` (VISION, FUNCTIONAL JF1/JF2 with FF1-FF4, TECHNICAL): today's factory mapped to mods, toolsets and consents, and 9 open decisions in its TECHNICAL 5 (1 Door H, 8 Door C), none settled. Its first build journey JF1 waits on agentic-harness stages E (V7, the judge) and F (N5): the main line has no buildable step until then. Sketch in factory/DONE.md.
 - [x] **S102 Alice connects her agent accounts in Settings (app stage L, part: 19.1, 19.3).** DONE 2026-11-23: PR #18
   merged with --admin at cdbfd4d, ~7 h in flight, 5 Claude rounds (8, 3, 1, 2 findings, then approve; validator PASS,
   adversary HELD, user-sim 61/61). Found and fixed on the way: a macOS EINVAL in the `claude --version` probe. (Was: in flight,
@@ -1908,6 +1891,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
+
+- (2026-11-25, deputy-4, from S120) **Where the factory mods live (Door H, `spec/design/factory/TECHNICAL.md` 5, first row).** W29 gives each mod with source its own repository, so a planning mod and a foreman mod are two new projects; one combined factory mod is one new project. Options, consequences and the recommendation are in that row. Not blocking: JF1 waits on agentic-harness stages E and F first. The 8 Door C rows go to deliberation when a build slice first depends on one.
 
 - (2026-11-24) The human rotates the secrets of the Codex `watane` environment (S112's build transcript held credential fragments; nothing reached GitHub).
 

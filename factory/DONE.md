@@ -10,3 +10,21 @@ Sketches of merged slices, moved out of PLAN.md (deputy skill, section 6). Newes
   P1.12, P1.13 in `scripted-responses` and dev TECHNICAL; (3) S118 r2 P2.1 and P2.2; (4) S110 R2: pkg's `grammar`
   refuses Windows reserved device names on every platform, red test first. Touches: `host/`, `dev/`, `pkg/`. No boundary
   moves (item 4 narrows what a package may name; adversary not run). Protects: *polish*, item 4 *guard*.
+
+- [~] **S120 Design: the factory as mods (VISION step 6).** (in flight, cloud, builder codex, reviewer claude; rule 3:
+  last two S119 codex, S118 claude; the main line, sketched 2026-11-25 by deputy-4; Codex task https://chatgpt.com/local/6b068ece-9e90-83ed-8b9e-480c43b7b077, dispatched 07:32 UTC; DELIVERED 07:35 UTC as PR #39 at c737b8f (+269, spec only); r1: Claude review, routine `trig_011JchRYiPCWpuvBDTaeAbJp`, fires 07:38 UTC; r1 (07:50): 4/6, changes (4), all text fixes that must name a gap and leave it open (F1.1 who writes `access/` for a mod identity, F1.2 the shell provider is not there yet, F1.3 JF1 waits on E and F, F1.4 W29: one repository per mod); deputy grade 4/6; answer r1 to the same Codex task, 07:53 UTC; r1 answered at 5e5fd89 (all 10 fixed); r2: Claude review, routine `trig_014XvUijaZ5BWfoogTczqGcZ`, fires 07:57 UTC; r2 (08:00): 0/1, approve (P2.1, this story's wording, fixed by the deputy); waits on CI; spec-check not run before the sketch: the slice writes a new draft and the review checks it against the chain.) Spec documents only, no code. The
+  story: a person steers coding agents from mods in her own host: the factory's planning role keeps the plan and sketches the next
+  slice, its foreman role has an implementer build it and another vendor's agent review it, she approves each merge, and the
+  factory proposes changes to its own mods, which she installs like any other mod (VISION step 6, "changes itself").
+  Outcomes, each checkable by reading: (1) a new subsystem design (VISION, FUNCTIONAL with journeys, TECHNICAL) under
+  `spec/design/factory/` as a draft, built only on the host and agent-layer interfaces as written (host 19, agentic-harness
+  design TECHNICAL 2.1 and 9); (2) the map from today's factory (`factory/*.sh`, `PLAN.md`, the deputy, foreman and
+  review-lead roles, routines and Codex tasks) to mods, toolsets and consents, saying what moves in and what stays out;
+  (3) every Door C or H point listed for the human with options, consequences and a recommendation: where the mods live (a
+  new repository is a new project, Door H), N5 (the implementer's shell: Codex app-server or the Claude shell grant), how
+  the factory changes itself without widening its own grants, and the V7 statements it needs; (4) the order of work after
+  it: the first build slice is the smallest journey that runs one real slice through mods, and which agentic-harness stage
+  (E, F) each later part waits on. Touches: `spec/design/factory/` (new), one line in `spec/VISION.md` step 6 and
+  `spec/TECHNICAL.md`'s order of work pointing at it; never a subsystem's code. Constraints: no change to a VISION goal or
+  boundary (that is the human's); open points stay open in the draft, not decided. Boundaries: the factory mods' grants and
+  consents are a W39 matter: the design names them; no adversary (no code). Size: a design slice. Protects: *core*.
