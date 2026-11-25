@@ -6,6 +6,8 @@ use std::process::Command;
 
 use crate::support::*;
 
+const RETRY: &str = "\nwatane setup was interrupted. Run the same command to try again.\n";
+
 /// `/bin/sh` and `/bin/dash`, when they are two shells: on a machine where one is the other
 /// (most Linux), the second run of every case would prove nothing.
 fn shells() -> Vec<&'static str> {
@@ -120,7 +122,11 @@ fn ac2_a_signal_before_a_check_failure_has_no_cause() {
                 ),
             );
             assert_eq!(out.code, code, "{shell}: {out:?}");
-            assert!(out.stderr.is_empty(), "{shell}: {out:?}");
+            assert_eq!(
+                out.stderr,
+                if code == 130 { RETRY } else { "" },
+                "{shell}: {out:?}"
+            );
         }
     }
 }
@@ -135,7 +141,11 @@ fn ac2_a_signalled_child_status_has_no_cause() {
                 &format!("trap cleanup EXIT\n(exit {code}) || die 2 'the tool id is missing'"),
             );
             assert_eq!(out.code, code, "{shell}: {out:?}");
-            assert!(out.stderr.is_empty(), "{shell}: {out:?}");
+            assert_eq!(
+                out.stderr,
+                if code == 130 { RETRY } else { "" },
+                "{shell}: {out:?}"
+            );
         }
     }
 }
@@ -236,7 +246,11 @@ fn ac1_a_signal_before_the_swap_ends_the_run_at_once() {
             );
             assert_eq!(out.code, code, "{shell}: {out:?}");
             assert!(out.stdout.is_empty(), "{shell}: {out:?}");
-            assert!(out.stderr.is_empty(), "{shell}: {out:?}");
+            assert_eq!(
+                out.stderr,
+                if code == 130 { RETRY } else { "" },
+                "{shell}: {out:?}"
+            );
         }
     }
 }
@@ -250,11 +264,15 @@ fn ac3_signalled_download_and_toolchain_have_no_cause() {
                 format!(
                     "TMP=$TMPDIR\ncurl() {{ return {code}; }}\ndownload fixture \"$TMP/archive\" plain"
                 ),
-                format!("rustup_step fixture /bin/sh -c 'exit {code}'"),
+                format!("TMP=$TMPDIR\nrustup_step fixture /bin/sh -c 'exit {code}'"),
             ] {
                 let out = fixture(shell, &format!("trap cleanup EXIT\n{body}"));
                 assert_eq!(out.code, code, "{shell}: {body}: {out:?}");
-                assert!(out.stderr.is_empty(), "{shell}: {body}: {out:?}");
+                assert_eq!(
+                    out.stderr,
+                    if code == 130 { RETRY } else { "" },
+                    "{shell}: {body}: {out:?}"
+                );
             }
         }
     }
@@ -282,5 +300,34 @@ fn a_recorded_signal_ends_the_flag_and_foreign_paths_without_a_cause() {
                 "{shell}: {body}: {out:?}"
             );
         }
+    }
+}
+
+/// TECHNICAL 3.8: the trap works while the downloaded script is still arriving.
+#[test]
+fn ctrl_c_before_main_prints_the_retry_hint() {
+    let script = include_str!("../../install.sh");
+    let (startup, _) = script.split_once("usage() {").expect("startup");
+    for shell in shells() {
+        // Send INT at the first point after the early trap is installed.
+        let mut cmd = Command::new(PERL);
+        cmd.args(LAUNCH)
+            .args([shell, "-c", &format!("{startup}kill -s INT $$\n")]);
+        let out = exec(cmd);
+        assert_eq!(out.code, 130, "{shell}: {out:?}");
+        assert_eq!(out.stderr, RETRY, "{shell}: {out:?}");
+    }
+}
+
+/// TECHNICAL 3.8: an INT detected during exit cleanup still prints a single hint.
+#[test]
+fn ctrl_c_during_cleanup_prints_the_retry_hint() {
+    for shell in shells() {
+        let out = fixture(
+            shell,
+            "trap cleanup EXIT\nTMP=$TMPDIR\nrm() { return 130; }\nexit 0",
+        );
+        assert_eq!(out.code, 130, "{shell}: {out:?}");
+        assert_eq!(out.stderr, RETRY, "{shell}: {out:?}");
     }
 }

@@ -300,7 +300,7 @@ fn adv_s94_a_dangling_install_folder_link_out_of_the_home_exits_2() {
     assert_eq!(
         out.first_err(),
         format!(
-            "watane install: ~/.local/bin resolves to {}/bin, outside your home folder ~",
+            "watane install: ~/.local/bin resolves to {}/bin, outside your home folder",
             o.display()
         )
     );

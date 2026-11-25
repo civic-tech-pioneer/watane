@@ -8,9 +8,14 @@ usage() { printf 'clean_mac.sh: usage: clean_mac.sh [--from <dir>] [--fresh-home
 while [ "$#" -gt 0 ]; do
   case $1 in
     --from) [ "$#" -ge 2 ] || usage; from=$2; shift ;;
-    --fresh-home) [ "$selected" = no ] || usage; selected=yes; mode=fresh ;;
+    --fresh-home)
+      [ "$selected" = no ] || usage
+      selected=yes
+      mode=fresh
+      ;;
     --part)
-      [ "$#" -ge 2 ] && [ "$selected" = no ] || usage
+      [ "$#" -ge 2 ] || usage
+      [ "$selected" = no ] || usage
       case $2 in clean|clt) ;; *) usage ;; esac
       selected=yes; mode=$2; shift ;;
     *) printf 'clean_mac.sh: unknown argument: %s\n' "$1" >&2; exit 1 ;;

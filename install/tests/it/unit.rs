@@ -423,7 +423,7 @@ fn unit_check_folders_refuses_an_install_folder_outside_the_home() {
         assert_eq!(
             u.err,
             format!(
-                "watane install: {} resolves to {}, outside your home folder ~\n{tail}",
+                "watane install: {} resolves to {}, outside your home folder\n{tail}",
                 o.folder, o.shown
             ),
             "{}",
@@ -1778,6 +1778,24 @@ fn unit_ac3b_a_moved_entry_with_its_staging_name_left_is_not_proven_installed() 
     foreign_lines(u, &["~/.local/bin/watane"]);
     let u = case(&units, "unstaged");
     assert_eq!((u.code, u.err.as_str()), (0, ""), "{u:?}");
+}
+
+/// TECHNICAL 3.6.1: only another live process prevents stale-file recovery.
+#[test]
+fn unit_pid_gone_distinguishes_self_live_and_dead() {
+    let fx = Fx::new();
+    let units = fx.units(
+        r#"kill() { [ "$*" = "-0 42" ]; }"#,
+        &[],
+        &[
+            ("self", "pid_gone \"$$\""),
+            ("live", "pid_gone 42"),
+            ("dead", "pid_gone 43"),
+        ],
+    );
+    for (name, expected) in [("self", 0), ("live", 1), ("dead", 0)] {
+        assert_eq!(case(&units, name).code, expected, "{name}");
+    }
 }
 
 /// TECHNICAL 3.4.2: a live PID's journal is skipped, even when it would otherwise prove the entry.

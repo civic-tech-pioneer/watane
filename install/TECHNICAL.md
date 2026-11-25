@@ -166,12 +166,13 @@ Stock macOS 14 and later, found on the default `PATH`
 in POSIX mode or dash-like; the script uses only POSIX), `curl`, `tar`,
 `shasum` (else `sha256sum`), `uname`, `sw_vers`, `sysctl`, `id`, `mktemp`,
 `mkdir`, `mv`, `cp`, `rm`, `rmdir`, `ls`, `cat`, `chmod`, `grep`, `sed`,
-`awk`, `tr`, `head`, `dirname`, `readlink`, `dd`, `od`, `xattr`, `xcode-select`, `kill`, `printf`, `test`. It uses no
+`awk`, `tr`, `head`, `tail`, `tee`, `dirname`, `readlink`, `dd`, `od`, `xattr`, `xcode-select`, `kill`, `printf`, `test`. It uses no
 `python`, `perl`, `jq`, `brew`, `git`, `openssl`, `wget`, `gh` or
 `codesign`, and no bash-only syntax (no `[[`, arrays, `local`, `echo -e`,
 `$'..'`, process substitution, `read -p`). It starts `set -eu`, `umask
 022`, and its whole body is one function `main` called on the last line
-(`main "$@"`), so that a download cut off half way runs nothing. Step 3 checks each tool with `command -v`; a missing one
+(`main "$@"`), so that a download cut off half way starts no install. A
+builtin-only INT trap is set before the function definitions (3.8). Step 3 checks each tool with `command -v`; a missing one
 is exit 2 (INST-S-21). `sw_vers`, `sysctl`, `xattr` and `xcode-select` exist only on macOS, so step 3
 leaves them out and step 4 checks them once `uname -s` printed `Darwin`: on Linux the
 person reads `unsupported platform: Linux <arch>` (9), not that `sw_vers` is missing.
@@ -221,7 +222,7 @@ home must not be `/`. Each must start with the resolved home followed by `/` (st
 that resolves to the home itself is refused too); otherwise exit 2 with
 
 ```text
-watane install: ~/.local/bin resolves to /Volumes/Data/bin, outside your home folder ~
+watane install: ~/.local/bin resolves to /Volumes/Data/bin, outside your home folder
 watane writes only under your home folder. Make it a real folder there, then run this again.
 ```
 
@@ -466,7 +467,9 @@ journal check stays, for a run of an older script that takes no lock.
 An install and an uninstall take a lock before they read the receipt
 (step 6; 8.4 step 1), so two runs started at once cannot both pass the
 journal check of 3.6.1, which runs long before either journal exists.
-`--status` takes none: it changes nothing. The lock is the folder
+`--status` attempts to take the same lock before running step 0 of 3.6.
+If it cannot take the lock, it reports the current receipt without recovering
+or removing anything. The lock is the folder
 `$HOME/.watane-install.lock`, made with `mkdir` (no `-p`: it fails when
 anything, a link included, is at that name), then the file `pid` inside
 it, written with `set -C`, holding the run's pid and a newline. It is the
@@ -553,12 +556,13 @@ IN-24, IN-25).
   framed on stdout: the line `--- rustup's own output follows ---` before it
   and the line `--- end of rustup's output ---` after it, so what rustup
   prints (on stdout and stderr, as it prints it) lies between the two and
-  watane's own lines never do (IN-46). A newline separates the closing
-  marker from rustup's last bytes, even when rustup ends on a partial line.
+  watane's own lines never do (IN-46). The script streams both descriptors
+  through `tee` into its temporary folder and saves rustup's exit status
+  separately. It adds a newline before the closing marker only when the
+  last line is partial.
   The end line is also printed when
   rustup failed, before the exit 6 text; it is not printed when a signal
-  ends the run. The exit status of rustup decides exit 6 and the signal
-  mapping (3.8) as before.
+  ends the run. Rustup's exit status decides exit 6 and the signal mapping (3.8).
 - Print `toolchain: installed` and re-run the detection once; if it is
   not `ok`, print `toolchain: still incomplete after the install` and exit
   6.
@@ -698,8 +702,11 @@ runs starts the hint on a new line. A signal while the toolchain question waits 
 offer A downloads the rustup installer also prints,
 after those two lines and on stderr, the "install it later" block of 3.7 for the
 state found (the same lines as for the answer `N`, without `toolchain: not
-installed`). A signal before the commit prints neither (nothing is installed
-or the old version stays), and leaves no folder the run created (3.6 step 4; IN-47).
+installed`). A signal before the commit leaves no folder the run created (3.6 step 4;
+IN-47). Ctrl-C before the commit prints
+`watane setup was interrupted. Run the same command to try again.` on a
+new line. The same hint applies while the shell is still reading the script,
+as soon as the initial INT trap has run.
 These lines are printed once, by the exit trap, whichever way the
 signal reached it (IN-45). At the uninstall home question it instead prints
 the uninstall outcome (8.4) and that the watane home was kept.
@@ -1165,6 +1172,10 @@ watane 0.1.0 (aarch64-apple-darwin)
 ~/Applications/watane.app
 ```
 
+Before printing the receipt, status runs step 0 of 3.6 if it acquired
+the lock (3.6.2). It prints only receipt paths in the current install
+set whose folders pass the path checks of 8.5 rules 1 to 3.
+
 The receipt, `<prefix>/share/watane/receipt`, text, staged as
 `receipt.new.<pid>` in step 10 and moved into place as the last entry of the
 swap (3.6), so it is never half written and never ahead of its files:
@@ -1185,6 +1196,8 @@ resolved .local/share/watane /Users/alice/.local/share/watane
 resolved .local/share/watane-dev /Users/alice/.local/share/watane-dev
 resolved Applications /Users/alice/Applications
 created .local 310
+created .local/bin 311
+created .local/share 312
 created Applications 325
 ```
 
@@ -1196,10 +1209,11 @@ when these lines were added, and a receipt without them is still read, its
 removals skipped by rule 4.
 
 Optional `created <folder> <inode>` lines record whether the installer
-made `.local` or `Applications`. These are the only two names accepted
-for this operation. An upgrade carries a line forward only when the same
-folder is still there. A receipt without these lines continues to work
-and leaves those two top-level folders alone on uninstall.
+made `.local`, `.local/bin`, `.local/share` or `Applications`. These are
+the only names accepted for this operation. An upgrade carries a line
+forward only while the same inode is at the same physical path and the
+folder itself is not a symlink. Uninstall leaves these folders alone
+when their creation lines are absent.
 If the filesystem reuses an inode after a recorded folder is deleted,
 uninstall may also remove an empty replacement at the same path.
 
@@ -1239,13 +1253,14 @@ is a feature of `app`, not of `install` (Q11).
    it refuses is left in place, with `watane install: skipped <path>: not a
    path that watane installs` on stderr (INST-S-27); then the stale names of
    3.8; then the receipt, when 8.5 allows it (else the same `skipped` line); then `rmdir` (not `rm -r`; each folder only when it resolves strictly below the resolved home, 8.5 rule 3)
-   `<prefix>/share/watane`, `<prefix>/share/watane-dev`, `<prefix>/share`
-   and `<prefix>/bin`, each only if empty. Finally, for each of `~/.local`
-   and `~/Applications`, remove the empty directory with `rmdir` if its
-   inode matches the receipt's `created` line (8.1), it is not a symlink,
-   and it resolves directly below the resolved home at the expected name.
+   `<prefix>/share/watane` and `<prefix>/share/watane-dev`, each only if
+   empty. Then consider `~/.local/share`, `~/.local/bin`, `~/.local` and
+   `~/Applications`, in that order. Remove an empty directory with
+   `rmdir` if its inode matches the receipt's `created` line (8.1), it
+   is not a symlink, and its resolved path is the expected path under
+   the resolved home.
 3. Print `uninstalled watane 0.1.0`, or
-   `partially uninstalled watane 0.1.0 (some entries were skipped or could not be removed)`
+   `partly uninstalled watane 0.1.0 (some entries were skipped or could not be removed)`
    when any entries or the receipt were skipped or could not be removed.
 4. Print what it kept, one line each (the home's line comes after step 5,
    and only when the home exists: `deleted: <home>`, or
@@ -1278,7 +1293,7 @@ is a feature of `app`, not of `install` (Q11).
    file and no terminal keep it (INST-S-15 to 17). No flag, variable or file answers this
    question (Q12). Ctrl-C at the question leaves the home intact and prints
    `watane 0.1.0 was uninstalled; the watane home was kept.` (or
-   `watane 0.1.0 was partially uninstalled; the watane home was kept.`).
+   `watane 0.1.0 was partly uninstalled; the watane home was kept.`).
    Tests type the answer on a pseudo-terminal (12.1).
 
 The home is `$WATANE_HOME` if set and not empty, else `~/.watane`, as
@@ -1458,11 +1473,12 @@ proven at the lowest level that shows it:
   only a whole run shows* (the order of its steps, an exit code and its stderr, what is left on disk
   after an interrupt), with several assertions on that run, and `Fx::installed()` instead of an
   install as the start of a test that needs an installed home. `installed()` copies the home of one
-  real install, with its own paths in the receipt rewritten, so that the start costs no process. That
+  real install, with the paths and creation inodes in the receipt rewritten for the copy, so that the start costs no process. That
   home, and the fake archives of the releases a test serves, are made once and kept between runs in
   `install-cache-<hash>` under `CARGO_TARGET_TMPDIR` (the hash covers `install.sh`, `support/mod.rs` and
   the folder of the fakes, so a stale one is never read), so that a run of one module does not make them
-  again.
+  again. A test run prunes cache generations at least seven days old when no test binary holds
+  them open.
 - **Slow** (`#[ignore = "slow: ..."]`): the runs that need many whole installs (a signal or a fault at
   each step of a swap, a kill and the recovery runs after it), the questions on a pseudo-terminal, and
   the failing steps of the two-machine driver. Every reason names what no cheaper test proves, and the
