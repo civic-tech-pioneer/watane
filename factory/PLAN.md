@@ -1216,6 +1216,20 @@ names the same interface in its sketch and fakes it until this one merges.
 
 - [x] **S122 Alice gives a checked provider its judge key (host A5, app 19.4; agentic-harness stage E, watane half).** DONE 2026-11-25: PR #42 rebase-merged by deputy-5 (13597bf2, no bypass); builder codex, reviewer claude, 1 round (0/8); ~3.8 h in flight. On a checked provider's manager page Alice saves, replaces and removes a judge key and its https origin; the host sends it only with that provider's granted POSTs to that origin (no redirects); removing it ends the provider's live judge streams `gone`; startup deletes key files of uninstalled mods. Adversary HELD, user-sim ACCEPTED, validator PASS. R1.1 to R1.4 accepted (Deputy decisions); P1.1 to P1.8 and R1.1's spec question in Leftovers. Sketch in factory/DONE.md.
 - [x] **S124 (upkeep) a failed fetch blames the true cause (net, node, dist), and net's budget flake.** DONE 2026-11-25: PR #43 rebase-merged by deputy-5 (e76d1682, no bypass); builder claude, reviewer codex, 2 rounds (3/2, 0/0); ~3.5 h in flight. A local I/O or holder failure during a fetch reads as this machine's, with no temp path; a bad copy on a full machine and every full machine being off each say so instead of 'not followed'; a close before the download is Unreachable; net's budget probes no longer race the refill clock. F1.3 regraded polish (fixed anyway); R2.1 accepted; P1.1, P1.2 in Leftovers. Sketch in factory/DONE.md.
+- [~] **S125 (upkeep, guard) host's and app's flaky tests, and S122's judge polish.**
+  (in flight, cloud, builder codex, reviewer claude; rule 3: last two S124 claude, S122 codex; the upkeep lane, sketched
+  2026-11-25 by deputy-5 from Leftovers `### host` and `### app`; spec-check not run: tests, one app 19.4 rule.)
+  Outcomes, each item's check: (1) (guard) the `Busy("/tmp/.tmp…")` reopen after `drop(host)` (host
+  `mcp::ac7_toolset_grammar_and_persistence`, app `fixtures::ac5_committed_fixtures_call_subscribe_and_keep_state`): find
+  the one cause (the lock's release on drop) and fix it in the host or the test rig, with a test that reopens at once;
+  (2) (guard) host `streams::ac10_hand_off...` (`Some(2)` vs `Some(3)`) and `adv_s96_timer_cancelled_while_the_firing_waits_still_fires`
+  on Windows: find each race and fix it; the consent `ac5` and `https_stream::ac5` lines first check whether S118's rig fix
+  already covers them (then drop the lines); each guard: 20 runs green per OS in one CI run; (3) [S122 R1.1] app 19.4:
+  the judge section stays on the manager page while a key is kept, even after `claude-code` is withdrawn, so Alice can
+  remove it (app TECHNICAL and FUNCTIONAL say so; a test); (4) [S122 r1] P1.1 to P1.8 (Leftovers `### app`), each where
+  cheap. Touches: `host/` (tests, the lock on drop, `agent/accounts.rs`), `app/` (judge page, tests); never `dist/`,
+  `net/`, `node/`, `log/`, `pkg/`. Protects: *guard* (1, 2), *core* (3), *polish* (4). Remove the items from Leftovers
+  when it merges.
 
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
