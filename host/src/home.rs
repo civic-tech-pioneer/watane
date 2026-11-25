@@ -86,7 +86,18 @@ pub(crate) struct Home {
     pub mode: Mode,
     #[cfg(all(unix, watane_dev_profile, debug_assertions))]
     pub(crate) scripted_openai: std::sync::OnceLock<ScriptedOpenAi>,
-    _lock: fs::File,
+    _lock: HomeLock,
+}
+
+#[derive(Debug)]
+struct HomeLock(fs::File);
+
+impl Drop for HomeLock {
+    fn drop(&mut self) {
+        // On Unix a child may still share this file description between fork and exec.
+        // Unlock explicitly so closing our descriptor releases the lock even then.
+        let _ = self.0.unlock();
+    }
 }
 
 impl Home {
@@ -107,6 +118,7 @@ impl Home {
             Err(std::fs::TryLockError::WouldBlock) => return Err(HostError::Busy(path)),
             Err(e) => return Err(HostError::Internal(format!("lock {}: {e}", path.display()))),
         }
+        let lock = HomeLock(lock);
         let marker = path.join("home.json");
         if !marker.exists() {
             let empty =
@@ -207,4 +219,28 @@ pub(crate) fn write_json(path: &Path, value: &impl Serialize) -> Result<(), Host
     #[cfg(windows)]
     watane_log_windows_fs::publish(&temp, path, true)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ac1_reopens_immediately_after_the_host_releases_its_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let open = || crate::Host::open(dir.path(), Mode::Preview, crate::Limits::default());
+        let mut host = open().unwrap();
+        for generation in 2..=21 {
+            assert!(matches!(open(), Err(HostError::Busy(_))));
+            // Like a child between fork and exec, the duplicate retains the open file
+            // description after the host closes its own descriptor.
+            #[cfg(unix)]
+            let duplicate = host.home._lock.0.try_clone().unwrap();
+            drop(host);
+            host = open().unwrap();
+            assert_eq!(host.generation, generation);
+            #[cfg(unix)]
+            drop(duplicate);
+        }
+    }
 }

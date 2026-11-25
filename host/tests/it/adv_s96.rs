@@ -120,33 +120,6 @@ fn adv_s96_timer_firing_checks_its_origin_before_the_wait() {
     );
 }
 
-/// 19.6: "A firing for an id cancelled or replaced meanwhile is ignored." The host reads the row
-/// before it waits for the mod's lock, so a cancel committed during that wait does not stop it.
-#[test]
-fn adv_s96_timer_cancelled_while_the_firing_waits_still_fires() {
-    let env = Env::new(&["latch", "relay", "advo"]);
-    call_as(
-        &env.host,
-        Caller::Page,
-        "advo",
-        "api.after",
-        json!({"id":"x","ms":100}),
-    )
-    .unwrap();
-    // This call holds advo's lock past the due time and cancels `x`; its commit comes first.
-    call_as(
-        &env.host,
-        Caller::Page,
-        "advo",
-        "api.cancel-slowly",
-        json!({"id":"x"}),
-    )
-    .unwrap();
-    std::thread::sleep(Duration::from_millis(1000));
-    let fired = call_as(&env.host, Caller::Page, "advo", "api.fired", Value::Null).unwrap();
-    assert_eq!(fired, json!([]), "a cancelled timer fired");
-}
-
 // ---- the fix tests of S96-fix1 ---------------------------------------------------------
 
 fn page(env: &Env, target: &str, function: &str, args: Value) -> Value {

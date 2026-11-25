@@ -115,8 +115,12 @@ pub(crate) struct Request {
 
 impl Request {
     /// Reads and checks the request text (19.4, Refused at the call). `grants` are the mod's
-    /// granted `Http` hosts. Nothing leaves the host here.
-    pub(crate) fn parse(text: &str, grants: &[String]) -> Result<Self, Refusal> {
+    /// granted `Http` hosts. `bind_judge` resolves the provider's account in-process.
+    fn parse(
+        text: &str,
+        grants: &[String],
+        bind_judge: impl FnOnce(&str, &hyper::Method) -> Result<JudgeAtCall, Refusal>,
+    ) -> Result<Self, Refusal> {
         let Ok(Value::Object(fields)) = serde_json::from_str::<Value>(text) else {
             return Err(bad("request", "the request is a JSON object"));
         };
@@ -173,9 +177,7 @@ impl Request {
                 if endpoint.grant == OPENAI_HOST {
                     return Err(Refusal::Destination);
                 }
-                Some(RequestAccount::Judge(JudgeAtCall::Missing(
-                    JudgeUnavailable::NoAccount,
-                )))
+                Some(RequestAccount::Judge(bind_judge(&endpoint.grant, &method)?))
             }
             Some(_) => return Err(Refusal::Destination),
         };
@@ -191,12 +193,12 @@ impl Request {
             idle: Duration::from_secs(idle),
         })
     }
+}
 
-    fn judge_matches(&self, account: &JudgeAccount) -> bool {
-        self.method == hyper::Method::POST
-            && judge_origin(&account.origin)
-                .is_ok_and(|origin| origin.strip_prefix("https://") == Some(self.grant.as_str()))
-    }
+fn judge_matches(account: &JudgeAccount, grant: &str, method: &hyper::Method) -> bool {
+    method == hyper::Method::POST
+        && judge_origin(&account.origin)
+            .is_ok_and(|origin| origin.strip_prefix("https://") == Some(grant))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -328,19 +330,18 @@ pub(crate) fn start(inv: &Invocation, args: &[Val]) -> Result<Value, CallError> 
     };
     let host = &inv.chain.host;
     let grants = host.http_grants(&inv.local);
-    let mut request = match Request::parse(text, &grants) {
-        Ok(r) => r,
+    let me = inv.me();
+    let request = Request::parse(text, &grants, |grant, method| {
+        match judge_account(&host.home.mode, &me.identity) {
+            Ok(account) if judge_matches(&account, grant, method) => Ok(JudgeAtCall::Bound),
+            Ok(_) => Err(Refusal::Destination),
+            Err(reason) => Ok(JudgeAtCall::Missing(reason)),
+        }
+    });
+    let request = match request {
+        Ok(request) => request,
         Err(refusal) => return Ok(refusal.value()),
     };
-    let me = inv.me();
-    if matches!(request.account, Some(RequestAccount::Judge(_))) {
-        let at_call = match judge_account(&host.home.mode, &me.identity) {
-            Ok(account) if request.judge_matches(&account) => JudgeAtCall::Bound,
-            Ok(_) => return Ok(Refusal::Destination.value()),
-            Err(reason) => JudgeAtCall::Missing(reason),
-        };
-        request.account = Some(RequestAccount::Judge(at_call));
-    }
     let key = Consumer::Mod(me.clone()).key().unwrap_or_default();
     let gate = inv.gate();
     let mut log = inv.log();
@@ -1024,10 +1025,11 @@ impl Host {
             Some(RequestAccount::Judge(JudgeAtCall::Bound)) => {
                 let account = judge_account(&self.home.mode, &consumer.identity);
                 Some(match account {
-                    Ok(account) if request.judge_matches(&account) => bearer(&account.key)
-                        .ok_or_else(|| {
+                    Ok(account) if judge_matches(&account, &request.grant, &request.method) => {
+                        bearer(&account.key).ok_or_else(|| {
                             failed("account unavailable: the key is not a header value")
-                        }),
+                        })
+                    }
                     _ => Err(json!("gone")),
                 })
             }
@@ -1127,7 +1129,7 @@ mod tests {
         vec!["api.openai.com".into(), "other.test:8443".into()]
     }
     fn parse(text: &str) -> Result<Request, Refusal> {
-        Request::parse(text, &grants())
+        Request::parse(text, &grants(), |_, _| panic!("unexpected judge request"))
     }
 
     fn job() -> Job {

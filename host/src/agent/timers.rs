@@ -273,6 +273,62 @@ fn fire(host: &Arc<Host>, key: &str, due: u64) {
 mod tests {
     use crate::{Host, Limits, Mode};
 
+    /// A firing rechecks its row after waiting for the mod's call lock (19.6).
+    #[test]
+    fn ac3_a_timer_cancelled_while_its_firing_waits_does_not_run() {
+        use super::{Arc, Duration, Mutex, TimerOp, unix_ms};
+        use std::time::Instant;
+
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let advo =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mods/advo");
+        host.install_folders(&[advo], 0).unwrap();
+
+        let lock = Arc::new(Mutex::new(()));
+        host.call_locks
+            .lock()
+            .unwrap()
+            .insert("local/advo".into(), Arc::clone(&lock));
+
+        for trial in 0..20 {
+            let key = crate::state::timer_key("local/advo", &format!("t{trial}"));
+            let due = unix_ms();
+            // Arm only after taking the mod's lock, so the due timer cannot beat the cancel.
+            let held = lock.lock().unwrap();
+            host.state
+                .timer_write(&[TimerOp::After {
+                    key: key.clone(),
+                    due,
+                    origin: "local/advo".into(),
+                }])
+                .unwrap();
+
+            host.timers.arm(key.clone(), due);
+            let flight = (key.clone(), due);
+            let deadline = Instant::now() + Duration::from_secs(3);
+            // The map and this test own two references. The firing clones the third
+            // after it reads the timer row, just before waiting on the mod's lock.
+            while Arc::strong_count(&lock) < 3 {
+                assert!(
+                    Instant::now() < deadline,
+                    "the firing did not reach the call lock"
+                );
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            host.state.timer_write(&[TimerOp::Cancel { key }]).unwrap();
+            drop(held);
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while host.timers.lock().flight.contains(&flight) {
+                assert!(Instant::now() < deadline, "the firing did not finish");
+                std::thread::sleep(Duration::from_millis(1));
+            }
+
+            let mut state = host.state.transaction("local/advo", &host.limits).unwrap();
+            assert_eq!(state.get("fired").unwrap(), None, "a cancelled timer fired");
+        }
+    }
+
     /// A timer armed after `reload` read the rows (its row committed after that read) stays
     /// armed: `reload` keeps what is armed already, and arms a row once (19.6).
     #[test]
