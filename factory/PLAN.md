@@ -1216,7 +1216,7 @@ names the same interface in its sketch and fakes it until this one merges.
 
 - [~] **S122 Alice gives a checked provider its judge key (host A5, app 19.4; agentic-harness stage E, watane half).**
   (in flight, cloud, builder codex, reviewer claude; rule 3: last two S121 claude, S120 codex; the main line, sketched
-  2026-11-25 by deputy-4: step 6's first build waits on stages E and F (S120), and E's watane half needs no real judge. Codex task https://chatgpt.com/local/6b06994d-5934-83eb-9d1f-da9025713051, dispatched 08:15 UTC; PR #42 opened ~09:28 UTC (+1804/-81), build still running.)
+  2026-11-25 by deputy-4: step 6's first build waits on stages E and F (S120), and E's watane half needs no real judge. Codex task https://chatgpt.com/local/6b06994d-5934-83eb-9d1f-da9025713051, dispatched 08:15 UTC; PR #42 opened ~09:28 UTC as a draft; BLOCKED 09:52 at 83b71eb: the builder held delivery on cloud reds that also fail on main (app look::windows window height, host stage A load); GitHub CI at d235a2d was red on all three OSes on dev `scripted_host::ac2_case_19_every_refused_form_reaches_no_server`, a test of this slice's area: the answer waits for CI on 83b71eb.)
   The story: in the manager's page for a checked provider, Alice enters a judge key and the judge's origin; only that
   provider's requests to that origin carry it, and removing it ends its live streams. Outcomes, on the real programs
   with dev's scripted judge origin (dev 18.3): (1) Alice sets and removes a judge key for an installed provider in the app
