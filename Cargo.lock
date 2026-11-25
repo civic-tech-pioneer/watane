@@ -8470,6 +8470,7 @@ dependencies = [
  "tower",
  "tower-http",
  "ureq",
+ "watane-dev",
  "watane-dist",
  "watane-host",
  "watane-log-windows-fs",
