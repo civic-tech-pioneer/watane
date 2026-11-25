@@ -1214,6 +1214,23 @@ names the same interface in its sketch and fakes it until this one merges.
   to the deputy first). Touches: host, dev, pkg if a row needs it. Boundary: W39 (adversary). Cloud.
   Protects: *core*.
 
+- [~] **S122 Alice gives a checked provider its judge key (host A5, app 19.4; agentic-harness stage E, watane half).**
+  (in flight, cloud, builder codex, reviewer claude; rule 3: last two S121 claude, S120 codex; the main line, sketched
+  2026-11-25 by deputy-4: step 6's first build waits on stages E and F (S120), and E's watane half needs no real judge.)
+  The story: in the manager's page for a checked provider, Alice enters a judge key and the judge's origin; only that
+  provider's requests to that origin carry it, and removing it ends its live streams. Outcomes, on the real programs
+  with dev's scripted judge origin (dev 18.3): (1) Alice sets and removes a judge key for an installed provider in the app
+  (`judge_set`, `judge_remove`, app 19.4, 19.5); the key file is named by the provider's identity, 0600, written
+  atomically; (2) a request with `account: "judge"` from that provider reaches the scripted judge with the key, and from
+  the unchecked provider, another publisher's mod or a preview it ends `no-account` with no request counted (host 19.4,
+  S59); (3) `judge_origin` parses once (case and default port folded; a path or query refused `bad_request`), no
+  redirect is followed; (4) removing the key ends a live judge stream `gone` (HOST-F-72); at startup a key file of no
+  installed mod is deleted (app 19.4). Interface: `watane:host@0.1.0` H3 accounts as host 19 states it (no WIT change
+  expected; one goes to the deputy first); the judge's wire shape stays the checked provider's (dev 17). Touches:
+  `host/src/agent/`, `app/` (accounts, the judge page), `dev/` only if the scripted judge needs it; never `dist/`, `log/`,
+  `pkg/` (S121). Boundary: W39, "a judge key goes only to its judge" (host 18, app 2072): adversary on. Leaves out: the
+  checked provider itself and V7 (agentic-harness, needs a real judge account). Protects: *core*.
+
 After step 8, the plan ends and VISION's own step 6 begins: the factory as a set of mods in the
 host. It exists today as `factory/*.sh`, markdown briefs and sessions the product owner starts by
 hand — outside the substrate, steering coding agents and changing itself, which is what VISION
