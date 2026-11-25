@@ -1881,11 +1881,11 @@ fn ac2_judge_key_is_scoped_to_the_signed_publisher() {
             rig.call(Caller::Page, target, "api.ended", Value::Null) == json!([expected])
         });
     };
-    let second_stream = start(second.local.as_str());
-    ends(second.local.as_str(), format!("{second_stream} no-account"));
+    let second_stream = start(second.local.as_ref());
+    ends(second.local.as_ref(), format!("{second_stream} no-account"));
     assert_eq!(judge.connections.load(Ordering::SeqCst), 0);
-    let first_stream = start(first.local.as_str());
-    ends(first.local.as_str(), format!("{first_stream} closed"));
+    let first_stream = start(first.local.as_ref());
+    ends(first.local.as_ref(), format!("{first_stream} closed"));
     let requests = judge.requests();
     assert_eq!(requests.len(), 1);
     assert_eq!(
