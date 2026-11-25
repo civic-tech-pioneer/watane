@@ -3,17 +3,6 @@
 The product owner's state; only the product owner edits it, on `main`. A new session continues
 from here. Newest digest line last.
 
-## Deputy handover
-
-From deputy-3 to deputy-4, 2026-11-25 06:45 UTC. The new rules (mboogerd/claude-plugin#3) apply: cut stalls yourself, hand over at 3 merges, 6 h or 300k context, one watcher, one writer per branch.
-- **S119** (watane PR #35, builder codex, reviewer claude): review r1 by the Claude routine `trig_01QxsQGcSfzYy1Hjj5buRF2r` (fires 06:42 UTC) posts a PR comment. Approve with all four CI jobs green: merge it yourself (`gh pr merge 35 --rebase`, else `--squash`). Changes: the answer goes to the Codex task https://chatgpt.com/local/6b067827-da14-83ed-ab43-79bfbda7704a as a follow-up.
-- **S40** (agentic-harness PR #54, builder claude, reviewer codex): the deputy cut restart recovery (agentic-harness PLAN, S40-CUT). Answer r3 with the cut is with the Claude routine `trig_014rQUrVhYxDfSZTELMCedUR` (fired 06:37 UTC). On its `S40 r3: answers` push, review r4 goes to Codex as a reading check of the cut, a follow-up in https://chatgpt.com/local/6b05eeef-aae8-83eb-85bf-a60c3e428074.
-- **Factory PRs** merged by deputy-3: watane #36 (no relay), #37 (foreman: one writer), #38 and agentic-harness #55 (cloud tools), watane-mods #8 (watch-all.sh), mboogerd/claude-plugin #3 and #4 (rules; plugin 0.1.1 installed on the Mac).
-- **Watcher:** `watch-all.sh` is on watane-mods main (8ba0bfe) but not yet in the shared checkout, which holds another session's uncommitted edits to factory/README.md. Do not pull there. Run it from `git -C ../watane-mods show origin/main:factory/scripts/watch-all.sh > <scratchpad>/watch-all.sh`, with a fresh state file (its first run is a baseline).
-- **Lanes:** the main line is empty: propose watane step 6 (the factory as mods), a design slice first; A5's judge waits on V7. Refill the upkeep lane from Leftovers once S119 merges.
-- **The human owes:** rotating the Codex `watane` environment secrets. Codex reported short-lived signed job-log URLs in its tool output twice (S117, S119); none were committed.
-- **Analysis:** side-session-notes/local_54d12e9a-7f72-4914-a7ce-022040acbb1c/analysis-2026-11-25.md.
-
 ## Slices
 
 Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
@@ -1382,14 +1371,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Touches: `app/`, `dist/`, `log/`, `net/` and their TECHNICAL, never `host/` or `dev/`. Boundaries: dist 5.9 and log's
   key folder are touched by tests only, the managed install by item 1 (adversary on item 1). Size: an upkeep slice.
   Protects: *guard* (item 1), else *polish*.
-- [~] **S119 (upkeep) S111's polish in host and dev, S118's, and pkg's reserved Windows names.** (in flight, cloud,
-  builder codex, reviewer claude; rule 3: last two S118 claude, S117 codex; the upkeep lane, sketched 2026-11-25 by
-  deputy-3 from Leftovers; Codex task https://chatgpt.com/local/6b067827-da14-83ed-ab43-79bfbda7704a, dispatched 05:20 UTC; DELIVERED 05:59 UTC as PR #35, final head 7264e38 (+640/-102, all four CI jobs green; item 4 was already on main from S112, a red test added); r1: Claude review, routine `trig_01QxsQGcSfzYy1Hjj5buRF2r`, fires 06:42 UTC.) Outcomes, each item's check: (1) S111 r1 P1.1: connect and TLS handshake each get their own
-  `idle-s` in `host/src/agent/https_stream.rs`, with a test each; P1.2 to P1.5, P1.11, P1.14 (host tests, the
-  reset-before-head message, one sentence each in host 19.4 for the accepted R2 and R5); (2) S111 r1 P1.6 to P1.10,
-  P1.12, P1.13 in `scripted-responses` and dev TECHNICAL; (3) S118 r2 P2.1 and P2.2; (4) S110 R2: pkg's `grammar`
-  refuses Windows reserved device names on every platform, red test first. Touches: `host/`, `dev/`, `pkg/`. No boundary
-  moves (item 4 narrows what a package may name; adversary not run). Protects: *polish*, item 4 *guard*.
+- [x] **S119 (upkeep) S111's polish in host and dev, S118's, and pkg's reserved Windows names.** DONE 2026-11-25: PR #35 rebase-merged by deputy-4 (1202a7b, no bypass); builder codex, reviewer claude, 1 round (0/7); ~2 h in flight. host's https stream gives connect and TLS handshake their own idle budget, `scripted-responses` refuses unknown script fields, pkg refuses Windows device names (guard already on main from S112, red test added). Accepted R1.1 (deputy): a maker's `scripted-responses.json` with an extra key is now refused (format shipped in S111). Polish P1.1 to P1.7 in Leftovers. Sketch in factory/DONE.md.
 - [x] **S118 (upkeep) host's flaky consent tests, kept storage in the install plan, and S114's polish.** DONE 2026-11-25: PR #34 merged by the deputy (3a7999f, no bypass); builder claude, reviewer codex, 2 rounds (2/3, 0/2); ~4.2 h in flight. Both consent flakes were test-rig races; `PlanEntry.kept_state` and 'data kept from before' (needs a surviving record); a Delete data removal deletes inside one redb write holding the catalog (lock order: redb writer, then catalog); host's 'always asks' wording; S114 r3 polish. P2.1, P2.2 in Leftovers. (Was: (in flight,
   cloud, builder claude, reviewer codex; rule 3: last two S117 codex, S116 codex; the upkeep lane, sketched 2026-11-25
   by deputy-3 from Leftovers once S114 and S117 freed `host/` and `dev/`; routine `trig_01VFy6xjSA76FBaYDyGtKzLH`, fires 01:59 UTC; DELIVERED ~03:05 UTC as PR #34 at 87a9ef8 (items 1 to 4 done; both flakes were test-rig races, 20/20 per OS in run 45534361465; `PlanEntry.kept_state`; leftover: an adv_s96 timer flake on Windows); r1: Codex review https://chatgpt.com/local/6b0651be-2aec-83ed-9173-a2c50a054060, dispatched 03:14 UTC (adversary and user-sim on item 2); r1 (03:17): 2/3, changes (2) (adversary HELD, user-sim ACCEPTED on the DOM); F1.1 dismissed (the `consent` module is unix-only on main, so it cannot flake on Windows); F1.2 stands, narrowed: the kept-data label must agree with what the plan validates when an install plan overlaps a Delete data removal; P1.1, P1.2 folded in; P1.3 to Leftovers; `local/<slug>` risk accepted; answer r1: Claude routine `trig_017xicAQrQ4sa1oMjgrpj3Pm`, fires 04:00 UTC; r1 answered at e2e147d (a Delete data removal deletes inside one redb write that also holds the catalog; its first form deadlocked against timer commits and the builder's validator caught it; lock order 'redb writer, then catalog' everywhere); r2: Codex focused check in the same task, dispatched 05:08 UTC (with a hunt for other reverse lock orders).) Outcomes, each item's check: (1) (guard)
@@ -1648,6 +1630,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### pkg
 
+- [S119 r1] (polish) P1.4 `pkg/tests/it/package.rs:82-91,112`: the decode refusal loop should match "a Windows device name is reserved", as the pack test at `:136` does.
+
 - [S110 R2] `pkg/src/package.rs:58` `grammar`: refuse Windows reserved device names (`con`, `nul`, `aux`, `com1`-`9`, `lpt1`-`9`, with or without an extension) on every platform.
 
 - From S91: `watane-dev add` on a provider with invalid WIT says only "is not a mod folder"; a pack entry gone during listing is sometimes named at its parent; pkg/tests/it/s91.rs is a race test of up to 5 s in the default run.
@@ -1661,6 +1645,9 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 
 ### host
+
+- [S119 r1] (polish) P1.1 `host/src/agent/https_stream.rs:662-666`: a head that fails to parse also reads "connection ended before the response head"; P1.5 `:832` the `data: ` field name counts toward MAX_ITEM (an event of exactly 4 MiB is refused), test `Sse::feed` at the boundary.
+- [S119 r1] (guard, first sighting) P1.7 `streams::ac10_hand_off_moves_a_host_stream_to_a_mod_that_exports_stream_sink` (`host/tests/it/streams.rs:663`) failed once (`Some(2)` vs `Some(3)`); likely a race between `api.received` and the `deliveries()` snapshot.
 
 - [S118 r2] (polish) `host/src/runtime/call.rs:1032`: say that removal changes the catalog before the timer rewrite transaction; `host/tests/it/kept_state.rs:208`: bound the readiness wait.
 
@@ -1685,6 +1672,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 - [S44] an unknown `/api` route answers 404 `bad_request` (host/src/server.rs:107, 245).
 
 ### dev
+
+- [S119 r1] (polish) P1.2 `dev/TECHNICAL.md:89-91` dev-dependencies block lists `regex` and `tempfile = "3.27"` (Cargo.toml: no regex, `"3"`); P1.3 a unit test that `read_script` refuses `{"replise":[]}`; P1.6 move the nested unknown-field cases of `ac6_program_refuses_unknown_script_fields` to a unit test; R1.1 (accepted) one line in dev TECHNICAL 18.3 that extra script keys are refused.
 
 - [S114 r3] (polish) `dev/src/preview/openai.rs:68,196`: pin that `fallback` rejects the plain scripted marker and a `Refusal::Scripted` round trip (`Refusal::tag`); pin or delete the `automatic()` check at lines 189-191.
 - [S114 r3] (polish) `dev/src/preview/openai.rs:74-80`: the reuse warning for `Refusal::Scripted` says "Use a development build", drops the cause, and should name `watane-dev serve --stop` (the refusal stays until the port changes).
@@ -1894,6 +1883,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
+
+- (2026-11-25 07:25 UTC, deputy-4) **No round can be dispatched from deputy-4.** It runs as `claude --bg` (handover, deputy skill section 8): it has no browser pane for Codex, and `RemoteTrigger` answers 401 `oauth_scope_insufficient`, so it cannot start Claude routines either. The Codex CLI resolves only the old watane-only environment. Held: S40 r4 review (agentic-harness PR #54) and every new slice. Options: (a) run the deputy in a session with the browser pane and the routine scope (the desktop app, as deputy-3 ran), and `claude attach` no longer; (b) give this session the scope. Rec: (a), and change section 8 so a handover starts where both work.
 
 - (2026-11-24) The human rotates the secrets of the Codex `watane` environment (S112's build transcript held credential fragments; nothing reached GitHub).
 
@@ -2297,6 +2288,8 @@ The human may veto each one.
   Rejected: accepting the race (two runs can interleave swaps in one home).
 
 ## Friction
+
+- (2026-11-25, deputy-4) A deputy started by the handover's `claude --bg` command has neither the browser pane nor the routine scope (RemoteTrigger 401), so it can merge and record but dispatch nothing. Factory change proposed to the human (Waiting on the human).
 
 - 2026-11-24 (S112 r1) Codex's cyber filter withheld an answer round on dist's SSRF guards (third time after S105 r5 twice): a slice of network-boundary guards should start with Claude as builder. Same day: Codex also withheld S111's review (an HTTPS and account-token boundary), so S111 is reviewed by Claude, its own builder's vendor. Three blocks in one day on security work: proposed to the human (Codex 'Daybreak' for authorized security work is an account setting). (deputy-3)
 
