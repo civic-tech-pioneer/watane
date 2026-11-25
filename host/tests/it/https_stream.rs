@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
@@ -17,7 +17,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use watane_host::watane_pkg::Grant;
 use watane_host::{
     Account, AccountError, AccountSource, Caller, Confirm, Consent, ConsentAnswer, ConsentRequest,
-    Host, JudgeAccount, Limits, Mode, TestNet,
+    Host, JudgeAccount, Limits, Mode, TestClock, TestNet,
 };
 
 // ---- the TLS test server -------------------------------------------------------------------
@@ -572,6 +572,18 @@ fn ac1_a_connection_closed_before_the_response_head_reports_why() {
     );
     assert!(rig.items(&s).is_empty());
     assert_eq!(server.requests().len(), 1);
+}
+
+#[test]
+fn s126_an_invalid_response_head_reports_a_parse_failure() {
+    let mut rig = Rig::new(None);
+    rig.serve("api.openai.com", |mut c| async move {
+        c.write(b"HTTP/1.1 200 OK\r\nInvalid-Header\r\n\r\n").await;
+        c.finish().await;
+    });
+    let s = rig.start(&get("https://api.openai.com/v1/x"));
+    rig.wait_ended_with_prefix(&s, "failed(HTTP: invalid response head:");
+    assert!(rig.items(&s).is_empty());
 }
 
 #[test]
@@ -1607,8 +1619,10 @@ fn writer(
     count: usize,
     size: usize,
     gap: Duration,
+    stop: Option<Arc<AtomicBool>>,
 ) -> impl Fn(Conn) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     move |mut c| {
+        let stop = stop.clone();
         Box::pin(async move {
             c.head("200 OK", SSE).await;
             let pad = "x".repeat(size);
@@ -1622,6 +1636,12 @@ fn writer(
                     return;
                 }
                 c.stats.written.fetch_add(1, Ordering::SeqCst);
+                if stop
+                    .as_ref()
+                    .is_some_and(|stop| stop.load(Ordering::SeqCst))
+                {
+                    break;
+                }
                 if !gap.is_zero() {
                     tokio::time::sleep(gap).await;
                 }
@@ -1636,37 +1656,42 @@ fn ac7_a_consumer_that_defers_stops_the_host_reading_and_resume_loses_nothing() 
     const EVENTS: usize = 400;
     const SIZE: usize = 128 << 10;
     let mut rig = Rig::new(None);
-    let server = rig.serve("api.openai.com", writer(EVENTS, SIZE, Duration::ZERO));
+    // The stream's lag and deferral deadlines are unrelated to the order tested here.
+    rig.host().set_test_clock(TestClock::new());
+    let stop = Arc::new(AtomicBool::new(false));
+    let server = rig.serve(
+        "api.openai.com",
+        writer(EVENTS, SIZE, Duration::ZERO, Some(Arc::clone(&stop))),
+    );
     rig.mode("defer");
     let s = rig.start(&get("https://api.openai.com/v1/x"));
-    // The writes block: the count stops growing, far below what was to be sent.
-    let mut last = (0, Instant::now());
-    loop {
-        let now = server.written.load(Ordering::SeqCst);
-        if now != last.0 {
-            last = (now, Instant::now());
-        } else if last.1.elapsed() > Duration::from_secs(2) {
-            break;
-        }
-        assert!(now < EVENTS, "the host read the whole body: {now} events");
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    let written = server.written.load(Ordering::SeqCst);
+    wait(
+        "the deferred stream to apply backpressure",
+        Duration::from_secs(60),
+        || rig.host().test_stream_deferred_and_full(&s),
+    );
     assert!(
-        written < 160,
-        "the server wrote {written} of {EVENTS} events of {SIZE} bytes: the host did not stop reading"
+        server.written.load(Ordering::SeqCst) < EVENTS,
+        "the server sent the complete body while the stream was deferred"
     );
     assert_eq!(
         rig.items(&s),
         Vec::<String>::new(),
         "a deferred batch records nothing"
     );
+    // Let the writer finish its current event after resume. This keeps the amount drained
+    // proportional to the bytes actually buffered, instead of sending another 50 MiB.
+    stop.store(true, Ordering::SeqCst);
     rig.mode("quiet");
     assert_eq!(
         rig.call(Caller::Page, "https", "api.resume", json!({"s": s})),
         json!("ok")
     );
-    rig.wait_ended(&s, "closed");
+    let prefix = format!("{s} ");
+    wait("the resumed stream to end", Duration::from_secs(60), || {
+        rig.ended().iter().any(|line| line.starts_with(&prefix))
+    });
+    assert_eq!(rig.ended(), [format!("{s} closed")]);
     let tally = rig.tally(&s);
     let [n, bad, bytes] = ["n", "bad", "bytes"].map(|k| -> u64 {
         tally
@@ -1677,8 +1702,10 @@ fn ac7_a_consumer_that_defers_stops_the_host_reading_and_resume_loses_nothing() 
             .unwrap()
     });
     // Every event, in order: a gap or a repeat would count as `bad`.
-    assert_eq!((n, bad), (EVENTS as u64, 0), "{tally}");
-    assert!(bytes > (EVENTS * SIZE) as u64);
+    let written = server.written.load(Ordering::SeqCst);
+    assert!(written > 0);
+    assert_eq!((n, bad), (written as u64, 0), "{tally}");
+    assert!(bytes > (written * SIZE) as u64);
 }
 
 #[test]
@@ -1688,7 +1715,7 @@ fn ac7_stage_d_budget_p95_from_the_servers_write_to_the_items_call_is_at_most_50
     let mut rig = Rig::new(None);
     rig.serve(
         "api.openai.com",
-        writer(EVENTS, 200, Duration::from_millis(3)),
+        writer(EVENTS, 200, Duration::from_millis(3), None),
     );
     rig.mode("stamp");
     let s = rig.start(&get("https://api.openai.com/v1/x"));

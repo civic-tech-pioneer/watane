@@ -468,7 +468,11 @@ in `Outcome.value`.
 another name. A preview home has none of them (W5); it does have `state/`,
 which `Host::open` creates (3.1 step 6). On shutdown, the host releases
 `lock` after all other home resources, including the state database, close.
-The run marker can disappear earlier (12.2).
+The run marker can disappear earlier (12.2). Closing asks live run threads to
+stop. Their process cleanup may finish after the lock is released. On Unix,
+the host explicitly unlocks the file because a child between fork and exec
+can still hold the same open file description. Children exec or exit and
+do not continue doing host work in a forked copy of the process.
 
 `default_home()`: `$WATANE_HOME` if set and not empty, else
 `$HOME/.watane`. It does not create the directory.
@@ -536,9 +540,11 @@ The run marker can disappear earlier (12.2).
 4. Read each installed mod with `Mod::read`, compile its `logic.wasm` when
    `logic()` is `Some`, and build the registry (section 6.4). A mod that fails to
    load keeps its record and gets `error`; the host still opens.
-5. Start the epoch ticker (section 6.3).
-6. Step 11 (A2): raise `generation` in the `host` table of state by one
-   (19.1, 7). This creates `state/state.redb` at every open, a preview's too.
+5. Recover any timer rows left by an interrupted removal (19.6). Raise
+   `generation` in the `host` table of state by one (19.1, 7). This creates
+   `state/state.redb` at every open, a preview's too.
+6. Start the epoch ticker (6.3), the stream worker (19.2) and the timer worker
+   (19.6).
 
 ### 3.2 Local name grammar
 
@@ -695,8 +701,11 @@ Install checks the generation again before committing (Q24).
   delivery; a consumer's call into it fails with `not_granted` ("provider
   <local> is disabled"); its `/events` streams end; its page answers 404.
 - `enable`: `enabled = true`; send `reload` to its pages.
-- `remove(local, delete_data)`: wait for the mod's call lock; drop it from
-  the registry; delete `mods/<local>/`; if `delete_data`, delete its state
+- `remove(local, delete_data)` waits for the mod's call lock up to the
+  configured call duration (6.3). If it expires, the error names the mod
+  whose call did not finish. Removal leaves the mod installed and releases
+  the removal lock. After getting the call lock, removal drops the mod from
+  the registry and deletes `mods/<local>/`. If `delete_data`, it deletes its state
   (section 7) while it still holds the catalog mutex, so that no plan sees
   the new catalog without the deletion (4.2 step 6). The lock order is the
   write transaction first, then the catalog mutex, as in a timer commit
@@ -710,9 +719,9 @@ Install checks the generation again before committing (Q24).
   the mod or the grant, also those whose origin client it is (`gone`; 19,
   Terms; 19.2, 19.5). A disabled mod's own timers wait and a removed mod's are
   deleted (19.6); another mod's timer that carries it as origin client fires
-  with its own mod as origin client. `remove` also rewrites, in the same
-  write, the origin of every other mod's timer that carries the removed mod's
-  identity to that timer's own mod: a local mod's identity is `local/<slug>`,
+  with its own mod as origin client. After saving the catalog, `remove` rewrites
+  the origin of every other mod's timer that carries the removed mod's identity
+  to that timer's own mod: a local mod's identity is `local/<slug>`,
   so a later local mod with the same slug has the same identity and must not
   find the removed mod's authority waiting in a timer (S62). `remove`, a
   `grant` of `Manage` and an update whose approval grants `Manage`, drop the names `<local>_…` of that mod (3.2: no `_` in
@@ -2708,24 +2717,14 @@ undo, and none changes a WIT signature):
   its streams depend on none; a page or a host stream depends on none until
   A2. Cost to undo: a field of the stream.
 
-Raised by S96's adversary (fifth pass; open, for the product owner; neither
-blocks A1):
+Raised by S96's adversary (fifth pass) and resolved in S126.
 
-- **Q47** (open) `remove` waits for the removed mod's call lock with no
-  deadline while it holds the removal lock that every install takes (4.4), so
-  a mod kept busy by its page, an agent or its timers delays the removal and
-  every install on the host, each wait bounded by the call deadline but the
-  lock not fair. Options: (a) `remove` waits with the call deadline and fails
-  `busy`; (b) a removal takes priority over new callers of the mod; (c) keep.
-  Recommended: (a). Cost to undo: one wait.
-- **Q48** (open) A crash, or a failed redb write, between the catalog save of
-  `remove` and its timer rewrite leaves rows that carry the removed identity
-  (its own timers and other mods' timers with it as origin client); nothing
-  sweeps them at start, and a later install with the same identity inherits
-  them. Options: (a) at `Host::open`, rewrite or delete every row whose owner
-  or origin client is not installed; (b) keep the install generation in the
-  row (it lives in memory today, so it needs a persisted install id);
-  (c) keep. Recommended: (a). Cost to undo: one pass at start.
+- **Q47** (4.4) The wait for the mod's call lock delayed every install and could
+  continue indefinitely while new calls acquired the lock. The removal now
+  waits up to the call duration and reports the name of the mod on timeout.
+- **Q48** (3.1, 19.6) A crash between the catalog save and the timer rewrite
+  left timer rows for the removed identity. Startup now compares timer owners
+  and origins with the committed catalog before arming them.
 
 
 Raised by S99's adversary (open; none blocks S99, which runs only in scratch
@@ -3468,8 +3467,8 @@ checks of the table above are made at the call.
     in LF, CR or CRLF; a line that starts with `:` is a comment; a blank line ends the event;
     a leading byte-order mark is dropped); an event with no `data` line gives no item, one
     with an empty `data` line gives an empty item, and an event that the stream cut before its
-    blank line is dropped. An event over 4 MiB ends the stream `failed("a server-sent event
-    is over 4 MiB")`.
+    blank line is dropped. The 4 MiB item limit counts data and inter-line LF bytes.
+    An event over that limit ends the stream `failed("a server-sent event is over 4 MiB")`.
   - *Any other body*: items of exactly 65 536 bytes, the last one shorter, whatever the sizes
     of the reads (150 KiB is items of 65 536, 65 536 and 22 528). The rest of the last chunk is
     delivered when the body ends and when the stream ends `idle-timeout` or `failed`.
@@ -3509,7 +3508,9 @@ checks of the table above are made at the call.
   name checks are never off, also under `test-net` (19.9: the test root is an added root).
   A connect, TLS or HTTP failure ends the stream `failed("<what>")` (a message that holds no
   token). A connection that the server resets or closes before the response head ends the stream
-  `failed("HTTP: connection ended before the response head: <what>")`. **Reading stops while the stream is full** (19.2, In flight and Deferred batch): the
+  `failed("HTTP: connection ended before the response head: <what>")`. A response
+  head that fails to parse ends the stream `failed("HTTP: invalid response head: <what>")`.
+  **Reading stops while the stream is full** (19.2, In flight and Deferred batch): the
   host pushes an item, and when the push fails `full` it tries again every 5 ms without reading
   the connection, so a consumer that defers makes the server's writes block once the kernel
   buffers are full. Items counted in the budgets of 19.2 are the 64 KiB chunks and the events.
@@ -3581,6 +3582,10 @@ checks of the table above are made at the call.
   - Scope: the account is bound to the judge's origin (N10), not to one path.
   - Entering the key is the participant's consent for that provider: no
     per-origin-client consent for this account (19.7).
+  - **Not protected.** The participant can enter an origin with an unspecified,
+    loopback or private IP literal. The request still requires the provider's
+    matching, consented `Http` grant. This allows a participant to use a
+    self-hosted judge.
 
 The host reaches tokens, keys and the `claude` path only through this
 in-process trait, which the app implements and hands over through
@@ -3830,8 +3835,11 @@ is deleted). A mod in the `error` state gets no firing; its timers wait, and
 the reload after every catalog commit arms them when the error
 clears (a removal clears no other mod's error). Timers survive a restart; a kill after the
 commit of `after` and before the host arms it loses nothing: the timer is
-armed from state at start, and its firing happens once. A mod that is
-disabled gets no firing; its timers wait. A mod that does not export
+armed from state at start, and its firing happens once. If a removal was
+interrupted after the catalog save, startup deletes rows whose owner is
+absent and rewrites a missing origin client to the installed owner. It does
+this before arming the rows. A mod that is disabled gets no firing and its
+timers wait. A mod that does not export
 `timer-sink` gets no firing: at its due time the row is deleted and the host
 logs `watane: timer <id> of <local> dropped: no timer-sink`. Removal of the mod deletes its
 timers (the no-`timer-sink` delete checks, in its own write transaction,
@@ -4050,6 +4058,9 @@ pub struct TestNet { pub routes: Vec<(String, SocketAddr)>, pub root_pem: String
   - `TestStream::deliveries()` lists every `items` call made for the stream,
     in order: the numbers of its batch and how it came back (`Taken`,
     `Deferred`, `Failed`). It is the oracle of "counted deliveries".
+  - `Host::test_stream_deferred_and_full(id)` reads whether the stream is
+    deferred and its writer is waiting for room. The loopback HTTPS test
+    uses it to synchronize resume with backpressure.
   - `Host::set_test_clock(TestClock)` replaces the clock of the lag clock and
     the deferral backstop of 19.2 (not the call deadline of 6.3, not the
     timers of 19.6, which tests wait for in real time); `TestClock::advance`
@@ -4067,6 +4078,7 @@ pub struct TestNet { pub routes: Vec<(String, SocketAddr)>, pub root_pem: String
 #[cfg(feature = "test-streams")]
 impl Host {
     pub fn test_stream(&self, consumer: TestConsumer) -> Result<TestStream, StreamError>;
+    pub fn test_stream_deferred_and_full(&self, id: &str) -> bool;
     pub fn set_test_clock(&self, clock: TestClock);
     pub fn test_stats(&self) -> TestStats;
 }
