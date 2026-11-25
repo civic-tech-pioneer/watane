@@ -52,8 +52,13 @@ pub fn judge_origin(text: &str) -> Result<String, crate::HostError> {
 
     let (scheme, authority) = text.split_once("://").ok_or_else(bad_origin)?;
     let authority = authority.strip_suffix('/').unwrap_or(authority);
+    let host = authority
+        .rsplit_once(':')
+        .map_or(authority, |(host, _)| host);
     if !scheme.eq_ignore_ascii_case("https")
         || authority.is_empty()
+        || authority.ends_with(':')
+        || host.ends_with('.')
         || authority.contains(['/', '\\', '?', '#', '@'])
         || authority.chars().any(char::is_whitespace)
         || authority.chars().any(char::is_control)
@@ -67,10 +72,11 @@ pub fn judge_origin(text: &str) -> Result<String, crate::HostError> {
         Some(url::Host::Ipv4(address)) => address.to_string(),
         _ => return Err(bad_origin()),
     };
-    let grant = url
-        .port()
-        .map_or(name.clone(), |port| format!("{name}:{port}"));
-    Ok(format!("https://{grant}"))
+    match url.port() {
+        Some(0) => Err(bad_origin()),
+        Some(port) => Ok(format!("https://{name}:{port}")),
+        None => Ok(format!("https://{name}")),
+    }
 }
 
 #[cfg(test)]
@@ -91,6 +97,9 @@ mod tests {
         for text in [
             "http://judge.example",
             "https://judge.example.",
+            "https://127.0.0.1.:443",
+            "https://judge.example:",
+            "https://judge.example:0",
             "https://judge.example/v1",
             "https://judge.example/.",
             "https://judge.example/?",
