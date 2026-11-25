@@ -1373,7 +1373,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Protects: *guard* (item 1), else *polish*.
 - [~] **S118 (upkeep) host's flaky consent tests, kept storage in the install plan, and S114's polish.** (in flight,
   cloud, builder claude, reviewer codex; rule 3: last two S117 codex, S116 codex; the upkeep lane, sketched 2026-11-25
-  by deputy-3 from Leftovers once S114 and S117 freed `host/` and `dev/`; routine `trig_01VFy6xjSA76FBaYDyGtKzLH`, fires 01:59 UTC; DELIVERED ~03:05 UTC as PR #34 at 87a9ef8 (items 1 to 4 done; both flakes were test-rig races, 20/20 per OS in run 45534361465; `PlanEntry.kept_state`; leftover: an adv_s96 timer flake on Windows); r1: Codex review https://chatgpt.com/local/6b0651be-2aec-83ed-9173-a2c50a054060, dispatched 03:14 UTC (adversary and user-sim on item 2).) Outcomes, each item's check: (1) (guard)
+  by deputy-3 from Leftovers once S114 and S117 freed `host/` and `dev/`; routine `trig_01VFy6xjSA76FBaYDyGtKzLH`, fires 01:59 UTC; DELIVERED ~03:05 UTC as PR #34 at 87a9ef8 (items 1 to 4 done; both flakes were test-rig races, 20/20 per OS in run 45534361465; `PlanEntry.kept_state`; leftover: an adv_s96 timer flake on Windows); r1: Codex review https://chatgpt.com/local/6b0651be-2aec-83ed-9173-a2c50a054060, dispatched 03:14 UTC (adversary and user-sim on item 2); r1 (03:17): 2/3, changes (2) (adversary HELD, user-sim ACCEPTED on the DOM); F1.1 dismissed (the `consent` module is unix-only on main, so it cannot flake on Windows); F1.2 stands, narrowed: the kept-data label must agree with what the plan validates when an install plan overlaps a Delete data removal; P1.1, P1.2 folded in; P1.3 to Leftovers; `local/<slug>` risk accepted; answer r1: Claude routine `trig_017xicAQrQ4sa1oMjgrpj3Pm`, fires 04:00 UTC.) Outcomes, each item's check: (1) (guard)
   `consent::ac5_a_consent_given_through_one_provider_is_not_used_through_another` (`host/tests/it/consent.rs:533`, seen
   twice) and `https_stream::ac5_a_refused_consent_ends_the_stream_consent_refused` stop flaking: name each race, fix it
   in host if a person could hit it, else in the test; a CI job on the branch runs both 20 times on each OS, all green;
@@ -1642,6 +1642,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 
 ### host
+
+- [S118 r1] (guard) `host/tests/it/adv_s96.rs:147` `adv_s96_timer_cancelled_while_the_firing_waits_still_fires` failed on windows-latest (PR #30 attempt 1); first sighting.
 
 - [S114 CI] (guard) `consent::ac5_a_consent_given_through_one_provider_is_not_used_through_another` (`host/tests/it/consent.rs:533`) flaked again, on ubuntu (PR #30 attempt 1): the pending item had not arrived yet. Second sighting after S113's macOS one: give it to the next upkeep slice that may touch host.
 
@@ -1938,6 +1940,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - 2026-11-24 host 18 **Q38: (b)**, the human ("b is fine for q38"). A workspace or account consent is kept per (origin client, `via` = the provider's identity, folder or account); a new provider asks again. S103 built (b); its next answer round writes host 18 Q38 as decided by the human, 2026-11-24, and the 19.7 rows to match. agentic-harness TECHNICAL 8 already cites 19.7.
 
 ## Deputy decisions
+- 2026-11-25 (S118 r1) accepted: the existing unsigned `local/<slug>` identity rule stands; a different local package with the same slug can recover retained records after Alice approves Storage.
 - 2026-11-25 (S117 r1) accepted: R1.1 net's `cfg(test)` 200 ms STORE_WAIT applies to every net unit test; a store shutdown over 200 ms on a slow Windows runner could bring back `Database already open` in `no_default_services` and `ac2_the_book_decides_the_switches` only (fix then: give the wait only to the forced test).
 
 - 2026-11-25 (S116 r1) accepted: R1.1 every `HostError::Refused` on the interactive app install path reads as a decline (the host can refuse there only because Alice declined); R1.2 a manager install with a New or Update entry follows the publisher with no follow line in its consent (app TECHNICAL by design, same class as S113 R2.1, now limited to changed releases).
