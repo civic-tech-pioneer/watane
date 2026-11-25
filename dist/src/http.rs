@@ -339,11 +339,12 @@ mod tests {
     fn s116_http_redirect_to_https_is_allowed() {
         let first = "http://publisher.example/head";
         let target = "https://publisher.example/head";
+        let checked = RefCell::new(Vec::new());
         let mut requested = Vec::new();
         let result = follow_hops(
             first,
             &|url| {
-                assert_eq!(url, target);
+                checked.borrow_mut().push(url.to_owned());
                 Ok(())
             },
             |url| {
@@ -358,6 +359,7 @@ mod tests {
 
         assert_eq!(result.unwrap(), "head");
         assert_eq!(requested, [first, target]);
+        assert_eq!(*checked.borrow(), [target]);
     }
     #[test]
     fn ac3_five_hops_followed_sixth_is_an_error() {
