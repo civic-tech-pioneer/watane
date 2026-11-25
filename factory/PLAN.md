@@ -2312,7 +2312,7 @@ The human may veto each one.
 
 ## Friction
 
-- (2026-11-25, deputy-4) The deputy skill's review brief names `.claude/factory/review-lead.md`, which exists in no repository (watane, agentic-harness, watane-mods) and not in plugin 0.1.1: S120's Claude reviewer fell back to the skill's own text, and S121's Codex brief carried the lead's rules inline. Factory change to propose: ship review-lead.md with the plugin or a project's factory copy. A deputy-3 run in the Desktop app (this one) dispatches fine; the --bg blocker is gone.
+- (2026-11-25, deputy-4) The deputy skill's review brief names `.claude/factory/review-lead.md`, which exists in no repository (watane, agentic-harness, watane-mods) and not in plugin 0.1.1: S120's Claude reviewer fell back to the skill's own text, and S121's Codex brief carried the lead's rules inline. Factory change to propose: ship review-lead.md with the plugin or a project's factory copy. deputy-4 in the Desktop app dispatches fine; the --bg blocker is gone.
 
 - (2026-11-25, deputy-4) A deputy started by the handover's `claude --bg` command has neither the browser pane nor the routine scope (RemoteTrigger 401), so it can merge and record but dispatch nothing. Factory change proposed to the human (Waiting on the human).
 
