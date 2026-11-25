@@ -1221,6 +1221,24 @@ describes except for where it runs. Moving it inside makes the thing that built 
 serious thing built on watane, and is the sharpest test of the premise: if the substrate cannot host
 its own factory, the premise is weaker than it looks. Not sketched; it needs its own design slice.
 
+- [~] **S120 Design: the factory as mods (VISION step 6).** (in flight, cloud, builder codex, reviewer claude; rule 3:
+  last two S119 codex, S118 claude; the main line, sketched 2026-11-25 by deputy-4.) Spec documents only, no code. The
+  story: a person steers coding agents from mods in her own host: a planning mod keeps the plan and sketches the next
+  slice, a foreman mod has an implementer build it and another vendor's agent review it, she approves each merge, and the
+  factory proposes changes to its own mods, which she installs like any other mod (VISION step 6, "changes itself").
+  Outcomes, each checkable by reading: (1) a new subsystem design (VISION, FUNCTIONAL with journeys, TECHNICAL) under
+  `spec/design/factory/` as a draft, built only on the host and agent-layer interfaces as written (host 19, agentic-harness
+  design TECHNICAL 2.1 and 9); (2) the map from today's factory (`factory/*.sh`, `PLAN.md`, the deputy, foreman and
+  review-lead roles, routines and Codex tasks) to mods, toolsets and consents, saying what moves in and what stays out;
+  (3) every Door C or H point listed for the human with options, consequences and a recommendation: where the mods live (a
+  new repository is a new project, Door H), N5 (the implementer's shell: Codex app-server or the Claude shell grant), how
+  the factory changes itself without widening its own grants, and the V7 statements it needs; (4) the order of work after
+  it: the first build slice is the smallest journey that runs one real slice through mods, and which agentic-harness stage
+  (E, F) each later part waits on. Touches: `spec/design/factory/` (new), one line in `spec/VISION.md` step 6 and
+  `spec/TECHNICAL.md`'s order of work pointing at it; never a subsystem's code. Constraints: no change to a VISION goal or
+  boundary (that is the human's); open points stay open in the draft, not decided. Boundaries: the factory mods' grants and
+  consents are a W39 matter: the design names them; no adversary (no code). Size: a design slice. Protects: *core*.
+
 - [x] **S102 Alice connects her agent accounts in Settings (app stage L, part: 19.1, 19.3).** DONE 2026-11-23: PR #18
   merged with --admin at cdbfd4d, ~7 h in flight, 5 Claude rounds (8, 3, 1, 2 findings, then approve; validator PASS,
   adversary HELD, user-sim 61/61). Found and fixed on the way: a macOS EINVAL in the `claude --version` probe. (Was: in flight,
@@ -1371,6 +1389,13 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Touches: `app/`, `dist/`, `log/`, `net/` and their TECHNICAL, never `host/` or `dev/`. Boundaries: dist 5.9 and log's
   key folder are touched by tests only, the managed install by item 1 (adversary on item 1). Size: an upkeep slice.
   Protects: *guard* (item 1), else *polish*.
+- [~] **S121 (upkeep) polish in dist, log and pkg (S105 r5/r6, S108 r2, S109 r2, S119 P1.4).** (in flight, cloud, builder
+  claude, reviewer codex; rule 3: last two S120 codex, S119 codex; the upkeep lane, sketched 2026-11-25 by deputy-4 from
+  Leftovers.) Outcomes, each item's check (re-check each line against main first): (1) S105 P5.3, P5.4, P6.1 to P6.3 in
+  `dist/` (a test each for P6.1 to P6.3; P5.3 a fix or one line in dist TECHNICAL 4.4); (2) S109 P2.1 to P2.3 in `log/`
+  and log TECHNICAL; (3) S108 P2.1, P2.2 in `pkg/`; (4) S119 P1.4 in `pkg/tests/it/package.rs`. Leaves out S108's spec
+  questions and S109's crash-before-rename items. Touches: `dist/`, `log/`, `pkg/` and their TECHNICAL; never `host/`,
+  `dev/`, `spec/`. No boundary moves (tests and messages only; adversary not run). Protects: *polish*.
 - [x] **S119 (upkeep) S111's polish in host and dev, S118's, and pkg's reserved Windows names.** DONE 2026-11-25: PR #35 rebase-merged by deputy-4 (1202a7b, no bypass); builder codex, reviewer claude, 1 round (0/7); ~2 h in flight. host's https stream gives connect and TLS handshake their own idle budget, `scripted-responses` refuses unknown script fields, pkg refuses Windows device names (guard already on main from S112, red test added). Accepted R1.1 (deputy): a maker's `scripted-responses.json` with an extra key is now refused (format shipped in S111). Polish P1.1 to P1.7 in Leftovers. Sketch in factory/DONE.md.
 - [x] **S118 (upkeep) host's flaky consent tests, kept storage in the install plan, and S114's polish.** DONE 2026-11-25: PR #34 merged by the deputy (3a7999f, no bypass); builder claude, reviewer codex, 2 rounds (2/3, 0/2); ~4.2 h in flight. Both consent flakes were test-rig races; `PlanEntry.kept_state` and 'data kept from before' (needs a surviving record); a Delete data removal deletes inside one redb write holding the catalog (lock order: redb writer, then catalog); host's 'always asks' wording; S114 r3 polish. P2.1, P2.2 in Leftovers. (Was: (in flight,
   cloud, builder claude, reviewer codex; rule 3: last two S117 codex, S116 codex; the upkeep lane, sketched 2026-11-25
@@ -1883,8 +1908,6 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
-
-- (2026-11-25 07:25 UTC, deputy-4) **No round can be dispatched from deputy-4.** It runs as `claude --bg` (handover, deputy skill section 8): it has no browser pane for Codex, and `RemoteTrigger` answers 401 `oauth_scope_insufficient`, so it cannot start Claude routines either. The Codex CLI resolves only the old watane-only environment. Held: S40 r4 review (agentic-harness PR #54) and every new slice. Options: (a) run the deputy in a session with the browser pane and the routine scope (the desktop app, as deputy-3 ran), and `claude attach` no longer; (b) give this session the scope. Rec: (a), and change section 8 so a handover starts where both work.
 
 - (2026-11-24) The human rotates the secrets of the Codex `watane` environment (S112's build transcript held credential fragments; nothing reached GitHub).
 
