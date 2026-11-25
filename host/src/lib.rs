@@ -336,8 +336,8 @@ impl Host {
             .lock()
             .expect("lock poisoned: another thread panicked while holding it")
             .validate(&plan, self.home())?;
-        // Step 10 (6.10, 12.1): a manager's install asks whenever its plan has an entry other than
-        // `Unchanged`.
+        // Step 10 (6.10, 12.1): outside a preview, a manager's install asks whenever its plan has
+        // an entry other than `Unchanged`.
         let manager = match &requester {
             Requester::Mod(by) => {
                 if !self.is_manager(by) {
