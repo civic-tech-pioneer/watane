@@ -1729,6 +1729,8 @@ Re-checked and swept by S86 (2026-11-18); these remain.
 
 ### app
 
+- [S121 CI] (guard, first sighting) `fixtures::ac5_committed_fixtures_call_subscribe_and_keep_state` (`app/tests/it/fixtures.rs:25`) failed on ubuntu with `Busy("/tmp/.tmp…")` on a slice that does not touch `app/`; green on rerun.
+
 - [S117 r1] (polish) a channel both compromised and failing its last read: Updates says "Couldn't read … tries again" while the row says `Compromised`; nothing tells Alice why or what to do (APP-F-44 style words for followed rows).
 - [S117 r1] (polish) `app/tests/it/manage.rs:317`: the polled `api.received` promise has no `.catch`.
 - [S117 r1] (polish) `log/tests/it/identity_windows.rs`: the ACL oracle does not check the ACE's access mask.
