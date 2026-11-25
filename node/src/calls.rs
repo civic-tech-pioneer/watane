@@ -10,17 +10,15 @@ use watane_net::{DeviceList, NetError, PairCode};
 /// The error net answered a light machine's `need` with, if it had something to say (5.3).
 type NetCause = Option<NetError>;
 
-/// Every error but `Off` and `NoFullMachine`, which say nothing about any machine.
+/// Every error but `Off`, which says nothing: net is not asked.
 fn kept(result: Result<(), NetError>) -> NetCause {
-    result
-        .err()
-        .filter(|e| !matches!(e, NetError::Off | NetError::NoFullMachine))
+    result.err().filter(|e| !matches!(e, NetError::Off))
 }
 
 /// A failed dist call after a failed `need`: when dist found no source (`NotFollowed`,
 /// `NoRelease`, `UnknownRelease`, `StaleBases`), net's error is the cause (5.3). Every
 /// other verdict of dist (`Compromised`, `Withdrawn`, web-host errors) stands.
-/// The chain reads `the server: node K refused: not_allowed`; a local failure
+/// The chain reads `your full machine: node K refused: not_allowed`; a local failure
 /// is `this machine: ...`.
 fn cause_or(cause: NetCause, error: DistError) -> DistError {
     let no_source = matches!(
@@ -39,10 +37,24 @@ fn cause_or(cause: NetCause, error: DistError) -> DistError {
                     | NetError::Timeout { .. }
                     | NetError::TooLarge { .. }
                     | NetError::BadObject { .. }
+                    | NetError::NotServed { .. }
+                    | NetError::NoFullMachine
             );
+            let text = net.to_string();
+            let text = match net {
+                NetError::NotTaken { .. } => text
+                    .strip_prefix("this machine ")
+                    .map_or(text.clone(), str::to_owned),
+                _ => text,
+            };
             DistError::Io {
-                path: if other { "the server" } else { "this machine" }.into(),
-                source: std::io::Error::other(net),
+                path: if other {
+                    "your full machine"
+                } else {
+                    "this machine"
+                }
+                .into(),
+                source: std::io::Error::other(text),
             }
         }
         _ => error,
@@ -98,7 +110,7 @@ impl Node {
         self.machine() == Machine::Light
     }
 
-    /// `need` on a light machine; every error but Off and NoFullMachine is kept (5.3).
+    /// `need` on a light machine; every error but Off is kept (5.3).
     fn need_channel(&self, channel: &PublicKey) -> NetCause {
         if self.is_light() {
             kept(self.net.need(channel))
@@ -339,7 +351,10 @@ mod tests {
         }
         assert_eq!(
             chain.join(": "),
-            format!("the server: node {} refused: not_allowed", node.short())
+            format!(
+                "your full machine: node {} refused: not_allowed",
+                node.short()
+            )
         );
         let none = cause_or(
             None,
@@ -380,10 +395,15 @@ mod tests {
                 node,
                 code: watane_net::Code::NotAllowed,
             },
+            NetError::NotServed {
+                node,
+                cause: "package 01234567: gone".into(),
+            },
+            NetError::NoFullMachine,
         ];
         for net in server {
             let got = cause_or(kept(Err(net)), none());
-            assert_eq!(path(got), std::path::Path::new("the server"));
+            assert_eq!(path(got), std::path::Path::new("your full machine"));
         }
         let io = NetError::Io {
             path: "p".into(),
@@ -393,8 +413,24 @@ mod tests {
             path(cause_or(kept(Err(io)), none())),
             std::path::Path::new("this machine")
         );
+        let taken = NetError::NotTaken {
+            channel,
+            cause: "no room".into(),
+        };
+        let got = cause_or(kept(Err(taken)), none());
+        assert_eq!(got.to_string(), "this machine", "the path is the top line");
+        let text = std::error::Error::source(&got).unwrap().to_string();
+        assert_eq!(text, format!("did not take channel {channel}: no room"));
+        let corrupt = NetError::Corrupt {
+            path: "p".into(),
+            cause: "x".into(),
+        };
+        assert_eq!(
+            path(cause_or(kept(Err(corrupt)), none())),
+            std::path::Path::new("this machine")
+        );
         assert!(kept(Err(NetError::Off)).is_none());
-        assert!(kept(Err(NetError::NoFullMachine)).is_none());
+        assert!(kept(Err(NetError::NoFullMachine)).is_some());
         assert!(kept(Ok(())).is_none());
         let timeout = || Some(NetError::Timeout { node });
         let release = ReleaseRef {
@@ -420,7 +456,7 @@ mod tests {
         for error in no_source {
             assert_eq!(
                 path(cause_or(timeout(), error)),
-                std::path::Path::new("the server")
+                std::path::Path::new("your full machine")
             );
         }
         let stands = DistError::Withdrawn {

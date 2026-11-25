@@ -258,15 +258,16 @@ caused the pull already spread through the topic (net 5.7), and the
 ### 5.3 A light machine
 
 Only when `machine()` is `Light` (NODE-F-9). Every `need` and `need_blob`
-error is kept except `Off` and `NoFullMachine` (net had nothing to say about any
-machine): dist then reads from the link location as before (net 5.9), and when that
-call fails with a missing source (`NotFollowed`, `NoRelease`,
-`UnknownRelease`, `StaleBases`), the kept error is returned in its place, as the
-cause of a `DistError::Io` with path `the server` when the net error names
-another machine (`Refused`, `Unreachable`, `Timeout`, `TooLarge`, `BadObject`;
-`node <short> refused: not_allowed`) and `this machine` for any other (`Io`,
-`Corrupt`, ...), not dist's "is not followed" (NO-14). The package's error
-comes before the channel's. Any other dist error (`Compromised`, `Withdrawn`,
+error is kept except `Off` (net is off: dist's own error stands): dist then reads from
+the link location as before (net 5.9), and when that call fails with a missing source
+(`NotFollowed`, `NoRelease`, `UnknownRelease`, `StaleBases`), the kept error is returned
+in its place, as the cause of a `DistError::Io` (NO-14). Its path is `your full machine`
+when the net error names a full machine or none (`Refused`, `Unreachable`, `Timeout`,
+`TooLarge`, `BadObject`, `NotServed`, `NoFullMachine`; `node <short> refused: not_allowed`,
+`no full machine is reachable`) and `this machine` for any other (`NotTaken`, `Io`,
+`Corrupt`, ...), whose cause is net's text as it is, without a node's key or a temporary's
+path. A web host that has the release still wins: the fetch then succeeds. The package's
+error comes before the channel's. Any other dist error (`Compromised`, `Withdrawn`,
 `BadKey`, `NoIdentity`, a web host's `Network`/`Http`/`BadLink`) is returned as it is.
 
 | Wrapper | Before dist's call |
@@ -586,4 +587,4 @@ Gaps found in stage 2 (no code of a sibling was changed):
 | NO-10 | A question (`relay add`, `dht on`) reads one line from standard input; only `y` or `yes` counts, so a closed or empty input is a no. | A script and a person get the same rule, and nothing changes without a yes. |
 | NO-12 | `join` and `run` take an optional `--bind <addr:port>`, passed as `Options.bind`. | A test of the program, and a participant with several networks, choose the interface; the default is unchanged. |
 | NO-13 | `status` beside a running `run` reads `net`'s files alone and says that the channel and package lines are `run`'s. | `run` holds dist's lock for as long as it runs; net's files are read without the lock and the command writes nothing. Undo: cheap. |
-| NO-14 | Every `need`/`need_blob` error but `Off` and `NoFullMachine` is kept; if dist's call then fails with `NotFollowed`, `NoRelease`, `UnknownRelease` or `StaleBases` (no source), the wrapper returns `DistError::Io { path, source: <the net error> }`, `path` `"the server"` for an error that names another machine and `"this machine"` otherwise. | A removed light machine learns that the server refused it (the participant must re-pair), and a full machine's bad copy (S92) reads as that machine's cause, not as "not followed", which sends Alice to do something that does not help. A wrapper keeps its `DistError` type, so the app and dist callers are unchanged; the chain carries the net text. Undo: cheap. |
+| NO-14 | Every `need`/`need_blob` error but `Off` is kept; if dist's call then fails with `NotFollowed`, `NoRelease`, `UnknownRelease` or `StaleBases` (no source), the wrapper returns `DistError::Io { path, source: <the net error> }`, `path` `"your full machine"` for an error that names a full machine or none (`NoFullMachine` too) and `"this machine"` otherwise. | A removed light machine learns that the server refused it (the participant must re-pair), and a full machine's bad copy (S92) reads as that machine's cause, not as "not followed", which sends Alice to do something that does not help. A wrapper keeps its `DistError` type, so the app and dist callers are unchanged; the chain carries the net text. Undo: cheap. |

@@ -237,7 +237,37 @@ fn ac2_a_bad_copy_on_the_server_is_not_read_as_not_followed() {
     // only the server answers
     anchor.net().set_options(Default::default()).unwrap();
     let chain = chain(&light.fetch(&published.info.reference).unwrap_err());
-    assert!(chain.contains(&server_key.short()), "{chain}");
+    assert!(
+        chain.contains(&format!(
+            "node {} did not serve package",
+            server_key.short()
+        )) || chain.contains("sent a bad object"),
+        "{chain}"
+    );
+    assert!(!chain.contains("is not followed"), "{chain}");
+}
+
+#[test]
+fn ac1_every_full_machine_off_says_no_full_machine_is_reachable() {
+    let Stored {
+        dirs: _dirs,
+        anchor,
+        light,
+        mut server,
+        published,
+        ..
+    } = stored();
+    // the server and the anchor are both off
+    let _ = server.child.kill();
+    let _ = server.child.wait();
+    anchor.net().set_options(Default::default()).unwrap();
+    let error = light.fetch(&published.info.reference).unwrap_err();
+    let chain = chain(&error);
+    assert!(
+        error.to_string().starts_with("your full machine"),
+        "{chain}"
+    );
+    assert!(chain.contains("no full machine is reachable"), "{chain}");
     assert!(!chain.contains("is not followed"), "{chain}");
 }
 
