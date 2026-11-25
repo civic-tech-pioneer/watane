@@ -1691,8 +1691,6 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 
 
-- [S113] reinstall after 'Keep data' keeps the books but the consent still labels Storage `new`: the host's install plan does not report retained storage.
-
 - [S111 r1] P1.1 connect and TLS handshake each get their own `idle-s` (`host/src/agent/https_stream.rs:580-595`); P1.2 to P1.5, P1.11, P1.14: stronger and more host tests, a reset-before-head message; one sentence each in 19.4 for the accepted R2 and R5.
 
 - From S91: an over-declared Content-Length whose body never arrives waits instead of a 413 at once.
