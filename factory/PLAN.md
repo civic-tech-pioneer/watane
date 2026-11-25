@@ -1222,7 +1222,7 @@ serious thing built on watane, and is the sharpest test of the premise: if the s
 its own factory, the premise is weaker than it looks. Not sketched; it needs its own design slice.
 
 - [~] **S120 Design: the factory as mods (VISION step 6).** (in flight, cloud, builder codex, reviewer claude; rule 3:
-  last two S119 codex, S118 claude; the main line, sketched 2026-11-25 by deputy-4; Codex task https://chatgpt.com/local/6b068ece-9e90-83ed-8b9e-480c43b7b077, dispatched 07:32 UTC; DELIVERED 07:35 UTC as PR #39 at c737b8f (+269, spec only); r1: Claude review, routine `trig_011JchRYiPCWpuvBDTaeAbJp`, fires 07:38 UTC; spec-check not run before the sketch: the slice writes a new draft and the review checks it against the chain.) Spec documents only, no code. The
+  last two S119 codex, S118 claude; the main line, sketched 2026-11-25 by deputy-4; Codex task https://chatgpt.com/local/6b068ece-9e90-83ed-8b9e-480c43b7b077, dispatched 07:32 UTC; DELIVERED 07:35 UTC as PR #39 at c737b8f (+269, spec only); r1: Claude review, routine `trig_011JchRYiPCWpuvBDTaeAbJp`, fires 07:38 UTC; r1 (07:50): 4/6, changes (4), all text fixes that must name a gap and leave it open (F1.1 who writes `access/` for a mod identity, F1.2 the shell provider is not there yet, F1.3 JF1 waits on E and F, F1.4 W29: one repository per mod); deputy grade 4/6; answer r1 to the same Codex task, 07:53 UTC; spec-check not run before the sketch: the slice writes a new draft and the review checks it against the chain.) Spec documents only, no code. The
   story: a person steers coding agents from mods in her own host: a planning mod keeps the plan and sketches the next
   slice, a foreman mod has an implementer build it and another vendor's agent review it, she approves each merge, and the
   factory proposes changes to its own mods, which she installs like any other mod (VISION step 6, "changes itself").
@@ -1391,7 +1391,7 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Protects: *guard* (item 1), else *polish*.
 - [~] **S121 (upkeep) polish in dist, log and pkg (S105 r5/r6, S108 r2, S109 r2, S119 P1.4).** (in flight, cloud, builder
   claude, reviewer codex; rule 3: last two S120 codex, S119 codex; the upkeep lane, sketched 2026-11-25 by deputy-4 from
-  Leftovers; routine `trig_01UpZcrvSd1d7y3Mtwi5LMtD`, fires 07:32 UTC.) Outcomes, each item's check (re-check each line against main first): (1) S105 P5.3, P5.4, P6.1 to P6.3 in
+  Leftovers; routine `trig_01UpZcrvSd1d7y3Mtwi5LMtD`, fires 07:32 UTC; DELIVERED ~07:50 UTC as PR #40 at 2ab4bf3 (+166/-2); r1: Codex review https://chatgpt.com/local/6b0693d8-2064-83ed-afd5-e27b8632b05c, dispatched 07:55 UTC.) Outcomes, each item's check (re-check each line against main first): (1) S105 P5.3, P5.4, P6.1 to P6.3 in
   `dist/` (a test each for P6.1 to P6.3; P5.3 a fix or one line in dist TECHNICAL 4.4); (2) S109 P2.1 to P2.3 in `log/`
   and log TECHNICAL; (3) S108 P2.1, P2.2 in `pkg/`; (4) S119 P1.4 in `pkg/tests/it/package.rs`. Leaves out S108's spec
   questions and S109's crash-before-rename items. Touches: `dist/`, `log/`, `pkg/` and their TECHNICAL; never `host/`,
@@ -2311,6 +2311,8 @@ The human may veto each one.
   Rejected: accepting the race (two runs can interleave swaps in one home).
 
 ## Friction
+
+- (2026-11-25, deputy-4) The deputy skill's review brief names `.claude/factory/review-lead.md`, which exists in no repository (watane, agentic-harness, watane-mods) and not in plugin 0.1.1: S120's Claude reviewer fell back to the skill's own text, and S121's Codex brief carried the lead's rules inline. Factory change to propose: ship review-lead.md with the plugin or a project's factory copy. A deputy-3 run in the Desktop app (this one) dispatches fine; the --bg blocker is gone.
 
 - (2026-11-25, deputy-4) A deputy started by the handover's `claude --bg` command has neither the browser pane nor the routine scope (RemoteTrigger 401), so it can merge and record but dispatch nothing. Factory change proposed to the human (Waiting on the human).
 
