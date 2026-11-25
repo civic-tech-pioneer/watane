@@ -3509,7 +3509,7 @@ checks of the table above are made at the call.
   name checks are never off, also under `test-net` (19.9: the test root is an added root).
   A connect, TLS or HTTP failure ends the stream `failed("<what>")` (a message that holds no
   token). A connection that the server resets or closes before the response head ends the stream
-  `failed("HTTP: <what>")`. **Reading stops while the stream is full** (19.2, In flight and Deferred batch): the
+  `failed("HTTP: connection ended before the response head: <what>")`. **Reading stops while the stream is full** (19.2, In flight and Deferred batch): the
   host pushes an item, and when the push fails `full` it tries again every 5 ms without reading
   the connection, so a consumer that defers makes the server's writes block once the kernel
   buffers are full. Items counted in the budgets of 19.2 are the 64 KiB chunks and the events.
@@ -3532,6 +3532,10 @@ checks of the table above are made at the call.
   nowhere else: not in an item, an outcome or a log, and the mod's headers cannot hold
   one. A sign-out (`Host::account_changed(&Account::OpenAi)`) ends every live `openai`
   stream `gone`.
+  OpenAI response headers are passed through and may identify the participant's organization
+  or project, while the request still refuses mod-supplied authorization and cookie headers.
+  A request body can start work at OpenAI that continues after withdrawal or sign-out and
+  uses the participant's plan (spec/TECHNICAL.md 6).
 - **Account `judge`** (N10, the human, 2026-11-20). The host keeps the judge's
   key as an account `judge`, as it keeps the OpenAI tokens. The participant
   enters the key and the judge's origin (`https://host[:port]`) in the app, on
