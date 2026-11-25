@@ -1600,8 +1600,6 @@ Upkeep (polish from S108's review r2, 2026-11-23):
 - (guard, 4 cloud runs: S96, S97, S99, agentic-harness S32) The host refuses to start without an IPv6 loopback
   (`host/src/server.rs:76`); cloud containers have none, so each cloud slice patches it by hand. Now S101 (Slices).
 - A watane release with host 19 (past v0.1.0), so agentic-harness CI's watane-dev can link the kernel's world.
-- S96 Q47: `remove` waits for a busy mod's call lock with no deadline while every install waits behind it.
-- S96 Q48: no startup sweep of timer rows left by a crash between `remove`'s catalog save and its timer rewrite.
 - S96: the fixture build is not byte-reproducible (every rebuild rewrites each `logic.wasm`).
 - S54: dev's publish still suggests raw.githubusercontent.com as the base; GitHub Pages is a real static host and could be offered.
 
@@ -1659,7 +1657,6 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 ### host
 
 - [S126 r1] (polish) P1.1 `host/tests/it/https_stream.rs:1674` the "host stops reading" bound weakened to `written < EVENTS`: add a buffer-sized bound; P1.2 a removal timeout answers `internal` (host 4.4 names no code; a busy-mod kind is an interface change); P1.3 `.github/workflows/ci.yml:85,104` the S126 repeat steps are dead after merge: remove; P1.4 `judge_set` with an invalid origin lacks the editor's explanation; P1.5 `app/ui/app.js:132-136` "needs ." with empty hosts (unreachable today).
-- (Leftovers, guard) S96 Q47/Q48 done by S126.
 
 
 
