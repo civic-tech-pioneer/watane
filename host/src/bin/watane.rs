@@ -155,7 +155,7 @@ async fn run(args: Args) -> Result<(), watane_host::HostError> {
         host.set_fake_claude(program)?;
     }
     #[cfg(all(unix, watane_dev_profile, debug_assertions))]
-    let _scripted_openai = args.scripted_openai.start(&host)?;
+    let scripted_openai = args.scripted_openai.start(&host)?;
     let served = host.serve(args.port, axum::Router::new()).await?;
     // Initial folders share the API's catalog transaction.
     if !args.folders.is_empty() {
@@ -168,6 +168,13 @@ async fn run(args: Args) -> Result<(), watane_host::HostError> {
         ready.mcp = Some(served.mcp_url(&preview));
         ready.token = Some(token.as_str().into());
     }
+    #[cfg(all(unix, watane_dev_profile, debug_assertions))]
+    let ready = scripted_openai::PreviewReady {
+        ready,
+        judge_origin: scripted_openai
+            .as_ref()
+            .and_then(|child| child.judge_origin.as_deref()),
+    };
     println!("{}", serde_json::to_string(&ready)?);
     std::io::stdout().flush()?;
     tokio::select! { _ = term.recv() => (), _ = interrupt.recv() => () }

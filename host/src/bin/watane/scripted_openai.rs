@@ -1,13 +1,13 @@
 //! Launch the S111 Responses fake for the lifetime of a dev preview (TECHNICAL 19.9).
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read};
 use std::net::SocketAddrV4;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
-use watane_host::{Host, HostError, Mode};
+use watane_host::{Host, HostError, JudgeAccount, Mode};
 
 #[derive(Default)]
 pub(super) struct Options {
@@ -50,20 +50,21 @@ impl Options {
         let Some(program) = &self.program else {
             return Ok(None);
         };
-        let token = script_token(self.script.as_deref())?;
+        let script = read_script(self.script.as_deref())?;
         let mut command = Command::new(program);
         if let Some(script) = &self.script {
             command.arg("--script").arg(script);
         }
-        let mut child = ScriptedChild(
-            command
+        let mut child = ScriptedChild {
+            process: command
                 .env_clear()
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .spawn()
                 .map_err(|err| invalid(format!("cannot start {}: {err}", program.display())))?,
-        );
-        let stdout = child.0.stdout.take().expect("piped stdout");
+            judge_origin: None,
+        };
+        let stdout = child.process.stdout.take().expect("piped stdout");
         let (send, receive) = std::sync::mpsc::sync_channel(1);
         std::thread::spawn(move || {
             let _ = send.send(read_ready(stdout));
@@ -71,7 +72,27 @@ impl Options {
         let ready = receive
             .recv_timeout(Duration::from_secs(10))
             .map_err(|err| invalid(format!("waiting for the ready line: {err}")))??;
-        host.set_scripted_openai(ready.responses_addr, &ready.ca_pem, token)
+        let judge = if script.plays.is_some_and(|plays| !plays.is_empty()) {
+            let address = ready
+                .judge_addr
+                .as_str()
+                .and_then(|address| address.parse().ok())
+                .ok_or_else(|| invalid("ready line needs an IPv4 judge address"))?;
+            let origin = ready
+                .judge_origin
+                .as_str()
+                .ok_or_else(|| invalid("ready line needs a judge origin"))?
+                .to_owned();
+            let key = script
+                .judge_key
+                .unwrap_or_else(|| "watane-preview-judge".into());
+            Some((address, JudgeAccount { origin, key }))
+        } else {
+            None
+        };
+        let token = script.token.unwrap_or_else(|| "watane-preview".into());
+        child.judge_origin = host
+            .set_scripted_responses(ready.responses_addr, &ready.ca_pem, token, judge)
             .map_err(invalid)?;
         Ok(Some(child))
     }
@@ -82,6 +103,11 @@ struct Ready {
     scripted: u32,
     responses_addr: SocketAddrV4,
     ca_pem: String,
+    // An OpenAI-only script does not depend on the judge fields.
+    #[serde(default)]
+    judge_addr: serde_json::Value,
+    #[serde(default)]
+    judge_origin: serde_json::Value,
 }
 
 fn read_ready(reader: impl Read) -> Result<Ready, HostError> {
@@ -102,35 +128,46 @@ fn invalid(message: impl std::fmt::Display) -> HostError {
     HostError::BadRequest(format!("scripted OpenAI: {message}"))
 }
 
-fn script_token(script: Option<&Path>) -> Result<String, HostError> {
-    #[derive(Deserialize)]
-    struct Script {
-        token: Option<String>,
-    }
-    let token = if let Some(path) = script {
-        let file = std::fs::File::open(path)
-            .map_err(|err| invalid(format!("cannot open {}: {err}", path.display())))?;
-        let script: Script = serde_json::from_reader(BufReader::new(file))
-            .map_err(|err| invalid(format!("invalid script {}: {err}", path.display())))?;
-        script.token
-    } else {
-        None
-    };
-    Ok(token.unwrap_or_else(|| "watane-preview".into()))
+#[derive(Default, Deserialize)]
+struct Script {
+    token: Option<String>,
+    judge_key: Option<String>,
+    plays: Option<Vec<serde::de::IgnoredAny>>,
 }
 
-pub(super) struct ScriptedChild(Child);
+fn read_script(script: Option<&Path>) -> Result<Script, HostError> {
+    let Some(path) = script else {
+        return Ok(Script::default());
+    };
+    let file = std::fs::File::open(path)
+        .map_err(|err| invalid(format!("cannot open {}: {err}", path.display())))?;
+    serde_json::from_reader(BufReader::new(file))
+        .map_err(|err| invalid(format!("invalid script {}: {err}", path.display())))
+}
+
+#[derive(Serialize)]
+pub(super) struct PreviewReady<'a> {
+    #[serde(flatten)]
+    pub(super) ready: watane_host::Ready,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) judge_origin: Option<&'a str>,
+}
+
+pub(super) struct ScriptedChild {
+    process: Child,
+    pub(super) judge_origin: Option<String>,
+}
 
 impl Drop for ScriptedChild {
     fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
+        let _ = self.process.kill();
+        let _ = self.process.wait();
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Options, read_ready, script_token};
+    use super::{Options, read_ready, read_script};
 
     #[test]
     fn an_option_is_not_a_scripted_program_path() {
@@ -147,13 +184,20 @@ mod tests {
         let ready = r#"{"scripted":1,"responses_addr":"127.0.0.1:1","ca_pem":"fixture"}"#;
         let parsed = read_ready(format!("{ready}\n").as_bytes()).expect("valid ready line");
         assert_eq!(parsed.responses_addr.to_string(), "127.0.0.1:1");
+        let unused_judge = ready.replace(
+            "\"ca_pem\"",
+            "\"judge_addr\":\"unused\",\"judge_origin\":{},\"ca_pem\"",
+        );
+        assert!(read_ready(format!("{unused_judge}\n").as_bytes()).is_ok());
         assert!(read_ready(ready.as_bytes()).is_err());
         assert!(read_ready(format!("{}\n", ready.replace(":1,", ":2,")).as_bytes()).is_err());
         assert!(read_ready(format!("{}{ready}\n", " ".repeat(64 * 1024)).as_bytes()).is_err());
     }
 
     #[test]
-    fn no_script_uses_the_fixture_token() {
-        assert_eq!(script_token(None).ok().as_deref(), Some("watane-preview"));
+    fn no_script_supplies_no_token_or_judge_plays() {
+        let script = read_script(None).expect("default script");
+        assert!(script.token.is_none());
+        assert!(script.plays.is_none());
     }
 }

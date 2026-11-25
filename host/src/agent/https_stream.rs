@@ -224,9 +224,21 @@ impl JudgeUnavailable {
     }
 }
 
-/// Read only the exact calling mod's account. A preview never consults an account source.
-fn judge_account(mode: &Mode, provider: &str) -> Result<JudgeAccount, JudgeUnavailable> {
-    let Mode::Home { app } = mode else {
+/// Read the preview fixture or the exact calling mod's participant account.
+fn judge_account(host: &Host, provider: &str) -> Result<JudgeAccount, JudgeUnavailable> {
+    #[cfg(all(unix, watane_dev_profile, debug_assertions))]
+    if let Some((_, account)) = host
+        .home
+        .scripted_openai
+        .get()
+        .and_then(|fake| fake.judge.as_ref())
+    {
+        return Ok(JudgeAccount {
+            origin: account.origin.clone(),
+            key: account.key.clone(),
+        });
+    }
+    let Mode::Home { app } = &host.home.mode else {
         return Err(JudgeUnavailable::NoAccount);
     };
     app.as_ref()
@@ -332,7 +344,7 @@ pub(crate) fn start(inv: &Invocation, args: &[Val]) -> Result<Value, CallError> 
     let grants = host.http_grants(&inv.local);
     let me = inv.me();
     let request = Request::parse(text, &grants, |grant, method| {
-        match judge_account(&host.home.mode, &me.identity) {
+        match judge_account(host, &me.identity) {
             Ok(account) if judge_matches(&account, grant, method) => Ok(JudgeAtCall::Bound),
             Ok(_) => Err(Refusal::Destination),
             Err(reason) => Ok(JudgeAtCall::Missing(reason)),
@@ -1023,7 +1035,7 @@ impl Host {
                 Some(Err(reason.outcome()))
             }
             Some(RequestAccount::Judge(JudgeAtCall::Bound)) => {
-                let account = judge_account(&self.home.mode, &consumer.identity);
+                let account = judge_account(self, &consumer.identity);
                 Some(match account {
                     Ok(account) if judge_matches(&account, &request.grant, &request.method) => {
                         bearer(&account.key).ok_or_else(|| {
