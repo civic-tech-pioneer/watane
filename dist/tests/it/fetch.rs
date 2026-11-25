@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "tests may panic")]
 use crate::support;
 use std::sync::Arc;
 use support::*;
@@ -122,4 +123,47 @@ fn ac13_fetch_reference_from_literal_text() {
             .parse()
             .unwrap();
     assert_eq!(bob.fetch(&reference).unwrap().package.as_bytes(), bytes);
+}
+/// A fetch whose bytes match their hash but whose local temp directory is unusable.
+fn fetch_with_broken_tmp() -> (DistError, std::path::PathBuf) {
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    let alice = open(a.path());
+    let bob = open(b.path());
+    let p = alice.publish(fixture("1.0.0", false)).unwrap();
+    let host = TestHost::serve(&alice.site_dir());
+    bob.follow(&Link::new(alice.identity().unwrap(), &host.url, None).unwrap())
+        .unwrap();
+    // A file where the temp directory should be: creating a temp dir in it fails on every
+    // platform, also as root, with no real full disk.
+    let tmp = b.path().join("dist/tmp");
+    std::fs::remove_dir_all(&tmp).unwrap();
+    std::fs::write(&tmp, b"x").unwrap();
+    let error = bob.fetch(&p.info.reference).map(|_| ()).unwrap_err();
+    (error, tmp)
+}
+#[test]
+fn ac1_local_unpack_failure_is_io_not_bad_package() {
+    let (error, tmp) = fetch_with_broken_tmp();
+    assert!(
+        matches!(&error, DistError::Io { path, .. } if *path == tmp),
+        "{error:?}"
+    );
+}
+#[test]
+fn ac2_local_write_failure_names_temp_path_once() {
+    let (error, tmp) = fetch_with_broken_tmp();
+    let mut text = error.to_string();
+    let mut source = std::error::Error::source(&error);
+    while let Some(cause) = source {
+        text.push_str(": ");
+        text.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    assert_eq!(
+        text.matches(&*tmp.display().to_string()).count(),
+        1,
+        "{text}"
+    );
+    assert!(!text.contains("invalid package"), "{text}");
 }

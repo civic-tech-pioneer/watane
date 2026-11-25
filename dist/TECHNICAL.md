@@ -380,6 +380,14 @@ before escaping. A variant never repeats the error exposed by `source()`;
 path and exposes its `io::Error` as its source. `SiteNotWritten` displays its
 cause and does not expose it as a source.
 
+Who failed. `Io`, `Corrupt`, `Locked` and `ExportConflict` are local: a file on
+this machine (temp, cache, site, home) could not be read, written or trusted;
+their text names a local path, once, and never a web host. `BadPackage`,
+`HashMismatch`, `PackageMismatch`, `Invalid`, `Network`, `Http`, `Timeout`,
+`TooLarge` and `NotFound` name the web host (its URL): it sent or served
+something wrong. A local failure while a downloaded package is unpacked or
+checked (5.7 step 6) is never `BadPackage`.
+
 ```rust
 #[derive(Debug, thiserror::Error)]
 pub enum DistError {
@@ -894,7 +902,11 @@ small, and one derivation keeps one rule.
    record (DD-45); the record is not changed. A listed base is read as in 4.5
    (redirect targets checked).
 5. `PackageId::of(&bytes) != release.package`: `HashMismatch`.
-6. `Package::from_bytes`, then `unpacked` (`BadPackage`).
+6. `Package::from_bytes`, then `unpacked` (`BadPackage`). Only a package that
+   does not parse or pass pkg's checks is `BadPackage { url }`. An I/O error
+   on this machine (making the temp directory, writing or reading an unpacked
+   file) is `Io { path, source }`, and an unpack target that exists already is
+   `Corrupt`: the host sent nothing wrong, so no URL is named.
 7. `release.check(&m, &package)`: pkg confirms that the release body and
    the package agree, or names the first field that differs (PKG-F-23):
    `PackageMismatch { cause }`.

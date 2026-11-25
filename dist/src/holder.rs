@@ -285,16 +285,11 @@ impl Dist {
             .into_iter()
             .find(|r| r.release.package == *id)
             .ok_or_else(|| DistError::NotNamed { id: id.clone() })?;
-        let package = Package::from_bytes(bytes).map_err(|cause| DistError::BadPackage {
-            url: url.clone(),
-            cause,
-        })?;
+        let package =
+            Package::from_bytes(bytes).map_err(|cause| Self::package_failure(&url, cause))?;
         let (_tmp, m) = self
             .unpacked(&package)
-            .map_err(|cause| DistError::BadPackage {
-                url: url.clone(),
-                cause,
-            })?;
+            .map_err(|cause| Self::package_failure(&url, cause))?;
         info.release
             .check(&m, &package)
             .map_err(|cause| DistError::PackageMismatch { url, cause })?;
