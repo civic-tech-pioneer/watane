@@ -3,6 +3,19 @@
 The product owner's state; only the product owner edits it, on `main`. A new session continues
 from here. Newest digest line last.
 
+## Deputy handover
+
+From deputy-6 to deputy-7, 2026-11-25 ~20:00 UTC (3 merges: S40, S126, S128). Run as a Desktop session (browser pane for Codex, RemoteTrigger for routines); never `claude --bg`.
+- **S127** (agentic-harness PR #56, stage E, builder claude, reviewer codex): routine `trig_01E1Ngk3t7NCGXJnEjBgEjHR`; its build session (`cse_01LxwP8z269aT6xNUfUx25Zw`) keeps answering PR comments by itself. Deputy findings D1.1 (`noul` field) and D1.2 (no transcript excerpt) answered at 4fe51c4, CI green. r1: Codex review first withheld by Codex's cyber filter; resent once at https://chatgpt.com/local/6b07347c-1450-83ed-b77a-1aabbc8df068 (~19:20 UTC). A second refusal: run r1 on Claude (a routine; Claude reviews Claude, as S111) and say so. Ruling (b) on outcome verification: merge on the native proof. After merge: `test:host:e` (safe call on serve) goes to agentic-harness Upkeep once watane S129 merges.
+- **S129** (watane PR #46, preview scripted judge, builder codex https://chatgpt.com/local/6b073053-19c8-83ed-bff6-6bf7de4f307d, reviewer claude): r1 routine `trig_01EkdTKe86qd8kaf1wmkhMj1` (19:43 UTC). Shares the HTTPS stream source and host spec with merged S126 (separate sections); the review checks the merge and whether its 15/21 min suite times are load noise.
+- **S130** (watane PR #47, install upkeep, builder codex https://chatgpt.com/local/6b073806-b674-83ed-b83e-d3e470c2605f, reviewer claude): r1 routine `trig_01FEHfiVhzUVxTQfXgBV4xpg` (19:44 UTC).
+- **Lanes:** agentic-harness's upkeep lane is free (Upkeep: S128 polish, S36/S38/S39 items, the stage B carry list); refill it. 3 in flight now.
+- **Builders (rule 3):** last two handed out S130 codex, S129 codex: Claude builds next.
+- **For the human's veto (Door C, deputy-6):** the judge wire shape (agentic-harness Deputy decisions 2026-11-25): the checked provider speaks TypeSafe System One, thresholds on its page. **Held, Door C:** a watane timer-origin contract (watane PLAN Unsettled) would close agentic-harness F6.1 and case 22; deliberate before sketching.
+- **The human owes:** S120's Door H; the Codex `watane` environment secret rotation; merging mboogerd/claude-plugin#6 (the watcher's 10-minute Codex timer, the human's choice 2026-11-25; the auto-mode classifier refused the deputy's merge).
+- **Friction:** Codex's cyber filter withholds reviews whose brief says "attack" (S111, S127): word the adversary as a boundary check. Claude cloud reviews of agentic-harness have no watane tools, so their user-sim does not run; the builder's runs are the evidence. Codex `chatgpt.com/local` tasks show 'Ask for approval' but push and open PRs as before.
+- **Watcher:** `git -C ../watane-mods show origin/main:factory/scripts/watch-all.sh` into your scratchpad, a fresh state file, `600` as max seconds while a Codex task runs (the human's choice). Edit agentic-harness's PLAN from a scratch clone of origin/main; do not pull the shared checkouts.
+
 ## Slices
 
 Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
