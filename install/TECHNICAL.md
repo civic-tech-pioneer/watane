@@ -1200,6 +1200,8 @@ made `.local` or `Applications`. These are the only two names accepted
 for this operation. An upgrade carries a line forward only when the same
 folder is still there. A receipt without these lines continues to work
 and leaves those two top-level folders alone on uninstall.
+If the filesystem reuses an inode after a recorded folder is deleted,
+uninstall may also remove an empty replacement at the same path.
 
 Absolute paths, one for each entry of 3.6; a path is the rest of its
 line, so it may hold a space but not a newline (a `HOME` with a newline

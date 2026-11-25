@@ -1135,9 +1135,9 @@ rustup_src() {
 }
 
 doctor_command() {
+  # shellcheck disable=SC2088 # Print the home shorthand.
   case ":${PATH:-}:" in
     *":$PREFIX/bin:"*) DOCTOR='watane-dev doctor' ;;
-    # shellcheck disable=SC2088 # Print the home shorthand.
     *) DOCTOR='~/.local/bin/watane-dev doctor' ;;
   esac
 }

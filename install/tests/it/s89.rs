@@ -191,6 +191,45 @@ fn ac2_uninstall_removes_the_folders_the_install_created() {
     assert!(fx.home_tree().is_empty(), "{:?}", fx.home_tree());
 }
 
+/// TECHNICAL 8.1: receipts predating creation records leave the top-level folders.
+#[test]
+fn ac2_uninstall_with_an_old_receipt_keeps_top_level_folders() {
+    let fx = Fx::new();
+    let out = fx.run(&["--no-toolchain"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    let receipt = fx.read(&fx.receipt());
+    let old_receipt = receipt
+        .split_inclusive('\n')
+        .filter(|line| !line.starts_with("created "))
+        .collect::<String>();
+    assert_ne!(old_receipt, receipt);
+    fs::write(fx.receipt(), old_receipt).expect("write the old receipt");
+
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(out.has_line("uninstalled watane 0.1.0"), "{out:?}");
+    assert_eq!(fx.home_tree(), vec![".local/", "Applications/"]);
+}
+
+/// TECHNICAL 8.4: a creation record does not authorize removing a relinked root.
+#[test]
+fn ac2_uninstall_keeps_a_relinked_created_folder() {
+    let fx = Fx::new();
+    let out = fx.run(&["--no-toolchain"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(fx.read(&fx.receipt()).contains("\ncreated Applications "));
+    let app_folder = fx.home.join("Applications");
+    let original = fx.home.join("old-applications");
+    fs::remove_dir_all(fx.app()).expect("empty the original folder");
+    fs::rename(&app_folder, &original).expect("move the original aside");
+    symlink(&original, &app_folder).expect("link to the original directory");
+
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert_eq!(fs::read_link(app_folder).expect("kept link"), original);
+    assert!(original.is_dir(), "{out:?}");
+}
+
 /// TECHNICAL 8.4: uninstall leaves empty user folders and a replacement at the same path.
 #[test]
 fn ac2_uninstall_keeps_preexisting_and_replaced_folders() {
