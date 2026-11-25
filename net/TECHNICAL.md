@@ -446,7 +446,7 @@ off until `set_options` turns it on. `set_options` writes `on`, `relays` and
 `relay_server` come from `Options` only. A change of `relays`, `dht`, `bind`
 or `relay_server` while on rebuilds the endpoint (a running relay server of
 the same address keeps running). Turning off or rebuilding waits up to
-`STORE_WAIT` (5 s) for the blob store to close its redb database and release
+`STORE_WAIT` (5 s in production, 200 ms in unit tests) for the blob store to close its redb database and release
 the exclusive lock. After a timeout, a rebuild or a subsequent `Net::open`
 still attempts to open the store and reports any error from that open.
 
