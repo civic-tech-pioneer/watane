@@ -10,16 +10,6 @@ use tempfile::TempDir;
 
 const MAX_PROVIDER_BASES: usize = 4;
 
-/// `tempfile` wraps its I/O errors with the path it tried (`<os error> at path "<p>"`); the
-/// error names that path itself, once (TECHNICAL 3.1), so the OS text alone is kept.
-fn bare_io(error: std::io::Error) -> std::io::Error {
-    let text = error.to_string();
-    match (error.get_ref(), text.rsplit_once(" at path ")) {
-        (Some(_), Some((os, _))) => std::io::Error::new(error.kind(), os),
-        _ => error,
-    }
-}
-
 impl Dist {
     pub(crate) fn unpacked(
         &self,
@@ -28,7 +18,7 @@ impl Dist {
         let path = self.home.join("dist/tmp");
         let tmp = TempDir::new_in(&path).map_err(|source| PackageError::Io {
             path,
-            source: bare_io(source),
+            source: site::bare_io(source),
         })?;
         let m = package.unpack(&tmp.path().join("mod"))?;
         Ok((tmp, m))
