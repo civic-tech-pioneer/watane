@@ -5,7 +5,7 @@ pub const HOST_WIT: &str = include_str!("../wit/host.wit");
 pub const WATANE_JS: &str = include_str!("watane.js");
 
 mod agent;
-pub use agent::accounts::{Account, AccountError, AccountSource, JudgeAccount};
+pub use agent::accounts::{Account, AccountError, AccountSource, JudgeAccount, judge_origin};
 pub use agent::consent::{Consent, ConsentAnswer, ConsentRequest};
 #[cfg(feature = "test-net")]
 pub use agent::https_stream::TestNet;

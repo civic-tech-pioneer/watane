@@ -43,3 +43,55 @@ pub enum Account {
     OpenAi,
     Judge { provider: String },
 }
+
+
+/// Canonicalize the HTTPS origin the participant entered (TECHNICAL 19.4).
+pub fn judge_origin(text: &str) -> Result<String, crate::HostError> {
+    fn bad_origin() -> crate::HostError {
+        crate::HostError::BadRequest("not an https origin".into())
+    }
+
+    let (scheme, authority) = text.split_once("://").ok_or_else(bad_origin)?;
+    let authority = authority.strip_suffix('/').unwrap_or(authority);
+    if !scheme.eq_ignore_ascii_case("https")
+        || authority.is_empty()
+        || authority.contains(['/', '\\', '?', '#', '@'])
+        || authority.chars().any(char::is_whitespace)
+        || authority.chars().any(char::is_control)
+    {
+        return Err(bad_origin());
+    }
+
+    let url = url::Url::parse(text).map_err(|_| bad_origin())?;
+    let name = match url.host() {
+        Some(url::Host::Domain(name)) if !name.ends_with('.') => name.to_owned(),
+        Some(url::Host::Ipv4(address)) => address.to_string(),
+        _ => return Err(bad_origin()),
+    };
+    let grant = url.port().map_or(name.clone(), |port| format!("{name}:{port}"));
+    Ok(format!("https://{grant}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::judge_origin;
+    use crate::HostError;
+
+    #[test]
+    fn ac3_judge_origin_is_canonical_and_has_no_path_or_userinfo() {
+        assert_eq!(judge_origin("HTTPS://Judge.Example:443/").unwrap(), "https://judge.example");
+        assert_eq!(judge_origin("https://Judge.Example:8443").unwrap(), "https://judge.example:8443");
+        for text in [
+            "http://judge.example",
+            "https://judge.example.",
+            "https://judge.example/v1",
+            "https://judge.example/.",
+            "https://judge.example/?",
+            "https://judge.example/#",
+            "https://@judge.example",
+            "https://name@judge.example",
+        ] {
+            assert!(matches!(judge_origin(text), Err(HostError::BadRequest(_))), "{text}");
+        }
+    }
+}
