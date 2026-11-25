@@ -280,6 +280,8 @@ pub struct MemHoldings {
     pub not_wanted: std::sync::atomic::AtomicBool,
     /// `ingest` answers `Compromised` while set.
     pub compromised: std::sync::atomic::AtomicBool,
+    /// `ingest` answers `Failed` with this cause while set.
+    pub ingest_fails: Mutex<Option<String>>,
     /// What `search` answers, whatever the query.
     pub hits: Mutex<Vec<Hit>>,
     /// How many `entries` calls came for each channel.
@@ -307,6 +309,7 @@ impl MemHoldings {
             taken: Mutex::new(HashMap::new()),
             not_wanted: std::sync::atomic::AtomicBool::new(false),
             compromised: std::sync::atomic::AtomicBool::new(false),
+            ingest_fails: Mutex::new(None),
             hits: Mutex::new(Vec::new()),
             entries_calls: AtomicUsize::new(0),
             dir: tempfile::tempdir().unwrap(),
@@ -475,6 +478,9 @@ impl Holdings for MemHoldings {
         }
         if self.compromised.load(Ordering::SeqCst) {
             return Ingested::Compromised;
+        }
+        if let Some(cause) = self.ingest_fails.lock().unwrap().clone() {
+            return Ingested::Failed(cause);
         }
         let mut chains = self.chains.lock().unwrap();
         let chain = chains.entry(*channel).or_default();
