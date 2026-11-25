@@ -198,18 +198,39 @@ impl Request {
 #[derive(Debug, Clone, Copy)]
 enum JudgeAtCall {
     Bound,
+    Missing(JudgeUnavailable),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum JudgeUnavailable {
+    NoApp,
     NoAccount,
     Unavailable,
 }
 
+impl JudgeUnavailable {
+    fn outcome(self) -> Value {
+        match self {
+            Self::NoApp => json!("no-app"),
+            Self::NoAccount => json!("no-account"),
+            Self::Unavailable => failed("account unavailable"),
+        }
+    }
+}
+
 /// Read only the exact calling mod's account. A preview never consults an account source.
-fn judge_account(mode: &Mode, provider: &str) -> Result<JudgeAccount, AccountError> {
-    let Mode::Home { app: Some(app) } = mode else {
-        return Err(AccountError::NoAccount);
+fn judge_account(mode: &Mode, provider: &str) -> Result<JudgeAccount, JudgeUnavailable> {
+    let Mode::Home { app } = mode else {
+        return Err(JudgeUnavailable::NoAccount);
     };
-    app.accounts()
-        .ok_or(AccountError::NoAccount)?
+    app.as_ref()
+        .and_then(|app| app.accounts())
+        .ok_or(JudgeUnavailable::NoApp)?
         .judge(provider)
+        .map_err(|error| match error {
+            AccountError::NoAccount => JudgeUnavailable::NoAccount,
+            AccountError::Unavailable(_) => JudgeUnavailable::Unavailable,
+        })
 }
 
 /// The parts of a checked URL.
@@ -312,8 +333,7 @@ pub(crate) fn start(inv: &Invocation, args: &[Val]) -> Result<Value, CallError> 
         request.judge_at_call = Some(match judge_account(&host.home.mode, &me.identity) {
             Ok(account) if request.judge_matches(&account) => JudgeAtCall::Bound,
             Ok(_) => return Ok(Refusal::Destination.value()),
-            Err(AccountError::NoAccount) => JudgeAtCall::NoAccount,
-            Err(AccountError::Unavailable(_)) => JudgeAtCall::Unavailable,
+            Err(reason) => JudgeAtCall::Missing(reason),
         });
     }
     let key = Consumer::Mod(me.clone()).key().unwrap_or_default();
@@ -988,8 +1008,7 @@ impl Host {
         // Register before reading the key. A concurrent removal either changes that read or
         // finds this stream and stops it. The job never re-reads a key after the apply.
         let judge_authorization = request.judge_at_call.map(|at_call| match at_call {
-            JudgeAtCall::NoAccount => Err(json!("no-account")),
-            JudgeAtCall::Unavailable => Err(failed("account unavailable")),
+            JudgeAtCall::Missing(reason) => Err(reason.outcome()),
             JudgeAtCall::Bound => match judge_account(&self.home.mode, &consumer.identity) {
                 Ok(account) if request.judge_matches(&account) => bearer(&account.key)
                     .ok_or_else(|| failed("account unavailable: the key is not a header value")),
