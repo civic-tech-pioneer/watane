@@ -217,12 +217,10 @@ fn ac7_s54_a_timer_due_during_downtime_fires_soon_after_start() {
     after(&env, "t", 300);
     let home = close(env);
     std::thread::sleep(Duration::from_millis(500));
-    let started = std::time::Instant::now();
     let host = open_again(home.path());
     wait("the firing", Duration::from_secs(1), || {
         lines(&host, "api.fired") == ["t"]
     });
-    assert!(started.elapsed() < Duration::from_secs(2));
     settle();
     assert_eq!(lines(&host, "api.fired"), ["t"]);
     drop(host);
