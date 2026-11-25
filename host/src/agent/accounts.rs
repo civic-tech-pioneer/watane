@@ -44,7 +44,6 @@ pub enum Account {
     Judge { provider: String },
 }
 
-
 /// Canonicalize the HTTPS origin the participant entered (TECHNICAL 19.4).
 pub fn judge_origin(text: &str) -> Result<String, crate::HostError> {
     fn bad_origin() -> crate::HostError {
@@ -68,7 +67,9 @@ pub fn judge_origin(text: &str) -> Result<String, crate::HostError> {
         Some(url::Host::Ipv4(address)) => address.to_string(),
         _ => return Err(bad_origin()),
     };
-    let grant = url.port().map_or(name.clone(), |port| format!("{name}:{port}"));
+    let grant = url
+        .port()
+        .map_or(name.clone(), |port| format!("{name}:{port}"));
     Ok(format!("https://{grant}"))
 }
 
@@ -79,8 +80,14 @@ mod tests {
 
     #[test]
     fn ac3_judge_origin_is_canonical_and_has_no_path_or_userinfo() {
-        assert_eq!(judge_origin("HTTPS://Judge.Example:443/").unwrap(), "https://judge.example");
-        assert_eq!(judge_origin("https://Judge.Example:8443").unwrap(), "https://judge.example:8443");
+        assert_eq!(
+            judge_origin("HTTPS://Judge.Example:443/").unwrap(),
+            "https://judge.example"
+        );
+        assert_eq!(
+            judge_origin("https://Judge.Example:8443").unwrap(),
+            "https://judge.example:8443"
+        );
         for text in [
             "http://judge.example",
             "https://judge.example.",
@@ -91,7 +98,10 @@ mod tests {
             "https://@judge.example",
             "https://name@judge.example",
         ] {
-            assert!(matches!(judge_origin(text), Err(HostError::BadRequest(_))), "{text}");
+            assert!(
+                matches!(judge_origin(text), Err(HostError::BadRequest(_))),
+                "{text}"
+            );
         }
     }
 }

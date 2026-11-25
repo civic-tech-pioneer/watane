@@ -1,12 +1,15 @@
 //! H3, HTTPS streams (TECHNICAL 19.4): `https-stream.start` at the call, the start that a
 //! committed chain applies, one HTTPS connection per stream, its items, the idle clock, the
-//! account `openai` with its consent, and the ends (withdrawal, sign-out, a lost grant).
+//! accounts `openai` and `judge`, and the ends (withdrawal, account changes, a lost grant).
 
 use super::consent::Asked;
 use super::streams::{Consumer, Hub, MAX_ITEM, MAX_OPEN, StreamError};
 use super::{Effect, ModRef};
 use crate::runtime::call::Invocation;
-use crate::{Account, AccountError, CallError, Consent, ConsentRequest, Host, Mode};
+use crate::{
+    Account, AccountError, CallError, Consent, ConsentRequest, Host, JudgeAccount, Mode,
+    judge_origin,
+};
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper::header::{HeaderName, HeaderValue};
@@ -86,6 +89,12 @@ fn bad(field: &str, reason: &str) -> Refusal {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RequestAccount {
+    OpenAi,
+    Judge,
+}
+
 /// A checked request of `https-stream.start` (19.4).
 #[derive(Debug)]
 pub(crate) struct Request {
@@ -99,8 +108,9 @@ pub(crate) struct Request {
     method: hyper::Method,
     headers: Vec<(HeaderName, HeaderValue)>,
     body: Vec<u8>,
-    /// `account: "openai"` (19.4).
-    pub openai: bool,
+    account: Option<RequestAccount>,
+    /// A judge absent at the call cannot acquire an account by the time the chain applies.
+    judge_at_call: Option<JudgeAtCall>,
     idle: Duration,
 }
 
@@ -150,17 +160,17 @@ impl Request {
         if body.len() > MAX_BODY {
             return Err(Refusal::TooLarge);
         }
-        // The stage-A4 rule: `openai` is the only account; `judge` is built in A5 (19.4).
-        let openai = match account {
-            None => false,
+        let account = match account {
+            None => None,
             Some("openai") => {
                 let responses = method == hyper::Method::POST && endpoint.path == "/v1/responses";
                 let models = method == hyper::Method::GET && endpoint.path == "/v1/models";
                 if endpoint.grant != OPENAI_HOST || endpoint.query || !(responses || models) {
                     return Err(Refusal::Destination);
                 }
-                true
+                Some(RequestAccount::OpenAi)
             }
+            Some("judge") => Some(RequestAccount::Judge),
             Some(_) => return Err(Refusal::Destination),
         };
         Ok(Self {
@@ -171,10 +181,34 @@ impl Request {
             method,
             headers,
             body: body.as_bytes().to_vec(),
-            openai,
+            account,
+            judge_at_call: None,
             idle: Duration::from_secs(idle),
         })
     }
+
+    fn judge_matches(&self, account: &JudgeAccount) -> bool {
+        self.method == hyper::Method::POST
+            && judge_origin(&account.origin)
+                .is_ok_and(|origin| origin.strip_prefix("https://") == Some(self.grant.as_str()))
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum JudgeAtCall {
+    Bound,
+    NoAccount,
+    Unavailable,
+}
+
+/// Read only the exact calling mod's account. A preview never consults an account source.
+fn judge_account(mode: &Mode, provider: &str) -> Result<JudgeAccount, AccountError> {
+    let Mode::Home { app: Some(app) } = mode else {
+        return Err(AccountError::NoAccount);
+    };
+    app.accounts()
+        .ok_or(AccountError::NoAccount)?
+        .judge(provider)
 }
 
 /// The parts of a checked URL.
@@ -259,11 +293,19 @@ pub(crate) fn start(inv: &Invocation, args: &[Val]) -> Result<Value, CallError> 
     };
     let host = &inv.chain.host;
     let grants = host.http_grants(&inv.local);
-    let request = match Request::parse(text, &grants) {
+    let mut request = match Request::parse(text, &grants) {
         Ok(r) => r,
         Err(refusal) => return Ok(refusal.value()),
     };
     let me = inv.me();
+    if request.account == Some(RequestAccount::Judge) {
+        request.judge_at_call = Some(match judge_account(&host.home.mode, &me.identity) {
+            Ok(account) if request.judge_matches(&account) => JudgeAtCall::Bound,
+            Ok(_) => return Ok(Refusal::Destination.value()),
+            Err(AccountError::NoAccount) => JudgeAtCall::NoAccount,
+            Err(AccountError::Unavailable(_)) => JudgeAtCall::Unavailable,
+        });
+    }
     let key = Consumer::Mod(me.clone()).key().unwrap_or_default();
     let gate = inv.gate();
     let mut log = inv.log();
@@ -324,7 +366,7 @@ struct Entry {
     consumer: ModRef,
     /// The grant that the stream depends on: the host (`name` or `name:port`).
     host: String,
-    openai: bool,
+    account: Option<RequestAccount>,
     ctl: Arc<Control>,
 }
 /// The live HTTPS streams of a host (19.4): what a withdrawal, a sign-out or a lost grant ends.
@@ -340,14 +382,23 @@ impl Live {
     pub(crate) fn of_account(&self, origin: &str, via: &str) -> Vec<String> {
         self.lock()
             .iter()
-            .filter(|(_, e)| e.openai && e.origin == origin && e.consumer.identity == via)
+            .filter(|(_, e)| {
+                e.account == Some(RequestAccount::OpenAi)
+                    && e.origin == origin
+                    && e.consumer.identity == via
+            })
             .map(|(id, _)| id.clone())
             .collect()
     }
-    fn openai(&self) -> Vec<String> {
+    fn using(&self, account: &Account) -> Vec<String> {
         self.lock()
             .iter()
-            .filter(|(_, e)| e.openai)
+            .filter(|(_, e)| match account {
+                Account::OpenAi => e.account == Some(RequestAccount::OpenAi),
+                Account::Judge { provider } => {
+                    e.account == Some(RequestAccount::Judge) && &e.consumer.identity == provider
+                }
+            })
             .map(|(id, _)| id.clone())
             .collect()
     }
@@ -394,6 +445,12 @@ fn failed(message: impl std::fmt::Display) -> Value {
     json!({"failed": message.to_string()})
 }
 
+fn bearer(key: &str) -> Option<HeaderValue> {
+    let mut value = HeaderValue::from_str(&format!("Bearer {key}")).ok()?;
+    value.set_sensitive(true);
+    Some(value)
+}
+
 /// The thread of one stream (19.4).
 #[derive(Debug)]
 pub(crate) struct Job {
@@ -403,6 +460,7 @@ pub(crate) struct Job {
     live: Arc<Live>,
     ctl: Arc<Control>,
     request: Arc<Request>,
+    judge_authorization: Option<Result<HeaderValue, Value>>,
     origin: String,
     origin_gen: Option<u64>,
     via: ModRef,
@@ -451,7 +509,7 @@ impl Job {
     /// The account consent of the origin client through `via`, before a token is asked (19.4,
     /// 19.7). A preview has no accounts; a home with no app or no accounts is `no-app`.
     fn consent(&self) -> Result<(), End> {
-        if !self.request.openai {
+        if self.request.account != Some(RequestAccount::OpenAi) {
             return Ok(());
         }
         let with = |v: Value| Err(End::With(v));
@@ -588,10 +646,17 @@ impl Job {
         if self.stopped() {
             return Err(End::Stop);
         }
-        let token = if request.openai {
-            Some(self.token().await?)
+        let authorization = if request.account == Some(RequestAccount::OpenAi) {
+            Some(bearer(&self.token().await?).ok_or_else(|| {
+                End::With(failed(
+                    "account unavailable: the token is not a header value",
+                ))
+            })?)
         } else {
-            None
+            self.judge_authorization
+                .clone()
+                .transpose()
+                .map_err(End::With)?
         };
         let connector = self.connector().map_err(|m| End::With(failed(m)))?;
         let name = ServerName::try_from(request.name.clone())
@@ -621,7 +686,7 @@ impl Job {
         let driver = tokio::spawn(async move {
             let _ = connection.await;
         });
-        let result = self.exchange(&mut sender, token).await;
+        let result = self.exchange(&mut sender, authorization).await;
         driver.abort();
         result
     }
@@ -629,7 +694,7 @@ impl Job {
     async fn exchange(
         &self,
         sender: &mut hyper::client::conn::http1::SendRequest<Full<Bytes>>,
-        token: Option<String>,
+        authorization: Option<HeaderValue>,
     ) -> Result<Value, End> {
         let request = &self.request;
         if self.stopped() {
@@ -643,14 +708,7 @@ impl Job {
         for (name, value) in &request.headers {
             built = built.header(name, value);
         }
-        if let Some(token) = token {
-            // The token is in this header and nowhere else (19.4).
-            let mut value = HeaderValue::from_str(&format!("Bearer {token}")).map_err(|_| {
-                End::With(failed(
-                    "account unavailable: the token is not a header value",
-                ))
-            })?;
-            value.set_sensitive(true);
+        if let Some(value) = authorization {
             built = built.header(hyper::header::AUTHORIZATION, value);
         }
         let built = built
@@ -913,10 +971,21 @@ impl Host {
                 origin: origin.clone(),
                 consumer: consumer.clone(),
                 host: request.grant.clone(),
-                openai: request.openai,
+                account: request.account,
                 ctl: Arc::clone(&ctl),
             },
         );
+        // Register before reading the key. A concurrent removal either changes that read or
+        // finds this stream and stops it. The job never re-reads a key after the apply.
+        let judge_authorization = request.judge_at_call.map(|at_call| match at_call {
+            JudgeAtCall::NoAccount => Err(json!("no-account")),
+            JudgeAtCall::Unavailable => Err(failed("account unavailable")),
+            JudgeAtCall::Bound => match judge_account(&self.home.mode, &consumer.identity) {
+                Ok(account) if request.judge_matches(&account) => bearer(&account.key)
+                    .ok_or_else(|| failed("account unavailable: the key is not a header value")),
+                _ => Err(json!("gone")),
+            },
+        });
         Some(Job {
             id,
             hub: Arc::clone(&self.hub),
@@ -924,6 +993,7 @@ impl Host {
             live: Arc::clone(&self.https),
             ctl,
             request,
+            judge_authorization,
             origin,
             origin_gen,
             via: consumer,
@@ -951,12 +1021,9 @@ impl Host {
         }
     }
 
-    /// An account entry changed (19.4, Lifetime): the live streams that used it end `gone`. In
-    /// stage A4 only `OpenAi` has streams.
+    /// An account entry changed (19.4, Lifetime): the live streams that used it end `gone`.
     pub fn account_changed(&self, account: &Account) {
-        if let Account::OpenAi = account {
-            self.hub.end_gone(&self.https.openai());
-        }
+        self.hub.end_gone(&self.https.using(account));
     }
 
     /// Ends the streams whose consumer lost the `Http` grant of their host (19.2, Ends). Called
@@ -1027,6 +1094,7 @@ mod tests {
             live: Arc::default(),
             ctl: Arc::new(Control::new()),
             request: Arc::new(request),
+            judge_authorization: None,
             origin: "o".into(),
             origin_gen: None,
             via: ModRef {
@@ -1084,7 +1152,7 @@ mod tests {
                         identity: format!("local/{via}"),
                     },
                     host: "api.openai.com".into(),
-                    openai: true,
+                    account: Some(RequestAccount::OpenAi),
                     ctl: Arc::new(Control::new()),
                 },
             );

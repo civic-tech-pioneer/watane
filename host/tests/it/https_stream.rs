@@ -1,5 +1,5 @@
 #![allow(clippy::unwrap_used, reason = "tests may panic")]
-//! Stage A4 `https-stream` (TECHNICAL 19.4, 19.5, 19.7, 19.9; FUNCTIONAL S64): the `https`
+//! Stages A4 and A5 `https-stream` (TECHNICAL 19.4, 19.5, 19.7, 19.9; FUNCTIONAL S64): the `https`
 //! fixture, a TLS test server of this module that the host reaches through `set_test_net`, a fake
 //! `AccountSource` and a fake `Confirm`. Oracles are literals: the bytes the server sent, the
 //! items the fixture recorded, the requests the server received.
@@ -260,6 +260,8 @@ struct Tokens {
     calls: AtomicUsize,
     mode: Mutex<TokenMode>,
     program: Mutex<Option<PathBuf>>,
+    judge: Mutex<Option<(String, JudgeAccount)>>,
+    judge_reads: AtomicUsize,
 }
 impl AccountSource for Tokens {
     fn openai_token(&self) -> Pin<Box<dyn Future<Output = Result<String, AccountError>> + Send>> {
@@ -271,8 +273,17 @@ impl AccountSource for Tokens {
         };
         Box::pin(async move { answer })
     }
-    fn judge(&self, _: &str) -> Result<JudgeAccount, AccountError> {
-        Err(AccountError::NoAccount)
+    fn judge(&self, identity: &str) -> Result<JudgeAccount, AccountError> {
+        let entry = self.judge.lock().unwrap();
+        self.judge_reads.fetch_add(1, Ordering::SeqCst);
+        let (_, account) = entry
+            .as_ref()
+            .filter(|(provider, _)| provider == identity)
+            .ok_or(AccountError::NoAccount)?;
+        Ok(JudgeAccount {
+            key: account.key.clone(),
+            origin: account.origin.clone(),
+        })
     }
     fn claude_binary(&self) -> Result<PathBuf, AccountError> {
         self.program
@@ -703,7 +714,7 @@ fn ac2_every_refusal_comes_at_the_call_before_a_byte_leaves() {
         let request = json!({"url": url, "method": method, "account": "openai"});
         cases.push((request, "destination".into()));
     }
-    for account in ["judge", "other", "OpenAI", ""] {
+    for account in ["other", "OpenAI", ""] {
         let request = with(post(RESPONSES), "account", json!(account));
         cases.push((request, "destination".into()));
     }
@@ -1445,7 +1456,7 @@ fn ac5_a_sign_out_ends_every_live_openai_stream() {
     assert_eq!(
         rig.ended(),
         Vec::<String>::new(),
-        "a judge sign-out ends nothing in A4"
+        "changing a judge account does not end OpenAI streams"
     );
     rig.host().account_changed(&Account::OpenAi);
     rig.wait_ended(&a, "gone");
@@ -1754,4 +1765,150 @@ fn ac8_no_release_build_holds_the_feature_test_net() {
             "{feature} is in a normal build:\n{text}"
         );
     }
+}
+
+// ---- Stage A5: judge accounts (HOST-F-72) ----------------------------------------------------
+
+fn judge_request() -> Value {
+    with(
+        post("https://SECOND.TEST:443/verdict"),
+        "account",
+        json!("judge"),
+    )
+}
+
+fn enter_judge(rig: &Rig, identity: &str, origin: &str) {
+    *rig.tokens.judge.lock().unwrap() = Some((
+        identity.into(),
+        JudgeAccount {
+            key: "test-judge-key".into(),
+            origin: origin.into(),
+        },
+    ));
+}
+
+#[test]
+fn ac1_judge_post_carries_the_key_and_does_not_follow_a_redirect() {
+    let mut rig = Rig::new(None);
+    enter_judge(&rig, "local/https", "HTTPS://SECOND.TEST:443/");
+    let judge = rig.serve("second.test", |mut c| async move {
+        c.head(
+            "307 Temporary Redirect",
+            &[("location", RESPONSES), ("content-length", "0")],
+        )
+        .await;
+        c.finish().await;
+    });
+    let other = rig.serve("api.openai.com", |c| async move { c.finish().await });
+    let id = rig.start(&judge_request());
+    assert!(hex32(&id), "{id}");
+    rig.wait_ended(&id, "closed");
+    let requests = judge.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].method, "POST");
+    assert_eq!(requests[0].target, "/verdict");
+    assert_eq!(
+        requests[0].header("authorization"),
+        ["Bearer test-judge-key"]
+    );
+    assert_eq!(other.connections.load(Ordering::SeqCst), 0);
+    assert!(rig.app.asked.lock().unwrap().is_empty());
+}
+
+#[test]
+fn ac2_judge_requires_the_exact_provider_and_a_post_to_its_origin() {
+    let mut rig = Rig::new(None);
+    let judge = rig.serve("second.test", |c| async move { c.finish().await });
+    let other = rig.serve("api.openai.com", |c| async move { c.finish().await });
+    let missing = rig.start(&judge_request());
+    rig.wait_ended(&missing, "no-account");
+    enter_judge(&rig, "local/https-checked", "https://second.test");
+    let different = rig.start(&judge_request());
+    rig.wait_ended(&different, "no-account");
+    enter_judge(&rig, "local/https", "https://second.test");
+    let wrong_origin = with(post(RESPONSES), "account", json!("judge"));
+    let wrong_method = with(judge_request(), "method", json!("GET"));
+    assert_eq!(rig.start(&wrong_origin), "destination");
+    assert_eq!(rig.start(&wrong_method), "destination");
+    assert_eq!(judge.connections.load(Ordering::SeqCst), 0);
+    assert_eq!(other.connections.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn ac2_a_preview_cannot_use_a_judge_account() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+    crate::streams::install(&host, &["https"]);
+    let server = Server::start(|c| async move { c.finish().await });
+    host.set_test_net(TestNet {
+        routes: vec![("second.test".into(), server.addr)],
+        root_pem: pki().root_pem.clone(),
+    });
+    let value = call_as(
+        &host,
+        Caller::Page,
+        "https",
+        "api.start",
+        json!({"request": judge_request().to_string()}),
+    )
+    .unwrap();
+    let id = value.as_str().unwrap();
+    assert!(hex32(id), "{id}");
+    wait("no-account", Duration::from_secs(20), || {
+        call_as(&host, Caller::Page, "https", "api.ended", Value::Null).unwrap()
+            == json!([format!("{id} no-account")])
+    });
+    assert_eq!(server.stats.connections.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn ac4_judge_origin_is_checked_again_at_apply() {
+    let mut rig = Rig::new(None);
+    enter_judge(&rig, "local/https", "https://second.test");
+    let judge = rig.serve("second.test", |c| async move { c.finish().await });
+    let host = Arc::clone(rig.host());
+    let request = judge_request().to_string();
+    let chain = std::thread::spawn(move || {
+        call_as(
+            &host,
+            Caller::Page,
+            "https",
+            "api.start-then-sleep",
+            json!({"request": request, "ms": 1000}),
+        )
+        .unwrap()
+    });
+    wait("account read at the call", Duration::from_secs(20), || {
+        rig.tokens.judge_reads.load(Ordering::SeqCst) > 0
+    });
+    enter_judge(&rig, "local/https", "https://api.openai.com");
+    let value = chain.join().unwrap();
+    let id = value.as_str().unwrap();
+    assert!(hex32(id), "{id}");
+    rig.wait_ended(id, "gone");
+    assert_eq!(judge.connections.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn ac4_removing_a_judge_key_ends_that_providers_live_stream() {
+    let mut rig = Rig::new(None);
+    enter_judge(&rig, "local/https", "https://second.test");
+    let judge = rig.serve("second.test", hold);
+    let account = rig.start(&judge_request());
+    let plain = rig.start(&get("https://second.test/plain"));
+    rig.wait_items(&account, 2);
+    rig.wait_items(&plain, 2);
+    rig.host().account_changed(&Account::Judge {
+        provider: "local/another".into(),
+    });
+    assert!(rig.ended().is_empty());
+    *rig.tokens.judge.lock().unwrap() = None;
+    rig.host().account_changed(&Account::Judge {
+        provider: "local/https".into(),
+    });
+    rig.wait_ended(&account, "gone");
+    wait("judge connection closed", Duration::from_secs(10), || {
+        judge.closed.load(Ordering::SeqCst) == 1
+    });
+    assert_eq!(rig.ended(), [format!("{account} gone")]);
 }
