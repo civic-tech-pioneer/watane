@@ -343,11 +343,7 @@ fn ac2_transient_undo_failure_retries_and_restores_old_version() {
     let out = fx.run(&[]);
     assert_eq!(out.code, 5, "{out:?}");
     assert!(fx.home.join("undo_failed_once").exists());
-    assert!(
-        out.stderr
-            .contains("Nothing was changed: the version that was installed still works."),
-        "{out:?}"
-    );
+    assert!(out.stderr.contains("Nothing was changed."), "{out:?}");
     assert!(!out.stderr.contains("could not be put back"), "{out:?}");
     fx.assert_installed("0.1.0");
 }

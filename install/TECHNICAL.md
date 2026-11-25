@@ -221,7 +221,7 @@ home must not be `/`. Each must start with the resolved home followed by `/` (st
 that resolves to the home itself is refused too); otherwise exit 2 with
 
 ```text
-watane install: ~/.local/bin resolves to /Volumes/Data/bin, outside your home folder /Users/alice
+watane install: ~/.local/bin resolves to /Volumes/Data/bin, outside your home folder ~
 watane writes only under your home folder. Make it a real folder there, then run this again.
 ```
 
@@ -489,12 +489,11 @@ changes anything, and prints, to stderr:
 ```text
 watane install: another install may be running (pid 4242)
 If no install is running, remove its lock and run this again:
-  rm -rf '/Users/alice/.watane-install.lock'
+  rm -rf ~/.watane-install.lock
 ```
 
 `(pid <n>)` only when `pid` is a regular file whose one line is digits;
-otherwise the first line ends at `running`. The path is quoted for the
-shell as 8.4 quotes `<R>`. The script never removes a lock it did not
+otherwise the first line ends at `running`. The script never removes a lock it did not
 make, even one whose pid is dead: it cannot tell a dead pid from a reused
 one, nor a lock just made from one whose `pid` was never written, and two
 runs that both broke one stale lock would both proceed (IN-41). So a run
@@ -518,7 +517,7 @@ or run a `path` toolchain's `rustc`, to answer `which`, before any typed yes. Th
 |---|---|---|---|
 | ok | rustc found and the target present | none | none; prints `toolchain: ok (rustup, wasm32-wasip2)` |
 | no target | rustup and rustc, no target | `rustup target add wasm32-wasip2` | `watane-dev needs the wasm32-wasip2 target to build mods, and it is missing.` newline `Add the wasm32-wasip2 target with rustup? [y/N]` |
-| none | no rustup, or rustup with no toolchain | A: run the rustup installer; B (rustup, no toolchain): `rustup toolchain install stable --profile minimal -t wasm32-wasip2`, then `rustup default stable` | `watane-dev needs the Rust toolchain with the wasm32-wasip2 target to build mods, and it is not installed.` newline `Install it with rustup (a few hundred MB, from https://sh.rustup.rs, into ~/.rustup and ~/.cargo)? [y/N]`; when offer A is the one and `WATANE_RUSTUP_URL` is set, `https://sh.rustup.rs` is that URL (IN-37), here and in the "install it later" command below (IN-44) |
+| none | no rustup, or rustup with no toolchain | A: run the rustup installer; B (rustup, no toolchain): `rustup toolchain install stable --profile minimal -t wasm32-wasip2`, then `rustup default stable` | `watane-dev needs the Rust toolchain with the wasm32-wasip2 target to build mods, and it is not installed.` newline `Install it with rustup (a few hundred MB, from https://sh.rustup.rs, into ~/.rustup and ~/.cargo)? [y/N]`; when offer A is the one and `WATANE_RUSTUP_URL` is set, `https://sh.rustup.rs` is that URL (IN-37), here and in the "install it later" command below (IN-44). Offer B omits `from <URL>` because it uses the available rustup. |
 
 **Answer.** Read one line from `/dev/tty`, when `( : < /dev/tty ) 2>/dev/null`
 succeeds; a script piped from `curl` has the pipe as stdin, so it never reads
@@ -531,7 +530,8 @@ this whole answer invalid; continue through the line's newline. Retain at
 most six shell characters (the longest accepted word across both questions); longer
 lines are invalid and are drained through their newline. Decode non-NUL
 bytes with POSIX `printf %b`, without case folding or trimming. An empty line, end of file and no terminal
-are all `N` (INST-F-9, as `node` NO-10).
+are all `N` (INST-F-9, as `node` NO-10). On end of file, finish the
+prompt's line before printing the outcome. The uninstall prompt does the same.
 Uninstall creates the same temporary folder lazily when it asks its question;
 `mktemp` is checked for all modes. The exit trap removes that folder too.
 `--no-toolchain` is `N` with no question. No flag, variable or file means `y`:
@@ -561,7 +561,12 @@ IN-24, IN-25).
   not `ok`, print `toolchain: still incomplete after the install` and exit
   6.
 A rustup failure is exit 6 with `watane install: the toolchain step
-failed (rustup exited <n>)`; the programs stay installed.
+failed: <step> (rustup exited <n>)` after the closing line. The step is
+`install Rust with rustup` for offer A, or the command as printed below
+for the other offers. A rustup installer download failure is exit 3 with
+`watane install: cannot download the rustup installer from <URL>` and
+curl's diagnostic. In either case, stderr then confirms the installed
+watane version and gives the commands to install the toolchain later.
 
 **On `N`** (or no terminal) print, for state `none` A:
 
@@ -572,6 +577,8 @@ To install it later, run:
 Then `watane-dev doctor` checks it again.
 ```
 
+The doctor command uses `~/.local/bin/watane-dev` when `~/.local/bin`
+is off `PATH`, in this block and in the post-commit hint of 3.9.
 (INST-S-3 checks line 3 with its `\|` unescaped; the pipe is part of the
 command.) When `WATANE_RUSTUP_URL` is set, line 3 names that URL in place of
 `https://sh.rustup.rs`, the URL the question named (IN-44). The URL is printed bare only when it starts with `https://` or `http://` and holds only letters, digits and `._/:@%+,=~-`; any other URL (a leading `~`, `=` or `-`, a `file://` URL, any odd byte) is printed in single quotes (`shell_quote`), so pasting the line runs one `curl` on that word. A leading `-` is still a `curl` option inside quotes: a decided limit, since only the person sets the variable (AGENTS rule 4). When `WATANE_RUSTUP_URL` is set the offer downloads without `--proto '=https'` (3.2), so the line omits `--proto '=https'` too and runs for the URL it names; the default line keeps it. The block names it in every case that prints
@@ -614,7 +621,7 @@ not be removed. Run this script again: it removes them and installs watane." and
 "The files could not be put back. Run this script again to restore the installed
 version." It prints the second text also if an old entry path is missing or an
 old entry other than the receipt still has its `.old.<pid>` name. Otherwise it prints
-"Nothing was changed: the version that was installed still works."
+`Nothing was changed.`
 On a fresh install (no entry of the receipt's list, the receipt included,
 existed before the swap began, so there was no installed version) the second line is `Nothing was installed.` instead. When the
 failure came after the receipt's rename (the receipt `mv` renamed the file and
@@ -684,13 +691,16 @@ prints on stderr the two lines of 3.9 (`watane <v> is installed; the run was
 interrupted before it finished.` and `Run watane-dev doctor to check the
 maker tools.`) and the run exits with the signal's code. This covers every
 point from the commit to the end of the success block, the toolchain
-question included. A signal while the toolchain question waits also prints,
+question included. A signal while either question waits starts the
+hint on a new line. A signal while the toolchain question waits or while
+offer A downloads the rustup installer also prints,
 after those two lines and on stderr, the "install it later" block of 3.7 for the
 state found (the same lines as for the answer `N`, without `toolchain: not
 installed`). A signal before the commit prints neither (nothing is installed
 or the old version stays), and leaves no folder the run created (3.6 step 4; IN-47).
 These lines are printed once, by the exit trap, whichever way the
-signal reached it (IN-45).
+signal reached it (IN-45). At the uninstall home question it instead prints
+the uninstall outcome (8.4) and that the watane home was kept.
 
 "After the commit" is decided by the state undo uses: the journal exists and `receipt.new.<pid>` is gone; the exit trap reads that before undo runs, so a signal that lands between the receipt's `mv` and the next command still prints the hint (no flag set after the `mv` decides it).
 
@@ -715,10 +725,12 @@ left by an earlier process that had the same pid). Any other name (`watane.old.m
 ### 3.9 What it prints
 
 After a failed swap (exit 5), stderr reports `could not put the files in
-place`, then `Nothing was changed: the version that was installed still
-works.` (`Nothing was installed.` on a fresh install) unless an old entry the run moved is missing or not yet back from its `.old.<pid>` name, or
-`The files could not be put back. Run this script again to restore the installed version.` if such an entry is not back
-without a signal, after retrying a failed undo once (3.8). Staging cleanup
+place`, then `Nothing was changed.` (`Nothing was installed.` on a
+fresh install) when undo restored the previous state. The script does not
+verify that the previous install works. It instead prints
+`The files could not be put back. Run this script again to restore the installed version.` if an old
+entry the run moved is missing or not yet back from its `.old.<pid>` name after
+retrying a failed undo once without a signal (3.8). Staging cleanup
 failure alone uses the first text; both cases exit 5. A swap that fails after
 the receipt's rename (3.8) prints, instead, `watane install: a step after the
 install failed`, `watane <v> is installed.` and `Run watane-dev doctor to check the
@@ -752,6 +764,9 @@ and no text of printf's, never a silent carry-on.
 watane 0.1.0 is installed; the run was interrupted before it finished.
 Run watane-dev doctor to check the maker tools.
 ```
+
+When the installed tools are off `PATH`, the second line instead names
+`~/.local/bin/watane-dev doctor`.
 
 The success output
 of INST-S-1 (answer `N`, `PATH` ok), exactly:
@@ -1167,6 +1182,8 @@ resolved .local/bin /Users/alice/.local/bin
 resolved .local/share/watane /Users/alice/.local/share/watane
 resolved .local/share/watane-dev /Users/alice/.local/share/watane-dev
 resolved Applications /Users/alice/Applications
+created .local 310
+created Applications 325
 ```
 
 A `resolved <folder> <R>` line for each of the four install folders of
@@ -1175,6 +1192,12 @@ the folder's resolved path (`pwd -P`) when step 4 checked it; 8.5 rule 4
 reads them. The format stays `watane-receipt 1`: no release had shipped
 when these lines were added, and a receipt without them is still read, its
 removals skipped by rule 4.
+
+Optional `created <folder> <inode>` lines record whether the installer
+made `.local` or `Applications`. These are the only two names accepted
+for this operation. An upgrade carries a line forward only when the same
+folder is still there. A receipt without these lines continues to work
+and leaves those two top-level folders alone on uninstall.
 
 Absolute paths, one for each entry of 3.6; a path is the rest of its
 line, so it may hold a space but not a newline (a `HOME` with a newline
@@ -1213,8 +1236,13 @@ is a feature of `app`, not of `install` (Q11).
    path that watane installs` on stderr (INST-S-27); then the stale names of
    3.8; then the receipt, when 8.5 allows it (else the same `skipped` line); then `rmdir` (not `rm -r`; each folder only when it resolves strictly below the resolved home, 8.5 rule 3)
    `<prefix>/share/watane`, `<prefix>/share/watane-dev`, `<prefix>/share`
-   and `<prefix>/bin`, each only if empty.
-3. Print `uninstalled watane 0.1.0`.
+   and `<prefix>/bin`, each only if empty. Finally, for each of `~/.local`
+   and `~/Applications`, remove the empty directory with `rmdir` if its
+   inode matches the receipt's `created` line (8.1), it is not a symlink,
+   and it resolves directly below the resolved home at the expected name.
+3. Print `uninstalled watane 0.1.0`, or
+   `partially uninstalled watane 0.1.0 (some entries were skipped or could not be removed)`
+   when any entries or the receipt were skipped or could not be removed.
 4. Print what it kept, one line each (the home's line comes after step 5,
    and only when the home exists: `deleted: <home>`, or
    `kept: ~/.watane (your home: identity, mods, channels)`, or the kept line
@@ -1244,7 +1272,10 @@ is a feature of `app`, not of `install` (Q11).
    NUL included (`de\0lete`, for example), keeps the home. Then print
    `deleted: ~/.watane` only after deletion. Anything else, an end of
    file and no terminal keep it (INST-S-15 to 17). No flag, variable or file answers this
-   question (Q12). Tests type the answer on a pseudo-terminal (12.1).
+   question (Q12). Ctrl-C at the question leaves the home intact and prints
+   `watane 0.1.0 was uninstalled; the watane home was kept.` (or
+   `watane 0.1.0 was partially uninstalled; the watane home was kept.`).
+   Tests type the answer on a pseudo-terminal (12.1).
 
 The home is `$WATANE_HOME` if set and not empty, else `~/.watane`, as
 `watane_host::default_home()`.

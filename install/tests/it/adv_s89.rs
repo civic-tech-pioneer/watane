@@ -7,7 +7,7 @@ use std::os::unix::fs::PermissionsExt;
 
 const HINT: [&str; 2] = [
     "watane 0.1.0 is installed; the run was interrupted before it finished.",
-    "Run watane-dev doctor to check the maker tools.",
+    "Run ~/.local/bin/watane-dev doctor to check the maker tools.",
 ];
 
 /// TECHNICAL 3.8, 3.9 (IN-45): a signal at the receipt move keeps the install and prints the hint.

@@ -23,15 +23,17 @@ fn ac1_resolved_folders_guard_receipt_removals() {
             );
         }
         let lines: Vec<&str> = receipt.lines().collect();
-        assert_eq!(lines.len(), 14, "{receipt}");
+        assert_eq!(lines.len(), 16, "{receipt}");
         assert!(
             lines[3..10].iter().all(|l| l.starts_with("path ")),
             "{receipt}"
         );
         assert!(
-            lines[10..].iter().all(|l| l.starts_with("resolved ")),
+            lines[10..14].iter().all(|l| l.starts_with("resolved ")),
             "{receipt}"
         );
+        assert!(lines[14].starts_with("created .local "), "{receipt}");
+        assert!(lines[15].starts_with("created Applications "), "{receipt}");
         if recorded {
             fs::rename(fx.share("watane-dev"), fx.home.join("old-dev")).unwrap();
             write_file(&fx.home.join("Documents/vendor/marker"), "mine");
@@ -97,8 +99,7 @@ fn ac2_lock_excludes_runs_and_preserves_planted_locks() {
             assert_eq!(
                 out.stderr,
                 format!(
-                    "watane install: another install may be running{suffix}\nIf no install is running, remove its lock and run this again:\n  rm -rf '{}'\n",
-                    lock.display()
+                    "watane install: another install may be running{suffix}\nIf no install is running, remove its lock and run this again:\n  rm -rf ~/.watane-install.lock\n"
                 )
             );
             assert_eq!(snapshot(&fx.home), before);
