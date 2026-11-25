@@ -273,11 +273,11 @@ impl AccountSource for Tokens {
         };
         Box::pin(async move { answer })
     }
-    fn judge(&self, identity: &str) -> Result<JudgeAccount, AccountError> {
+    fn judge(&self, provider: &str) -> Result<JudgeAccount, AccountError> {
         let mut entry = self.judge.lock().unwrap();
         let (_, account) = entry
             .as_mut()
-            .filter(|(provider, _)| provider == identity)
+            .filter(|(stored_provider, _)| stored_provider == provider)
             .ok_or(AccountError::NoAccount)?;
         if let Some(replacement) = self.judge_after_read.lock().unwrap().take() {
             return Ok(std::mem::replace(account, replacement));
