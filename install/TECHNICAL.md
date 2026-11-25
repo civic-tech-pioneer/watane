@@ -553,7 +553,9 @@ IN-24, IN-25).
   framed on stdout: the line `--- rustup's own output follows ---` before it
   and the line `--- end of rustup's output ---` after it, so what rustup
   prints (on stdout and stderr, as it prints it) lies between the two and
-  watane's own lines never do (IN-46). The end line is also printed when
+  watane's own lines never do (IN-46). A newline separates the closing
+  marker from rustup's last bytes, even when rustup ends on a partial line.
+  The end line is also printed when
   rustup failed, before the exit 6 text; it is not printed when a signal
   ends the run. The exit status of rustup decides exit 6 and the signal
   mapping (3.8) as before.
@@ -691,8 +693,8 @@ prints on stderr the two lines of 3.9 (`watane <v> is installed; the run was
 interrupted before it finished.` and `Run watane-dev doctor to check the
 maker tools.`) and the run exits with the signal's code. This covers every
 point from the commit to the end of the success block, the toolchain
-question included. A signal while either question waits starts the
-hint on a new line. A signal while the toolchain question waits or while
+question included. A signal while either question waits or while rustup
+runs starts the hint on a new line. A signal while the toolchain question waits or while
 offer A downloads the rustup installer also prints,
 after those two lines and on stderr, the "install it later" block of 3.7 for the
 state found (the same lines as for the answer `N`, without `toolchain: not

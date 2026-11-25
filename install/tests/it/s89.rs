@@ -258,9 +258,9 @@ fn ac7_rustups_output_is_set_apart() {
         path,
         body.replacen(
             "#!/bin/sh\n",
-            "#!/bin/sh\necho 'info: from rustup'\necho 'warn: also rustup' >&2\n",
+            "#!/bin/sh\necho 'info: from rustup'\n",
             1,
-        ),
+        ) + "printf 'warn: also rustup' >&2\n",
     )
     .expect("installer");
     let out = fx.run_pty(&[], &[("WATANE_RUSTUP_URL", &url)], &[("[y/N] ", "y")]);
@@ -286,7 +286,7 @@ fn ac7_a_failing_rustup_still_decides_exit_6() {
     let fx = Fx::new();
     let url = fx.rustup_installer();
     let path = url.trim_start_matches("file://");
-    fs::write(path, "#!/bin/sh\necho oops\nexit 3\n").expect("installer");
+    fs::write(path, "#!/bin/sh\nprintf oops\nexit 3\n").expect("installer");
     let out = fx.run_pty(&[], &[("WATANE_RUSTUP_URL", &url)], &[("[y/N] ", "y")]);
     assert_eq!(out.code, 6, "{out:?}");
     let all = lines(&out.stdout);
@@ -414,7 +414,7 @@ fn ac2_int_after_the_answer_prints_no_install_it_later_lines() {
     let path = url.trim_start_matches("file://");
     fs::write(
         path,
-        "#!/bin/sh\necho 'info: rustup waits'\nexec \"$FAKE_REAL/sleep\" 600\n",
+        "#!/bin/sh\nprintf 'info: rustup waits'\nexec \"$FAKE_REAL/sleep\" 600\n",
     )
     .expect("installer");
     let out = fx.run_pty(

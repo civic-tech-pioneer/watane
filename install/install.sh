@@ -36,6 +36,7 @@ CLEANUP_ACTIVE=0
 COMMITTED=0
 PROMPT=""
 TC_DOWNLOADING=0
+TC_RUNNING=0
 CREATED=""
 
 usage() {
@@ -572,7 +573,7 @@ cleanup() {
     set +e
     # cl_rc retains the signal; formatting a quoted mirror URL performs its own checks.
     SIGNAL=0
-    if [ -n "$PROMPT" ]; then printf '\n' >&2; fi
+    if [ -n "$PROMPT" ] || [ "$TC_RUNNING" = 1 ]; then printf '\n' >&2; fi
     if [ "$COMMITTED" = 1 ]; then
       interrupted_hint
     elif [ "$PROMPT" = uninstall ]; then
@@ -1173,16 +1174,17 @@ rustup_step() {
   shift
   rs_rc=0
   say "--- rustup's own output follows ---"
+  TC_RUNNING=1
   ( cd "$HOME" 2>/dev/null || cd /; RUSTUP_AUTO_INSTALL=0; export RUSTUP_AUTO_INSTALL; "$@" ) || rs_rc=$?
+  check_signal "$rs_rc"
+  say "$NL--- end of rustup's output ---"
+  TC_RUNNING=0
   if [ "$rs_rc" != 0 ]; then
-    check_signal "$rs_rc"
-    say "--- end of rustup's output ---"
     warn "the toolchain step failed: $rs_step (rustup exited $rs_rc)"
     printf 'watane %s is installed.\n' "$RELEASE" >&2
     print_commands >&2
     exit 6
   fi
-  say "--- end of rustup's output ---"
   return 0
 }
 
