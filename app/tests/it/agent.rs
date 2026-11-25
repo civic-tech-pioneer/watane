@@ -458,22 +458,69 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
             json!(field), json!(value)
         ));
     };
-    app.eval("main", "window.__badJudge = null; window.__TAURI_INTERNALS__.invoke('judge_set', {local:'judge-provider', key:'test-key-only', origin:'https://judge.test/v1'}).then(() => window.__badJudge = 'success', error => window.__badJudge = error.code); null");
-    until(&app, "main", "window.__badJudge !== null");
-    assert_eq!(app.eval("main", "window.__badJudge"), "bad_request");
+    let refuse_save = |local: &str, origin: &str| {
+        let args = json!({"local":local,"key":"test-key-only","origin":origin});
+        app.eval("main", &format!("window.__badJudge = null; window.__TAURI_INTERNALS__.invoke('judge_set', {args}).then(() => window.__badJudge = 'success', error => window.__badJudge = error); null"));
+        until(&app, "main", "window.__badJudge !== null");
+        app.eval("main", "window.__badJudge")
+    };
+    assert_eq!(
+        refuse_save("judge-provider", "https://judge.test/v1")["code"],
+        "bad_request"
+    );
+    let refusal = refuse_save("judge-provider", "https://unlisted.test");
+    assert_eq!(refusal["code"], "bad_input");
+    assert_eq!(
+        refusal["message"],
+        "This provider cannot reach https://unlisted.test. Choose an origin at one of its granted hosts (judge.test)."
+    );
+    assert_eq!(
+        refuse_save("claude", "https://judge.test")["code"],
+        "bad_input"
+    );
+    let http = json!({"local":"judge-provider","key":"http judge.test"});
+    invoke(&app, "grant_withdraw", http.clone());
+    assert_eq!(
+        refuse_save("judge-provider", "https://judge.test")["code"],
+        "bad_input"
+    );
+    assert!(
+        !home
+            .path()
+            .join("app/accounts/judge/local__judge-provider.json")
+            .exists()
+    );
+    invoke(&app, "grant_give", http);
+    until(&app, "main", &format!("!!({query})('.judge-save')"));
+    assert_eq!(evaluate("q('.judge-save').disabled"), true);
+    assert_eq!(
+        evaluate("q('.judge-save-hint').textContent"),
+        "Enter a judge origin."
+    );
+    enter(".judge-origin", "https://judge.test");
+    until(
+        &app,
+        "main",
+        &format!("({query})('.judge-save-hint').textContent === 'Enter a judge key.'"),
+    );
+    assert_eq!(evaluate("q('.judge-save').disabled"), true);
     enter(".judge-key", "test-key-only");
     enter(".judge-origin", "https://judge.test/v1");
     until(
         &app,
         "main",
-        &format!("({query})('.judge-feedback').textContent === 'Not an https origin.'"),
+        &format!(
+            "({query})('.judge-feedback').textContent.includes('without a path, query or fragment')"
+        ),
     );
     assert_eq!(evaluate("q('.judge-save').disabled"), true);
     enter(".judge-origin", "https://unlisted.test");
     until(
         &app,
         "main",
-        &format!("({query})('.judge-feedback').textContent.includes('cannot reach unlisted.test')"),
+        &format!(
+            "({query})('.judge-feedback').textContent.includes('cannot reach https://unlisted.test')"
+        ),
     );
     assert_eq!(evaluate("q('.judge-save').disabled"), true);
     enter(".judge-origin", "https://Judge.Test:443/");
@@ -512,9 +559,49 @@ fn ac1_ac2_ac3_ac4_s63_s64_s66_judge_key_in_provider_details() {
     until(&app, "main", &format!("!!({query})('.judge-replace')"));
     assert!(path.exists());
     assert!(!stray.exists());
+    click(&app, "[data-tile=judge-provider]");
+    click(
+        &app,
+        "section[data-local=judge-provider] [data-key=claude-code] .sw",
+    );
+    until(
+        &app,
+        "main",
+        "document.querySelector('section[data-local=judge-provider] [data-key=claude-code] .sw').getAttribute('aria-checked') === 'false'",
+    );
+    assert_eq!(
+        app.eval("main", &format!("({query})('.judge-kept')?.textContent")),
+        "A key is kept for https://judge.test"
+    );
+    assert_eq!(
+        app.eval("main", &format!("!!({query})('.judge-editor')")),
+        false
+    );
+    assert_eq!(
+        app.eval("main", &format!("!!({query})('.judge-replace')")),
+        false
+    );
+    assert_eq!(
+        invoke(&app, "mods_list", json!({}))
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["local"] == "judge-provider")
+            .unwrap()["judge"],
+        json!({"kept":true,"origin":"https://judge.test","hosts":[]})
+    );
     click(&app, "section[data-local=judge-provider] .judge-remove");
-    until(&app, "main", &format!("!({query})('.judge-replace')"));
+    until(
+        &app,
+        "main",
+        "!document.querySelector('section[data-local=judge-provider] .judge')",
+    );
     assert!(!path.exists());
+    invoke(
+        &app,
+        "grant_give",
+        json!({"local":"judge-provider","key":"claude-code"}),
+    );
     invoke(
         &app,
         "judge_set",

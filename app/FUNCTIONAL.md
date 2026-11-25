@@ -73,7 +73,7 @@ The main mod and the manager (stage I, W36) are designed and not built.
 - **APP-F-83** The details of a mod shall list the consents it holds, each in the words of its question, and the participant shall be able to withdraw each one. A withdrawal shall end what depends on it. Traces: F-AGENT-7, F-INST-5, J11.
 - **APP-F-84** The grants to start Claude Code shall read in words in the consent view and in the details of a mod, `Can start Claude Code with your Claude account, to read and change files in folders you choose. Not checked by watane.` and `Can start Claude Code with your Claude account and let it run programs and use the web, inside Claude's sandbox. Not checked by watane.` The plan of every mod whose calls reach either grant shall say `Uses Claude Code through <provider>.` Traces: F-AGENT-5, F-INST-1, J11.
 - **APP-F-85** The participant shall be able to choose the `claude` program in Settings. The app shall refuse a program older than the minimum version, with the version found and the version needed, and keep none until a good one is chosen. Traces: F-AGENT-5.
-- **APP-F-86** On the page that the manager shows for a checked provider, the participant shall be able to enter a key and the origin of the provider's judge, see that a key is kept and for which origin (never the key), and remove it. The origin shall show next to the key before it is saved and shall never be filled in from the provider. Removing the key, or removing the provider, shall delete it. Traces: F-AGENT-9.
+- **APP-F-86** On the page that the manager shows for a checked provider, the participant shall be able to enter a key and the origin of the provider's judge, see that a key is kept and for which origin (never the key), and remove it. The origin shall show next to the key before it is saved and shall never be filled in from the provider. A kept key remains visible by its origin and removable after the participant withdraws a grant needed to use it. Removing the key, or removing the provider, shall delete it. Traces: F-AGENT-9.
 - **APP-F-87** No mod shall be able to read a sign-in, a key or the `claude` path: they stay in the app and reach the host in process only. Traces: F-AGENT-5, F-AGENT-9, F-RUN-4.
 
 ## Step 3: Publish
@@ -438,7 +438,9 @@ installed, when the participant opens its details, enters a key and the
 origin `https://judge.example` (a lone trailing `/` is accepted and shown without it; any other path, a query or a fragment is refused), then the origin shows next to the key
 before saving; after saving, the page says `A key is kept for
 https://judge.example` and never shows the key; a fresh start of the app
-shows the same; `Remove key` removes it.
+shows the same. After the participant withdraws Claude Code, the page
+still shows the kept origin and `Remove key`. The participant can remove the
+key, which removes the section while the grant is withdrawn.
 
 **S66 Remove the provider** (APP-F-86). Given S63 with a key kept, when the
 participant removes the provider, its key file is gone, and a reinstall of the
