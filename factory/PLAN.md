@@ -1216,7 +1216,7 @@ names the same interface in its sketch and fakes it until this one merges.
 
 - [~] **S122 Alice gives a checked provider its judge key (host A5, app 19.4; agentic-harness stage E, watane half).**
   (in flight, cloud, builder codex, reviewer claude; rule 3: last two S121 claude, S120 codex; the main line, sketched
-  2026-11-25 by deputy-4: step 6's first build waits on stages E and F (S120), and E's watane half needs no real judge. Codex task https://chatgpt.com/local/6b06994d-5934-83eb-9d1f-da9025713051, dispatched 08:15 UTC; PR #42 opened ~09:28 UTC as a draft; BLOCKED 09:52 at 83b71eb: the builder held delivery on cloud reds that also fail on main (app look::windows window height, host stage A load); GitHub CI at d235a2d was red on all three OSes on dev `scripted_host::ac2_case_19_every_refused_form_reaches_no_server`, a test of this slice's area: the answer waits for CI on 83b71eb.)
+  2026-11-25 by deputy-4: step 6's first build waits on stages E and F (S120), and E's watane half needs no real judge. Codex task https://chatgpt.com/local/6b06994d-5934-83eb-9d1f-da9025713051, dispatched 08:15 UTC; PR #42 opened ~09:28 UTC as a draft; BLOCKED 09:52 at 83b71eb: the builder held delivery on cloud reds that also fail on main (app look::windows window height, host stage A load); GitHub CI at d235a2d was red on all three OSes on dev `scripted_host::ac2_case_19_every_refused_form_reaches_no_server`, a test of this slice's area: the answer waits for CI on 83b71eb; answered 10:09 UTC; DELIVERED at cadba83 (+1814/-82, CI green on all four); r1: Claude review routine `trig_01DkHPfSzNr3as2C8c6Aapde`, fires 11:20 UTC, adversary on.)
   The story: in the manager's page for a checked provider, Alice enters a judge key and the judge's origin; only that
   provider's requests to that origin carry it, and removing it ends its live streams. Outcomes, on the real programs
   with dev's scripted judge origin (dev 18.3): (1) Alice sets and removes a judge key for an installed provider in the app
@@ -1232,7 +1232,7 @@ names the same interface in its sketch and fakes it until this one merges.
   checked provider itself and V7 (agentic-harness, needs a real judge account). Protects: *core*.
 - [~] **S124 (upkeep) a failed fetch blames the true cause (net, node, dist), and net's budget flake.**
   (in flight, cloud, builder claude, reviewer codex; rule 3: last two S122 codex, S123 codex; the upkeep lane, sketched
-  2026-11-25 by deputy-5 from Leftovers outside S122's host/, app/, dev/; spec-check not run: error text and tests only.)
+  2026-11-25 by deputy-5 from Leftovers outside S122's host/, app/, dev/; spec-check not run: error text and tests only; routine `trig_01S1fjM2MXnYjYVirKm928Le`, fires 11:21 UTC.)
   Outcomes, each item's check, on the real programs with a test per item: (1) (guard) [S100 CI] net's tests that share
   the connection budget (`budget::s9...`, and each like it) no longer flake on timing: 20 runs green per OS in CI, as
   S106 fixed `pair::s4`; (2) [S87 adversary, S87 user-sim] a local I/O or holder error during a download reads as local
@@ -1922,6 +1922,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - S7: `871c5605` (sessionId `871c5605-a537-44d1-bd37-c2dc3068d11c`), worktree `.claude/worktrees/s7` (stopped, removed).
 
 ## Waiting on the human
+
+- (2026-11-25 11:20 UTC, deputy-5) The browser pane is signed out of chatgpt.com: sign in there (or import the chatgpt.com cookie). Held: agentic-harness S40's r5 result (its Codex task https://chatgpt.com/local/6b05eeef-aae8-83eb-85bf-a60c3e428074) and every Codex round (S124's review).
 
 - (2026-11-25, deputy-4, from S120) **Where the factory mods live (Door H, `spec/design/factory/TECHNICAL.md` 5, first row).** W29 gives each mod with source its own repository, so a planning mod and a foreman mod are two new projects; one combined factory mod is one new project. Options, consequences and the recommendation are in that row. Not blocking: JF1 waits on agentic-harness stages E and F first. The 8 Door C rows go to deliberation when a build slice first depends on one.
 
