@@ -80,6 +80,24 @@ jobs:
           # copy made 129 install tests fail. It is never worth caching.
           rm -rf target/tmp
           cargo test --workspace --locked --features "${{ matrix.features }}" --no-fail-fast -- ${{ matrix.skip }}
+      - name: Repeat the S126 host regressions
+        if: github.head_ref == 'slice/s126' && runner.os != 'Linux'
+        shell: bash
+        run: |
+          export WATANE_HOME="$RUNNER_TEMP/watane-home-s126"
+          mkdir -p "$WATANE_HOME"
+          for trial in {1..20}; do
+            echo "S126 trial $trial of 20"
+            if [ "$RUNNER_OS" = "Windows" ]; then
+              cargo test -p watane-host --locked --lib -- \
+                --exact runtime::call::tests::s126_timer_commit_uses_the_current_origin_install
+              cargo test -p watane-host --locked --test it -- \
+                --exact https_stream::ac7_a_consumer_that_defers_stops_the_host_reading_and_resume_loses_nothing
+            else
+              cargo test -p watane-host --locked --test it -- \
+                --exact runtime::ac11_s11_restart_preserves_links_and_provider_state
+            fi
+          done
       # S103: the agent consent view and its withdrawal on the real app (app S58, S60) need a GUI
       # session; the cloud build team has no Mac, so this job is where they are checked.
       - name: App window tests of the agent consent (S58, S60)
