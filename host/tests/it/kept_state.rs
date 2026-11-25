@@ -281,8 +281,9 @@ fn ac2_remove_with_delete_data_does_not_deadlock_with_timer_commits() {
     let mut last = 0;
     loop {
         match done_rx.recv_timeout(std::time::Duration::from_secs(10)) {
-            Ok(()) => break,
-            Err(_) => {
+            // A remove that failed drops the sender: its panic is reported by the join below.
+            Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
                 let now = progress.load(Ordering::SeqCst);
                 assert!(
                     now != last,
