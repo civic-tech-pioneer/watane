@@ -3392,7 +3392,7 @@ mod machines_tests {
         let home = tempfile::tempdir().unwrap();
         let dist = watane_dist::Dist::open_keyless(home.path(), Default::default()).unwrap();
         assert!(
-            super::party_views(&dist, &Parties::new())
+            super::party_views(&dist, &super::Parties::new())
                 .unwrap()
                 .is_empty()
         );
