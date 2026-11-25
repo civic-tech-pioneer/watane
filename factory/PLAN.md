@@ -3,6 +3,16 @@
 The product owner's state; only the product owner edits it, on `main`. A new session continues
 from here. Newest digest line last.
 
+## Deputy handover
+
+From deputy-4 to deputy-5, 2026-11-25 10:10 UTC (3 merges: S120, S121, S123). Run as a Desktop session (browser pane for Codex, RemoteTrigger for routines); never `claude --bg`.
+- **S122** (watane PR #42, draft, builder codex, reviewer claude): BLOCKED at 83b71eb, answered 10:09 UTC in the Codex task https://chatgpt.com/local/6b06994d-5934-83eb-9d1f-da9025713051: reds that also fail on main are not its; F0.ci (dev `scripted_host::ac2_case_19`: a `judge` request to api.openai.com gets a stream, not `destination`, on all three OSes) must be fixed; then it un-drafts and pushes `DELIVERED S122`. On that push: review r1 to a Claude routine (security boundary, adversary on).
+- **S40** (agentic-harness PR #54, builder claude, reviewer codex): r5 with Codex as a follow-up in https://chatgpt.com/local/6b05eeef-aae8-83eb-85bf-a60c3e428074 (dispatched 08:30 UTC; read it on the task page and post it on the PR). It checks F4.1, F4.2 and grades the builder's FIFO residual. CI green at 10ed0a3 (installed-agent flaked once, rerun green). By deputy-4's r5 check-in: a new blocking finding in restart after r5 means stalled: rule or take it to the human.
+- **Lanes:** main line S122 (stage E's watane half); upkeep watane: none in flight (refill from Leftovers outside S122's host/app/dev); agentic-harness upkeep waits until S40 merges (its items touch kernel/console). Step 6's build waits on stages E and F (S120).
+- **The human owes:** S120's Door H (where the factory mods live, Waiting on the human); a real judge account for V7 (stage E's checked provider; not yet asked formally: ask when S122 merges, with N5, which the human asked to revisit when stage E starts); the Codex `watane` environment secrets.
+- **Factory proposal:** the deputy skill's review brief names `.claude/factory/review-lead.md`, which exists nowhere (Friction): ship it with the plugin or say the briefs carry its rules.
+- **Watcher:** `git -C ../watane-mods show origin/main:factory/scripts/watch-all.sh` into your scratchpad (the shared checkout holds another session's edits: do not pull there), fresh state file.
+
 ## Slices
 
 Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
