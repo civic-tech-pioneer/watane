@@ -1371,6 +1371,17 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Touches: `app/`, `dist/`, `log/`, `net/` and their TECHNICAL, never `host/` or `dev/`. Boundaries: dist 5.9 and log's
   key folder are touched by tests only, the managed install by item 1 (adversary on item 1). Size: an upkeep slice.
   Protects: *guard* (item 1), else *polish*.
+- [~] **S118 (upkeep) host's flaky consent tests, kept storage in the install plan, and S114's polish.** (in flight,
+  cloud, builder claude, reviewer codex; rule 3: last two S117 codex, S116 codex; the upkeep lane, sketched 2026-11-25
+  by deputy-3 from Leftovers once S114 and S117 freed `host/` and `dev/`.) Outcomes, each item's check: (1) (guard)
+  `consent::ac5_a_consent_given_through_one_provider_is_not_used_through_another` (`host/tests/it/consent.rs:533`, seen
+  twice) and `https_stream::ac5_a_refused_consent_ends_the_stream_consent_refused` stop flaking: name each race, fix it
+  in host if a person could hit it, else in the test; a CI job on the branch runs both 20 times on each OS, all green;
+  (2) S113: a reinstall after 'Keep data' no longer labels Storage `new`: the host's install plan reports retained
+  storage and the consent words say it is kept, with a test; (3) host TECHNICAL 1845 and 2423 stop saying a
+  manager-started install "always asks" (S116 made a no-op install follow nothing; say what is true); (4) S114 r3 P3.1
+  to P3.3 in `dev/src/preview/openai.rs` and dev TECHNICAL. Touches: `host/`, `dev/`, `app/` only for item 2's words.
+  No boundary moves (adversary not run unless item 2 changes what consent grants). Protects: *guard* (item 1), *polish*.
 - [x] **S117 (upkeep) the app's last leftovers and S116's polish.** DONE 2026-11-25: PR #33 merged by the deputy (9ba1112, no bypass); builder codex, reviewer claude, 2 rounds (1/5, 0/0); ~1.8 h in flight. S116 P1.1 to P1.7 done; `Core::mods()` memoizes channel views (S44); channel rows show plain words and APP-F-37 says so (S58); a macOS removal-test race fixed. R1.1 accepted; P1.3 to P1.5 in Leftovers. (Was: (in flight, cloud, builder codex, reviewer claude;
   rule 3: last two S116 codex, S115 claude; the upkeep lane, sketched 2026-11-25 by deputy-3; beside S114, which holds
   `host/` and `dev/`; Codex task https://chatgpt.com/local/6b062512-7874-83ed-ba16-8300d8b14068, dispatched 00:05 UTC; DELIVERED as PR #33 at ab6a9ca (+610/-158, all four CI jobs green after one macOS retry of an existing removal journey); r1: Claude review, fires 01:12 UTC; r1: 1/5, changes (1) (validators PASS but s117-4, user-sim REJECTED on APP-F-37 only; the macOS removal flake is a test race, fixed by s117-fix1): F1.1 app FUNCTIONAL APP-F-37 still promises `Compromised: <cause>`; ruling: amend APP-F-37 to the new words, plus P1.1 (words.rs arm tests) and P1.2 (a TECHNICAL 9.2 sentence); P1.3 to P1.5 to Leftovers; R1.1 accepted; answer r1 dispatched ~01:25 UTC; r1 answered at 54bafe1; r2: Claude reading check, fires 01:33 UTC.) Outcomes, each item's check: (1) S116 r1 P1.1 to P1.7 (the mixed-plan consent test, the dist
