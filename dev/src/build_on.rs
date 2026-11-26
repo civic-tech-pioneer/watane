@@ -533,14 +533,30 @@ mod tests {
         let temp = providers.join(format!("{}.{}.tmp", package.id(), std::process::id()));
         let killed = providers.join(format!("{}.{}.tmp", package.id(), std::process::id() + 1));
         let aged = providers.join(format!("other-id.{}.tmp", std::process::id() + 2));
-        for folder in [&temp, &killed, &aged] {
+        // Aged, but not `<id>.<pid>.tmp`: not a provider temp, so never swept.
+        let not_pid = providers.join("other-id.x1.tmp");
+        for folder in [&temp, &killed, &aged, &not_pid] {
             fs::create_dir_all(folder).unwrap();
             fs::write(folder.join("partial"), "partial").unwrap();
         }
-        fs::File::open(&aged)
-            .unwrap()
-            .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 3600))
+        for folder in [&aged, &not_pid] {
+            // A directory opens for its times only with backup semantics on Windows.
+            #[cfg(windows)]
+            let dir = {
+                use std::os::windows::fs::OpenOptionsExt;
+                fs::OpenOptions::new()
+                    .access_mode(0x100) // FILE_WRITE_ATTRIBUTES
+                    .custom_flags(0x0200_0000) // FILE_FLAG_BACKUP_SEMANTICS
+                    .open(folder)
+                    .unwrap()
+            };
+            #[cfg(not(windows))]
+            let dir = fs::File::open(folder).unwrap();
+            dir.set_modified(
+                std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 3600),
+            )
             .unwrap();
+        }
         let folder = store(&package, &env).unwrap();
         assert_eq!(
             fs::read_to_string(folder.join("ui/index.html")).unwrap(),
@@ -550,6 +566,7 @@ mod tests {
         assert!(!temp.exists());
         assert!(killed.exists());
         assert!(!aged.exists());
+        assert!(not_pid.exists());
         fs::write(folder.join("keep"), "existing").unwrap();
         fs::create_dir_all(&temp).unwrap();
         fs::write(temp.join("partial"), "partial").unwrap();
