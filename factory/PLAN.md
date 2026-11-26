@@ -1583,7 +1583,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 
 - [~] **S137 (upkeep, guard first) dist's local-address guards and install's S135/S123 polish.**
   (sketched 2026-11-26 by Deputy Scissors, the upkeep lane; builder claude by rule 3 (last two S136 codex, S135 codex),
-  reviewer codex; exempt from the size rule (upkeep). No spec-check run: items only, any spec gap goes through spec-change.)
+  reviewer codex; in flight, cloud, routine `trig_01D2jzqZBQFVRMEmK7P1o3Ek` fires 10:01 UTC; exempt from the size rule (upkeep). No spec-check run: items only, any spec gap goes through spec-change.)
   Outcomes (each item's check, re-checked against main first; an item already fixed is dropped with a line):
   (1) *guard* dist's local ranges (5.9) also refuse 100.64/10, 198.18/15, 0/8, fec0::/10 and the NAT64 and 6to4 forms of
   a local IPv4 address (S105 adversary, deputy decision 2026-11-23), and `localhost.` with one trailing dot is local
