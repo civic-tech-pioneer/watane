@@ -1891,6 +1891,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
+- **STEP6-REPO (2026-11-26, Deputy Scissors): the factory mod's repository, so step 6 can build.** S146 settled one combined factory mod whose source lives in its own repository (W29, `spec/design/factory/TECHNICAL.md` 1: "chosen when the repository is made"). Making a repository is an account act (Door H), so watane's main line waits on it: (a) you make it (say `civic-tech-pioneer/watane-factory`, or under `watane-mods`) and name the publisher; the next slice then builds the mod's skeleton there with a consumer half here; (b) the factory mod starts as a folder in watane until you make it, which goes against W29's "its own repository". Rec: (a). Meanwhile the fourth lane is empty: the other free path is adopting blog-based (`watane-mods/factory/bin/adopt.sh blog-based civic-tech-pioneer/blog-based`), also yours to start.
+
 - (2026-11-25, deputy-5, S122 merged: agentic-harness stage E's watane half is done) **A real judge account for V7.** Stage E's checked provider (agentic-harness) needs a judge service the provider can call with a key Alice enters; nothing in the factory can open one (an account is the human's). Which judge (Jev or another), and may the factory use a key of yours in its cloud tests? Blocks agentic-harness stage E, so step 6's JF1. **N5 revisit** (agentic-harness PLAN, "N5 The factory's implementer needs a shell"): you asked to revisit it when stage E starts, leaning (b); it blocks stage F.
 
 - **V8 writer busy share (S96).** One durable write per batch costs 24.5% writer busy at stage A's load
