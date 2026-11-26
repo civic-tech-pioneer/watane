@@ -20,6 +20,8 @@ mod package;
 #[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.
 mod recovery_guards;
 #[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.
+mod regress_s135;
+#[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.
 mod regress_s50b;
 #[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.
 mod regress_s50b_fix;
@@ -29,8 +31,6 @@ mod regress_s50c;
 mod regress_s50c_sim;
 #[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.
 mod regress_s55;
-#[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.
-mod regress_s135;
 #[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.
 mod s50c;
 #[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.

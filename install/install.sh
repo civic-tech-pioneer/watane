@@ -252,6 +252,14 @@ EOF
   [ "$ra_recorded" = 1 ] || [ "$al_rr" = "$HOME_R/$ra_relative" ]
 }
 
+# recovery_allowed_both <entry> <pid> <locations> <staged ok> <staged locations>: recovery_allowed
+# against the published receipt's locations and, when the staged receipt is readable, against
+# its own too: the staged one may veto where the published one allows (3.6 step 4).
+recovery_allowed_both() {
+  recovery_allowed "$1" "$2" "$3" || return 1
+  [ "$4" != 1 ] || recovery_allowed "$1" "$2" "$5"
+}
+
 # read_receipt <file>: R_OK, R_VERSION, R_TARGET and the raw path and resolved lines
 read_receipt() {
   R_OK=0
@@ -351,7 +359,7 @@ EOF
 
 # lock_pid_suffix <lock>: show the pid only for a plain lock with a valid pid file.
 lock_pid_suffix() {
-  [ -d "$1" ] && [ ! -L "$1" ] && [ -f "$1/pid" ] && [ ! -L "$1/pid" ] || return 0
+  [ ! -L "$1" ] && [ -f "$1/pid" ] && [ ! -L "$1/pid" ] || return 0
   lp_pid=""
   lp_lines=0
   while IFS= read -r lp_line || [ -n "$lp_line" ]; do
@@ -443,11 +451,7 @@ EOF
         elif [ "$ub_old_ok" = 1 ]; then
           in_list "$ub_old_paths" "path $ub_p" || continue
         fi
-        recovery_allowed "$ub_p" "$1" "$ub_locations" || { ub_blocked=1; continue; }
-        # The staged receipt may veto a move even where the published receipt allows it.
-        if [ "$ub_new_ok" = 1 ]; then
-          recovery_allowed "$ub_p" "$1" "$ub_new_locations" || { ub_blocked=1; continue; }
-        fi
+        recovery_allowed_both "$ub_p" "$1" "$ub_locations" "$ub_new_ok" "$ub_new_locations" || { ub_blocked=1; continue; }
         exists "$ub_p.new.$1" && continue
         # Move back to staging before deleting: a repeated undo then has proof
         # that this fresh entry was already taken out of the installed paths.
@@ -468,9 +472,6 @@ EOF
     rm -f "$SHAREW/journal.$1" || exit "$?"
     while IFS= read -r ub_p; do
       recovery_allowed "$ub_p" "$1" "$ub_locations" || continue
-      if [ "$ub_new_ok" = 1 ]; then
-        recovery_allowed "$ub_p" "$1" "$ub_new_locations" || continue
-      fi
       if exists "$ub_p.new.$1"; then rm_path "$ub_p.new.$1" || exit "$?"; fi
     done <<EOF
 $ENTRIES_ALL
@@ -538,6 +539,7 @@ clean_stale() {
         recovery_allowed "$cs_e" "" "$R_RESOLVED" || continue
         if [ "${1:-}" = report ]; then
           say "leftover: $(tilde "$cs_f")"
+          CS_REPORTED=1
         else
           # A journal that recovery could not retire still needs its staging evidence.
           cs_j=$SHAREW/journal.$cs_n
@@ -550,6 +552,17 @@ clean_stale() {
   done <<EOF
 $ENTRIES_ALL
 EOF
+  return 0
+}
+
+# prune_watane_dirs <locations>: rmdir the two Watane-specific folders when empty and when the
+# recorded locations say where they are (8.4 steps 1 and 2; 8.5 rule 4).
+prune_watane_dirs() {
+  for pw_entry in "$SHAREW/VERSION" "$PREFIX/share/watane-dev/vendor"; do
+    allowed "$pw_entry" || continue
+    in_list "$1" "resolved ${al_root#"$HOME/"} $al_rr" || continue
+    rmdir "${pw_entry%/*}" 2>/dev/null || { check_signal "$?"; }
+  done
   return 0
 }
 
@@ -582,13 +595,7 @@ recover() {
 $JOURNALS
 EOF
   clean_stale || { check_signal "$?"; die 5 "could not recover stale install files" "Recovery stopped; fix the filesystem error and run this again."; }
-  if [ -n "$rc_prune" ]; then
-    for rc_entry in "$SHAREW/VERSION" "$PREFIX/share/watane-dev/vendor"; do
-      recovery_allowed "$rc_entry" "" "$rc_prune" || continue
-      in_list "$rc_prune" "resolved ${al_root#"$HOME/"} $al_rr" || continue
-      rmdir "${rc_entry%/*}" 2>/dev/null || { check_signal "$?"; }
-    done
-  fi
+  if [ -n "$rc_prune" ]; then prune_watane_dirs "$rc_prune"; fi
   if [ "$RECOVERED" = 1 ] && [ "$rc_pending" = 0 ]; then
     say "recovered interrupted watane install"
   fi
@@ -863,6 +870,7 @@ EOF
     cf_ownership=$R_OK
     cf_paths=$R_LINES
     cf_staged=0
+    cf_staged_locations=""
     if exists "$RECEIPT.new.$cf_n"; then
       read_receipt "$RECEIPT.new.$cf_n"
       if [ "$R_OK" = 1 ]; then
@@ -875,10 +883,7 @@ EOF
     read_journal "$SHAREW/journal.$cf_n"
     while IFS= read -r cf_p; do
       [ -n "$cf_p" ] || continue
-      recovery_allowed "$cf_p" "$cf_n" "$cf_locations" || continue
-      if [ "$cf_staged" = 1 ]; then
-        recovery_allowed "$cf_p" "$cf_n" "$cf_staged_locations" || continue
-      fi
+      recovery_allowed_both "$cf_p" "$cf_n" "$cf_locations" "$cf_staged" "$cf_staged_locations" || continue
       if [ "$cf_ownership" = 1 ]; then in_list "$cf_paths" "path $cf_p" || continue; fi
       in_list "$J_MOVED" "$cf_p" || continue
       if exists "$cf_p.new.$cf_n"; then continue; fi
@@ -1509,7 +1514,12 @@ do_install() {
 
 do_status() {
   ds_lock=$HOME/.watane-install.lock
+  ds_has_lock=0
+  ds_has_left=0
+  ds_seen=""
+  CS_REPORTED=0
   if exists "$ds_lock"; then
+    ds_has_lock=1
     ds_suffix=$(lock_pid_suffix "$ds_lock")
     check_signal "$?"
     say "install lock: $(tilde "$ds_lock")$ds_suffix"
@@ -1522,6 +1532,7 @@ do_status() {
       ds_p=${ds_l#path }
       if valid_entry "$ds_p"; then
         say "$(tilde "$ds_p")"
+        ds_seen=$(add_item "$ds_seen" "$ds_p")
       else
         check_signal "$?"
       fi
@@ -1537,19 +1548,21 @@ EOF
       read_recovery_receipt "$ds_n"
       recovery_allowed "$RECEIPT" "$ds_n" "$R_RESOLVED" || continue
       say "leftover: $(tilde "$SHAREW/journal.$ds_n")"
+      ds_has_left=1
       if exists "$RECEIPT.new.$ds_n"; then
         ds_locations=$R_RESOLVED
         read_receipt "$RECEIPT.new.$ds_n"
         [ "$R_OK" = 1 ] || continue
         read_journal "$SHAREW/journal.$ds_n"
         while IFS= read -r ds_p; do
-          [ "$ds_p" != "$RECEIPT" ] || continue
           in_list "$R_LINES" "path $ds_p" || continue
-          recovery_allowed "$ds_p" "$ds_n" "$ds_locations" || continue
-          recovery_allowed "$ds_p" "$ds_n" "$R_RESOLVED" || continue
+          recovery_allowed_both "$ds_p" "$ds_n" "$ds_locations" 1 "$R_RESOLVED" || continue
           exists "$ds_p.new.$ds_n" && continue
           exists "$ds_p" || continue
           if ! in_list "$J_NEW" "$ds_p" && ! exists "$ds_p.old.$ds_n"; then continue; fi
+          # a path the receipt already listed above is not listed again
+          if in_list "$ds_seen" "$ds_p"; then continue; fi
+          ds_seen=$(add_item "$ds_seen" "$ds_p")
           say "leftover: $(tilde "$ds_p")"
         done <<EOF
 $J_MOVED
@@ -1559,6 +1572,15 @@ EOF
 $JOURNALS
 EOF
     clean_stale report
+    if [ "$CS_REPORTED" = 1 ]; then ds_has_left=1; fi
+  fi
+  ds_run="sh $(tilde "$SHAREW/install.sh")"
+  if [ "$ds_has_lock" = 1 ] && [ "$ds_has_left" = 1 ]; then
+    say "Next: if no install is running, run: rm -rf $(tilde "$ds_lock"), then run: $ds_run"
+  elif [ "$ds_has_lock" = 1 ]; then
+    say "Next: if no install is running, run: rm -rf $(tilde "$ds_lock")"
+  elif [ "$ds_has_left" = 1 ]; then
+    say "Next: run: $ds_run (it recovers the interrupted install first)"
   fi
   [ "$ds_installed" = 1 ] || die 7 "not installed: no receipt at $(tilde "$RECEIPT")"
   return 0
@@ -1590,7 +1612,12 @@ do_uninstall() {
   check_no_live_install
   recover prune
   read_receipt "$RECEIPT"
-  [ "$R_OK" = 1 ] || die 7 "nothing to uninstall: no receipt at $(tilde "$RECEIPT")"
+  if [ "$R_OK" != 1 ]; then
+    if [ "$RECOVERED" = 1 ]; then
+      die 7 "nothing to uninstall: no receipt at $(tilde "$RECEIPT")" "The files of the interrupted install were removed."
+    fi
+    die 7 "nothing to uninstall: no receipt at $(tilde "$RECEIPT")"
+  fi
   du_ver=$R_VERSION
   du_partial=0
   while IFS= read -r du_l; do
@@ -1614,13 +1641,7 @@ EOF
   # Only the two Watane-specific directories are candidates for empty-directory cleanup.
   # Rule 4 must still match, including the location of the receipt itself.
   if receipt_allowed "$RECEIPT" 2>/dev/null; then
-    for du_entry in "$SHAREW/VERSION" "$PREFIX/share/watane-dev/vendor"; do
-      if receipt_allowed "$du_entry" 2>/dev/null; then
-        rmdir "${du_entry%/*}" 2>/dev/null || { check_signal "$?"; }
-      else
-        check_signal "$?"
-      fi
-    done
+    prune_watane_dirs "$R_RESOLVED"
   else
     check_signal "$?"
   fi
