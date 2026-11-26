@@ -466,3 +466,66 @@ cat "$bin"; kept "$node"; kept "$SHAREW/journal.$pid""#,
     let u = case(&units, "unrecognised");
     assert_eq!(u.out, "new\ngone\ngone\n", "{u:?}");
 }
+
+/// TECHNICAL 3.6 step 4 (validator, S137-1): in the `new` loop of the undo, the staged receipt's
+/// folder record vetoes a move that the published record allows: the entry stays and so does the
+/// journal. Mutant: pass `0` for the staged flag of that `recovery_allowed_both` call.
+#[test]
+fn regress_s135_undo_obeys_the_staged_receipts_folder_record() {
+    let units = run(&[(
+        "staged_elsewhere",
+        r#"rcpt "$RECEIPT" "$bin"; BINRES=/elsewhere rcpt "$RECEIPT.new.$pid" "$bin" "$node"
+: >"$node"; fresh_journal "$node"; undo_swap "$pid"; kept "$node"; kept "$SHAREW/journal.$pid""#,
+    )]);
+    let u = case(&units, "staged_elsewhere");
+    assert_eq!(u.out.matches("kept").count(), 2, "{u:?}");
+}
+
+/// TECHNICAL 8.4 step 1, 8.5 (validator, S137-1): the prune skips a Watane folder that resolves
+/// outside the home whatever the locations say, so an empty folder there is never removed. The
+/// locations name what an earlier `allowed` left in `al_rr`, which a missing veto would match.
+/// Mutant: drop `|| continue` after `allowed` in `prune_watane_dirs`.
+#[test]
+fn regress_s135_prune_leaves_a_folder_outside_the_home() {
+    let fx = Fx::new();
+    let out = fx.root.path().join("out");
+    fs::create_dir_all(out.join("watane")).expect("out/watane");
+    fs::create_dir_all(out.join("watane-dev")).expect("out/watane-dev");
+    fs::create_dir_all(fx.home.join(".local")).expect("local");
+    symlink(&out, fx.home.join(".local/share")).expect("share link");
+    let units = fx.units(
+        PRELUDE,
+        &[],
+        &[(
+            "share_linked_out",
+            r#"allowed "$bin"
+prune_watane_dirs "resolved .local/share/watane $al_rr
+resolved .local/share/watane-dev $al_rr"
+kept "$ROOT/out/watane"; kept "$ROOT/out/watane-dev""#,
+        )],
+    );
+    let u = case(&units, "share_linked_out");
+    assert_eq!(u.out.matches("kept").count(), 2, "{u:?}");
+}
+
+/// TECHNICAL 8.1 (validator, S137-1): a journal reported alone (a dead commit whose backups are
+/// gone) still ends status with the next step. Mutant: drop `ds_has_left=1` after the journal line.
+#[test]
+fn regress_s135_status_next_step_for_a_journal_alone() {
+    let units = run(&[(
+        "journal_only",
+        r#"rcpt "$RECEIPT" "$bin"; printf 'moved %s\n' "$bin" >"$SHAREW/journal.$pid"; do_status"#,
+    )]);
+    let u = case(&units, "journal_only");
+    assert!(
+        u.has_out_line("leftover: ~/.local/share/watane/journal.99999999"),
+        "{u:?}"
+    );
+    assert_eq!(
+        u.out.lines().last(),
+        Some(
+            "Next: run: sh ~/.local/share/watane/install.sh (it recovers the interrupted install first)"
+        ),
+        "{u:?}"
+    );
+}
