@@ -275,7 +275,7 @@ mod tests {
 
     /// A firing rechecks its row after waiting for the mod's call lock (19.6).
     #[test]
-    fn ac3_a_timer_cancelled_while_its_firing_waits_does_not_run() {
+    fn ac3_a_timer_cancelled_or_replaced_while_its_firing_waits_does_not_run() {
         use super::{Arc, Duration, Mutex, TimerOp, unix_ms};
         use std::time::Instant;
 
@@ -292,7 +292,6 @@ mod tests {
             .insert("local/advo".into(), Arc::clone(&lock));
 
         for trial in 0..=20 {
-            let cancel = trial < 20;
             let key = crate::state::timer_key("local/advo", &format!("t{trial}"));
             let due = unix_ms();
             // Arm only after taking the mod's lock, so the due timer cannot beat the cancel.
@@ -317,8 +316,17 @@ mod tests {
                 );
                 std::thread::sleep(Duration::from_millis(1));
             }
-            if cancel {
-                host.state.timer_write(&[TimerOp::Cancel { key }]).unwrap();
+            match trial {
+                0..=9 => host.state.timer_write(&[TimerOp::Cancel { key }]).unwrap(),
+                10..=19 => host
+                    .state
+                    .timer_write(&[TimerOp::After {
+                        key,
+                        due: due + 60_000,
+                        origin: "local/advo".into(),
+                    }])
+                    .unwrap(),
+                _ => {}
             }
             drop(held);
             let deadline = Instant::now() + Duration::from_secs(3);
@@ -330,8 +338,12 @@ mod tests {
             let mut state = host.state.transaction("local/advo", &host.limits).unwrap();
             assert_eq!(
                 state.get("fired").unwrap(),
-                if cancel { None } else { Some(b"t20".to_vec()) },
-                "only the uncancelled control timer should fire"
+                if trial == 20 {
+                    Some(b"t20".to_vec())
+                } else {
+                    None
+                },
+                "only the unchanged control timer should fire"
             );
         }
     }
