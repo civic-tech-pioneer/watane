@@ -1581,6 +1581,19 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dist | S1 to S5 | 3 | done (S21a) |
 | dist | S6 find | 4 | done (S28) |
 
+- [~] **S137 (upkeep, guard first) dist's local-address guards and install's S135/S123 polish.**
+  (sketched 2026-11-26 by Deputy Scissors, the upkeep lane; builder claude by rule 3 (last two S136 codex, S135 codex),
+  reviewer codex; exempt from the size rule (upkeep). No spec-check run: items only, any spec gap goes through spec-change.)
+  Outcomes (each item's check, re-checked against main first; an item already fixed is dropped with a line):
+  (1) *guard* dist's local ranges (5.9) also refuse 100.64/10, 198.18/15, 0/8, fec0::/10 and the NAT64 and 6to4 forms of
+  a local IPv4 address (S105 adversary, deputy decision 2026-11-23), and `localhost.` with one trailing dot is local
+  (S104 review); (2) dist S105 P5.3, P5.4, P6.1 to P6.3 (Upkeep list above); (3) install S135 r1 P1.1 to P1.14 of
+  PR #49, P1.1 by making user-sim's red test `regress_s135_changed_during_install_to_the_home_has_no_bare_tilde` pass,
+  P1.2 with tests that kill mutants 9 and 10; (4) install S123 r2 P2.1 and r1 P1.2, P1.4, P1.5.
+  Touches: `dist/src/`, `dist/tests/`, `install/`, dist and install TECHNICAL only where a rule changes. Not host/ or
+  dev/ (S136).
+  Constraints: no new public interface; a guard never weakens. Adversary on (1): Eve's listed base or redirect aimed
+  at each new range (spec/TECHNICAL.md 6).
 ## Leftovers
 
 ### S129 polish (PR #46 r1)
