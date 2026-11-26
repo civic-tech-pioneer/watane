@@ -1288,7 +1288,9 @@ is a feature of `app`, not of `install` (Q11).
    `recovered interrupted watane install` line was printed before it
    (INST-S-33) and recovery left no staging name of a dead run behind (a folder
    whose recorded location differs keeps its `.new.<n>` names, 3.6 step 4) and
-skipped no journal entry (a folder relinked outside the home is not entered, 8.5);
+   skipped no journal entry (a folder relinked outside the home is not entered, 8.5)
+   and could read each dead run's journal (only uninstall inspects them; an
+   unreadable one suppresses this line and changes nothing else of the recovery);
    otherwise it says nothing about removal. When another journal stays
    pending, the `recovered` line and this one are both left out.
 2. `rm -rf` each `path` of the receipt that the rule of 8.5 allows; a path

@@ -724,14 +724,20 @@ printf 'resolved .local/share/watane /elsewhere\n' >>"$RECEIPT.new.$pid"
 }
 
 /// TECHNICAL 8.1 (S137 r1 F1.1): the script is named only when the receipt that lists it records
-/// the physical folder it is in: a receipt with no `resolved .local/share/watane` line, or one
-/// that records another folder, gets the fallback line. Mutant: drop the `in_list "$ds_owned_at"`
-/// check in `do_status`.
+/// the physical folder it is in: a receipt with no `resolved .local/share/watane` line gets the
+/// fallback line; one that records another folder (S137 r2 P2.1) never names the script.
+/// Mutant: drop the `in_list "$ds_owned_at"` check in `do_status`.
 #[test]
 fn regress_s137_status_names_the_script_only_in_the_folder_the_receipt_records() {
     let plant = r#"rcpt "$RECEIPT" "$bin" "$SHAREW/install.sh"; : >"$SHAREW/install.sh"; : >"$bin.old.$pid""#;
     let units = run(&[
         ("recorded", &format!("{plant}\ndo_status")),
+        (
+            "mismatched",
+            &format!(
+                "{plant}\nsed 's|^resolved .local/share/watane .*|resolved .local/share/watane '\"$HOME_R\"'/elsewhere|' \"$RECEIPT\" >\"$RECEIPT.t\" && mv \"$RECEIPT.t\" \"$RECEIPT\" || exit 99\ngrep -q '/elsewhere$' \"$RECEIPT\" || exit 98\ndo_status"
+            ),
+        ),
         (
             "unrecorded",
             &format!(
@@ -751,6 +757,14 @@ fn regress_s137_status_names_the_script_only_in_the_folder_the_receipt_records()
         unrecorded.out.lines().last(),
         Some(format!("Next: run the install command again {tail}").as_str()),
         "{unrecorded:?}"
+    );
+    // a record of another folder also vetoes the leftover (8.5), so no `Next:` line names the script
+    let mismatched = case(&units, "mismatched");
+    assert_eq!(mismatched.code, 0, "{mismatched:?}");
+    assert!(!mismatched.out.contains("run: sh "), "{mismatched:?}");
+    assert!(
+        mismatched.has_out_line("~/.local/share/watane/install.sh"),
+        "{mismatched:?}"
     );
 }
 
@@ -784,4 +798,41 @@ fn regress_s137_uninstall_does_not_claim_removal_when_recovery_skipped_an_entry(
     let kept = case(&units, "in_place");
     assert_eq!(kept.code, 7, "{kept:?}");
     assert!(kept.has_err_line(line), "{kept:?}");
+}
+
+/// TECHNICAL 3.6 step 0, 8.4 step 1 (S137 r2 F2.1): a committed swap whose journal cannot be
+/// read, beside a readable published receipt. Install's recovery finishes the commit and retires
+/// the journal as before S137 r1 (it never reads the journal); uninstall's recovery does the same
+/// and, since it could not inspect the journal, claims no removal (`CS_LEFT`). Red at 2ccb2b8: the
+/// inspection read every journal and the shell exited 2. Needs a user that file modes bind, so
+/// it passes vacuously as root.
+#[test]
+fn regress_s137_an_unreadable_committed_journal_is_still_recovered() {
+    let uid = std::process::Command::new("id")
+        .arg("-u")
+        .output()
+        .expect("id");
+    if String::from_utf8_lossy(&uid.stdout).trim() == "0" {
+        eprintln!("skipped: root reads a file of mode 000");
+        return;
+    }
+    let plant = r#"rcpt "$RECEIPT" "$bin"; : >"$bin"; : >"$bin.old.$pid"
+printf 'old %s\nmoved %s\n' "$bin" "$bin" >"$SHAREW/journal.$pid"; chmod 000 "$SHAREW/journal.$pid""#;
+    let after =
+        r#"echo "left=$CS_LEFT"; kept "$SHAREW/journal.$pid"; kept "$bin.old.$pid"; kept "$bin""#;
+    let units = run(&[
+        ("install", &format!("{plant}\nrecover\n{after}")),
+        ("uninstall", &format!("{plant}\nrecover prune\n{after}")),
+    ]);
+    for (name, left) in [("install", "left=0"), ("uninstall", "left=1")] {
+        let u = case(&units, name);
+        assert_eq!(u.code, 0, "{u:?}");
+        assert!(
+            u.has_out_line("recovered interrupted watane install"),
+            "{u:?}"
+        );
+        assert!(u.has_out_line(left), "{u:?}");
+        assert_eq!(u.out.matches("gone").count(), 2, "{u:?}");
+        assert!(u.has_out_line("kept"), "{u:?}");
+    }
 }
