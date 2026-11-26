@@ -1217,6 +1217,8 @@ names the same interface in its sketch and fakes it until this one merges.
 - [x] **S122 Alice gives a checked provider its judge key (host A5, app 19.4; agentic-harness stage E, watane half).** DONE 2026-11-25: PR #42 rebase-merged by deputy-5 (13597bf2, no bypass); builder codex, reviewer claude, 1 round (0/8); ~3.8 h in flight. On a checked provider's manager page Alice saves, replaces and removes a judge key and its https origin; the host sends it only with that provider's granted POSTs to that origin (no redirects); removing it ends the provider's live judge streams `gone`; startup deletes key files of uninstalled mods. Adversary HELD, user-sim ACCEPTED, validator PASS. R1.1 to R1.4 accepted (Deputy decisions); P1.1 to P1.8 and R1.1's spec question in Leftovers. Sketch in factory/DONE.md.
 - [x] **S124 (upkeep) a failed fetch blames the true cause (net, node, dist), and net's budget flake.** DONE 2026-11-25: PR #43 rebase-merged by deputy-5 (e76d1682, no bypass); builder claude, reviewer codex, 2 rounds (3/2, 0/0); ~3.5 h in flight. A local I/O or holder failure during a fetch reads as this machine's, with no temp path; a bad copy on a full machine and every full machine being off each say so instead of 'not followed'; a close before the download is Unreachable; net's budget probes no longer race the refill clock. F1.3 regraded polish (fixed anyway); R2.1 accepted; P1.1, P1.2 in Leftovers. Sketch in factory/DONE.md.
 - [x] **S125 (upkeep, guard) host's and app's flaky tests, and S122's judge polish.** DONE 2026-11-25: PR #44 rebase-merged by deputy-5 (337a8466, no bypass); builder codex, reviewer claude, 1 round (0/10); ~2.3 h in flight. The host releases its home lock explicitly when it closes (a reopen no longer meets `Busy`); the streams hand-off and Windows timer tests wait on the right events; a kept judge key stays visible and removable after `claude-code` is withdrawn; the judge editor names what is wrong; S122's judge polish done; S118 had already fixed the consent flakes. R1.1 to R1.4 accepted (Deputy decisions); P1.1 to P1.10 and three new flake sightings in Leftovers. Windows rerun once (two host timing flakes outside the slice). Sketch in factory/DONE.md.
+- [x] **S141 (upkeep) host's S136/S126/S111 polish, the ac9 flake, and install's S137 rough spots.** DONE 2026-11-26: PR #52 rebase-merged by Deputy Rock (no bypass); builder codex, reviewer claude, 2 rounds (2/3, 0/0); ~1.7 h in flight. `claude::ac9` waits for the event it means; the backpressure bound is 128 events with headroom (30 passes); the judge hint names the `https-stream` import and the rerun keeps `--script`; the app shows the host's judge-origin error; install's `--status` and `--uninstall` name skipped staging, missing destinations, unrecognised receipts and partial recovery. Adversary HELD (install), user-sim ACCEPTED (after review B1.1: the build team had not run them). Deferred back to Leftovers: S136 P1.3 (a WIT change), P1.7 (a new interface). Friction: `review-lead.md` missing (proposed as a factory fix). Sketch in factory/DONE.md.
+
 - [x] **S137 (upkeep) dist's local-address guards and install's S135/S123 polish.** DONE 2026-11-26: PR #51 rebase-merged by Deputy Rock (no bypass); builder claude, reviewer codex, 3 rounds (2/1, 1/1, 0/0); ~2.8 h in flight. install's `--status` names `install.sh` only in the folder a readable receipt records, uninstall claims no removal after a skipped or unreadable journal entry, and recovery still finishes an unreadable post-commit journal; S135 and S123 install polish done; dist items (1), (2) were already on main. Adversary HELD (two RISKs settled by S137-fix1), user-sim ACCEPTED (5/5). Friction: the reviewers found no `.claude/factory/review-lead.md` (proposed as a factory fix); the first build session did not wake on PR comments (answers went as new routines). User-sim rough spots in Leftovers (`### install`). Sketch in factory/DONE.md.
 
 - [x] **S136 A mod's timer firing tells it whose authority it carries (host 19.6 build), with host's and dev's judge polish.** DONE 2026-11-26: PR #50 rebase-merged by Deputy Scissors (no bypass); builder codex, reviewer claude, 1 round (0/7); ~1.3 h in flight. A mod's own top-level `fired` reads `timers.firing-origin()` as the resolved origin identity (the owner after its client is disabled or removed); nested, page, subscriber, stream and agent calls read `none`; cancelled or replaced timers never fire; the Harness returns `none` and `Fakes` overrides it. S129 P1.1 to P1.8, S126 P1.3, P1.4 done. Adversary HELD, user-sim ACCEPTED. Polish P1.1 to P1.7 in Leftovers (`### host`). Unblocks agentic-harness's consumer half of S133 (after S134, which shares `design/TECHNICAL.md`). Sketch in factory/DONE.md.
@@ -1568,24 +1570,8 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dist | S1 to S5 | 3 | done (S21a) |
 | dist | S6 find | 4 | done (S28) |
 
-- [~] **S141 (upkeep, guard first) host's S136/S126/S111 polish, the ac9 flake, and install's S137 rough spots.**
-  (sketched 2026-11-26 by Deputy Rock, the upkeep lane; builder codex by rule 3 (last two S140 claude, S138 codex),
-  reviewer claude; in flight, cloud, Codex task https://chatgpt.com/local/6b082b7f-3a70-83ed-872a-f8da2c5e3050, 12:55 UTC; DELIVERED as PR #52 at 31d9a25 (13:50 UTC, +376/-61; S129 items already done by S136; S136 P1.3 (WIT comments) and P1.7 deferred; user-sim and adversary not run); r1: Claude routine `trig_01248AmqwLvZQ4ZGrbzwhrTo`, 13:52 UTC; r1: 2/3 (changes: B1.1 user-sim and adversary not run, B1.2 the tightened backpressure bound flakes 2 in 18; ruled narrow), answer as Codex follow-up in the build task 14:08 UTC; r1 answers at 4d561f3 (14:16 UTC; adversary HELD, user-sim ACCEPTED, 128-event bound, P1.1 disagreed); r2: Claude routine `trig_01Fraz988Ln1GxbyzRMbtkxD`, 14:18 UTC; at merge: S136 P1.3 and P1.7 back to `### host` and `### dev` (deferred: WIT change, new interface), drop `### S129 polish`, S126 r1 P1.4, S111 P1.1; friction: review-lead.md missing, third sighting (proposed as a factory fix); spec-check not run: no spec rule changes beyond a doc line where an item names one. Upkeep is exempt from the size rule.)
-  Outcomes (each item's check, re-checked against main first; an item already fixed is dropped with a line):
-  (1) *guard* the ubuntu flake `claude::ac9_say_refuses_slash_commands_strangers_and_unknown_streams`
-  (host/tests/it/claude.rs:587, left 0, right 1, S133 CI): the race found and fixed, or the assertion waits on the event it
-  means, with the reason in the test; (2) S136 r1 P1.1 to P1.7 (PR #50; P1.1 finishes S126 r1 P1.1) in `### host`;
-  (3) S111 r1 host P1.1 (connect and TLS handshake each get their own `idle-s`) and P1.2 to P1.5, P1.11, P1.14 where cheap;
-  (4) install's S137 user-sim rough spots (`### install`); (5) the `### S129 polish` list is checked against main and
-  dropped where S136 already did it.
-  Touches: `host/src/`, `host/tests/`, `dev/src/preview/` (S136 P1.4, P1.7), `app/` only for S136 P1.6's shared text,
-  `install/`, and each subsystem's TECHNICAL only for a doc line an item names.
-  Constraints: no new public interface, no WIT change; a guard never weakens; a flake is never fixed by a retry alone.
-  Adversary: install's boundary for (4) (spec/TECHNICAL.md 6).
 ## Leftovers
 
-### S129 polish (PR #46 r1)
-- P1.1 to P1.8 of https://github.com/civic-tech-pioneer/watane/pull/46 (review r1): fast host tests for the judge arm, the default token pinned, a duplicate test, one `Ready` type, `Option<String>` ready fields, `judge_key` checked at configure, `set_scripted_openai` wrapper, a serve hint when `[http]` lacks `judge.test`.
 
 Upkeep (polish from S105's reviews r5 and r6, 2026-11-24):
 - [S105 P5.3] `dist/src/holder.rs:162`: a Kept ingest of the participant's own channel settles too, so it fails while the store is unsynced; settle only when `channel != identity`, or say so in dist TECHNICAL 4.4.
@@ -1665,18 +1651,17 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### host
 
-- **(S136 r1 polish)** P1.1 to P1.7 of https://github.com/civic-tech-pioneer/watane/pull/50 (review r1): P1.1 `host/tests/it/https_stream.rs:1746` bound near the buffer size (finishes S126 P1.1); P1.2 a test of re-entry into the timer's own mod reading `none`; P1.3 a doc comment on `firing-origin` in `host/wit/host.wit:133` and the maker's copy; P1.4 `dev/src/preview/unix.rs:339` `judge_grant_missing` also names the `https-stream` import, and `mod.invalid`'s rerun keeps `--script`; P1.5 dev TECHNICAL `fakes` row lists `watane:host/timers`; P1.6 the judge-origin error text lives twice (host accounts.rs:51, app words.rs:406); P1.7 a mod disabled in a preview stays disabled across `serve`.
+- **(S136 r1 polish, left by S141)** P1.3 a doc comment on `firing-origin` in `host/wit/host.wit:133` and the maker's copy (a WIT change: S141 allowed none).
 
-- (flake, S133 CI 2026-11-26) `claude::ac9_say_refuses_slash_commands_strangers_and_unknown_streams` failed on ubuntu at host/tests/it/claude.rs:587 (left 0, right 1) on a docs-only PR; rerun.
-- [S126 r1] (polish) P1.1 `host/tests/it/https_stream.rs:1674` the "host stops reading" bound weakened to `written < EVENTS`: add a buffer-sized bound; P1.2 a removal timeout answers `internal` (host 4.4 names no code; a busy-mod kind is an interface change); P1.3 `.github/workflows/ci.yml:85,104` the S126 repeat steps are dead after merge: remove; P1.4 `judge_set` with an invalid origin lacks the editor's explanation; P1.5 `app/ui/app.js:132-136` "needs ." with empty hosts (unreachable today).
-
+- [S126 r1] (polish; P1.1 and P1.4 done by S141) P1.1 `host/tests/it/https_stream.rs:1674` the "host stops reading" bound weakened to `written < EVENTS`: add a buffer-sized bound; P1.2 a removal timeout answers `internal` (host 4.4 names no code; a busy-mod kind is an interface change); P1.3 `.github/workflows/ci.yml:85,104` the S126 repeat steps are dead after merge: remove; P1.4 `judge_set` with an invalid origin lacks the editor's explanation; P1.5 `app/ui/app.js:132-136` "needs ." with empty hosts (unreachable today).
 
 
 
 
 
 
-- [S111 r1] P1.1 connect and TLS handshake each get their own `idle-s` (`host/src/agent/https_stream.rs:580-595`); P1.2 to P1.5, P1.11, P1.14: stronger and more host tests, a reset-before-head message; one sentence each in 19.4 for the accepted R2 and R5.
+
+- [S111 r1] (host P1.1 to P1.5, P1.11, P1.14 found on main by S141; the dev items stand) P1.1 connect and TLS handshake each get their own `idle-s` (`host/src/agent/https_stream.rs:580-595`); P1.2 to P1.5, P1.11, P1.14: stronger and more host tests, a reset-before-head message; one sentence each in 19.4 for the accepted R2 and R5.
 
 - From S91: an over-declared Content-Length whose body never arrives waits instead of a 413 at once.
 - [S12a] `ac4_program_defaults_to_environment_home_and_port` probes port 47341 and then binds it
@@ -1689,6 +1674,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 - [S44] an unknown `/api` route answers 404 `bad_request` (host/src/server.rs:107, 245).
 
 ### dev
+
+- **(S136 r1 P1.7, left by S141)** a mod disabled in a preview stays disabled across `serve`: re-enabling it with its state kept needs a new interface.
 
 - [deputy-6, S127] dev 18.3's judge `Play::{Safe,Unsafe,Unsure}(reasons)` and 17 item 17's proposed verdict body are not the checked provider's wire shape: it speaks TypeSafe System One (agentic-harness Deputy decisions 2026-11-25), so its tests script `Raw`. Give `Judge` plays in System One's shape (a `noul` per question) once S127 has merged.
 
@@ -1759,7 +1746,6 @@ Re-checked and swept by S86 (2026-11-18); these remain.
   dist/TECHNICAL.md:1231 still carries Q12 open.
 
 ### install
-- **(S137 user-sim rough spots, PR #51)** partial recovery under a relinked bin is silent on `--uninstall`; `--status` is clean while a skipped `.new` name stays; during a killed upgrade `--status` names a path that exists only as `.old`; "writes only under your home folder" is the hint for a link to the home itself; "no receipt" is printed for a junk receipt.
 - **(S135 r1 polish)** P1.1 to P1.14 of https://github.com/civic-tech-pioneer/watane/pull/49 (review r1): P1.1 `install.sh:1068` a folder relinked to the home mid-install still ends in a bare `~` (user-sim's red test `regress_s135_changed_during_install_to_the_home_has_no_bare_tilde`); P1.2 `:442`, `:444` two unpinned undo checks (mutants 9, 10); the rest wording, next steps in `--status`, and `slow:` reasons.
 
 - [S123 r2] (polish) P2.1 `ac2_uninstall_keeps_a_relinked_created_folder` passes without the `! -L` and resolved-path guards of `root_folder_receipt_line`; test them through `keep_created_roots` on a reinstall. `install/tests/clean_mac.sh:13` raises SC2015 with ShellCheck 0.9.0 (CI's passes).
