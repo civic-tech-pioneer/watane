@@ -1,6 +1,10 @@
-# Factory mods · functional design (draft)
+# Factory mod · functional design (draft)
 
 ## 1. What Alice controls
+
+The planning page and the foreman page belong to one factory mod. Alice
+installs, updates and grants it once; a consent she gives it holds for
+both pages ([TECHNICAL §5](TECHNICAL.md#5-open-decisions)).
 
 **FF1 · Plan and dispatch.** The planning page shows the project, plan, slice sketch, outcomes and open
 decisions. An agent may propose a sketch or a change in direction. Alice
@@ -65,7 +69,7 @@ those handoffs. Existing required project gates still apply.
 
 Covers FF4.
 
-1. Alice points the same process at the factory mods' source. The running
+1. Alice points the same process at the factory mod's source repository. The running
    release continues to serve the work while the implementer changes a
    separate candidate checkout. Review and checks bind to the candidate
    revision, including the proposed changes in authority.
