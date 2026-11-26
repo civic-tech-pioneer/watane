@@ -775,7 +775,8 @@ home (`pwd -P`, which differs from `$HOME` when the home is reached through a
 link, such as `/var` -> `/private/var` on macOS), in every path the script
 prints: each `skipped <path>: ...` line and each `... resolves to <path>`
 line (8.5 rule 4, 3.4.2) name a path inside the home as `~/...`, the entry
-and the resolved folder alike, and a path outside the home stays absolute (IN-48).
+and the resolved folder alike, a resolved folder that is the home itself as `your home
+folder itself` (3.4.1, 3.6 step 3), and a path outside the home stays absolute (IN-48).
 A reader that closes the output early (`--status | head -1`) gets no
 `write error` text from the script: the next write ends the run with `PIPE`
 (exit 141, 3.8) and nothing on stderr; when the reader closes only after
