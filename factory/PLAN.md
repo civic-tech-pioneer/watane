@@ -1236,7 +1236,7 @@ names the same interface in its sketch and fakes it until this one merges.
   Constraints: design only, through the `spec-change` skill. List each Door C choice (the WIT shape, the callback) in
   the PR body with its options, for the human's veto. A new host export or callback is a public interface: prefer the
   narrowest (read-only, own timers only).
-- [ ] **S135 (upkeep) install.sh's last S130 and S123 polish.** (sketched 2026-11-26 by Deputy Paper, the watane upkeep
+- [~] **S135 (upkeep) install.sh's last S130 and S123 polish.** (in flight, cloud; Codex task https://chatgpt.com/local/6b07eebe-eed0-83eb-b34d-113057e32064, ~08:40 UTC; sketched 2026-11-26 by Deputy Paper, the watane upkeep
   lane; builder codex, reviewer claude by rule 3 (last two S134 claude, S133 codex); no spec-check: install's own
   3.x wording at most. Exempt from size: upkeep.)
   Outcomes, each item's check (re-check each against main first; drop the ones already true and say so):
