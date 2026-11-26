@@ -1680,9 +1680,8 @@ mod tests {
         let home = root.path().canonicalize().unwrap();
         let dir = home.join("m");
         template::new_mod(&dir, "m").unwrap();
+        // `add --release` and `new --from`: s93_ac2_no_app_next_is_the_rerun_for_add_and_new_from.
         let (d, h) = (shell_path(&dir), shell_path(&home));
-        let target = home.join("fresh");
-        let t = shell_path(&target);
         let cases = [
             (
                 Command::Install {
@@ -1702,14 +1701,6 @@ mod tests {
                 format!("watane-dev publish --json --dir {d} --home {h} --push"),
             ),
             (
-                Command::Add {
-                    provider: None,
-                    release: Some("k/p@0.1.0".into()),
-                    home: Some(home.clone()),
-                },
-                format!("watane-dev add --release 'k/p@0.1.0' --json --dir {d} --home {h}"),
-            ),
-            (
                 Command::Search {
                     text: vec!["w".into()],
                     publisher: None,
@@ -1718,24 +1709,11 @@ mod tests {
                 },
                 format!("watane-dev search --json w --home {h}"),
             ),
-            (
-                Command::New {
-                    slug: None,
-                    from: Some("k/p@0.1.0".into()),
-                    home: Some(home.clone()),
-                },
-                format!("watane-dev new --from 'k/p@0.1.0' --json --dir {t} --home {h}"),
-            ),
         ];
         for (command, rerun) in cases {
-            let dir = if matches!(command, Command::New { .. }) {
-                target.clone()
-            } else {
-                dir.clone()
-            };
             let outcome = run(Cli {
                 json: true,
-                dir: Some(dir),
+                dir: Some(dir.clone()),
                 command,
             });
             assert_eq!(
