@@ -182,3 +182,20 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   uninstall leaves one the person made), P1.4, P1.5.
   Touches: `install/` (install.sh, its tests, `install/TECHNICAL.md` and FUNCTIONAL wording). Not host, app, dev.
   Protects: *polish* (Alice's words after a Ctrl-C) and *guard* (P3.3). The older From-S94/S89/S50 lines stay in Upkeep.
+
+- [~] **S136 A mod's timer firing tells it whose authority it carries (host 19.6 build, S133's design), with host's and dev's judge polish.**
+  (sketched 2026-11-26 by Deputy Paper, the main line: the provider half of agentic-harness F6.1; builder codex, reviewer
+  claude by rule 3 (last two S135 codex, S134 claude); in flight, cloud, handed out ~09:20 UTC after S133 merged; Codex task https://chatgpt.com/local/6b07f9b7-3ff0-83ed-a6d1-e8b790c7606c; DELIVERED as PR #50 at f04f409 (+499/-184); r1: Claude routine `trig_01HWVVe4oneZKnnZD7xPZDdq`, fires 09:53 UTC.
+  Size: the read is small, so it carries host's polish to make one slice (reason: the provider half unblocks
+  agentic-harness's consumer half).)
+  Why: S133 specified `timers.firing-origin() -> option<string>` (host 19.1, 19.6); the kernel needs it to act under the
+  owner's authority on a firing instead of its own (agentic-harness F6.1, case 22).
+  Outcomes (user-sim on the real host and `watane-dev serve`): (1) a mod's own top-level `fired` reads `some(<origin
+  identity>)`, every nested call and every other entry point reads `none`; (2) after the origin client is removed or
+  disabled, the firing reads the rewritten origin (S62, S66) and gives no previous origin, name or generation; (3) a
+  cancelled or replaced timer never enters `fired`; (4) the Harness returns `none` and a `Fakes` entry overrides it;
+  (5) S129 P1.1 to P1.8 and S126 r1 P1.1, P1.3, P1.4 (re-check each against main first).
+  Touches: `host/src/` (timers, the WIT in `wit/host.wit`), `host/tests/`, `dev/` (judge polish, Fakes), host/dev TECHNICAL
+  only where the build finds a gap. Not install/ (S135).
+  Constraints: the shape is S133's, merged: do not change it; a gap goes back as BLOCKED. Adversary: a mod that tries
+  to read another mod's origin, or a stale one after a removal (spec/TECHNICAL.md 6).
