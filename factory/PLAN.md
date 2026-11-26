@@ -3,6 +3,15 @@
 The product owner's state; only the product owner edits it, on `main`. A new session continues
 from here. Newest digest line last.
 
+## Deputy handover
+
+From Deputy Rock to Deputy Paper, 2026-11-26 ~08:35 UTC (three merges this run: agentic-harness S127, watane S130, agentic-harness S132). Rotation per the deputy skill section 8 (Rock, Paper, Scissors; message, never start_session). The newest skill text is in mboogerd/claude-plugin `skills/deputy/SKILL.md` (the local plugin cache may be older).
+- **agentic-harness S131** (PR #58, upkeep: host tests check what they skip; builder claude, build session `cse_01LxwP9169FpT8HvWGTkyVbP` answers PR comments itself; reviewer codex): round 2. r1 8/2, ruled by Rock (F1.1/P1.1 sketch amended, F1.2 a named KNOWN GAP, F1.7/F1.8 narrowed); answered at 461bb74 (main merged in: merge with `--squash`). r2 Codex review https://chatgpt.com/local/6b07ec6b-3124-83ed-8204-bae83a42b053 (08:24 UTC), scoped to the r1 answers. Carry its result to the PR verbatim.
+- **watane S133** (design: a mod learns whose authority a timer firing carries, host 19.6 and 2.1; watane only): Codex build task https://chatgpt.com/local/6b07e871-2184-83ed-aaa7-1aaf7883e04d (~08:06 UTC), not yet delivered. Reviewer claude. Its PR body carries the contract text that agentic-harness's consumer half copies verbatim.
+- **Lanes: 2 in flight, target 4.** Fill with: (1) **S134, agentic-harness main line**: the stage F build on S132's design (9.7, AGT-J5, cases 23, 24, 52, the stage F budget row), builder **claude** (rule 3: last two S133 codex, S132 codex); fold S132's review polish P1.1 to P1.12 (PR #59 comment 'Review r1 by Claude') into its brief; Touches kernel/src, console; it must not edit S131's files (console/test/host/, kernel/tests/it/s36_firing.rs, s38.rs, AGENTS.md) until S131 merges. Run spec-check on 9.7 at 95ec3bc7 first (the last one was 10abec0, before the design). (2) the consumer half of S133 in agentic-harness (design/TECHNICAL.md 2.1, 9.5 F6.1, 15), beside S133 now that S132 has merged, built against S133's branch. (3) watane upkeep: `### install` holds S130's r3 polish.
+- **Waiting on the human:** N5 (agentic-harness PLAN, Waiting on the human; holds only the factory profiles of stage F); S132's Door C choices for veto (agentic-harness Done line S132: counters per turn, Claude refuses `max-tokens` and `max-tool-errors`). Neither is reported to the human yet beyond Rock's chat summary.
+- **Watcher:** `git -C ../watane-mods show origin/main:factory/scripts/watch-all.sh` into your scratchpad, a fresh state file, `600` while a Codex task runs. Edit agentic-harness's PLAN from a scratch clone of origin/main (`factory/runs` is git-ignored there). Agentic-harness has no review-lead.md, nor has watane: review briefs are self-contained (see `trig_01JC6XxHTrmmPgTB8izGU6rk` and `trig_01Vhs2W87TUiUeaQZFqNtwmm` for Claude, the S131 r2 task page for Codex). The Codex composer now shows an "Ask for approval" chip; tasks have run fine with it.
+
 ## Slices
 
 Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
