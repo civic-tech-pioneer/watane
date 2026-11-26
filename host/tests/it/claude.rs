@@ -550,10 +550,6 @@ fn ac9_say_refuses_slash_commands_strangers_and_unknown_streams() {
             "{text:?}"
         );
     }
-    assert_eq!(
-        rig.call("api.say", json!({"s": s, "text": "a /x"})),
-        json!("ok")
-    );
     let b = rig
         .call_as(
             Caller::Page,
@@ -572,7 +568,12 @@ fn ac9_say_refuses_slash_commands_strangers_and_unknown_streams() {
         rig.call("api.answer", json!({"s": s, "ask": "1"})),
         json!("unknown-ask")
     );
-    // A successful say queues stdin. Cancel can kill the child before it logs that line.
+    assert_eq!(
+        rig.call("api.say", json!({"s": s, "text": "a /x"})),
+        json!("ok")
+    );
+    // Stdin is one queue. Wait for this last line so any earlier unexpected
+    // writes are in the log before cancel can kill the child.
     rig.wait_log("the accepted user line", |lines| {
         lines.iter().any(|line| {
             line.starts_with("IN ")
