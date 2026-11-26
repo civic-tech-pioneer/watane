@@ -469,7 +469,7 @@ fn ac7_public_types_validate_and_round_trip() {
 }
 
 // Leave the write half open so the response cannot be the result of a body read.
-async fn assert_declared_oversize_refused(
+pub(super) async fn assert_declared_oversize_refused(
     port: u16,
     method: &str,
     path: &str,
