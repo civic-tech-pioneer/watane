@@ -400,11 +400,8 @@ pub(crate) const CHATGPT_REGISTRATION_REQUIRED: &str =
     "Sign in with ChatGPT needs Watane’s OpenAI client registration.";
 pub(crate) const CHATGPT_CALLBACK_PAGE: &str = "You can return to watane.";
 
-pub(crate) fn judge_origin(origin: Option<&str>) -> String {
-    match origin {
-        Some(origin) => format!("The key will go only to {origin}."),
-        None => "Enter an HTTPS origin such as https://judge.example. Leave out the username, any trailing dot in the host, and any path, query or fragment.".into(),
-    }
+pub(crate) fn judge_origin(origin: &str) -> String {
+    format!("The key will go only to {origin}.")
 }
 
 pub(crate) fn chatgpt_sign_in_refused(error: &str) -> String {
@@ -471,7 +468,7 @@ mod tests {
         for text in ["https://Judge.Example:443", "https://Judge.Example:443/"] {
             let parsed = watane_host::judge_origin(text).expect("valid judge origin");
             assert_eq!(
-                judge_origin(Some(&parsed)),
+                judge_origin(&parsed),
                 "The key will go only to https://judge.example."
             );
         }
@@ -483,12 +480,14 @@ mod tests {
             "http://judge.example",
             "https://judge.example.",
         ] {
-            assert!(watane_host::judge_origin(text).is_err(), "{text}");
+            let error = crate::CmdError::from(watane_host::judge_origin(text).unwrap_err());
+            assert_eq!(error.code, "bad_request", "{text}");
+            assert_eq!(
+                error.message,
+                "Enter an HTTPS origin such as https://judge.example. Leave out the username, any trailing dot in the host, and any path, query or fragment.",
+                "{text}"
+            );
         }
-        assert_eq!(
-            judge_origin(None),
-            "Enter an HTTPS origin such as https://judge.example. Leave out the username, any trailing dot in the host, and any path, query or fragment."
-        );
     }
 
     #[test]
