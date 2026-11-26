@@ -1205,7 +1205,11 @@ lock removal first when a lock was reported:
 only), `Next: run: sh ~/.local/share/watane/install.sh (it recovers the
 interrupted install first)` (leftovers only), or
 `Next: if no install is running, run: rm -rf ~/.watane-install.lock, then run: sh ~/.local/share/watane/install.sh`
-(both); a clean status prints none. Status makes no changes. Install and
+(both). That script is named only when `<prefix>/share/watane/install.sh` is a
+regular file; a run killed before its entry was swapped leaves none, and then
+the line says `run the install command again` in its place
+(`Next: run the install command again (it recovers the interrupted install first)`,
+or `..., then run the install command again` after the lock removal). A clean status prints none. Status makes no changes. Install and
 uninstall perform recovery under their lock (3.6).
 
 The receipt, `<prefix>/share/watane/receipt`, text, staged as
@@ -1276,8 +1280,10 @@ is a feature of `app`, not of `install` (Q11).
    `rmdir` if they are empty and their physical paths match that receipt (the
    same routine as step 2's). That run then has no receipt to read: it exits 7
    as above, and when recovery removed anything its second error line says
-   `The files of the interrupted install were removed.`, after the
-   `recovered interrupted watane install` line (INST-S-33).
+   `The files of the interrupted install were removed.`, only when the
+   `recovered interrupted watane install` line was printed before it
+   (INST-S-33); when another journal stays pending, that line and this one
+   are both left out.
 2. `rm -rf` each `path` of the receipt that the rule of 8.5 allows; a path
    it refuses is left in place, with `watane install: skipped <path>: not a
    path that watane installs` on stderr (INST-S-27). Then remove the

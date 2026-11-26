@@ -569,6 +569,7 @@ prune_watane_dirs() {
 # recover [prune]: undo or finish a dead swap, then clean its names (3.6 step 0).
 recover() {
   RECOVERED=0
+  RECOVERED_SAID=0
   rc_pending=0
   rc_prune=""
   # the journals and receipt.* lie beside the receipt: none is used through a link out (8.5)
@@ -598,6 +599,7 @@ EOF
   if [ -n "$rc_prune" ]; then prune_watane_dirs "$rc_prune"; fi
   if [ "$RECOVERED" = 1 ] && [ "$rc_pending" = 0 ]; then
     say "recovered interrupted watane install"
+    RECOVERED_SAID=1
   fi
   return 0
 }
@@ -1574,13 +1576,18 @@ EOF
     clean_stale report
     if [ "$CS_REPORTED" = 1 ]; then ds_has_left=1; fi
   fi
-  ds_run="sh $(tilde "$SHAREW/install.sh")"
+  # the script is named only where it is: a kill before its entry was swapped leaves none
+  if [ -f "$SHAREW/install.sh" ] && [ ! -L "$SHAREW/install.sh" ]; then
+    ds_run="run: sh $(tilde "$SHAREW/install.sh")"
+  else
+    ds_run="run the install command again"
+  fi
   if [ "$ds_has_lock" = 1 ] && [ "$ds_has_left" = 1 ]; then
-    say "Next: if no install is running, run: rm -rf $(tilde "$ds_lock"), then run: $ds_run"
+    say "Next: if no install is running, run: rm -rf $(tilde "$ds_lock"), then $ds_run"
   elif [ "$ds_has_lock" = 1 ]; then
     say "Next: if no install is running, run: rm -rf $(tilde "$ds_lock")"
   elif [ "$ds_has_left" = 1 ]; then
-    say "Next: run: $ds_run (it recovers the interrupted install first)"
+    say "Next: $ds_run (it recovers the interrupted install first)"
   fi
   [ "$ds_installed" = 1 ] || die 7 "not installed: no receipt at $(tilde "$RECEIPT")"
   return 0
@@ -1613,7 +1620,7 @@ do_uninstall() {
   recover prune
   read_receipt "$RECEIPT"
   if [ "$R_OK" != 1 ]; then
-    if [ "$RECOVERED" = 1 ]; then
+    if [ "$RECOVERED_SAID" = 1 ]; then
       die 7 "nothing to uninstall: no receipt at $(tilde "$RECEIPT")" "The files of the interrupted install were removed."
     fi
     die 7 "nothing to uninstall: no receipt at $(tilde "$RECEIPT")"
