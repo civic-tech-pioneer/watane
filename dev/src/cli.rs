@@ -1767,12 +1767,23 @@ mod tests {
                 format!("watane-dev serve --json --dir {d}"),
             ),
         ] {
+            let is_serve = matches!(command, Command::Serve { .. });
             let outcome = run(Cli {
                 json: true,
                 dir: Some(dir.clone()),
                 command,
             });
             assert!(!outcome.ok);
+            // On Windows serve refuses before the check (TECHNICAL 9.4).
+            if cfg!(windows) && is_serve {
+                assert_eq!(
+                    outcome.errors[0].code,
+                    crate::outcome::Code::EnvPreviewStart,
+                    "{:?}",
+                    outcome.errors
+                );
+                continue;
+            }
             let fix = outcome.errors[0].fix.clone().unwrap();
             assert!(fix.ends_with(&format!(", then run: {rerun}")), "{fix}");
             assert_eq!(outcome.next, Some(fix));
