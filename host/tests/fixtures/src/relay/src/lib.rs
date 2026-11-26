@@ -117,6 +117,12 @@ impl exports::mods::relay::api::Guest for Guest {
     fn ended() -> Vec<String> {
         lines("ended")
     }
+    fn firing_origin() -> Option<String> {
+        timers::firing_origin()
+    }
+    fn firing_context() -> Vec<String> {
+        lines("firing-context")
+    }
     fn fired() -> Vec<String> {
         lines("fired")
     }
@@ -180,6 +186,12 @@ impl exports::watane::host::stream_producer::Guest for Guest {
 }
 impl exports::watane::host::timer_sink::Guest for Guest {
     fn fired(id: String) {
+        if id == "origin-probe" {
+            let origin = timers::firing_origin();
+            let nested = mods::latch::api::firing_origin();
+            let caller = watane::host::caller::identity();
+            add_line("firing-context", format!("{origin:?} {nested:?} {caller}"));
+        }
         add_line("fired", id);
     }
 }

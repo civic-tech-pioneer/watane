@@ -217,8 +217,6 @@ their host references. If they finish within that bound, dropping the last
 caller handle releases the home synchronously. If the bound expires, shutdown returns anyway; running work can still hold
 the home until it ends.
 
-See 19.1 for the mod-facing `timers` interface and 19.6 for firing behavior.
-
 ### 2.2 Errors
 
 ```rust
@@ -1882,7 +1880,7 @@ run on the preview install path.
 | No mod sees a credential | tokens, keys and the `claude` path only through `AccountSource`; MCP tokens on fd 3; handle names, not handles (19.4, 19.5); the protected reads of 19.3 (deny rules, relative file-tool allows and no bare one, no `allow` answer outside the workspaces by path or pattern). Files: `src/agent/https_stream.rs`, `src/agent/tools.rs`, `src/agent/claude/launch.rs`, `run.rs`, `control.rs`, app account files | A2: S63, S67; A3: S68; A4 |
 | A plan token goes only to OpenAI's agent endpoints | the account binding of `openai`, the forbidden headers, no redirects (19.4); the preview binds the fake token to loopback with TLS name verification (19.9). Files: `src/agent/https_stream.rs`, `src/agent/https_stream/preview.rs` | A4: case 19 |
 | A judge key goes only to its judge | the binding of `judge`: identity, value, one origin parse, `POST`, `[http]`, no redirects, `no-account` (19.4). File: `https_stream.rs` | A5: cases 19, 33 |
-| A mod in the middle gains no authority | consent per origin client, carried with the chain by identity (19.7); a subscriber is its own origin client (19, Terms); the grants and the origin client checked again at apply (19.6); a toolset consent covers only the functions it named, and `remove` or a `grant` of `Manage` drops that mod's names from it (19.5, 4.4); `remove` leaves no timer carrying the removed mod (4.4); a tool on borrowed authority opens no handle, stream or timer (19.5, Borrowed authority). Files: `src/agent/consent.rs`, `src/agent/mod.rs`, `src/runtime/call.rs`, `src/runtime/events.rs` | A3: S61, S62, S65, S66, S68 |
+| A mod in the middle gains no authority | consent per origin client, carried with the chain by identity (19.7); a subscriber is its own origin client (19, Terms); the grants and the origin client checked again at apply (19.6); the firing-origin read confers no authority (19.6); a toolset consent covers only the functions it named, and `remove` or a `grant` of `Manage` drops that mod's names from it (19.5, 4.4); `remove` leaves no timer carrying the removed mod (4.4); a tool on borrowed authority opens no handle, stream or timer (19.5, Borrowed authority). Files: `src/agent/consent.rs`, `src/agent/mod.rs`, `src/runtime/call.rs`, `src/runtime/events.rs` | A3: S61, S62, S65, S66, S68 |
 | A stream has one consumer and cannot starve the host | consumer rules, byte budgets, the lag clock and the deferral backstop (19.2). File: `src/agent/streams.rs` | A1: cases 36, 51, 58 |
 | A repeated call changes nothing | job keys and numbered items (19.5, 19.2). Files: `tools.rs`, `streams.rs` | A1, A3 |
 | An ask shows the tool call that will run | the host serializes each `ask` and `check` from its own parsed value, with the call's `tool_use_id` and `expires-at`; no `claude` line passes as a host item (19.3). File: `control.rs` | A2 |
@@ -2945,7 +2943,7 @@ A grant revoked or a mod disabled stops the next host import of a running chain
 `launch` or `request` text. `identity` returns `local/<slug>` of the caller or
 `page`, and `host-info.generation` returns 1.
 `timers.firing-origin` returns `none`. A `Fakes` entry under
-`watane:host/timers` overrides it. Previews use the real host and need no
+`watane:host/timers` overrides it. Previews (19.9, `watane --preview`) use the real host and need no
 fake. The remaining functions return ok. Each request (19.6) of a succeeded
 call is recorded in `Outcome.requests` as `RequestRecord { function, args }`
 in call order; a failed call records none. A `Fakes` entry under
@@ -3868,7 +3866,9 @@ identity is the mod identity defined in `spec/TECHNICAL.md` 3, already
 resolved for this firing's chain. The host takes it from the same resolution
 that sets the chain's origin client, after taking the mod's call lock and
 rechecking the timer row and origin client. The read is stable within that
-invocation. It gives no live status or guarantee that the origin still
+invocation. Calls through a call link and timers armed during the firing
+carry the same origin through the existing checks, including at the
+depth-0 commit. The read gives no live status or guarantee that the origin still
 passes the checks when a request lands. A firing ignored because the timer
 was cancelled or replaced never enters `fired`.
 
@@ -3880,7 +3880,10 @@ at startup, likewise yields the timer owner's identity. The read gives no
 previous origin, local name, generation or reason for fallback. It returns
 `none` in every other invocation, including calls nested under the firing,
 even a re-entry into the timer's own mod. It takes no timer id and reads no
-other timer. The firing's caller stays `host`. The returned text is data.
+other timer. The firing's caller stays `host`.
+For example, if X calls M and M calls Z, Z sees M as its immediate
+caller. A timer that Z arms in that chain can reveal X's identity when it
+fires. The returned text is data.
 The host accepts no origin override and still checks grants, consents and
 the origin client at apply.
 

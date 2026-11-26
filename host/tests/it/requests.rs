@@ -166,6 +166,54 @@ fn ac11_the_harness_fakes_streams_timers_and_identity() {
 }
 
 #[test]
+fn firing_origin_is_a_pure_read_in_the_harness() {
+    for expected in [Value::Null, json!("local/fixture-origin")] {
+        let mut fakes = Fakes::new();
+        if !expected.is_null() {
+            fakes.insert(
+                "watane:host/timers".into(),
+                [("firing-origin".into(), expected.clone())].into(),
+            );
+        }
+        let harness = Harness::open(&fixture("relay"), fakes).unwrap();
+        let out = harness.call("api.firing-origin", Value::Null).unwrap();
+        assert_eq!(out.value, expected);
+        assert!(out.requests.is_empty());
+    }
+}
+
+#[test]
+fn firing_origin_is_only_visible_in_the_timer_owners_firing() {
+    let env = Env::relay();
+    assert_eq!(
+        relay(&env.host, "api.firing-origin", Value::Null),
+        Value::Null
+    );
+    assert_eq!(
+        call_as(
+            &env.host,
+            Caller::Mod(local("relay-front")),
+            "relay",
+            "api.after",
+            json!({"id":"origin-probe","ms":0})
+        )
+        .unwrap(),
+        json!({"ok":null})
+    );
+    wait("the firing", Duration::from_secs(5), || {
+        fired(&env) == ["origin-probe"]
+    });
+    assert_eq!(
+        lines(&env.host, "api.firing-context"),
+        [r#"Some("local/relay-front") None host"#]
+    );
+    assert_eq!(
+        relay(&env.host, "api.firing-origin", Value::Null),
+        Value::Null
+    );
+}
+
+#[test]
 fn ac7_s54_a_timer_fires_once() {
     let env = Env::relay();
     assert_eq!(after(&env, "t", 50), json!({"ok":null}));

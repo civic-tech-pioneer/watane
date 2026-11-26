@@ -1,3 +1,3 @@
 package mods:latch@0.1.0;
-interface api { trip: func(key: string) -> bool; }
-world latch { import watane:host/state@0.1.0; export api; }
+interface api { trip: func(key: string) -> bool; firing-origin: func() -> option<string>; }
+world latch { import watane:host/state@0.1.0; import watane:host/timers@0.1.0; export api; }
