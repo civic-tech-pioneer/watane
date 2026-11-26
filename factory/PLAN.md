@@ -1568,6 +1568,20 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dist | S1 to S5 | 3 | done (S21a) |
 | dist | S6 find | 4 | done (S28) |
 
+- [~] **S141 (upkeep, guard first) host's S136/S126/S111 polish, the ac9 flake, and install's S137 rough spots.**
+  (sketched 2026-11-26 by Deputy Rock, the upkeep lane; builder codex by rule 3 (last two S140 claude, S138 codex),
+  reviewer claude; spec-check not run: no spec rule changes beyond a doc line where an item names one. Upkeep is exempt from the size rule.)
+  Outcomes (each item's check, re-checked against main first; an item already fixed is dropped with a line):
+  (1) *guard* the ubuntu flake `claude::ac9_say_refuses_slash_commands_strangers_and_unknown_streams`
+  (host/tests/it/claude.rs:587, left 0, right 1, S133 CI): the race found and fixed, or the assertion waits on the event it
+  means, with the reason in the test; (2) S136 r1 P1.1 to P1.7 (PR #50; P1.1 finishes S126 r1 P1.1) in `### host`;
+  (3) S111 r1 host P1.1 (connect and TLS handshake each get their own `idle-s`) and P1.2 to P1.5, P1.11, P1.14 where cheap;
+  (4) install's S137 user-sim rough spots (`### install`); (5) the `### S129 polish` list is checked against main and
+  dropped where S136 already did it.
+  Touches: `host/src/`, `host/tests/`, `dev/src/preview/` (S136 P1.4, P1.7), `app/` only for S136 P1.6's shared text,
+  `install/`, and each subsystem's TECHNICAL only for a doc line an item names.
+  Constraints: no new public interface, no WIT change; a guard never weakens; a flake is never fixed by a retry alone.
+  Adversary: install's boundary for (4) (spec/TECHNICAL.md 6).
 ## Leftovers
 
 ### S129 polish (PR #46 r1)
