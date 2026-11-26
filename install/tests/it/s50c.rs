@@ -1,4 +1,5 @@
 //! S50c receipt, lock and recovery regressions (TECHNICAL 3.6, 8.5).
+use crate::support::unit::case;
 use crate::support::*;
 use std::fs;
 use std::os::unix::fs::symlink;
@@ -528,4 +529,100 @@ fn adv_s130_forged_created_line_removes_a_folder_the_person_made() {
     for folder in [".local/bin", ".local/share", "Applications"] {
         assert!(fx.home.join(folder).is_dir(), "{folder}: {out:?}");
     }
+}
+
+/// TECHNICAL 3.6: both rollback and commit cleanup respect the recorded bin location.
+#[test]
+fn recorded_location_mismatch_preserves_undo_and_commit_backups() {
+    for operation in ["undo_swap", "finish_commit"] {
+        let fx = Fx::installed();
+        let dead = dead_pid();
+        let bin = fx.home.join(".local/bin");
+        let old_bin = fx.home.join("old-bin");
+        fs::rename(&bin, &old_bin).expect("move recorded bin");
+        fs::create_dir(&bin).expect("replacement bin");
+        let current = fx.bin("watane");
+        let backup = fx.bin(&format!("watane.old.{dead}"));
+        write_file(&current, "replacement");
+        write_file(&backup, "backup");
+        let journal = fx.share(&format!("watane/journal.{dead}"));
+        write_file(&journal, &format!("old {}\n", current.display()));
+        let receipt = fx.read(&fx.receipt());
+        let recorded = fs::canonicalize(&bin).expect("current bin");
+        let old_location = fs::canonicalize(&old_bin).expect("old bin");
+        write_file(
+            &fx.receipt(),
+            &receipt.replace(
+                &format!("resolved .local/bin {}", recorded.display()),
+                &format!("resolved .local/bin {}", old_location.display()),
+            ),
+        );
+        if operation == "undo_swap" {
+            write_file(&fx.share(&format!("watane/receipt.new.{dead}")), &receipt);
+        }
+        let body = format!("{operation} {dead}");
+        let units = fx.units_in_home(&[("recovery", &body)]);
+        assert_eq!(case(&units, "recovery").code, 0, "{units:?}");
+        assert_eq!(fx.read(&current), "replacement");
+        assert_eq!(fx.read(&backup), "backup");
+    }
+}
+
+/// TECHNICAL 3.6: without a recorded location, recovery must not follow a linked folder.
+#[test]
+fn recovery_without_resolved_lines_leaves_staging_in_linked_directory() {
+    let fx = Fx::installed();
+    let bin = fx.home.join(".local/bin");
+    let moved = fx.home.join("moved-bin");
+    fs::rename(&bin, &moved).expect("move bin");
+    symlink(&moved, &bin).expect("link bin");
+    let receipt = fx.read(&fx.receipt());
+    let legacy = receipt
+        .split_inclusive('\n')
+        .filter(|line| !line.starts_with("resolved "))
+        .collect::<String>();
+    write_file(&fx.receipt(), &legacy);
+    let stale = moved.join(format!("watane.new.{}", dead_pid()));
+    write_file(&stale, "keep");
+    let units = fx.units_in_home(&[("recover", "recover")]);
+    assert_eq!(case(&units, "recover").code, 0, "{units:?}");
+    assert_eq!(fx.read(&stale), "keep");
+}
+
+/// TECHNICAL 3.6: a literal physical path cannot override a mismatched record.
+#[test]
+fn recovery_preserves_staging_in_canonical_directory_with_mismatched_record() {
+    let fx = Fx::installed();
+    let receipt = fx.read(&fx.receipt());
+    let actual = fs::canonicalize(fx.home.join(".local/bin")).expect("canonical bin");
+    let earlier = actual.with_file_name("earlier-bin");
+    write_file(
+        &fx.receipt(),
+        &receipt.replace(
+            &format!("resolved .local/bin {}", actual.display()),
+            &format!("resolved .local/bin {}", earlier.display()),
+        ),
+    );
+    let stale = fx.bin(&format!("watane.new.{}", dead_pid()));
+    write_file(&stale, "keep");
+    let units = fx.units_in_home(&[("recover", "recover")]);
+    assert_eq!(case(&units, "recover").code, 0, "{units:?}");
+    assert_eq!(fx.read(&stale), "keep");
+}
+
+/// TECHNICAL 8.1: only dead processes' journals are listed as leftovers.
+#[test]
+fn status_lists_dead_journal_and_omits_live_journal() {
+    let fx = Fx::installed();
+    let live = std::process::id();
+    let dead = dead_pid();
+    write_file(&fx.share(&format!("watane/journal.{live}")), "");
+    write_file(&fx.share(&format!("watane/journal.{dead}")), "");
+    let out = fx.run(&["--status"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(!out.stdout.contains(&format!("journal.{live}")), "{out:?}");
+    assert!(
+        out.has_line(&format!("leftover: ~/.local/share/watane/journal.{dead}")),
+        "{out:?}"
+    );
 }
