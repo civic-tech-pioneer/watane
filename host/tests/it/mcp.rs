@@ -199,18 +199,14 @@ async fn ac3_transport_guards_and_token_revocation() {
             .status(),
         415
     );
-    assert_eq!(
-        client
-            .post(&url)
-            .bearer_auth(active.as_str())
-            .header("content-type", "application/json")
-            .body(" ".repeat(1048577))
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        413
-    );
+    super::program::assert_declared_oversize_refused(
+        served.port,
+        "POST",
+        "/mcp/t",
+        (1 << 20) + 1,
+        &format!("Authorization: Bearer {}\r\n", active.as_str()),
+    )
+    .await;
     // MCP accepts bodies above the local API's separate 64 KiB limit.
     let r = client
         .post(&url)
