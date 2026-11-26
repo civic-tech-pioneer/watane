@@ -1294,6 +1294,22 @@ fn inst_s33_a_kill_at_the_app() {
     // install.sh and VERSION were swapped, the app and the receipt not
     assert!(fx.read(&fx.share("watane/VERSION")).contains("0.2.0"));
     assert!(!fx.app().exists() && has_leftover(&fx, "watane.app.old."));
+    let interrupted = snapshot(&fx.home);
+    let status = fx.run(&["--status"]);
+    assert_eq!(status.code, 0, "{status:?}");
+    assert!(
+        status.has_line("missing: ~/Applications/watane.app"),
+        "{status:?}"
+    );
+    assert!(!status.has_line("~/Applications/watane.app"), "{status:?}");
+    assert!(
+        status
+            .stdout
+            .lines()
+            .any(|line| line.starts_with("leftover: ~/Applications/watane.app.old.")),
+        "{status:?}"
+    );
+    assert_eq!(snapshot(&fx.home), interrupted, "status is read-only");
     fx.state_write("mv_fault", "fail\n*receipt.new.*\n");
     let out = fx.run(&["--release", "0.2.0"]);
     assert_eq!(out.code, 5, "{out:?}");

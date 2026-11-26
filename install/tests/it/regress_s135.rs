@@ -768,9 +768,55 @@ fn regress_s137_status_names_the_script_only_in_the_folder_the_receipt_records()
     );
 }
 
+/// TECHNICAL 8.1: a relinked bin may contain names that look like staging files.
+#[test]
+fn regress_s141_status_warns_when_staging_files_cannot_be_recovered() {
+    let units = run(&[(
+        "relinked",
+        r#"rcpt "$RECEIPT" "$bin"
+mv "$HOME/.local/bin" "$HOME/.local/bin.aside"
+mkdir "$HOME/elsewhere"
+ln -s "$HOME/elsewhere" "$HOME/.local/bin"
+printf 'marker' >"$bin.new.$pid"
+do_status
+cat "$bin.new.$pid""#,
+    )]);
+    let status = case(&units, "relinked");
+    assert_eq!(status.code, 0, "{status:?}");
+    assert!(
+        status.has_err_line(
+            "watane install: staging files were skipped for ~/.local/bin/watane: the install folder is not where recovery expects it"
+        ),
+        "{status:?}"
+    );
+    assert!(!status.out.contains("Next:"), "{status:?}");
+    assert!(!status.out.contains(".new."), "{status:?}");
+    assert!(status.out.ends_with("marker"), "{status:?}");
+}
+
+/// TECHNICAL 8.1: a receipt path is marked missing while only its backup exists.
+#[test]
+fn regress_s141_status_marks_a_receipt_path_missing_when_only_its_backup_exists() {
+    let units = run(&[(
+        "backed_up",
+        r#"rcpt "$RECEIPT" "$bin"; : >"$bin.old.$pid"; do_status"#,
+    )]);
+    let status = case(&units, "backed_up");
+    assert_eq!(status.code, 0, "{status:?}");
+    assert!(
+        status.has_out_line("missing: ~/.local/bin/watane"),
+        "{status:?}"
+    );
+    assert!(
+        status.has_out_line("leftover: ~/.local/bin/watane.old.99999999"),
+        "{status:?}"
+    );
+    assert!(!status.has_out_line("~/.local/bin/watane"), "{status:?}");
+}
+
 /// TECHNICAL 8.4 step 1 (S137 r1 F1.2): after a fresh pre-commit crash, `~/.local/bin` moved
 /// aside and relinked outside the home: the undo leaves the moved entry alone (it skips it) and
-/// retires the journal, and uninstall then makes no claim that the files were removed. Without
+/// retires the journal, and uninstall then warns that files may remain. Without
 /// the relink the claim still prints. Mutant: drop `CS_LEFT=1` after `read_journal` in `recover`.
 #[test]
 fn regress_s137_uninstall_does_not_claim_removal_when_recovery_skipped_an_entry() {
@@ -794,10 +840,14 @@ fn regress_s137_uninstall_does_not_claim_removal_when_recovery_skipped_an_entry(
         "{u:?}"
     );
     assert!(!u.has_err_line(line), "{u:?}");
+    let warning =
+        "Some files from the interrupted install may remain. Check the original install folders.";
+    assert!(u.has_err_line(warning), "{u:?}");
     assert!(aside.join("watane-node").exists());
     let kept = case(&units, "in_place");
     assert_eq!(kept.code, 7, "{kept:?}");
     assert!(kept.has_err_line(line), "{kept:?}");
+    assert!(!kept.has_err_line(warning), "{kept:?}");
 }
 
 /// TECHNICAL 3.6 step 0, 8.4 step 1 (S137 r2 F2.1): a committed swap whose journal cannot be
