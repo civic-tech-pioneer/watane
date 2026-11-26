@@ -349,7 +349,7 @@ files (INST-F-20, INST-S-14, 32, 33).
    folder, and compare it with the path step 4 resolved: if one differs (a
    link made or changed since), undo as step 4 below and exit 5 with
    `watane install: <folder> changed during the install: it now resolves to
-   <now>` (`<folder>` as `~/...`, `<now>` as `~/...` inside the home, 3.9), before any entry is moved. Then, for each entry in the order of the list above, the receipt
+   <now>` (`<folder>` as `~/...`, `<now>` as `~/...` inside the home, 3.9, or `your home folder itself` when it is the home, as in 3.4.1), before any entry is moved. Then, for each entry in the order of the list above, the receipt
    last: if `<path>` exists, `mv <path> <path>.old.<pid>`; then append the
    line `moved <path>` to the journal; then
    `mv <path>.new.<pid> <path>`. The receipt alone is not moved aside: it is
@@ -389,7 +389,12 @@ files (INST-F-20, INST-S-14, 32, 33).
    Only lines valid by 3.6.1 are used. When a receipt is readable, the
    published receipt must name an `old` path, and the staged receipt
    must name a `new` path. When only the published receipt is readable,
-   use its paths for `new` lines as well. A new entry must match the
+   use its paths for `new` lines as well. When the published receipt is
+   unrecognised and the staged one readable, no `old` path is named, so no
+   `old` entry is put back, and a `new` entry goes only if the staged receipt
+   names it, each folder at its literal path under the resolved home (the
+   unrecognised receipt records none); such a receipt is a corrupted one, which
+   8.5 rule 4 leaves out of scope, and no guard is weakened for it. A new entry must match the
    folder locations both receipts record for it. The receipt itself is governed
    by the separate journal rule above. Each removal only where the rule of 8.5
    allows; then remove
@@ -1191,8 +1196,16 @@ staged receipt names and the swap has moved into place. These have a
 `moved` line and no `.new.<n>` name remaining, with a `new` line or a
 backup at `.old.<n>`. If the install lock exists, status prints
 `install lock: ~/.watane-install.lock` first, with the pid when 3.6.2 allows it.
-Status makes no changes. Install and uninstall perform recovery under
-their lock (3.6).
+A path is listed once: a moved path that the receipt printed above is not
+printed again as `leftover:`. When status reported the lock or any leftover,
+its last stdout line is one next step that names the command to run, with the
+lock removal first when a lock was reported:
+`Next: if no install is running, run: rm -rf ~/.watane-install.lock` (lock
+only), `Next: run: sh ~/.local/share/watane/install.sh (it recovers the
+interrupted install first)` (leftovers only), or
+`Next: if no install is running, run: rm -rf ~/.watane-install.lock, then run: sh ~/.local/share/watane/install.sh`
+(both); a clean status prints none. Status makes no changes. Install and
+uninstall perform recovery under their lock (3.6).
 
 The receipt, `<prefix>/share/watane/receipt`, text, staged as
 `receipt.new.<pid>` in step 10 and moved into place as the last entry of the
@@ -1259,7 +1272,11 @@ is a feature of `app`, not of `install` (Q11).
    `.old.<n>` names behind. Then read the receipt; none is exit 7
    (INST-S-18). When this undoes a fresh pre-commit swap with a readable
    staged receipt, also remove the two Watane-specific directories with
-   `rmdir` if they are empty and their physical paths match that receipt.
+   `rmdir` if they are empty and their physical paths match that receipt (the
+   same routine as step 2's). That run then has no receipt to read: it exits 7
+   as above, and when recovery removed anything its second error line says
+   `The files of the interrupted install were removed.`, after the
+   `recovered interrupted watane install` line (INST-S-33).
 2. `rm -rf` each `path` of the receipt that the rule of 8.5 allows; a path
    it refuses is left in place, with `watane install: skipped <path>: not a
    path that watane installs` on stderr (INST-S-27). Then remove the

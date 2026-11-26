@@ -1218,23 +1218,45 @@ fn inst_s33_a_kill_at_the_receipt_of_a_fresh_install() {
     assert!(leftovers(&fx).is_empty(), "{:?}", leftovers(&fx));
 }
 
-/// TECHNICAL 8.4: uninstall recovers a fresh pre-commit kill and prunes the empty Watane directories.
+/// TECHNICAL 8.4 steps 1 and 2 (S135 r1 P1.13): uninstall recovers a fresh pre-commit kill, prunes the
+/// empty Watane directories, and says what it removed; it still exits 7, as there is no receipt.
+/// The killed run's files are planted with a dead pid: the install is complete but for its receipt,
+/// which lies staged, and the journal holds a `new` line for each entry and a `moved` line for each
+/// but the receipt, as a kill at the receipt move leaves them (INST-S-33).
 #[test]
-#[ignore = "slow: kills a fresh install at its receipt, then runs uninstall"]
 fn uninstall_recovers_a_fresh_kill_and_prunes_watane_folders() {
-    let fx = Fx::new();
-    fs::create_dir_all(fx.home.join(".local/share")).expect("pre-existing share");
-    kill_at(&fx, "mv", "*receipt.new.*", &["--no-toolchain"]);
+    let fx = Fx::installed();
+    let dead = dead_pid();
+    let receipt = fx.read(&fx.receipt());
+    let mut journal = String::new();
+    for line in receipt.lines() {
+        if let Some(path) = line.strip_prefix("path ") {
+            journal.push_str(&format!("new {path}\nmoved {path}\n"));
+        }
+    }
+    journal.push_str(&format!("new {}\n", fx.receipt().display()));
+    fs::rename(
+        fx.receipt(),
+        fx.share(&format!("watane/receipt.new.{dead}")),
+    )
+    .expect("stage the receipt");
+    write_file(&fx.share(&format!("watane/journal.{dead}")), &journal);
     let out = fx.run(&["--uninstall"]);
     assert_eq!(out.code, 7, "{out:?}");
     assert!(
         out.has_line("recovered interrupted watane install"),
         "{out:?}"
     );
+    assert_eq!(
+        out.stderr,
+        "watane install: nothing to uninstall: no receipt at ~/.local/share/watane/receipt\nThe files of the interrupted install were removed.\n",
+        "{out:?}"
+    );
     assert!(!fx.share("watane").exists());
     assert!(!fx.share("watane-dev").exists());
     assert!(fx.home.join(".local/share").is_dir());
     assert!(!fx.bin("watane").exists());
+    assert!(!fx.app().exists());
 }
 
 /// INST-S-33 and TECHNICAL 3.6 step 5: a kill after the receipt move (in step 5, at a path only the old receipt held)
@@ -1880,7 +1902,7 @@ fn recover_a_killed_fresh_install_through_a_linked_local() {
 
 /// TECHNICAL 3.6 step 4: when a relink is reverted, undo may restore only paths from the receipt.
 #[test]
-#[ignore = "slow: kills an upgrade, relinks and restores bin, then runs recovery twice"]
+#[ignore = "slow: only a real SIGKILL at the receipt move of an upgrade leaves the journal, `.old.` names and `receipt.old.` that the undo reads here, and only a whole run then shows that a relinked `~/.local/bin` is left alone until it is restored"]
 fn recovery_after_reverting_a_relink_uses_receipt_ownership() {
     let (fx, _) = swap_start();
     kill_at(&fx, "mv", "*receipt.new.*", &["--release", "0.2.0"]);
@@ -1947,7 +1969,7 @@ recover
 /// TECHNICAL 3.6 step 4: reverting a link after a crash does not turn an old installed file
 /// into an entry created by the interrupted upgrade.
 #[test]
-#[ignore = "slow: upgrades through a relinked bin, then restores the original bin and runs recovery"]
+#[ignore = "slow: only a real upgrade through a relinked `~/.local/bin`, killed at the receipt move, writes the journal whose `old` lines name files that were installed before; the test shows that restoring the link does not turn them into entries of the interrupted run"]
 fn recovery_does_not_undo_old_files_after_reverting_a_bin_link() {
     let (fx, _) = swap_start();
     let bin = fx.home.join(".local/bin");

@@ -14,6 +14,7 @@ const CHECKED_HELPERS: &[&str] = &[
     "tilde_r",
     "allowed",
     "recovery_allowed",
+    "recovery_allowed_both",
     "pid_gone",
     "resolve_dir",
     "home_deletable",
