@@ -587,3 +587,27 @@ do_uninstall"#,
     assert!(tidied.has_err_line(line), "{tidied:?}");
     assert!(tidied.has_out_line("recovered interrupted watane install"));
 }
+
+/// TECHNICAL 8.1 (validator, S137-1 round 2): a link at `install.sh` is not named as the script
+/// to run, wherever it leads. Mutant: drop `[ ! -L "$SHAREW/install.sh" ]` in `do_status`.
+#[test]
+fn regress_s135_status_next_step_does_not_name_a_linked_script() {
+    let fx = Fx::new();
+    fs::create_dir_all(fx.share("watane")).expect("share");
+    write_file(&fx.home.join("other.sh"), "echo other\n");
+    symlink(fx.home.join("other.sh"), fx.share("watane/install.sh")).expect("link");
+    let units = fx.units(
+        PRELUDE,
+        &[],
+        &[(
+            "linked_script",
+            r#"rcpt "$RECEIPT" "$bin"; : >"$bin.old.$pid"; do_status"#,
+        )],
+    );
+    let u = case(&units, "linked_script");
+    assert_eq!(
+        u.out.lines().last(),
+        Some("Next: run the install command again (it recovers the interrupted install first)"),
+        "{u:?}"
+    );
+}
