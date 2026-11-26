@@ -1888,7 +1888,6 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 - (2026-11-25, deputy-4, from S120) **Where the factory mods live (Door H, `spec/design/factory/TECHNICAL.md` 5, first row).** W29 gives each mod with source its own repository, so a planning mod and a foreman mod are two new projects; one combined factory mod is one new project. Options, consequences and the recommendation are in that row. Not blocking: JF1 waits on agentic-harness stages E and F first. The 8 Door C rows go to deliberation when a build slice first depends on one.
 
-- (2026-11-24) The human rotates the secrets of the Codex `watane` environment (S112's build transcript held credential fragments; nothing reached GitHub).
 
 - **V8 writer busy share (S96).** One durable write per batch costs 24.5% writer busy at stage A's load
   (budget 10%, which S96 applies to the no-write run). Options: (a) keep "durable first" (19.6) and
@@ -1948,6 +1947,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Human answers
+
+- 2026-11-26: the Codex `watane` environment's secrets will not be rotated; never ask again. mboogerd/claude-plugin#6 (10-minute Codex timer) merged by the human.
 
 - **2026-11-25, the human (to deputy-5): no test run in a cloud (CI or a cloud team) calls an external provider** (OpenAI, Jev or another judge, GitHub's API, any real service). Unit and integration tests use fakes: dev's scripted Responses server and scripted judge, fake `claude`, fake-watane. A check against a real provider is a deputy probe on the Mac (V7 on Jev). Checked 2026-11-25: no workflow in watane or agentic-harness passes a provider secret to a test.
 
