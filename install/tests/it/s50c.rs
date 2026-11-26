@@ -534,15 +534,26 @@ fn adv_s130_forged_created_line_removes_a_folder_the_person_made() {
 /// TECHNICAL 3.6: rollback checks the entry location and commit cleanup checks the journal location.
 #[test]
 fn recorded_location_mismatch_preserves_undo_and_commit_backups() {
-    for operation in ["undo_swap", "finish_commit"] {
+    for (operation, fresh) in [
+        ("undo_swap", false),
+        ("finish_commit", false),
+        ("undo_swap", true),
+    ] {
         let fx = Fx::installed();
         let dead = dead_pid();
         let current = fx.bin("watane");
         let backup = fx.bin(&format!("watane.old.{dead}"));
         write_file(&current, "replacement");
-        write_file(&backup, "backup");
         let journal = fx.share(&format!("watane/journal.{dead}"));
-        write_file(&journal, &format!("old {}\n", current.display()));
+        if fresh {
+            write_file(
+                &journal,
+                &format!("new {0}\nmoved {0}\n", current.display()),
+            );
+        } else {
+            write_file(&backup, "backup");
+            write_file(&journal, &format!("old {}\n", current.display()));
+        }
         let receipt = fx.read(&fx.receipt());
         let folder = if operation == "undo_swap" {
             ".local/bin"
@@ -565,7 +576,11 @@ fn recorded_location_mismatch_preserves_undo_and_commit_backups() {
         let units = fx.units_in_home(&[("recovery", &body)]);
         assert_eq!(case(&units, "recovery").code, 0, "{units:?}");
         assert_eq!(fx.read(&current), "replacement");
-        assert_eq!(fx.read(&backup), "backup");
+        if fresh {
+            assert!(!fx.bin(&format!("watane.new.{dead}")).exists());
+        } else {
+            assert_eq!(fx.read(&backup), "backup");
+        }
         assert!(journal.is_file());
     }
 }
