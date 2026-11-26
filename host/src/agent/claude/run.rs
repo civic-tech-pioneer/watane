@@ -1485,20 +1485,27 @@ mod join_tests {
 
     #[test]
     fn s100_fix12_ac1_the_next_queued_line_is_not_started_after_the_deadline() {
-        let mut rig = rig();
-        rig.release.as_ref().unwrap().send(vec![]).unwrap();
-        let mut reader = rig.reader.take().unwrap();
-        giveup_now(&rig);
-        rig.out(b"first".to_vec());
-        rig.out(b"second".to_vec());
-        rig.end(Duration::from_secs(5));
-        drop(rig.release.take());
-        let mut left = vec![];
-        let _ = std::io::Read::read_to_end(&mut reader, &mut left);
-        assert!(left.is_empty(), "{:?}", String::from_utf8_lossy(&left));
-    }
-    fn giveup_now(rig: &Rig) {
-        let _ = rig.giveup.set(std::time::Instant::now());
+        for trial in 1..=20 {
+            let mut rig = rig();
+            let mut reader = std::io::BufReader::new(rig.reader.take().unwrap());
+            let mut first = String::new();
+            reader.read_line(&mut first).unwrap();
+            let first: Value = serde_json::from_str(&first).unwrap();
+            assert_eq!(first["request"]["subtype"], "initialize", "trial {trial}");
+
+            // The writer cannot take the next queue entry until the held handshake
+            // releases it. Use a deadline already in the past across both threads.
+            assert!(rig.session.write(b"second".to_vec()));
+            rig.giveup
+                .set(std::time::Instant::now() - Duration::from_secs(1))
+                .unwrap();
+            rig.release.as_ref().unwrap().send(vec![]).unwrap();
+            rig.end(Duration::from_secs(5));
+
+            let mut left = vec![];
+            reader.read_to_end(&mut left).unwrap();
+            assert!(left.is_empty(), "trial {trial}: {left:?}");
+        }
     }
 
     #[cfg(target_os = "linux")]
