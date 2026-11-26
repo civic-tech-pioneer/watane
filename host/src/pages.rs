@@ -4,7 +4,7 @@
 
 use crate::{Caller, Host, LocalName, api};
 use axum::Json;
-use axum::body::{Body, to_bytes};
+use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
@@ -97,17 +97,9 @@ async fn call_response(
     {
         return api::error(415, "bad_request", "use application/json");
     }
-    let bytes = match to_bytes(request.into_body(), 1 << 20).await {
+    let bytes = match api::read_body(request.into_body(), 1 << 20).await {
         Ok(bytes) => bytes,
-        Err(e) => {
-            let mut response = api::error(413, "bad_request", e);
-            // The unread body must not leave a reusable HTTP/1 connection.
-            response.headers_mut().insert(
-                header::CONNECTION,
-                header::HeaderValue::from_static("close"),
-            );
-            return response;
-        }
+        Err(response) => return response,
     };
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]

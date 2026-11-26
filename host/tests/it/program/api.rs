@@ -94,17 +94,7 @@ async fn ac2_status_and_api_guards() {
             .unwrap();
         assert_eq!(response.status(), 200);
     }
-    let response = client
-        .get(&url)
-        .body("x".repeat(65_537))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), 413);
-    assert_eq!(
-        response.json::<Value>().await.unwrap()["error"]["code"],
-        "bad_request"
-    );
+    assert_declared_oversize_refused(port, "GET", "/api/status", 65_537, "").await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -204,11 +194,7 @@ async fn ac3_install_transport_and_symlink_guards() {
     let preview = Preview::start(home.path());
     let client = preview.client("localhost", "127.0.0.1");
     let url = format!("{}install", preview.ready.api);
-    for (body, status) in [
-        ("broken".to_owned(), 400),
-        ("{}".to_owned(), 400),
-        ("x".repeat(65_537), 413),
-    ] {
+    for body in ["broken", "{}"] {
         let response = client
             .post(&url)
             .header("Content-Type", "application/json")
@@ -216,12 +202,13 @@ async fn ac3_install_transport_and_symlink_guards() {
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), status);
+        assert_eq!(response.status(), 400);
         assert_eq!(
             response.json::<Value>().await.unwrap()["error"]["code"],
             "bad_request"
         );
     }
+    assert_declared_oversize_refused(preview.ready.port, "POST", "/api/install", 65_537, "").await;
     let response = client.post(&url).body("{}").send().await.unwrap();
     assert_eq!(response.status(), 415);
     assert_eq!(
@@ -437,34 +424,7 @@ async fn ac5_extra_api_receives_one_mib_unchanged_under_common_guards() {
         .await
         .unwrap();
     assert_eq!(response.status(), 404);
-    // The 413 guard does not drain the refused body (host TECHNICAL 8.1): the peer may
-    // reset the connection while we still write. A raw socket reads the status line
-    // whatever happens.
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    let over = vec![b'x'; 64 * 1024 + 1];
-    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", served.port))
-        .await
-        .unwrap();
-    let head = format!(
-        "POST /api/plan HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        served.port,
-        over.len()
-    );
-    stream.write_all(head.as_bytes()).await.unwrap();
-    let _ = stream.write_all(&over).await;
-    let mut status = Vec::new();
-    let mut buf = [0u8; 256];
-    while !status.windows(2).any(|w| w == b"\r\n") {
-        match stream.read(&mut buf).await {
-            Ok(0) | Err(_) => break,
-            Ok(n) => status.extend_from_slice(&buf[..n]),
-        }
-    }
-    let line = String::from_utf8_lossy(&status);
-    assert!(
-        line.starts_with("HTTP/1.1 413"),
-        "expected 413, got {line:?}"
-    );
+    assert_declared_oversize_refused(served.port, "POST", "/api/plan", 65_537, "").await;
     served.shutdown().await;
 }
 

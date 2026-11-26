@@ -9,7 +9,7 @@ pub(crate) struct ApiState {
     pub port: u16,
 }
 use axum::Json;
-use axum::body::{Body, to_bytes};
+use axum::body::{Body, Bytes, HttpBody, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
@@ -37,6 +37,24 @@ pub(crate) fn error(status: u16, code: &str, message: impl ToString) -> Response
 pub(crate) fn not_found() -> Response {
     error(404, "not_found", "unknown API route")
 }
+/// Read a built-in route's body within its limit, rejecting a known oversize before polling.
+pub(crate) async fn read_body(body: Body, limit: usize) -> Result<Bytes, Response> {
+    let mut response = if body.size_hint().lower() > limit as u64 {
+        error(413, "bad_request", "length limit exceeded")
+    } else {
+        match to_bytes(body, limit).await {
+            Ok(bytes) => return Ok(bytes),
+            Err(e) => error(413, "bad_request", e),
+        }
+    };
+    // The unread body must not leave a reusable HTTP/1 connection.
+    response.headers_mut().insert(
+        header::CONNECTION,
+        header::HeaderValue::from_static("close"),
+    );
+    Err(response)
+}
+
 fn host_error(error: HostError) -> Response {
     json_response(error.status(), json!({"error":error.json()}))
 }
@@ -75,9 +93,9 @@ pub(crate) async fn respond(state: ApiState, request: Request<Body>) -> Response
     {
         return error(415, "bad_request", "use application/json");
     }
-    let bytes = match to_bytes(request.into_body(), 65_536).await {
+    let bytes = match read_body(request.into_body(), 65_536).await {
         Ok(bytes) => bytes,
-        Err(e) => return error(413, "bad_request", e),
+        Err(response) => return response,
     };
     if route == "/api/mods" {
         return json_response(200, json!({"mods":state.host.mods()}));

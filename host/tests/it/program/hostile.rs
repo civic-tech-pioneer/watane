@@ -172,10 +172,6 @@ impl Reply {
 // HTTP/1.1 bytes bypass URL and header normalization. Connection: close gives
 // a bounded response; SSE uses reqwest separately so its body stays open.
 fn raw(preview: &Preview, ip: &str, request: &[u8]) -> Option<Reply> {
-    exchange(preview, ip, request, false)
-}
-
-fn exchange(preview: &Preview, ip: &str, request: &[u8], end_body: bool) -> Option<Reply> {
     let mut stream = TcpStream::connect((ip, preview.ready.port)).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(3)))
@@ -191,9 +187,6 @@ fn exchange(preview: &Preview, ip: &str, request: &[u8], end_body: bool) -> Opti
             ),
             "{error}"
         );
-    }
-    if end_body {
-        let _ = stream.shutdown(std::net::Shutdown::Write);
     }
     let mut bytes = Vec::new();
     if let Err(error) = stream.read_to_end(&mut bytes) {
@@ -367,11 +360,12 @@ fn ac3_preflight_refuses_post_without_cors_headers() {
 fn ac4_chunked_and_declared_oversized_bodies_never_change_state() {
     let (_home, preview) = setup();
     let prefix = format!(
-        "POST /call HTTP/1.1\r\nHost: counter.localhost:{}\r\nOrigin: {}\r\nContent-Type: application/json\r\nConnection: close\r\n",
+        "POST /call HTTP/1.1\r\nHost: counter.localhost:{}\r\nOrigin: {}\r\nContent-Type: application/json\r\n",
         preview.ready.port,
         origin(&preview, "counter")
     );
-    let mut chunked = format!("{prefix}Transfer-Encoding: chunked\r\n\r\n").into_bytes();
+    let mut chunked =
+        format!("{prefix}Connection: close\r\nTransfer-Encoding: chunked\r\n\r\n").into_bytes();
     // A valid mutating call padded to 2 MiB, split into 16 KiB chunks.
     let mut body = br#"{"fn":"api.add","args":null}"#.to_vec();
     body.resize(2 << 20, b' ');
@@ -385,11 +379,12 @@ fn ac4_chunked_and_declared_oversized_bodies_never_change_state() {
         .expect("413 response")
         .error(413, "bad_request");
     counter_call(&preview, "api.get", 0);
-    let short =
-        format!("{prefix}Content-Length: 2097152\r\n\r\n{{\"fn\":\"api.add\",\"args\":null}}");
-    if let Some(reply) = exchange(&preview, "127.0.0.1", short.as_bytes(), true) {
-        reply.error(413, "bad_request");
-    }
+    // Leave the request's write side open without sending any body bytes.
+    // The response must close the connection even though the client did not ask for it.
+    let headers_only = format!("{prefix}Content-Length: 1048577\r\n\r\n");
+    let reply = raw(&preview, "127.0.0.1", headers_only.as_bytes()).expect("prompt 413 response");
+    assert_eq!(reply.header("connection"), Some("close"));
+    reply.error(413, "bad_request");
     counter_call(&preview, "api.get", 0);
 }
 
