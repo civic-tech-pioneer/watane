@@ -469,3 +469,35 @@ fn ac1_relinked_folder_and_ordinary_foreign_path_are_both_reported() {
     assert_eq!(snapshot(&fx.home), before);
     assert_eq!(fx.rel.requests(), requests);
 }
+
+/// TECHNICAL 8.1: status reports leftovers without mutating the installation.
+#[test]
+fn adv_s130_status_recovery_empties_a_folder_linked_in_the_home() {
+    let fx = Fx::installed();
+    let moved = fx.home.join("Documents");
+    fs::rename(fx.share("watane-dev"), &moved).expect("move share");
+    symlink(&moved, fx.share("watane-dev")).expect("link");
+    let dead = dead_pid();
+    write_file(&moved.join(format!("vendor.new.{dead}/marker")), "keep");
+    let before = snapshot(&fx.home);
+    let out = fx.run(&["--status"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert_eq!(snapshot(&fx.home), before);
+}
+
+/// TECHNICAL 8.4: receipts do not authorize removing a general-purpose directory.
+#[test]
+fn adv_s130_refused_receipt_still_drives_folder_removal() {
+    let fx = Fx::installed();
+    fs::remove_dir_all(fx.app()).expect("empty Applications");
+    let moved = fx.home.join("moved-watane");
+    fs::rename(fx.share("watane"), &moved).expect("move receipt folder");
+    symlink(&moved, fx.share("watane")).expect("link receipt folder");
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(
+        out.stderr.contains("skipped ~/.local/share/watane/receipt"),
+        "{out:?}"
+    );
+    assert!(fx.home.join("Applications").is_dir(), "{out:?}");
+}
