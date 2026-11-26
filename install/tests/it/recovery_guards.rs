@@ -40,6 +40,7 @@ fn recovery_callers_obey_the_destination_check() {
         set_entries
         bin=$HOME/.local/bin/watane
         mkdir -p "$SHAREW" "${bin%/*}"
+        : >"$bin"
         pid=99999999
         pid_gone() { return 0; }
         recovery_allowed() { [ "$1" != "$denied" ]; }
@@ -77,10 +78,19 @@ fn recovery_callers_obey_the_destination_check() {
             "#,
             ),
             (
+                "stale_journal_evidence",
+                r#"
+                denied=
+                : >"$bin.new.$pid"
+                clean_stale
+                test -f "$bin.new.$pid" && echo 'staging preserved'
+                rm -f "$bin.new.$pid"
+            "#,
+            ),
+            (
                 "foreign_receipt",
                 r#"
                 denied=$RECEIPT
-                : >"$bin"
                 RELEASE=0.1.0
                 check_foreign
             "#,
@@ -111,6 +121,9 @@ fn recovery_callers_obey_the_destination_check() {
         assert_eq!(result.code, 0, "{result:?}");
         assert!(!result.out.contains("watane.new."), "{result:?}");
     }
+    let evidence = case(&units, "stale_journal_evidence");
+    assert_eq!(evidence.code, 0, "{evidence:?}");
+    assert!(evidence.has_out_line("staging preserved"), "{evidence:?}");
     for name in ["foreign_receipt", "foreign_entry"] {
         let result = case(&units, name);
         assert_eq!(result.code, 8, "{result:?}");
