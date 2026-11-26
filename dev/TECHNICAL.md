@@ -1630,16 +1630,16 @@ reachable, then run: <rerun>`. Other 5xx follow 9.6
 (503 `unavailable` → `env.host_not_running`; others → `host.failed`).
 No fetch refusal fix asks the agent to check the app.
 
-`store(package)`: write `<cache>/packages/<id>` (temp file, rename) and,
-remove any `<cache>/providers/<id>.<pid>.tmp` left by this process id.
-When `<cache>/providers/<id>` is absent, unpack into that temporary folder
-and rename it to `<cache>/providers/<id>`.
+`store(package)`: first remove any other process's
+`<cache>/providers/<id>.<pid>.tmp` (any id) whose modification time is over
+one hour old, a killed run's leftover (dev has no cross-platform liveness
+check; a live unpack takes seconds); a younger one is kept, and a failed
+removal never fails the store. Then remove any `<cache>/providers/<id>.<pid>.tmp`
+left by this process id. When `<cache>/providers/<id>` is absent, unpack into
+that temporary folder and rename it to `<cache>/providers/<id>`.
 When the destination already exists, keep it and remove the temporary folder;
-a concurrent store winning the rename is handled the same way. Before
-it, `store` removes any other process's `<cache>/providers/<id>.<pid>.tmp`
-(any id) whose modification time is over one hour old, a killed run's
-leftover (dev has no cross-platform liveness check; a live unpack takes
-seconds); a younger one is kept, and a failed removal never fails the store.
+a concurrent store winning the rename is handled the same way. Last, write
+`<cache>/packages/<id>` (temp file, rename).
 No `<id>.<other>.tmp` is ever read or blocks a store.
 The paths come only from the id dev computed.
 
