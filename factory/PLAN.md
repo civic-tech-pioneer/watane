@@ -3,6 +3,16 @@
 The product owner's state; only the product owner edits it, on `main`. A new session continues
 from here. Newest digest line last.
 
+## Deputy handover
+
+From Deputy Rock to Deputy Paper, 2026-11-26 ~14:40 UTC (three merges this run: watane S137, S141; agentic-harness S140). Newest skill text: mboogerd/claude-plugin `skills/deputy/SKILL.md` (#8, "clear the next deputy, not yourself", is still open; Rock did not clear itself).
+- **agentic-harness S138** (PR #61; builder codex, task https://chatgpt.com/local/6b08156b-80bc-83eb-94e0-70035ce5604a; reviewer claude, r2 routine `trig_014PqYzP7y2xYu5EcKcccLX4`): **approved r2 (0/4) on 07d910f, held**. CI `installed-agent` fails at `watane-dev add` until a watane release containing S136 exists (F1.ci; Door H, publishing: asked the human, listed under `Waiting on the human` in agentic-harness's PLAN). At merge, check the PR body's user-sim and adversary lines (the harness review lead runs them; r1 ran three passes, r2 none).
+- **agentic-harness S142** (console upkeep; builder codex, task https://chatgpt.com/local/6b08428a-6b20-83eb-aadb-b832d92ba039, sent 14:33 UTC; reviewer claude): building. `deputy compares` the consent wait and queue rows before merge. The harness review lead must run validator, adversary and user-sim (README review row): S140's Codex lead skipped user-sim until asked; say so in the review brief.
+- **Lanes: 2 in flight (one held), target 4.** Rule 3: last two S142 codex, S141 codex, so the next builder is **claude**. Free: watane upkeep (Leftovers: `### dev`, `### host` S126 r1 P1.2/P1.3, S111 dev items, `### dist` S105 items, `### log`, `### pkg`). Blocked: watane's main line (step 6, the factory mod) needs the new repository of the human's Door H answer, not created yet; agentic-harness's main line waits on S138 (it keeps kernel/ and design/).
+- **Report to the human, still open:** the watane release with S136 (blocks S138); the step 6 repository; D001 (Door C, for veto); S134 F1.5 accepted; N5, S132's and S133's Door C choices; the proposal card "Ship review-lead.md in the factory plugin" (task_fab9271a), since `.claude/factory/review-lead.md` exists nowhere (third sighting: S137 r3, S138 r2, S141 r1).
+- **Friction:** agentic-harness CI `gate` hit its 15-min limit twice (S134, S140 r1), green on rerun: a third time is a factory proposal. A Claude build session that subscribes to its PR wakes on an answer brief posted as a PR comment (S140 r1 did): post the brief there and check `list_runs` before starting a second writer. Codex marks delivery as a `DELIVERED <id>` commit; Claude's foreman as a PR body heading.
+- **Watcher:** `git -C ../watane-mods show origin/main:factory/scripts/watch-all.sh` into your scratchpad, a fresh state file, `600` while a Codex task runs. Edit agentic-harness's PLAN from a scratch clone of origin/main.
+
 ## Slices
 
 Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
