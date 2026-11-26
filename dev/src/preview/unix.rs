@@ -268,7 +268,7 @@ pub(crate) fn serve_with_script(
                 .as_ref()
                 .and_then(|setting| setting.fallback(&folder, ready.port))
             {
-                warnings.push(reason.warning());
+                warnings.push(reason.warning_with(OpenAi::cause(&folder).as_deref()));
                 true
             } else {
                 OpenAi::matches(openai.as_ref(), &folder, ready.port)
@@ -300,18 +300,23 @@ pub(crate) fn serve_with_script(
                     else {
                         return Err(error.problem);
                     };
+                    let cause = error.problem.message.clone();
                     warnings.push(match reason {
                         Refusal::Usage => reason.warning(),
                         Refusal::Scripted => unavailable_warning(error.problem),
                     });
-                    start(
+                    let ready = start(
                         &home,
                         &folder,
                         &log,
                         fake_claude.as_deref(),
                         Some((setting, Some(reason))),
                     )
-                    .map_err(|error| error.problem)?
+                    .map_err(|error| error.problem)?;
+                    if matches!(reason, Refusal::Scripted) {
+                        OpenAi::remember_cause(&folder, &cause)?;
+                    }
+                    ready
                 }
             }
         };

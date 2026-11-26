@@ -130,6 +130,36 @@ fn files(dir: &Path) -> Result<Vec<String>, Problem> {
     Ok(out)
 }
 
+/// Remove another process's `<id>.<pid>.tmp` folders over an hour old: a killed run's leftovers.
+/// A failed removal never fails the store.
+fn sweep_stale_temps(providers: &Path) {
+    let own = format!(".{}.tmp", std::process::id());
+    let Ok(entries) = fs::read_dir(providers) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some(stem) = name.strip_suffix(".tmp") else {
+            continue;
+        };
+        let other_pid = stem
+            .rsplit_once('.')
+            .is_some_and(|(_, pid)| !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()));
+        if !other_pid || name.ends_with(&own) {
+            continue;
+        }
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age > std::time::Duration::from_secs(3600));
+        if old {
+            let _ = fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
 /// Store only validated bytes, naming both cache paths by their computed id.
 pub fn store(package: &Package, env: &Env) -> Result<PathBuf, Problem> {
     let id = package.id();
@@ -137,6 +167,7 @@ pub fn store(package: &Package, env: &Env) -> Result<PathBuf, Problem> {
     let providers = env.cache.join("providers");
     fs::create_dir_all(&packages).map_err(Problem::internal)?;
     fs::create_dir_all(&providers).map_err(Problem::internal)?;
+    sweep_stale_temps(&providers);
     let folder = providers.join(id.to_string());
     let provider_temp = providers.join(format!("{id}.{}.tmp", std::process::id()));
     if provider_temp.exists() {
@@ -501,10 +532,15 @@ mod tests {
         let providers = env.cache.join("providers");
         let temp = providers.join(format!("{}.{}.tmp", package.id(), std::process::id()));
         let killed = providers.join(format!("{}.{}.tmp", package.id(), std::process::id() + 1));
-        for folder in [&temp, &killed] {
+        let aged = providers.join(format!("other-id.{}.tmp", std::process::id() + 2));
+        for folder in [&temp, &killed, &aged] {
             fs::create_dir_all(folder).unwrap();
             fs::write(folder.join("partial"), "partial").unwrap();
         }
+        fs::File::open(&aged)
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 3600))
+            .unwrap();
         let folder = store(&package, &env).unwrap();
         assert_eq!(
             fs::read_to_string(folder.join("ui/index.html")).unwrap(),
@@ -513,6 +549,7 @@ mod tests {
         assert!(!folder.join("partial").exists());
         assert!(!temp.exists());
         assert!(killed.exists());
+        assert!(!aged.exists());
         fs::write(folder.join("keep"), "existing").unwrap();
         fs::create_dir_all(&temp).unwrap();
         fs::write(temp.join("partial"), "partial").unwrap();

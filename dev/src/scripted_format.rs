@@ -78,3 +78,36 @@ impl std::fmt::Debug for Script {
         f.debug_struct("Script").finish_non_exhaustive()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Script;
+
+    #[test]
+    fn ac3_unknown_fields_are_refused_at_every_level() {
+        for (script, field) in [
+            (r#"{"replise":[]}"#, "replise"),
+            (r#"{"_comment":"x"}"#, "_comment"),
+            (
+                r#"{"replies":[{"usage-limit":{"resets_in_s":60,"extra":0}}]}"#,
+                "extra",
+            ),
+            (
+                r#"{"replies":[{"sse":[{"completed":{"input_tokens":1,"output_tokens":1,"extra":0}}]}]}"#,
+                "extra",
+            ),
+            (
+                r#"{"plays":[{"slow":{"ms":1,"then":"down","extra":0}}]}"#,
+                "extra",
+            ),
+        ] {
+            let error = serde_json::from_str::<Script>(script)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains(&format!("unknown field `{field}`")),
+                "{script}: {error}"
+            );
+        }
+    }
+}

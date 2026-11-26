@@ -72,6 +72,11 @@ impl Refusal {
     }
 
     pub(super) fn warning(self) -> Problem {
+        self.warning_with(None)
+    }
+
+    /// The warning of a remembered refusal; a scripted one ends in the host's cause when known.
+    pub(super) fn warning_with(self, cause: Option<&str>) -> Problem {
         let (message, fix) = match self {
             Self::Usage => (
                 "this watane is not a development build with scripted OpenAI support",
@@ -81,6 +86,10 @@ impl Refusal {
                 "the host previously refused scripted OpenAI for this preview",
                 "Run `watane-dev serve --stop`; the refusal is remembered until the preview stops or its port changes",
             ),
+        };
+        let message = match (self, cause) {
+            (Self::Scripted, Some(cause)) => format!("{message}: {cause}"),
+            _ => message.to_owned(),
         };
         unavailable_warning(Problem::new(Code::EnvPreviewStart, message).fix(fix))
     }
@@ -194,9 +203,27 @@ impl OpenAi {
             return None;
         }
         let marker = fs::read_to_string(folder.join(MARKER)).ok()?;
+        let first = marker.lines().next().unwrap_or_default();
         [Refusal::Usage, Refusal::Scripted]
             .into_iter()
-            .find(|reason| marker == self.refused_marker(port, *reason))
+            .find(|reason| first == self.refused_marker(port, *reason))
+    }
+
+    /// The host's cause kept after the first line of a refusal marker, if any.
+    pub(super) fn cause(folder: &Path) -> Option<String> {
+        let marker = fs::read_to_string(folder.join(MARKER)).ok()?;
+        let (_, cause) = marker.split_once('\n')?;
+        Some(cause.trim().to_owned()).filter(|cause| !cause.is_empty())
+    }
+
+    /// Keep the host's cause after the first line of the marker just written.
+    pub(super) fn remember_cause(folder: &Path, cause: &str) -> Result<(), Problem> {
+        let marker = folder.join(MARKER);
+        let first = fs::read_to_string(&marker).map_err(Problem::internal)?;
+        let first = first.lines().next().unwrap_or_default();
+        let cause = cause.split_whitespace().collect::<Vec<_>>().join(" ");
+        let temp = PrivateFile::create(folder, format!("{first}\n{cause}").as_bytes())?;
+        fs::rename(&temp.0, marker).map_err(Problem::internal)
     }
 
     fn refused_marker(&self, port: u16, reason: Refusal) -> String {
@@ -422,6 +449,60 @@ mod tests {
                 .warning()
                 .message
                 .contains("host previously refused scripted OpenAI for this preview")
+        );
+    }
+
+    #[test]
+    fn ac5_remembered_scripted_refusal_keeps_the_host_cause() {
+        let dir = tempfile::tempdir().expect("preview folder");
+        let folder = dir.path();
+        let openai = OpenAi {
+            program: "/fixture".into(),
+            script: None,
+            fingerprint: blake3::hash(b"default"),
+        };
+        OpenAi::remember(Some((&openai, Some(Refusal::Scripted))), folder, 100)
+            .expect("scripted refusal");
+        assert_eq!(OpenAi::cause(folder), None);
+        let bare = Refusal::Scripted.warning_with(OpenAi::cause(folder).as_deref());
+        assert_eq!(
+            bare.message,
+            "serving without scripted OpenAI: the host previously refused scripted OpenAI for this preview"
+        );
+        OpenAi::remember_cause(
+            folder,
+            "the preview did not start:\nscripted OpenAI: bad script",
+        )
+        .expect("cause");
+        assert!(matches!(
+            openai.fallback(folder, 100),
+            Some(Refusal::Scripted)
+        ));
+        let cause = OpenAi::cause(folder);
+        assert_eq!(
+            cause.as_deref(),
+            Some("the preview did not start: scripted OpenAI: bad script")
+        );
+        assert_eq!(
+            Refusal::Scripted.warning_with(cause.as_deref()).message,
+            "serving without scripted OpenAI: the host previously refused scripted OpenAI for this preview: the preview did not start: scripted OpenAI: bad script"
+        );
+    }
+
+    #[test]
+    fn ac2_read_script_names_an_unknown_field_the_file_and_the_fix() {
+        let dir = tempfile::tempdir().expect("mod folder");
+        let path = dir.path().join("script.json");
+        fs::write(&path, br#"{"replise":[]}"#).expect("script");
+        let Err(problem) = read_script(dir.path(), Some(&path)) else {
+            panic!("an unknown field must be refused");
+        };
+        assert!(problem.message.contains("unknown field `replise`"));
+        assert!(problem.message.contains(&path.display().to_string()));
+        assert_eq!(problem.file.as_deref(), Some(path.to_str().unwrap()));
+        assert_eq!(
+            problem.fix.as_deref(),
+            Some("Use the scripted-responses JSON format from dev TECHNICAL 18.3")
         );
     }
 

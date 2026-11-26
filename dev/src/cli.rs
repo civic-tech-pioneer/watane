@@ -298,13 +298,13 @@ fn fallback_rerun(cli: &Cli, cwd: Option<&Path>) -> String {
 }
 
 /// Fixes that end in the command's rerun where the code that made them does not
-/// know it (`build.compile`, `build.reads_outside`, `internal`): `<fix>, then run: <rerun>`.
+/// know it (`build.compile`, `build.resolve`, `build.reads_outside`, `internal`): `<fix>, then run: <rerun>`.
 fn end_in_rerun(mut outcome: Outcome, rerun: &str) -> Outcome {
     use crate::outcome::Code;
     for error in &mut outcome.errors {
         if !matches!(
             error.code,
-            Code::Internal | Code::BuildCompile | Code::BuildReadsOutside
+            Code::Internal | Code::BuildCompile | Code::BuildResolve | Code::BuildReadsOutside
         ) {
             continue;
         }
@@ -1521,6 +1521,20 @@ mod tests {
         assert_eq!(outcome.next.as_deref(), Some(fixes[0]));
     }
 
+    #[test]
+    fn ac6_resolve_fix_ends_in_the_rerun() {
+        use crate::outcome::Code;
+        let mut outcome = Outcome::new("test", None)
+            .fail(vec![Problem::new(Code::BuildResolve, "no match").fix(
+                "Use only the crates and features of the allowlist: serde",
+            )]);
+        outcome.next = outcome.errors[0].fix.clone();
+        let outcome = end_in_rerun(outcome, "watane-dev test --json --dir /m");
+        let fix = "Use only the crates and features of the allowlist: serde, then run: watane-dev test --json --dir /m";
+        assert_eq!(outcome.errors[0].fix.as_deref(), Some(fix));
+        assert_eq!(outcome.next.as_deref(), Some(fix));
+    }
+
     #[cfg(unix)]
     #[test]
     fn s114_serve_reruns_resolve_the_script_path() {
@@ -1658,6 +1672,115 @@ mod tests {
             Some(format!("Start the watane app, then run: {rerun}"))
         );
         assert_eq!(outcome.next, Some(rerun));
+    }
+
+    #[test]
+    fn ac6_no_app_next_is_the_bare_rerun_for_every_command() {
+        let root = tempfile::tempdir().unwrap();
+        let home = root.path().canonicalize().unwrap();
+        let dir = home.join("m");
+        template::new_mod(&dir, "m").unwrap();
+        let (d, h) = (shell_path(&dir), shell_path(&home));
+        let target = home.join("fresh");
+        let t = shell_path(&target);
+        let cases = [
+            (
+                Command::Install {
+                    home: Some(home.clone()),
+                    wait: Some(5),
+                },
+                format!("watane-dev install --json --dir {d} --home {h} --wait 5"),
+            ),
+            (
+                Command::Publish {
+                    push: true,
+                    owner: None,
+                    no_source: false,
+                    home: Some(home.clone()),
+                    wait: None,
+                },
+                format!("watane-dev publish --json --dir {d} --home {h} --push"),
+            ),
+            (
+                Command::Add {
+                    provider: None,
+                    release: Some("k/p@0.1.0".into()),
+                    home: Some(home.clone()),
+                },
+                format!("watane-dev add --release 'k/p@0.1.0' --json --dir {d} --home {h}"),
+            ),
+            (
+                Command::Search {
+                    text: vec!["w".into()],
+                    publisher: None,
+                    interface: None,
+                    home: Some(home.clone()),
+                },
+                format!("watane-dev search --json w --home {h}"),
+            ),
+            (
+                Command::New {
+                    slug: None,
+                    from: Some("k/p@0.1.0".into()),
+                    home: Some(home.clone()),
+                },
+                format!("watane-dev new --from 'k/p@0.1.0' --json --dir {t} --home {h}"),
+            ),
+        ];
+        for (command, rerun) in cases {
+            let dir = if matches!(command, Command::New { .. }) {
+                target.clone()
+            } else {
+                dir.clone()
+            };
+            let outcome = run(Cli {
+                json: true,
+                dir: Some(dir),
+                command,
+            });
+            assert_eq!(
+                outcome.errors[0].code,
+                crate::outcome::Code::EnvHostNotRunning
+            );
+            assert_eq!(
+                outcome.errors[0].fix,
+                Some(format!("Start the watane app, then run: {rerun}"))
+            );
+            assert_eq!(outcome.next, Some(rerun));
+        }
+    }
+
+    #[test]
+    fn ac6_test_and_serve_failing_at_check_time_give_their_own_rerun() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().canonicalize().unwrap().join("m");
+        template::new_mod(&dir, "m").unwrap();
+        std::fs::write(dir.join("mod.toml"), "name = [").unwrap();
+        let d = shell_path(&dir);
+        for (command, rerun) in [
+            (
+                Command::Test { home: None },
+                format!("watane-dev test --json --dir {d}"),
+            ),
+            (
+                Command::Serve {
+                    stop: false,
+                    home: None,
+                    script: None,
+                },
+                format!("watane-dev serve --json --dir {d}"),
+            ),
+        ] {
+            let outcome = run(Cli {
+                json: true,
+                dir: Some(dir.clone()),
+                command,
+            });
+            assert!(!outcome.ok);
+            let fix = outcome.errors[0].fix.clone().unwrap();
+            assert!(fix.ends_with(&format!(", then run: {rerun}")), "{fix}");
+            assert_eq!(outcome.next, Some(fix));
+        }
     }
 
     #[test]
