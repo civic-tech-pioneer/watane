@@ -1236,6 +1236,22 @@ names the same interface in its sketch and fakes it until this one merges.
   Constraints: design only, through the `spec-change` skill. List each Door C choice (the WIT shape, the callback) in
   the PR body with its options, for the human's veto. A new host export or callback is a public interface: prefer the
   narrowest (read-only, own timers only).
+- [ ] **S136 A mod's timer firing tells it whose authority it carries (host 19.6 build, S133's design), with host's and dev's judge polish.**
+  (sketched 2026-11-26 by Deputy Paper, the main line: the provider half of agentic-harness F6.1; builder codex, reviewer
+  claude by rule 3 (last two S135 codex, S134 claude → the count says codex, since S134 was Claude); handed out once S133 merges.
+  Size: the read is small, so it carries host's polish to make one slice (reason: the provider half unblocks
+  agentic-harness's consumer half).)
+  Why: S133 specified `timers.firing-origin() -> option<string>` (host 19.1, 19.6); the kernel needs it to act under the
+  owner's authority on a firing instead of its own (agentic-harness F6.1, case 22).
+  Outcomes (user-sim on the real host and `watane-dev serve`): (1) a mod's own top-level `fired` reads `some(<origin
+  identity>)`, every nested call and every other entry point reads `none`; (2) after the origin client is removed or
+  disabled, the firing reads the rewritten origin (S62, S66) and gives no previous origin, name or generation; (3) a
+  cancelled or replaced timer never enters `fired`; (4) the Harness returns `none` and a `Fakes` entry overrides it;
+  (5) S129 P1.1 to P1.8 and S126 r1 P1.1, P1.3, P1.4 (re-check each against main first).
+  Touches: `host/src/` (timers, the WIT in `wit/host.wit`), `host/tests/`, `dev/` (judge polish, Fakes), host/dev TECHNICAL
+  only where the build finds a gap. Not install/ (S135).
+  Constraints: the shape is S133's, merged: do not change it; a gap goes back as BLOCKED. Adversary: a mod that tries
+  to read another mod's origin, or a stale one after a removal (spec/TECHNICAL.md 6).
 - [~] **S135 (upkeep) install.sh's last S130 and S123 polish.** (in flight, cloud; Codex task https://chatgpt.com/local/6b07eebe-eed0-83eb-b34d-113057e32064, ~08:40 UTC; PR #49 at 780f4d1 (+501/-37); r1: Claude routine `trig_01LZEhZuvsfGGpRWBzxGsMim`, fires 08:46 UTC; sketched 2026-11-26 by Deputy Paper, the watane upkeep
   lane; builder codex, reviewer claude by rule 3 (last two S134 claude, S133 codex); no spec-check: install's own
   3.x wording at most. Exempt from size: upkeep.)
