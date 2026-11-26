@@ -38,21 +38,21 @@ pub(crate) fn not_found() -> Response {
     error(404, "not_found", "unknown API route")
 }
 /// Read a built-in route's body within its limit, rejecting a known oversize before polling.
-pub(crate) async fn read_body(body: Body, limit: usize) -> Result<Bytes, Response> {
-    let mut response = if body.size_hint().lower() > limit as u64 {
-        error(413, "bad_request", "length limit exceeded")
-    } else {
-        match to_bytes(body, limit).await {
-            Ok(bytes) => return Ok(bytes),
-            Err(e) => error(413, "bad_request", e),
-        }
-    };
+pub(crate) async fn read_body(body: Body, limit: usize) -> Result<Bytes, String> {
+    if body.size_hint().lower() > limit as u64 {
+        return Err("length limit exceeded".to_owned());
+    }
+    to_bytes(body, limit).await.map_err(|e| e.to_string())
+}
+
+pub(crate) fn body_too_large(message: String) -> Response {
+    let mut response = error(413, "bad_request", message);
     // The unread body must not leave a reusable HTTP/1 connection.
     response.headers_mut().insert(
         header::CONNECTION,
         header::HeaderValue::from_static("close"),
     );
-    Err(response)
+    response
 }
 
 fn host_error(error: HostError) -> Response {
@@ -95,7 +95,7 @@ pub(crate) async fn respond(state: ApiState, request: Request<Body>) -> Response
     }
     let bytes = match read_body(request.into_body(), 65_536).await {
         Ok(bytes) => bytes,
-        Err(response) => return response,
+        Err(message) => return body_too_large(message),
     };
     if route == "/api/mods" {
         return json_response(200, json!({"mods":state.host.mods()}));
