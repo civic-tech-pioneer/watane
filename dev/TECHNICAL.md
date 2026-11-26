@@ -311,9 +311,11 @@ answers (`host.no_answer` outside `--wait`) is `Check the preview log, then run:
 <rerun>`; the one of a `--wait` that ran out is the longer-wait rerun above;
 the fix of any other `host.refused` the app gives is `The watane app could not
 complete this command; ask the person to check the watane app, then run: <rerun>`.
-A fix made where the command is not known (`build.compile`, `build.reads_outside`,
+A fix made where the command is not known (`build.compile`, `build.resolve`, `build.reads_outside`,
 `internal`) is written without its ending, and cli.rs ends it `, then run:
-<rerun>` with the command as given (`--dir` and `--home` only as given). A
+<rerun>` with the command as given (`--dir` and `--home` only as given). A local
+provider's failure is the exception: its fix and `next` are already one command,
+the provider's own `watane-dev test --json --dir <provider>`, and stay so. A
 `test`, `serve`, `install` or `publish` that fails before any build (a check
 error with a prose fix) ends its fix and `next` the same way, with its own rerun. `check` and `new`
 `next` keep the `--dir` they were given; the `next` of `search` keeps a filter
@@ -1631,7 +1633,7 @@ reachable, then run: <rerun>`. Other 5xx follow 9.6
 No fetch refusal fix asks the agent to check the app.
 
 `store(package)`: first remove any other process's
-`<cache>/providers/<id>.<pid>.tmp` (any id) whose modification time is over
+`<cache>/providers/<id>.<pid>.tmp` (any `<id>` that parses as a `PackageId`, a decimal `<pid>`) whose modification time is over
 one hour old, a killed run's leftover (dev has no cross-platform liveness
 check; a live unpack takes seconds); a younger one is kept, and a failed
 removal never fails the store. Then remove any `<cache>/providers/<id>.<pid>.tmp`
@@ -3032,8 +3034,8 @@ once. The maker tools offer the fake `claude` instead:
   for the selected program fingerprint (a hash of the program's path and the
   supplied script's bytes, not of the program's contents) and the live preview port, preserving
   the API and MCP connection on the next serve without a script. A scripted
-  refusal's marker keeps the host's cause after its first line (the first line alone is compared),
-  and the reuse warning's message ends in `: <cause>`; a marker without a cause still reads. With a supplied script,
+  refusal's marker keeps the host's cause verbatim after its first line, written in the same step as
+  the marker (the first line alone is compared), and the reuse warning's message ends in `: <cause>`; a marker without a cause still reads. With a supplied script,
   invalid input or unavailable scripted preview support fails with
   `env.preview_start` and names the maker's file.
   An unchanged script reuses a live preview. Changing the script or enabling
