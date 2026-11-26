@@ -1,6 +1,6 @@
 //! Launch the S111 Responses fake for the lifetime of a dev preview (TECHNICAL 19.9).
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read};
 use std::net::SocketAddrV4;
@@ -72,25 +72,26 @@ impl Options {
         let ready = receive
             .recv_timeout(Duration::from_secs(10))
             .map_err(|err| invalid(format!("waiting for the ready line: {err}")))??;
+        let (token, judge_key) = fixture_credentials(script.token, script.judge_key);
         let judge = if script.plays.is_some_and(|plays| !plays.is_empty()) {
             let address = ready
                 .judge_addr
-                .as_str()
+                .as_deref()
                 .and_then(|address| address.parse().ok())
                 .ok_or_else(|| invalid("ready line needs an IPv4 judge address"))?;
             let origin = ready
                 .judge_origin
-                .as_str()
-                .ok_or_else(|| invalid("ready line needs a judge origin"))?
-                .to_owned();
-            let key = script
-                .judge_key
-                .unwrap_or_else(|| "watane-preview-judge".into());
-            Some((address, JudgeAccount { origin, key }))
+                .ok_or_else(|| invalid("ready line needs a judge origin"))?;
+            Some((
+                address,
+                JudgeAccount {
+                    origin,
+                    key: judge_key,
+                },
+            ))
         } else {
             None
         };
-        let token = script.token.unwrap_or_else(|| "watane-preview".into());
         child.judge_origin = host
             .set_scripted_responses(ready.responses_addr, &ready.ca_pem, token, judge)
             .map_err(invalid)?;
@@ -103,11 +104,8 @@ struct Ready {
     scripted: u32,
     responses_addr: SocketAddrV4,
     ca_pem: String,
-    // An OpenAI-only script does not depend on the judge fields.
-    #[serde(default)]
-    judge_addr: serde_json::Value,
-    #[serde(default)]
-    judge_origin: serde_json::Value,
+    judge_addr: Option<String>,
+    judge_origin: Option<String>,
 }
 
 fn read_ready(reader: impl Read) -> Result<Ready, HostError> {
@@ -135,6 +133,13 @@ struct Script {
     plays: Option<Vec<serde::de::IgnoredAny>>,
 }
 
+fn fixture_credentials(token: Option<String>, judge_key: Option<String>) -> (String, String) {
+    (
+        token.unwrap_or_else(|| "watane-preview".into()),
+        judge_key.unwrap_or_else(|| "watane-preview-judge".into()),
+    )
+}
+
 fn read_script(script: Option<&Path>) -> Result<Script, HostError> {
     let Some(path) = script else {
         return Ok(Script::default());
@@ -143,14 +148,6 @@ fn read_script(script: Option<&Path>) -> Result<Script, HostError> {
         .map_err(|err| invalid(format!("cannot open {}: {err}", path.display())))?;
     serde_json::from_reader(BufReader::new(file))
         .map_err(|err| invalid(format!("invalid script {}: {err}", path.display())))
-}
-
-#[derive(Serialize)]
-pub(super) struct PreviewReady<'a> {
-    #[serde(flatten)]
-    pub(super) ready: watane_host::Ready,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) judge_origin: Option<&'a str>,
 }
 
 pub(super) struct ScriptedChild {
@@ -167,7 +164,7 @@ impl Drop for ScriptedChild {
 
 #[cfg(test)]
 mod tests {
-    use super::{Options, read_ready, read_script};
+    use super::{Options, fixture_credentials, read_ready, read_script};
 
     #[test]
     fn an_option_is_not_a_scripted_program_path() {
@@ -184,20 +181,20 @@ mod tests {
         let ready = r#"{"scripted":1,"responses_addr":"127.0.0.1:1","ca_pem":"fixture"}"#;
         let parsed = read_ready(format!("{ready}\n").as_bytes()).expect("valid ready line");
         assert_eq!(parsed.responses_addr.to_string(), "127.0.0.1:1");
-        let unused_judge = ready.replace(
-            "\"ca_pem\"",
-            "\"judge_addr\":\"unused\",\"judge_origin\":{},\"ca_pem\"",
-        );
-        read_ready(format!("{unused_judge}\n").as_bytes()).expect("unused judge fields");
+        assert!(parsed.judge_addr.is_none());
+        assert!(parsed.judge_origin.is_none());
         assert!(read_ready(ready.as_bytes()).is_err());
         assert!(read_ready(format!("{}\n", ready.replace(":1,", ":2,")).as_bytes()).is_err());
         assert!(read_ready(format!("{}{ready}\n", " ".repeat(64 * 1024)).as_bytes()).is_err());
     }
 
     #[test]
-    fn no_script_supplies_no_token_or_judge_plays() {
+    fn no_script_uses_the_default_credentials_and_has_no_judge_plays() {
         let script = read_script(None).expect("default script");
-        assert!(script.token.is_none());
         assert!(script.plays.is_none());
+        assert_eq!(
+            fixture_credentials(script.token, script.judge_key),
+            ("watane-preview".into(), "watane-preview-judge".into())
+        );
     }
 }

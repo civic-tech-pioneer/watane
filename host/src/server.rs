@@ -225,6 +225,7 @@ impl Served {
             api: self.api_url(),
             mcp: None,
             token: None,
+            judge_origin: None,
             mods: catalog
                 .mods
                 .iter()

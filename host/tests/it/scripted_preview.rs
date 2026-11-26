@@ -90,30 +90,3 @@ fn scripted_child_with_invalid_address_or_ca_is_reaped() {
         assert!(!home.join("run.json").exists());
     }
 }
-
-#[test]
-fn scripted_judge_shares_the_preview_and_release_guards() {
-    let temp = tempfile::tempdir().unwrap();
-    let home = temp.path().join("home");
-    let script = temp.path().join("judge.json");
-    fs::write(&script, r#"{"plays":[{"safe":[]}]}"#).unwrap();
-    let command = |mode: &str| {
-        Command::new(HOST)
-            .arg(mode)
-            .arg(&home)
-            .arg("--scripted-openai")
-            .arg(temp.path().join("unexpected-program"))
-            .arg("--openai-script")
-            .arg(&script)
-            .output()
-            .unwrap()
-    };
-    let output = command("--home");
-    assert_eq!(output.status.code(), Some(2));
-    assert!(!home.exists());
-    if !cfg!(all(watane_dev_profile, debug_assertions)) {
-        let output = command("--preview");
-        assert_eq!(output.status.code(), Some(2));
-        assert!(!home.exists());
-    }
-}

@@ -1256,8 +1256,8 @@ fn ac5_a_preview_has_no_accounts() {
 #[cfg(all(unix, watane_dev_profile, debug_assertions))]
 mod scripted_preview {
     use super::{
-        Host, Limits, Mode, Pki, RESPONSES, SSE_HEAD, Server, TestNet, answer_one, get, make_pki,
-        pki, post, with,
+        Host, JudgeAccount, Limits, Mode, Pki, RESPONSES, SSE_HEAD, Server, TestNet, answer_one,
+        get, make_pki, pki, post, with,
     };
     use crate::streams::{call_as, install, wait};
     use serde_json::{Value, json};
@@ -1274,17 +1274,33 @@ mod scripted_preview {
 
     impl Preview {
         fn new(addr: SocketAddr, pki: &Pki) -> Self {
+            Self::with_judge(addr, pki, None)
+        }
+
+        fn with_judge(addr: SocketAddr, pki: &Pki, judge_addr: Option<SocketAddr>) -> Self {
             let dir = tempfile::tempdir().unwrap();
             let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
             install(&host, &["https"]);
-            host.set_scripted_openai(v4(addr), &pki.root_pem, "tok".into())
+            let judge = judge_addr.map(|address| {
+                (
+                    v4(address),
+                    JudgeAccount {
+                        origin: "https://judge.test".into(),
+                        key: "judge-fixture".into(),
+                    },
+                )
+            });
+            host.set_scripted_responses(v4(addr), &pki.root_pem, "tok".into(), judge)
                 .unwrap();
             Self { host, _dir: dir }
         }
 
         fn test_route(&self, server: &Server) {
             self.host.set_test_net(TestNet {
-                routes: vec![("api.openai.com".into(), server.addr)],
+                routes: vec![
+                    ("api.openai.com".into(), server.addr),
+                    ("judge.test".into(), server.addr),
+                ],
                 root_pem: pki().root_pem.clone(),
             });
         }
@@ -1335,10 +1351,11 @@ mod scripted_preview {
         let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
         for token in ["", "two words"] {
             let error = host
-                .set_scripted_openai(
+                .set_scripted_responses(
                     "127.0.0.1:1".parse().unwrap(),
                     &pki().root_pem,
                     token.into(),
+                    None,
                 )
                 .unwrap_err();
             assert_eq!(error.to_string(), "invalid scripted OpenAI token");
@@ -1385,6 +1402,61 @@ mod scripted_preview {
         let end = preview.end(&stream);
         assert!(end.contains("cannot connect to scripted OpenAI"), "{end}");
         assert_eq!(ordinary.stats.connections.load(Ordering::SeqCst), 0);
+    }
+
+    fn judge() -> Value {
+        with(
+            post("https://judge.test/verdict"),
+            "account",
+            json!("judge"),
+        )
+    }
+
+    #[test]
+    fn scripted_judge_reaches_the_fake_with_its_key_and_tls_name() {
+        // The leaf cert is valid for judge.test alone, so this also pins the SNI name.
+        let pki = make_pki(&["judge.test"]);
+        let judge_server = Server::start_with_pki(&pki, answer_one("scripted verdict"));
+        let responses = Server::start(answer_one("wrong account"));
+        let preview = Preview::with_judge(responses.addr, &pki, Some(judge_server.addr));
+        let stream = preview.start(judge());
+        assert_eq!(preview.end(&stream), "closed");
+        assert_eq!(
+            preview.call("api.items", json!({"s":stream})),
+            json!([SSE_HEAD, "scripted verdict"])
+        );
+        let requests = judge_server.stats.requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            requests[0].header("authorization"),
+            ["Bearer judge-fixture"]
+        );
+        assert_eq!(requests[0].header("host"), ["judge.test"]);
+        assert_eq!(responses.stats.connections.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn scripted_judge_socket_failure_never_tries_the_normal_route() {
+        let closed = tokio::net::TcpSocket::new_v4().unwrap();
+        closed.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let pki = make_pki(&["judge.test"]);
+        let ordinary = Server::start_with_pki(&pki, answer_one("wrong route"));
+        let preview = Preview::with_judge(ordinary.addr, &pki, Some(closed.local_addr().unwrap()));
+        preview.test_route(&ordinary);
+        let stream = preview.start(judge());
+        let end = preview.end(&stream);
+        assert!(end.contains("cannot connect to scripted judge"), "{end}");
+        assert_eq!(ordinary.stats.connections.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn scripted_responses_without_a_judge_binding_has_no_judge_account() {
+        let fake = Server::start(answer_one("wrong account"));
+        let preview = Preview::new(fake.addr, pki());
+        preview.test_route(&fake);
+        let stream = preview.start(judge());
+        assert_eq!(preview.end(&stream), "no-account");
+        assert_eq!(fake.stats.connections.load(Ordering::SeqCst), 0);
     }
 
     #[test]
@@ -1671,8 +1743,8 @@ fn ac7_a_consumer_that_defers_stops_the_host_reading_and_resume_loses_nothing() 
         || rig.host().test_stream_deferred_and_full(&s),
     );
     assert!(
-        server.written.load(Ordering::SeqCst) < EVENTS,
-        "the server sent the complete body while the stream was deferred"
+        server.written.load(Ordering::SeqCst) < EVENTS / 2,
+        "the server sent half the body while the stream was deferred"
     );
     assert_eq!(
         rig.items(&s),

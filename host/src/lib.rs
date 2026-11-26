@@ -682,6 +682,8 @@ pub struct Ready {
     pub mcp: Option<String>,
     pub token: Option<String>,
     pub mods: Vec<ReadyMod>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub judge_origin: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ReadyMod {

@@ -203,6 +203,7 @@ impl RunInfo { pub fn read(home: &Path) -> Result<Option<RunInfo>, HostError>; }
 pub struct Ready {
     pub watane: u32, pub mode: String, pub home: PathBuf, pub port: u16, pub api: String,
     pub mcp: Option<String>, pub token: Option<String>, pub mods: Vec<ReadyMod>,
+    pub judge_origin: Option<String>,
 }
 pub struct ReadyMod { pub local: LocalName, pub page: Option<String> }
 ```
@@ -1771,7 +1772,8 @@ In a participant home, `mcp` and `token` are `null`. `page` is `null` for a
 mod without a page. A scripted judge preview also gives its `judge_origin`
 (19.9). A failure before the ready line prints
 `{"watane":1,"error":<HostError JSON>}` and exits 1. `watane_host::Ready`
-(Serialize, Deserialize) is the common part of the ready line, for `dev`.
+(Serialize, Deserialize) is the ready line for `dev`. It omits `judge_origin`
+when absent and reads older lines without that field.
 
 SIGINT or SIGTERM: stop accepting, let running requests end for up to 5 s
 (routers 4 s, then connections and blocking work until 5 s in all), remove
@@ -4040,7 +4042,9 @@ review r1 of S103 a gate in place of a sleep.
   A script with at least one play also configures a preview judge account.
   The host takes the judge's nonzero IPv4 localhost socket and its origin
   `https://judge.test` from the same program's ready line. It takes the
-  fixture key from `judge_key` or uses `watane-preview-judge`. The installed
+  fixture key from `judge_key` or uses `watane-preview-judge`. Both fixture
+  credentials must be nonempty and contain only printable ASCII without
+  spaces. The installed
   mod still needs a matching granted `Http` host and its request passes
   19.4 at the call and at apply. Only the account lookup uses the fixture
   instead of an app account. The request retains the checked host for
@@ -4052,12 +4056,6 @@ review r1 of S103 a gate in place of a sleep.
 ```rust
 #[cfg(all(unix, watane_dev_profile, debug_assertions))]
 impl Host {
-    pub fn set_scripted_openai(
-        &self,
-        address: std::net::SocketAddrV4,
-        root_pem: &str,
-        token: String,
-    ) -> Result<(), HostError>;
     pub fn set_scripted_responses(
         &self,
         address: std::net::SocketAddrV4,
