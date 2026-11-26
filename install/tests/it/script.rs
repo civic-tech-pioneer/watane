@@ -1989,4 +1989,20 @@ fn recovery_does_not_undo_old_files_after_reverting_a_bin_link() {
     assert!(has_leftover(&fx, "journal."));
     assert!(replacement.join("watane").is_file());
     assert_eq!(fx.read(&aside.join("watane")), old_bin);
+
+    // An older published receipt without a location still requires the literal path.
+    let legacy: String = fx
+        .read(&fx.receipt())
+        .split_inclusive('\n')
+        .filter(|line| !line.starts_with("resolved .local/bin "))
+        .collect();
+    write_file(&fx.receipt(), &legacy);
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(
+        !out.has_line("recovered interrupted watane install"),
+        "{out:?}"
+    );
+    assert!(has_leftover(&fx, "journal."));
+    assert!(replacement.join("watane").is_file());
 }
