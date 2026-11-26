@@ -572,6 +572,14 @@ fn ac9_say_refuses_slash_commands_strangers_and_unknown_streams() {
         rig.call("api.answer", json!({"s": s, "ask": "1"})),
         json!("unknown-ask")
     );
+    // A successful say queues stdin. Cancel can kill the child before it logs that line.
+    rig.wait_log("the accepted user line", |lines| {
+        lines.iter().any(|line| {
+            line.starts_with("IN ")
+                && line.contains(r#""type":"user""#)
+                && line.contains(r#""content":"a /x""#)
+        })
+    });
     rig.call("api.cancel", json!({"s": s}));
     rig.wait_ended(1);
     assert_eq!(
