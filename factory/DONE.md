@@ -199,3 +199,17 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   only where the build finds a gap. Not install/ (S135).
   Constraints: the shape is S133's, merged: do not change it; a gap goes back as BLOCKED. Adversary: a mod that tries
   to read another mod's origin, or a stale one after a removal (spec/TECHNICAL.md 6).
+
+- [~] **S137 (upkeep, guard first) dist's local-address guards and install's S135/S123 polish.**
+  (sketched 2026-11-26 by Deputy Scissors, the upkeep lane; builder claude by rule 3 (last two S136 codex, S135 codex),
+  reviewer codex; in flight, cloud, routine `trig_01D2jzqZBQFVRMEmK7P1o3Ek` fires 10:01 UTC; DELIVERED as PR #51 at 6e2ab67 (+1065/-54; dist items (1), (2) already on main, dropped); r1: Codex review https://chatgpt.com/local/6b08113f-1a4c-83eb-9486-f3d94dd8207b, 11:00 UTC; r1: 2/1 (changes; CI green), answer brief as PR comment 11:21 UTC, ruled narrow; the build session did not wake on it; answer routine `trig_01YH4RzNA7aoQz8ePvTwzZFQ` 11:42 UTC; r1 answers 2ccb2b8 (3 fixed); r2: Codex follow-up 11:55 UTC; exempt from the size rule (upkeep). No spec-check run: items only, any spec gap goes through spec-change.) r2: Codex review on 2ccb2b8, posted 12:14 UTC by Deputy Rock: 1/1 (changes; F2.1 a regression in the r1 answer, ruled narrow); r2 answer routine `trig_014os5h91fnwn7DzF9tsca9t` fires 12:16 UTC; r2 answers at d5d2dcf (12:27 UTC, check PASS); r3: Codex review, follow-up in the same task, 12:29 UTC.
+  Outcomes (each item's check, re-checked against main first; an item already fixed is dropped with a line):
+  (1) *guard* dist's local ranges (5.9) also refuse 100.64/10, 198.18/15, 0/8, fec0::/10 and the NAT64 and 6to4 forms of
+  a local IPv4 address (S105 adversary, deputy decision 2026-11-23), and `localhost.` with one trailing dot is local
+  (S104 review); (2) dist S105 P5.3, P5.4, P6.1 to P6.3 (Upkeep list above); (3) install S135 r1 P1.1 to P1.14 of
+  PR #49, P1.1 by making user-sim's red test `regress_s135_changed_during_install_to_the_home_has_no_bare_tilde` pass,
+  P1.2 with tests that kill mutants 9 and 10; (4) install S123 r2 P2.1 and r1 P1.2, P1.4, P1.5.
+  Touches: `dist/src/`, `dist/tests/`, `install/`, dist and install TECHNICAL only where a rule changes. Not host/ or
+  dev/ (S136).
+  Constraints: no new public interface; a guard never weakens. Adversary on (1): Eve's listed base or redirect aimed
+  at each new range (spec/TECHNICAL.md 6).
