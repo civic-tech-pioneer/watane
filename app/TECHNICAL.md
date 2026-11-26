@@ -2752,8 +2752,8 @@ N10).
   canonical text (agentic-harness 5).
   The app applies no rule of its own: for the
   page's line and for `judge_set` it calls `watane_host::judge_origin(text)`
-  (host 19.4), and what it shows and stores is its result (`words::judge_origin`
-  maps the error to the editor's origin hint). The host parses the stored origin again at
+  (host 19.4). The editor displays the host's error message or shows the
+  canonical origin with `words::judge_origin`. The host parses the stored origin again at
   each binding check (host 19.4), so the app's parse decides only what is
   shown and stored, never where a key goes.
 - **Storing.** `judge_set({local, key, origin})` stores

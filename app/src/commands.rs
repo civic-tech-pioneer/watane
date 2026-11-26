@@ -158,9 +158,8 @@ pub(crate) async fn claude_binary_clear(
 #[tauri::command]
 pub(crate) fn judge_origin(webview: tauri::Webview, origin: String) -> Result<Value, CmdError> {
     record(&webview, "judge_origin");
-    let origin = watane_host::judge_origin(&origin)
-        .map_err(|error| CmdError::new(error.code(), crate::words::judge_origin(None)))?;
-    Ok(json!({"text": crate::words::judge_origin(Some(&origin)), "origin": origin}))
+    let origin = watane_host::judge_origin(&origin)?;
+    Ok(json!({"text": crate::words::judge_origin(&origin), "origin": origin}))
 }
 
 #[tauri::command]
