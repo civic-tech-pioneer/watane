@@ -573,6 +573,13 @@ fn regress_s135_uninstall_says_what_it_removed_only_when_it_said_recovered() {
 do_uninstall"#,
         ),
         (
+            // A finish that leaves only its journal isolates recover's warning from clean_stale.
+            "journal_only",
+            r#"finish_commit() { return 0; }
+: >"$SHAREW/journal.$pid"
+do_uninstall"#,
+        ),
+        (
             "tidied",
             r#"rcpt "$RECEIPT.new.$pid" "$bin"; : >"$SHAREW/VERSION.new.99999998"
 do_uninstall"#,
@@ -582,9 +589,17 @@ do_uninstall"#,
     let pending = case(&units, "pending");
     assert_eq!(pending.code, 7, "{pending:?}");
     assert!(!pending.has_err_line(line), "{pending:?}");
+    let warning =
+        "Some files from the interrupted install may remain. Check the original install folders.";
+    assert!(pending.has_err_line(warning), "{pending:?}");
+    let journal_only = case(&units, "journal_only");
+    assert_eq!(journal_only.code, 7, "{journal_only:?}");
+    assert!(journal_only.has_err_line(warning), "{journal_only:?}");
+    assert!(!journal_only.has_err_line(line), "{journal_only:?}");
     assert!(!pending.has_out_line("recovered interrupted watane install"));
     let tidied = case(&units, "tidied");
     assert!(tidied.has_err_line(line), "{tidied:?}");
+    assert!(!tidied.has_err_line(warning), "{tidied:?}");
     assert!(tidied.has_out_line("recovered interrupted watane install"));
 }
 
