@@ -65,6 +65,10 @@ impl Preview {
     }
 
     fn started(&self, args: &[&str], reused: bool, fake: &Path) -> Value {
+        self.started_envelope(args, reused, fake)["result"].clone()
+    }
+
+    fn started_envelope(&self, args: &[&str], reused: bool, fake: &Path) -> Value {
         let out = self
             .command(args)
             .env("WATANE_SCRIPTED_RESPONSES", fake)
@@ -77,7 +81,7 @@ impl Preview {
             envelope["errors"]
         );
         assert_eq!(envelope["result"]["reused"], reused);
-        envelope["result"].clone()
+        envelope
     }
 }
 
@@ -451,9 +455,18 @@ hosts = ["judge.test", "second.test"]
         br#"{"judge_key":"checked-fixture","plays":[{"safe":[]},{"unsafe":["blocked"]},{"redirect":"https://judge.test/redirected"}]}"#,
     )
     .unwrap();
-    let result = preview.started(&[], false, &fake);
-    assert_eq!(result["judge_origin"], "https://judge.test");
-    assert!(!result.to_string().contains("checked-fixture"));
+    let envelope = preview.started_envelope(&[], false, &fake);
+    let grant_warning = |envelope: &Value| {
+        envelope["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|warning| warning["code"] == "preview.judge_grant_missing")
+            .cloned()
+    };
+    assert!(grant_warning(&envelope).is_none());
+    assert_eq!(envelope["result"]["judge_origin"], "https://judge.test");
+    assert!(!envelope.to_string().contains("checked-fixture"));
     let reused = preview.started(&[], true, &fake);
     assert_eq!(reused["judge_origin"], "https://judge.test");
 
@@ -536,4 +549,33 @@ hosts = ["judge.test", "second.test"]
         assert_eq!(stream_outcome(&result, id), format!("{id} no-account"));
         assert!(!calls.join("judge/1.json").exists());
     }
+
+    let manifest = preview.mod_dir().join("mod.toml");
+    let without_judge = fs::read_to_string(&manifest)
+        .unwrap()
+        .replace(r#""judge.test", "#, "");
+    fs::write(&manifest, without_judge).unwrap();
+    fs::write(&script, br#"{"plays":[{"safe":[]}]}"#).unwrap();
+    for reused in [false, true] {
+        let envelope = preview.started_envelope(&[], reused, &fake);
+        assert_eq!(envelope["result"]["judge_origin"], "https://judge.test");
+        let warning = grant_warning(&envelope).expect("missing judge grant warning");
+        assert_eq!(
+            warning["message"],
+            "the preview judge is at https://judge.test, but no served mod has an HTTP grant for judge.test"
+        );
+        assert!(warning["fix"].as_str().unwrap().starts_with(
+            "Add judge.test to [http].hosts in mod.toml of the mod that calls the judge, then run: watane-dev serve --json --dir "
+        ));
+        assert_eq!(
+            start(&envelope["result"], url, "POST", Value::Null),
+            "destination"
+        );
+        assert!(!calls.join("judge/1.json").exists());
+    }
+
+    fs::write(&script, "{}").unwrap();
+    let envelope = preview.started_envelope(&[], false, &fake);
+    assert!(envelope["result"].get("judge_origin").is_none());
+    assert!(grant_warning(&envelope).is_none());
 }

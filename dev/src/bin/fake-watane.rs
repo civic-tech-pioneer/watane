@@ -85,6 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         api: format!("http://localhost:{port}/api/"),
         mcp: None,
         mods: vec![],
+        judge_origin: None,
         token: (mode == "preview").then(|| "wt_fake".into()),
     };
     println!("{}", serde_json::to_string(&ready)?);

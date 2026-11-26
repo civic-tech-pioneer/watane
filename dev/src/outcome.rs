@@ -51,6 +51,7 @@ pub enum Code {
     PreviewPrevious,
     PreviewFakeClaudeMissing,
     PreviewScriptedOpenaiMissing,
+    PreviewJudgeGrantMissing,
     EnvGitMissing,
     EnvGhMissing,
     EnvGhAuth,
@@ -107,6 +108,7 @@ impl Code {
             Self::PreviewPrevious => "preview.previous",
             Self::PreviewFakeClaudeMissing => "preview.fake_claude_missing",
             Self::PreviewScriptedOpenaiMissing => "preview.scripted_openai_missing",
+            Self::PreviewJudgeGrantMissing => "preview.judge_grant_missing",
             Self::EnvGitMissing => "env.git_missing",
             Self::EnvGhMissing => "env.gh_missing",
             Self::EnvGhAuth => "env.gh_auth",
@@ -123,6 +125,7 @@ impl Code {
             | Self::PreviewPrevious
             | Self::PreviewFakeClaudeMissing
             | Self::PreviewScriptedOpenaiMissing
+            | Self::PreviewJudgeGrantMissing
             | Self::PublishProviderUnlisted
             | Self::NewForkUnavailable
             | Self::NewForkDiffers
