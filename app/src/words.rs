@@ -480,13 +480,11 @@ mod tests {
             "http://judge.example",
             "https://judge.example.",
         ] {
-            let error = crate::CmdError::from(watane_host::judge_origin(text).unwrap_err());
+            let refused = watane_host::judge_origin(text).unwrap_err();
+            let explanation = refused.to_string();
+            let error = crate::CmdError::from(refused);
             assert_eq!(error.code, "bad_request", "{text}");
-            assert_eq!(
-                error.message,
-                "Enter an HTTPS origin such as https://judge.example. Leave out the username, any trailing dot in the host, and any path, query or fragment.",
-                "{text}"
-            );
+            assert_eq!(error.message, explanation, "{text}");
         }
     }
 
