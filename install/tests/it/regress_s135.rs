@@ -672,3 +672,53 @@ do_uninstall"#,
     assert!(!kept.has_err_line(line), "{kept:?}");
     assert!(case(&units, "nothing_left").has_err_line(line));
 }
+
+/// TECHNICAL 8.1 (validator, S137-fix1): a published receipt that does not list `install.sh`
+/// does not make a regular file there watane's. Mutant: set `ds_owned=1` for any published receipt.
+#[test]
+fn regress_s135_status_does_not_name_a_script_the_published_receipt_omits() {
+    let units = run(&[(
+        "omitted",
+        r#"rcpt "$RECEIPT" "$bin"; : >"$SHAREW/install.sh"; : >"$bin.old.$pid"; do_status"#,
+    )]);
+    let u = case(&units, "omitted");
+    assert_eq!(
+        u.out.lines().last(),
+        Some("Next: run the install command again (it recovers the interrupted install first)"),
+        "{u:?}"
+    );
+}
+
+/// TECHNICAL 8.4 step 1 (validator, S137-fix1): a stale name kept because its run's receipt
+/// location is vetoed, or because its folder resolves outside the home, also stops the removal
+/// line; another dead run's stale name is removed, so `recovered` still prints. Mutants: drop
+/// `CS_LEFT=1` after the `recovery_allowed "$RECEIPT"` and the `allowed "$cs_e"` checks.
+#[test]
+fn regress_s135_uninstall_does_not_claim_removal_for_a_vetoed_or_outside_stale_name() {
+    let tidy = r#": >"$SHAREW/VERSION.new.99999998""#;
+    let receipt_vetoed = format!(
+        r#"rcpt "$RECEIPT.new.$pid" "$bin"
+printf 'resolved .local/share/watane /elsewhere\n' >>"$RECEIPT.new.$pid"
+: >"$bin.new.$pid"; {tidy}; do_uninstall"#
+    );
+    let mut units = run(&[("receipt_vetoed", receipt_vetoed.as_str())]);
+    let fx = Fx::new();
+    let out = fx.root.path().join("out");
+    fs::create_dir_all(&out).expect("out");
+    fs::write(out.join("watane.new.99999999"), "").expect("stale");
+    fs::create_dir_all(fx.home.join(".local")).expect("local");
+    symlink(&out, fx.home.join(".local/bin")).expect("bin link");
+    let outside = format!(r#"{tidy}; do_uninstall"#);
+    units.extend(fx.units(PRELUDE, &[], &[("outside", outside.as_str())]));
+    let line = "The files of the interrupted install were removed.";
+    for name in ["receipt_vetoed", "outside"] {
+        let u = case(&units, name);
+        assert_eq!(u.code, 7, "{name}: {u:?}");
+        assert!(
+            u.has_out_line("recovered interrupted watane install"),
+            "{name}: {u:?}"
+        );
+        assert!(!u.has_err_line(line), "{name}: {u:?}");
+    }
+    assert!(out.join("watane.new.99999999").exists());
+}
