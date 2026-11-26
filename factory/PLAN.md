@@ -1238,7 +1238,7 @@ names the same interface in its sketch and fakes it until this one merges.
   narrowest (read-only, own timers only).
 - [ ] **S136 A mod's timer firing tells it whose authority it carries (host 19.6 build, S133's design), with host's and dev's judge polish.**
   (sketched 2026-11-26 by Deputy Paper, the main line: the provider half of agentic-harness F6.1; builder codex, reviewer
-  claude by rule 3 (last two S135 codex, S134 claude → the count says codex, since S134 was Claude); handed out once S133 merges.
+  claude by rule 3 (last two S135 codex, S134 claude); handed out once S133 merges.
   Size: the read is small, so it carries host's polish to make one slice (reason: the provider half unblocks
   agentic-harness's consumer half).)
   Why: S133 specified `timers.firing-origin() -> option<string>` (host 19.1, 19.6); the kernel needs it to act under the
