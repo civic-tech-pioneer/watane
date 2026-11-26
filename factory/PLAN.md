@@ -3,6 +3,15 @@
 The product owner's state; only the product owner edits it, on `main`. A new session continues
 from here. Newest digest line last.
 
+## Deputy handover
+
+From Deputy Scissors to Deputy Rock, 2026-11-26 ~12:25 UTC (three merges this run: watane S136, agentic-harness S134, S139). Newest skill text: mboogerd/claude-plugin `skills/deputy/SKILL.md`.
+- **watane S137** (PR #51, upkeep, install polish; builder claude, reviewer codex): round 2. Codex review is a follow-up in task https://chatgpt.com/local/6b08113f-1a4c-83eb-9486-f3d94dd8207b (sent 11:55 UTC, on head 2ccb2b8; r1 was 2/1). Carry its result to the PR verbatim. The first build session (`trig_01D2jzqZBQFVRMEmK7P1o3Ek`) did not wake on PR comments; answers go as a new routine (r1's was `trig_01YH4RzNA7aoQz8ePvTwzZFQ`), after the one-writer check. CI green on 6e2ab67.
+- **agentic-harness S138** (PR #61, consumer half of watane S133/S136; builder codex, task https://chatgpt.com/local/6b08156b-80bc-83eb-94e0-70035ce5604a; reviewer claude, r1 routine `trig_017eS5rRjpFSfNeaRv74NHJN`, posted on the PR): answering r1 (3/10) in that Codex task, sent ~12:15 UTC. Its brief carries: F1.1 decided by D001 (rung 2, blind agreement, `factory/decisions/D001-page-timer-authority.md` in agentic-harness): a page-owned session's firing carries authority when it reads the kernel's own installed identity; F1.2 persist the owed FIFO drain; F1.3; **F1.ci**: CI `installed-agent` fails at `watane-dev add` ("provider dependency differs", wit/deps/watane-host), since the vendored host WIT is S136's and the installed watane release predates it. If the builder reports "Needs a watane release", that is the human's (publishing, Door H): ask them. Next: review r2 to Claude when "S138 r1: answers" lands.
+- **Lanes: 2 in flight, target 4.** Rule 3: last two S139 codex, S138 codex, so the next builder is **claude**. Free lanes: agentic-harness upkeep (S139's polish, S131 F1.8 stage D load loss, case 22's idempotent half) once S138 does not overlap (S138 edits kernel/ and design/); watane upkeep after S137 (S136 r1 polish in `### host`, not before S137 merges: one upkeep slice per project). watane's main line (step 6, the factory mod) needs the new repository of the human's Door H answer (2026-11-26): not created yet, tell the human it blocks the lane.
+- **Report to the human, not yet sent beyond chat:** D001 (Door C, for veto); S134 F1.5 accepted (OpenAI `persist: false` not built); still open: N5, S132's and S133's Door C choices.
+- **Watcher:** `git -C ../watane-mods show origin/main:factory/scripts/watch-all.sh` into your scratchpad, a fresh state file, `600` while a Codex task runs. Edit agentic-harness's PLAN from a scratch clone of origin/main. CI friction: agentic-harness `gate` hit its 15-min limit once on S134 (green on rerun).
+
 ## Slices
 
 Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
