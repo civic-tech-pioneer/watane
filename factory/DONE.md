@@ -148,3 +148,23 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   with a reason. Touches: `install/` only. Mac checks: the existing macOS CI job (`clean_mac`). Constraints: no change to
   the receipt or journal format beyond what S123 made; Windows stays report-only. Protects: *polish* (guard: none). Size:
   an upkeep slice.
+
+- [~] **S133 Design: a mod learns whose authority a timer firing carries (host 19.6, agentic-harness TECHNICAL 2.1).** (in flight,
+  cloud, builder codex, reviewer claude; rule 3: last two S132 codex, S131 claude; the fourth lane, from Unsettled
+  (deputy-6, agentic-harness S128), sketched 2026-11-26 by Deputy Rock; Codex task https://chatgpt.com/local/6b07e871-2184-83ed-aaa7-1aaf7883e04d, 08:06 UTC; BLOCKED 08:07 in the task (no spec-change skill in its workspace), answered by Deputy Paper 08:33 UTC with the plugin's public raw URL, or AGENTS.md's chain rule; DELIVERED as PR #48 at 966099c (+43/-1, host/TECHNICAL.md, spec/TECHNICAL.md); r1: Claude review routine `trig_019mDW1p3MCoLcnqcdtqEf1M`, fires 08:35 UTC; r1: 2/13 `changes (2)` (F1.1 the WIT belongs in 19.1, F1.2 the fake's result; adversary HELD), answer r1 sent ~08:40 UTC into the Codex task; answered at fab7d4c (F1.1, F1.2 fixed, polish 7 fixed, 6 deferred with reasons); r2: Claude routine `trig_01PUvpAqrm78X15Nbk1JLSzT`, fires 08:46 UTC; the agentic-harness consumer half goes out after r1, so it builds on a reviewed shape; no spec-check: the slice writes the clause that is
+  missing on both sides. Size: a design slice. It ends two known limits in agentic-harness: F6.1 and case 22's
+  idempotent half.)
+  Why: the host resolves a timer's origin client and keeps it to itself. A timer callback's caller is `host`, so the
+  kernel cannot tell whose authority a firing carries, or whether that owner is still enabled. A restart pass has the
+  same gap. The kernel then acts under its own origin, which is the F6.1 known limit.
+  Outcomes (the review checks them in the documents): (1) host TECHNICAL 19.6 (and 2.1 where the WIT changes) gives a
+  mod a read-only way to learn the resolved origin of its own timer firing, with its exact shape: a field, a function
+  or a callback argument. It holds what a removal or disable rewrote (S62), and what a mod sees when the origin is gone;
+  (2) an owner-scoped restart callback, or the reason not to have one; (3) the PR body holds the contract text that
+  agentic-harness's `design/TECHNICAL.md` 2.1 and 15 rows will copy verbatim (its consumer half, sketched after S132
+  merges: S132 edits that file); (4) spec/TECHNICAL 6: no authority widens; a mod learns only the origin of its own timers.
+  Touches: `host/TECHNICAL.md` 19.6 and 2.1, `spec/TECHNICAL.md` 6 if a row changes, watane only. Not agentic-harness
+  (S132 edits its `design/TECHNICAL.md`). No code.
+  Constraints: design only, through the `spec-change` skill. List each Door C choice (the WIT shape, the callback) in
+  the PR body with its options, for the human's veto. A new host export or callback is a public interface: prefer the
+  narrowest (read-only, own timers only).
