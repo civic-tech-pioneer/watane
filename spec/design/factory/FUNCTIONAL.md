@@ -3,8 +3,10 @@
 ## 1. What Alice controls
 
 The planning page and the foreman page belong to one factory mod. Alice
-installs, updates and grants it once; a consent she gives it holds for
-both pages ([TECHNICAL §5](TECHNICAL.md#5-open-decisions)).
+installs, updates and grants the mod, not each page: each install,
+update or consent covers both pages
+([TECHNICAL §5](TECHNICAL.md#5-open-decisions)). An update that asks for
+added reach still waits for her approval of that reach (JF2).
 
 **FF1 · Plan and dispatch.** The planning page shows the project, plan, slice sketch, outcomes and open
 decisions. An agent may propose a sketch or a change in direction. Alice
