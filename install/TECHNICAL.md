@@ -172,7 +172,7 @@ in POSIX mode or dash-like; the script uses only POSIX), `curl`, `tar`,
 `$'..'`, process substitution, `read -p`). It starts `set -eu`, `umask
 022`, and its whole body is one function `main` called on the last line
 (`main "$@"`), so that a download cut off half way starts no install. A
-builtin-only INT trap is set before the function definitions (3.8). Step 3 checks each tool with `command -v`; a missing one
+builtin-only INT and EXIT traps are set before the function definitions (3.8). Step 3 checks each tool with `command -v`; a missing one
 is exit 2 (INST-S-21). `sw_vers`, `sysctl`, `xattr` and `xcode-select` exist only on macOS, so step 3
 leaves them out and step 4 checks them once `uname -s` printed `Darwin`: on Linux the
 person reads `unsupported platform: Linux <arch>` (9), not that `sw_vers` is missing.
@@ -312,11 +312,13 @@ files (INST-F-20, INST-S-14, 32, 33).
    commit happened, so do step 5 with `<n>` in place of `<pid>` and the old
    receipt at `receipt.old.<n>` (its paths that the receipt does not hold, if
    it still exists, then its `.old.<n>` names); then remove the journal. Then remove the stale names of 3.8.
-   When the receipt's path is not allowed by 8.5 (its folder resolves
-   elsewhere; uninstall and `--status` skip the check of 3.4.1), step 0
-   does nothing at all: it cannot read the journals there, and without
-   them a `.new.<n>` or `.old.<n>` name may be the only evidence of an
-   interrupted swap, so no stale name is removed either. If `<path>.new.<pid>` or
+   Recovery of an earlier run requires the expected physical install
+   directories under the resolved home. Any recorded physical path must
+   also match the current directory. If the receipt directory resolves
+   elsewhere, leave its journals and all staging evidence alone. If another
+   install directory resolves elsewhere, skip that directory's entries.
+   The live run's own undo and commit cleanup check the physical locations
+   it saved before staging. If `<path>.new.<pid>` or
    `<path>.old.<pid>` (this run's own pid) still exists (`-e` or `-L`), exit
    5 before any copy: `cp -R` onto an existing folder or link copies into
    it, and `mv` onto one moves into it.
@@ -467,9 +469,7 @@ journal check stays, for a run of an older script that takes no lock.
 An install and an uninstall take a lock before they read the receipt
 (step 6; 8.4 step 1), so two runs started at once cannot both pass the
 journal check of 3.6.1, which runs long before either journal exists.
-`--status` attempts to take the same lock before running step 0 of 3.6.
-If it cannot take the lock, it reports the current receipt without recovering
-or removing anything. The lock is the folder
+`--status` reads without taking the lock. The lock is the folder
 `$HOME/.watane-install.lock`, made with `mkdir` (no `-p`: it fails when
 anything, a link included, is at that name), then the file `pid` inside
 it, written with `set -C`, holding the run's pid and a newline. It is the
@@ -705,8 +705,10 @@ state found (the same lines as for the answer `N`, without `toolchain: not
 installed`). A signal before the commit leaves no folder the run created (3.6 step 4;
 IN-47). Ctrl-C before the commit prints
 `watane setup was interrupted. Run the same command to try again.` on a
-new line. The same hint applies while the shell is still reading the script,
-as soon as the initial INT trap has run.
+new line. While the shell is still reading the script, its initial INT
+trap records the signal. When the input pipe closes, the early EXIT trap
+uses that flag to print the hint and exit 130, including after a parse error
+from an incomplete function.
 These lines are printed once, by the exit trap, whichever way the
 signal reached it (IN-45). At the uninstall home question it instead prints
 the uninstall outcome (8.4) and that the watane home was kept.
@@ -1157,7 +1159,7 @@ A person learns the version with:
 | the app | `Info.plist` `CFBundleShortVersionString` = `0.1.0`; Finder's Get Info shows it |
 | `sh ~/.local/share/watane/install.sh --status` | the receipt, below |
 
-`--status` writes nothing but these lines. When its reader has closed the
+When the reader of `--status` has closed the
 output (`--status | head -1`) it exits 141 with nothing on stderr (3.9), or 0
 if all lines were written before the reader went away. It prints, for the receipt of INST-S-1 (exit 0):
 
@@ -1172,9 +1174,11 @@ watane 0.1.0 (aarch64-apple-darwin)
 ~/Applications/watane.app
 ```
 
-Before printing the receipt, status runs step 0 of 3.6 if it acquired
-the lock (3.6.2). It prints only receipt paths in the current install
-set whose folders pass the path checks of 8.5 rules 1 to 3.
+Status prints only receipt paths in the current install set whose
+folders pass 8.5 rules 1 to 3. It also reports dead journals and staging
+names in the expected physical install directories as `leftover: <path>`.
+Status makes no changes. Install and uninstall perform recovery under
+their lock (3.6).
 
 The receipt, `<prefix>/share/watane/receipt`, text, staged as
 `receipt.new.<pid>` in step 10 and moved into place as the last entry of the
@@ -1195,10 +1199,6 @@ resolved .local/bin /Users/alice/.local/bin
 resolved .local/share/watane /Users/alice/.local/share/watane
 resolved .local/share/watane-dev /Users/alice/.local/share/watane-dev
 resolved Applications /Users/alice/Applications
-created .local 310
-created .local/bin 311
-created .local/share 312
-created Applications 325
 ```
 
 A `resolved <folder> <R>` line for each of the four install folders of
@@ -1208,14 +1208,9 @@ reads them. The format stays `watane-receipt 1`: no release had shipped
 when these lines were added, and a receipt without them is still read, its
 removals skipped by rule 4.
 
-Optional `created <folder> <inode>` lines record whether the installer
-made `.local`, `.local/bin`, `.local/share` or `Applications`. These are
-the only names accepted for this operation. An upgrade carries a line
-forward only while the same inode is at the same physical path and the
-folder itself is not a symlink. Uninstall leaves these folders alone
-when their creation lines are absent.
-If the filesystem reuses an inode after a recorded folder is deleted,
-uninstall may also remove an empty replacement at the same path.
+Older receipts can contain optional `created <folder> <inode>` lines.
+The reader ignores them. Inode equality alone cannot authorize directory
+removal.
 
 Absolute paths, one for each entry of 3.6; a path is the rest of its
 line, so it may hold a space but not a newline (a `HOME` with a newline
@@ -1251,14 +1246,12 @@ is a feature of `app`, not of `install` (Q11).
    (INST-S-18).
 2. `rm -rf` each `path` of the receipt that the rule of 8.5 allows; a path
    it refuses is left in place, with `watane install: skipped <path>: not a
-   path that watane installs` on stderr (INST-S-27); then the stale names of
-   3.8; then the receipt, when 8.5 allows it (else the same `skipped` line); then `rmdir` (not `rm -r`; each folder only when it resolves strictly below the resolved home, 8.5 rule 3)
-   `<prefix>/share/watane` and `<prefix>/share/watane-dev`, each only if
-   empty. Then consider `~/.local/share`, `~/.local/bin`, `~/.local` and
-   `~/Applications`, in that order. Remove an empty directory with
-   `rmdir` if its inode matches the receipt's `created` line (8.1), it
-   is not a symlink, and its resolved path is the expected path under
-   the resolved home.
+   path that watane installs` on stderr (INST-S-27). Then remove the
+   receipt when 8.5 allows it (else print the same `skipped` line).
+   When rule 4 accepts the receipt's location and the respective Watane
+   directory, remove the empty `<prefix>/share/watane` or
+   `<prefix>/share/watane-dev` with `rmdir`. Keep `~/.local/share`,
+   `~/.local/bin`, `~/.local` and `~/Applications`.
 3. Print `uninstalled watane 0.1.0`, or
    `partly uninstalled watane 0.1.0 (some entries were skipped or could not be removed)`
    when any entries or the receipt were skipped or could not be removed.
@@ -1473,7 +1466,7 @@ proven at the lowest level that shows it:
   only a whole run shows* (the order of its steps, an exit code and its stderr, what is left on disk
   after an interrupt), with several assertions on that run, and `Fx::installed()` instead of an
   install as the start of a test that needs an installed home. `installed()` copies the home of one
-  real install, with the paths and creation inodes in the receipt rewritten for the copy, so that the start costs no process. That
+  real install, with the paths in the receipt rewritten for the copy, so that the start costs no process. That
   home, and the fake archives of the releases a test serves, are made once and kept between runs in
   `install-cache-<hash>` under `CARGO_TARGET_TMPDIR` (the hash covers `install.sh`, `support/mod.rs` and
   the folder of the fakes, so a stale one is never read), so that a run of one module does not make them

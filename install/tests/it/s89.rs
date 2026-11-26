@@ -178,9 +178,9 @@ fn ac6_an_interrupted_fresh_install_leaves_no_folder_it_made() {
     }
 }
 
-/// TECHNICAL 8.4: ownership of empty top-level folders survives a later upgrade.
+/// TECHNICAL 8.4: an upgrade and uninstall preserve the general-purpose folders.
 #[test]
-fn ac2_uninstall_removes_the_folders_the_install_created() {
+fn ac2_uninstall_keeps_general_purpose_folders_after_upgrade() {
     let fx = Fx::new();
     assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
     fx.rel.set_version("0.2.0", &["new-crate-1.0.0"]);
@@ -188,26 +188,6 @@ fn ac2_uninstall_removes_the_folders_the_install_created() {
     let out = fx.run(&["--uninstall"]);
     assert_eq!(out.code, 0, "{out:?}");
     assert!(out.has_line("uninstalled watane 0.2.0"), "{out:?}");
-    assert!(fx.home_tree().is_empty(), "{:?}", fx.home_tree());
-}
-
-/// TECHNICAL 8.1: receipts predating creation records leave the top-level folders.
-#[test]
-fn ac2_uninstall_with_an_old_receipt_keeps_top_level_folders() {
-    let fx = Fx::new();
-    let out = fx.run(&["--no-toolchain"]);
-    assert_eq!(out.code, 0, "{out:?}");
-    let receipt = fx.read(&fx.receipt());
-    let old_receipt = receipt
-        .split_inclusive('\n')
-        .filter(|line| !line.starts_with("created "))
-        .collect::<String>();
-    assert_ne!(old_receipt, receipt);
-    fs::write(fx.receipt(), old_receipt).expect("write the old receipt");
-
-    let out = fx.run(&["--uninstall"]);
-    assert_eq!(out.code, 0, "{out:?}");
-    assert!(out.has_line("uninstalled watane 0.1.0"), "{out:?}");
     assert_eq!(
         fx.home_tree(),
         vec![".local/", ".local/bin/", ".local/share/", "Applications/"]
@@ -220,7 +200,7 @@ fn ac2_uninstall_keeps_a_relinked_created_folder() {
     let fx = Fx::new();
     let out = fx.run(&["--no-toolchain"]);
     assert_eq!(out.code, 0, "{out:?}");
-    assert!(fx.read(&fx.receipt()).contains("\ncreated Applications "));
+    add_legacy_created_lines(&fx);
     let app_folder = fx.home.join("Applications");
     let original = fx.home.join("old-applications");
     fs::remove_dir_all(fx.app()).expect("empty the original folder");
@@ -237,9 +217,8 @@ fn ac2_uninstall_keeps_a_relinked_created_folder() {
 #[test]
 fn ac2_reinstall_drops_creation_records_for_relinked_folders() {
     let fx = Fx::installed();
+    add_legacy_created_lines(&fx);
     let before = fx.read(&fx.receipt());
-    assert!(before.contains("\ncreated Applications "));
-    assert!(before.contains("\ncreated .local/bin "));
 
     // Relink a leaf and a parent. Only the former is itself a symlink.
     fs::remove_dir_all(fx.app()).expect("empty applications");
@@ -292,7 +271,10 @@ fn ac2_uninstall_keeps_preexisting_and_replaced_folders() {
     assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
     let out = fx.run(&["--uninstall"]);
     assert_eq!(out.code, 0, "{out:?}");
-    assert_eq!(fx.home_tree(), vec!["Applications/"]);
+    assert_eq!(
+        fx.home_tree(),
+        vec![".local/", ".local/bin/", ".local/share/", "Applications/"]
+    );
 }
 
 /// TECHNICAL 3.6 step 4 (IN-47): a failed swap of a fresh install leaves no folder the run made.
@@ -363,7 +345,7 @@ fn ac7_a_failing_rustup_still_decides_exit_6() {
     let fx = Fx::new();
     let url = fx.rustup_installer();
     let path = url.trim_start_matches("file://");
-    fs::write(path, "#!/bin/sh\nprintf oops\nexit 3\n").expect("installer");
+    fs::write(path, "#!/bin/sh\nprintf oops >&2\nexit 3\n").expect("installer");
     let out = fx.run_pty(&[], &[("WATANE_RUSTUP_URL", &url)], &[("[y/N] ", "y")]);
     assert_eq!(out.code, 6, "{out:?}");
     let all = lines(&out.stdout);
@@ -764,4 +746,17 @@ fn fix3_an_archive_failure_on_a_reinstall_does_not_say_nothing_was_installed() {
         "{out:?}"
     );
     fx.assert_installed("0.1.0");
+}
+
+/// Write the optional records emitted by previous installers to exercise old receipts.
+pub(crate) fn add_legacy_created_lines(fx: &Fx) {
+    use std::os::unix::fs::MetadataExt;
+    let mut receipt = fx.read(&fx.receipt());
+    for folder in [".local", ".local/bin", ".local/share", "Applications"] {
+        let inode = fs::metadata(fx.home.join(folder))
+            .expect("directory inode")
+            .ino();
+        receipt.push_str(&format!("created {folder} {inode}\n"));
+    }
+    write_file(&fx.receipt(), &receipt);
 }

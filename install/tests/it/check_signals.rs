@@ -363,6 +363,7 @@ fn ctrl_c_in_a_stream_between_commands_exits_130() {
     for shell in shells() {
         let out = interrupt_stream(shell, "");
         assert_eq!(out.code, 130, "{shell}: {out:?}");
+        assert!(out.stderr.ends_with(RETRY), "{shell}: {out:?}");
     }
 }
 
@@ -371,5 +372,6 @@ fn ctrl_c_in_a_stream_inside_a_function_exits_130() {
     for shell in shells() {
         let out = interrupt_stream(shell, "unfinished() {");
         assert_eq!(out.code, 130, "{shell}: {out:?}");
+        assert!(out.stderr.ends_with(RETRY), "{shell}: {out:?}");
     }
 }
