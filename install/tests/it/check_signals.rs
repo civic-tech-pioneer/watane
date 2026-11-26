@@ -331,3 +331,45 @@ fn ctrl_c_during_cleanup_prints_the_retry_hint() {
         assert_eq!(out.stderr, RETRY, "{shell}: {out:?}");
     }
 }
+
+/// TECHNICAL 3.8: the producer and shell receive INT, then the input pipe closes.
+fn interrupt_stream(shell: &str, tail: &str) -> Out {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::Stdio;
+
+    let source = include_str!("../../install.sh");
+    let (startup, _) = source.split_once("usage() {").expect("startup");
+    let mut cmd = Command::new(PERL);
+    cmd.args(LAUNCH)
+        .arg(shell)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = spawn_run(&mut cmd);
+    let mut input = child.stdin.take().expect("input");
+    writeln!(input, "{startup}printf 'ready\\n'\n{tail}").expect("write script prefix");
+    let mut ready = String::new();
+    BufReader::new(child.stdout.take().expect("output"))
+        .read_line(&mut ready)
+        .expect("read readiness");
+    assert_eq!(ready, "ready\n");
+    signal_group(child.id(), "INT");
+    drop(input);
+    finish(child)
+}
+
+#[test]
+fn ctrl_c_in_a_stream_between_commands_exits_130() {
+    for shell in shells() {
+        let out = interrupt_stream(shell, "");
+        assert_eq!(out.code, 130, "{shell}: {out:?}");
+    }
+}
+
+#[test]
+fn ctrl_c_in_a_stream_inside_a_function_exits_130() {
+    for shell in shells() {
+        let out = interrupt_stream(shell, "unfinished() {");
+        assert_eq!(out.code, 130, "{shell}: {out:?}");
+    }
+}
