@@ -1219,7 +1219,7 @@ names the same interface in its sketch and fakes it until this one merges.
 - [x] **S125 (upkeep, guard) host's and app's flaky tests, and S122's judge polish.** DONE 2026-11-25: PR #44 rebase-merged by deputy-5 (337a8466, no bypass); builder codex, reviewer claude, 1 round (0/10); ~2.3 h in flight. The host releases its home lock explicitly when it closes (a reopen no longer meets `Busy`); the streams hand-off and Windows timer tests wait on the right events; a kept judge key stays visible and removable after `claude-code` is withdrawn; the judge editor names what is wrong; S122's judge polish done; S118 had already fixed the consent flakes. R1.1 to R1.4 accepted (Deputy decisions); P1.1 to P1.10 and three new flake sightings in Leftovers. Windows rerun once (two host timing flakes outside the slice). Sketch in factory/DONE.md.
 - [~] **S136 A mod's timer firing tells it whose authority it carries (host 19.6 build, S133's design), with host's and dev's judge polish.**
   (sketched 2026-11-26 by Deputy Paper, the main line: the provider half of agentic-harness F6.1; builder codex, reviewer
-  claude by rule 3 (last two S135 codex, S134 claude); in flight, cloud, handed out ~09:20 UTC after S133 merged.
+  claude by rule 3 (last two S135 codex, S134 claude); in flight, cloud, handed out ~09:20 UTC after S133 merged; Codex task https://chatgpt.com/local/6b07f9b7-3ff0-83ed-a6d1-e8b790c7606c.
   Size: the read is small, so it carries host's polish to make one slice (reason: the provider half unblocks
   agentic-harness's consumer half).)
   Why: S133 specified `timers.firing-origin() -> option<string>` (host 19.1, 19.6); the kernel needs it to act under the
