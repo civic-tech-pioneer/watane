@@ -217,15 +217,7 @@ their host references. If they finish within that bound, dropping the last
 caller handle releases the home synchronously. If the bound expires, shutdown returns anyway; running work can still hold
 the home until it ends.
 
-The mod-facing WIT addition to the `timers` interface of 19.1
-(`watane:host/timers@0.1.0`) is:
-
-```wit
-firing-origin: func() -> option<string>;
-```
-
-This read uses the same grant-free import as `after` and `cancel`.
-See 19.6 for its scope and result.
+See 19.1 for the mod-facing `timers` interface and 19.6 for firing behavior.
 
 ### 2.2 Errors
 
@@ -2885,6 +2877,7 @@ interface timers {                                   // no grant
   enum timer-error { too-many, bad-id, bad-delay }
   after: func(id: string, delay-ms: u64) -> result<_, timer-error>;
   cancel: func(id: string);
+  firing-origin: func() -> option<string>;
 }
 
 // host-only exports: a mod exports them to receive; no page, tool or mod can call them
@@ -2947,8 +2940,13 @@ A grant revoked or a mod disabled stops the next host import of a running chain
 (Q24) and ends the streams that depended on it (19.2, Ends).
 
 **Harness** (2.6). The new imports are fakes: `streams.open` returns `s1`,
-`s2`, ... in call order (one count for the host), so does a start (`claude-code.start`, `https-stream.start`: a request record with its `launch` or `request` text), every other function returns ok, `identity` returns
-`local/<slug>` of the caller or `page`, and `host-info.generation` returns 1. Each request (19.6) of a succeeded
+`s2`, ... in call order (one count for the host). So do the starts
+`claude-code.start` and `https-stream.start`, which record requests with their
+`launch` or `request` text. `identity` returns `local/<slug>` of the caller or
+`page`, and `host-info.generation` returns 1.
+`timers.firing-origin` returns `none`. A `Fakes` entry under
+`watane:host/timers` overrides it. Previews use the real host and need no
+fake. The remaining functions return ok. Each request (19.6) of a succeeded
 call is recorded in `Outcome.requests` as `RequestRecord { function, args }`
 in call order; a failed call records none. A `Fakes` entry under
 `watane:host/<interface>` overrides a result.
@@ -3863,14 +3861,16 @@ update). Streams and jobs are memory only (19.2): after a restart their
 requests are gone, and the mod that wants them again starts them from a
 fired timer or a call.
 
-`timers.firing-origin()` (2.1) exposes the result of the origin check
-of HOST-F-73. It returns `some(identity)` in the top-level
-`timer-sink.fired(id)` invocation of the mod that owns the timer. The identity is the pkg 4.1 mod identity already
+`timers.firing-origin()` (19.1) is a pure read of the result of the origin
+check of HOST-F-73. It returns `some(identity)` in the top-level
+`timer-sink.fired(id)` invocation of the mod that owns the timer. The
+identity is the mod identity defined in `spec/TECHNICAL.md` 3, already
 resolved for this firing's chain. The host takes it from the same resolution
 that sets the chain's origin client, after taking the mod's call lock and
 rechecking the timer row and origin client. The read is stable within that
 invocation. It gives no live status or guarantee that the origin still
-passes the checks when a request lands.
+passes the checks when a request lands. A firing ignored because the timer
+was cancelled or replaced never enters `fired`.
 
 If the stored origin is installed and enabled at resolution, the read
 returns that origin's identity. If the stored origin is missing or disabled,
@@ -3886,14 +3886,16 @@ the origin client at apply.
 
 The host adds no startup callback. A durable timer set during a call
 carrying the intended origin client can deliver work after restart through
-the same `fired` export and resolution. A mod ties the timer
-id to the expected owner in its own state when it arms the timer. It starts
-owner-scoped work only when the resolved origin matches that owner and its
-own checks allow the work. With a mismatch or no firing origin, it can do
+the same `fired` export and resolution. This path gives no startup delivery
+for work without an armed timer.
+
+For owner-scoped recovery, a mod can tie the timer id to the expected owner
+in its own state when it arms the timer. It starts owner-scoped work only
+when the resolved origin matches that owner and its own checks allow the
+work. With a mismatch or no firing origin, it can do
 local cleanup or wait for an ordinary call carrying that owner's authority.
 A startup pass running for another owner cannot use the stored identity to
-choose the origin of a new timer or request. This path gives no startup
-delivery for work without an armed timer.
+choose the origin of a new timer or request.
 
 ### 19.7 Consents
 
