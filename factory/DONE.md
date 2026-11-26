@@ -168,3 +168,17 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   Constraints: design only, through the `spec-change` skill. List each Door C choice (the WIT shape, the callback) in
   the PR body with its options, for the human's veto. A new host export or callback is a public interface: prefer the
   narrowest (read-only, own timers only).
+
+- [~] **S135 (upkeep) install.sh's last S130 and S123 polish.** (in flight, cloud; Codex task https://chatgpt.com/local/6b07eebe-eed0-83eb-b34d-113057e32064, ~08:40 UTC; PR #49 at 780f4d1 (+501/-37); r1: Claude routine `trig_01LZEhZuvsfGGpRWBzxGsMim`, fires 08:46 UTC; sketched 2026-11-26 by Deputy Paper, the watane upkeep
+  lane; builder codex, reviewer claude by rule 3 (last two S134 claude, S133 codex); no spec-check: install's own
+  3.x wording at most. Exempt from size: upkeep.)
+  Outcomes, each item's check (re-check each against main first; drop the ones already true and say so):
+  (1) S130 P3.2: `undo_swap` reverts through the receipt's records only for watane's own files, a test on the
+  relink-revert edge; (2) P3.3: each unpinned guard (`install.sh` :238, :402, :506, :513, :807, :811, :1457 at
+  c8eb2a1f) has a test that fails without it; (3) P3.4: after a crash the stale-lock message comes first and
+  `--status` names the lock; kill point D lists its files at their real paths; a successful recovery says so; a
+  pre-commit kill then `--uninstall` leaves no empty `share/watane*/` folders; (4) S123 P2.1 (the relinked-folder guards
+  tested through `keep_created_roots`), P1.2 (receipts record a `~/.local/bin` or `~/.local/share` watane made, and
+  uninstall leaves one the person made), P1.4, P1.5.
+  Touches: `install/` (install.sh, its tests, `install/TECHNICAL.md` and FUNCTIONAL wording). Not host, app, dev.
+  Protects: *polish* (Alice's words after a Ctrl-C) and *guard* (P3.3). The older From-S94/S89/S50 lines stay in Upkeep.
