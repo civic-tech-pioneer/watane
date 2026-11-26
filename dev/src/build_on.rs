@@ -130,7 +130,7 @@ fn files(dir: &Path) -> Result<Vec<String>, Problem> {
     Ok(out)
 }
 
-/// Remove another process's `<id>.<pid>.tmp` folders over an hour old: a killed run's leftovers.
+/// Remove another process's `<id>.<pid>.tmp` folders (`<id>` a `PackageId`) over an hour old: a killed run's leftovers.
 /// A failed removal never fails the store.
 fn sweep_stale_temps(providers: &Path) {
     let own = format!(".{}.tmp", std::process::id());
@@ -142,9 +142,11 @@ fn sweep_stale_temps(providers: &Path) {
         let Some(stem) = name.strip_suffix(".tmp") else {
             continue;
         };
-        let other_pid = stem
-            .rsplit_once('.')
-            .is_some_and(|(_, pid)| !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()));
+        let other_pid = stem.rsplit_once('.').is_some_and(|(id, pid)| {
+            id.parse::<PackageId>().is_ok()
+                && !pid.is_empty()
+                && pid.bytes().all(|b| b.is_ascii_digit())
+        });
         if !other_pid || name.ends_with(&own) {
             continue;
         }
@@ -532,14 +534,16 @@ mod tests {
         let providers = env.cache.join("providers");
         let temp = providers.join(format!("{}.{}.tmp", package.id(), std::process::id()));
         let killed = providers.join(format!("{}.{}.tmp", package.id(), std::process::id() + 1));
-        let aged = providers.join(format!("other-id.{}.tmp", std::process::id() + 2));
-        // Aged, but not `<id>.<pid>.tmp`: not a provider temp, so never swept.
-        let not_pid = providers.join("other-id.x1.tmp");
-        for folder in [&temp, &killed, &aged, &not_pid] {
+        let other = PackageId::of(b"another provider");
+        let aged = providers.join(format!("{other}.{}.tmp", std::process::id() + 2));
+        // Aged, but not `<PackageId>.<pid>.tmp`: not a provider temp, so never swept.
+        let not_pid = providers.join(format!("{other}.x1.tmp"));
+        let not_id = providers.join("review-fixture.11114.tmp");
+        for folder in [&temp, &killed, &aged, &not_pid, &not_id] {
             fs::create_dir_all(folder).unwrap();
             fs::write(folder.join("partial"), "partial").unwrap();
         }
-        for folder in [&aged, &not_pid] {
+        for folder in [&aged, &not_pid, &not_id] {
             // A directory opens for its times only with backup semantics on Windows.
             #[cfg(windows)]
             let dir = {
@@ -567,6 +571,7 @@ mod tests {
         assert!(killed.exists());
         assert!(!aged.exists());
         assert!(not_pid.exists());
+        assert!(not_id.exists());
         fs::write(folder.join("keep"), "existing").unwrap();
         fs::create_dir_all(&temp).unwrap();
         fs::write(temp.join("partial"), "partial").unwrap();
