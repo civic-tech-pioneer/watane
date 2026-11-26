@@ -209,39 +209,37 @@ impl OpenAi {
             .find(|reason| first == self.refused_marker(port, *reason))
     }
 
-    /// The host's cause kept after the first line of a refusal marker, if any.
+    /// The host's cause kept verbatim after the first line of a refusal marker, if any.
     pub(super) fn cause(folder: &Path) -> Option<String> {
         let marker = fs::read_to_string(folder.join(MARKER)).ok()?;
         let (_, cause) = marker.split_once('\n')?;
-        Some(cause.trim().to_owned()).filter(|cause| !cause.is_empty())
-    }
-
-    /// Keep the host's cause after the first line of the marker just written.
-    pub(super) fn remember_cause(folder: &Path, cause: &str) -> Result<(), Problem> {
-        let marker = folder.join(MARKER);
-        let first = fs::read_to_string(&marker).map_err(Problem::internal)?;
-        let first = first.lines().next().unwrap_or_default();
-        let cause = cause.split_whitespace().collect::<Vec<_>>().join(" ");
-        let temp = PrivateFile::create(folder, format!("{first}\n{cause}").as_bytes())?;
-        fs::rename(&temp.0, marker).map_err(Problem::internal)
+        Some(cause.to_owned()).filter(|cause| !cause.is_empty())
     }
 
     fn refused_marker(&self, port: u16, reason: Refusal) -> String {
         format!("{}:{}", reason.tag(), self.marker(port))
     }
 
+    /// Write the marker in one step; a scripted refusal keeps the host's `cause` after its first line.
     pub(super) fn remember(
         setting: Option<(&Self, Option<Refusal>)>,
         folder: &Path,
         port: u16,
+        cause: Option<&str>,
     ) -> Result<(), Problem> {
         let marker = folder.join(MARKER);
         match setting {
             Some((setting, refusal)) => {
-                let record = refusal.map_or_else(
-                    || setting.marker(port),
-                    |reason| setting.refused_marker(port, reason),
-                );
+                let record = match (refusal, cause) {
+                    (None, _) => setting.marker(port),
+                    (Some(Refusal::Scripted), Some(cause)) => {
+                        format!(
+                            "{}\n{cause}",
+                            setting.refused_marker(port, Refusal::Scripted)
+                        )
+                    }
+                    (Some(reason), _) => setting.refused_marker(port, reason),
+                };
                 let temp = PrivateFile::create(folder, record.as_bytes())?;
                 fs::rename(&temp.0, marker).map_err(Problem::internal)
             }
@@ -385,18 +383,18 @@ mod tests {
         let changed = setting(b"changed");
         assert!(OpenAi::matches(None, folder, 100));
         assert!(!OpenAi::matches(Some(&openai), folder, 100));
-        OpenAi::remember(Some((&openai, None)), folder, 100).expect("save scripted marker");
+        OpenAi::remember(Some((&openai, None)), folder, 100, None).expect("save scripted marker");
         assert!(!OpenAi::matches(None, folder, 100));
         assert!(OpenAi::matches(Some(&openai), folder, 100));
         assert!(!OpenAi::matches(Some(&openai), folder, 101));
         assert!(!OpenAi::matches(Some(&changed), folder, 100));
-        OpenAi::remember(Some((&openai, Some(Refusal::Usage))), folder, 100)
+        OpenAi::remember(Some((&openai, Some(Refusal::Usage))), folder, 100, None)
             .expect("save fallback marker");
         assert!(matches!(openai.fallback(folder, 100), Some(Refusal::Usage)));
         assert!(openai.fallback(folder, 101).is_none());
         assert!(changed.fallback(folder, 100).is_none());
         assert!(!OpenAi::matches(Some(&openai), folder, 100));
-        OpenAi::remember(None, folder, 101).expect("clear scripted marker");
+        OpenAi::remember(None, folder, 101, None).expect("clear scripted marker");
         assert!(!folder.join(MARKER).exists());
         assert!(OpenAi::matches(None, folder, 101));
     }
@@ -410,15 +408,15 @@ mod tests {
             script: None,
             fingerprint: blake3::hash(b"default"),
         };
-        OpenAi::remember(Some((&openai, None)), folder, 100).expect("plain marker");
+        OpenAi::remember(Some((&openai, None)), folder, 100, None).expect("plain marker");
         assert!(openai.fallback(folder, 100).is_none());
-        OpenAi::remember(Some((&openai, Some(Refusal::Scripted))), folder, 100)
+        OpenAi::remember(Some((&openai, Some(Refusal::Scripted))), folder, 100, None)
             .expect("scripted refusal");
         assert!(matches!(
             openai.fallback(folder, 100),
             Some(Refusal::Scripted)
         ));
-        OpenAi::remember(Some((&openai, Some(Refusal::Usage))), folder, 100)
+        OpenAi::remember(Some((&openai, Some(Refusal::Usage))), folder, 100, None)
             .expect("usage refusal");
         assert!(matches!(openai.fallback(folder, 100), Some(Refusal::Usage)));
         let supplied = OpenAi {
@@ -461,7 +459,7 @@ mod tests {
             script: None,
             fingerprint: blake3::hash(b"default"),
         };
-        OpenAi::remember(Some((&openai, Some(Refusal::Scripted))), folder, 100)
+        OpenAi::remember(Some((&openai, Some(Refusal::Scripted))), folder, 100, None)
             .expect("scripted refusal");
         assert_eq!(OpenAi::cause(folder), None);
         let bare = Refusal::Scripted.warning_with(OpenAi::cause(folder).as_deref());
@@ -469,11 +467,16 @@ mod tests {
             bare.message,
             "serving without scripted OpenAI: the host previously refused scripted OpenAI for this preview"
         );
-        OpenAi::remember_cause(
+        // The host's diagnostic, verbatim: adjacent spaces in a path and a line break stay.
+        let host =
+            "the preview did not start: scripted OpenAI: cannot run /opt/my  fixture\nsee log";
+        OpenAi::remember(
+            Some((&openai, Some(Refusal::Scripted))),
             folder,
-            "the preview did not start:\nscripted OpenAI: bad script",
+            100,
+            Some(host),
         )
-        .expect("cause");
+        .expect("scripted refusal with its cause");
         assert!(matches!(
             openai.fallback(folder, 100),
             Some(Refusal::Scripted)
@@ -481,11 +484,13 @@ mod tests {
         let cause = OpenAi::cause(folder);
         assert_eq!(
             cause.as_deref(),
-            Some("the preview did not start: scripted OpenAI: bad script")
+            Some(
+                "the preview did not start: scripted OpenAI: cannot run /opt/my  fixture\nsee log"
+            )
         );
         assert_eq!(
             Refusal::Scripted.warning_with(cause.as_deref()).message,
-            "serving without scripted OpenAI: the host previously refused scripted OpenAI for this preview: the preview did not start: scripted OpenAI: bad script"
+            "serving without scripted OpenAI: the host previously refused scripted OpenAI for this preview: the preview did not start: scripted OpenAI: cannot run /opt/my  fixture\nsee log"
         );
     }
 

@@ -92,6 +92,7 @@ fn start(
     log: &Path,
     fake_claude: Option<&Path>,
     setting: Option<(&OpenAi, Option<Refusal>)>,
+    cause: Option<&str>,
 ) -> Result<Ready, StartFailure> {
     let binary = find_watane()?;
     fs::create_dir_all(folder).map_err(Problem::internal)?;
@@ -180,8 +181,8 @@ fn start(
                 .unwrap_or_else(|| failure("invalid ready line".into()).into()));
         }
     };
-    if let Err(error) =
-        OpenAi::remember(setting, folder, ready.port).and_then(|()| save_ready(folder, &ready))
+    if let Err(error) = OpenAi::remember(setting, folder, ready.port, cause)
+        .and_then(|()| save_ready(folder, &ready))
     {
         let _ = stop_home(home);
         let _ = child.kill();
@@ -291,6 +292,7 @@ pub(crate) fn serve_with_script(
                 &log,
                 fake_claude.as_deref(),
                 openai.as_ref().map(|setting| (setting, None)),
+                None,
             ) {
                 Ok(ready) => ready,
                 Err(error) => {
@@ -305,18 +307,15 @@ pub(crate) fn serve_with_script(
                         Refusal::Usage => reason.warning(),
                         Refusal::Scripted => unavailable_warning(error.problem),
                     });
-                    let ready = start(
+                    start(
                         &home,
                         &folder,
                         &log,
                         fake_claude.as_deref(),
                         Some((setting, Some(reason))),
+                        Some(&cause),
                     )
-                    .map_err(|error| error.problem)?;
-                    if matches!(reason, Refusal::Scripted) {
-                        OpenAi::remember_cause(&folder, &cause)?;
-                    }
-                    ready
+                    .map_err(|error| error.problem)?
                 }
             }
         };
