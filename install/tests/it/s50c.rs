@@ -23,19 +23,15 @@ fn ac1_resolved_folders_guard_receipt_removals() {
             );
         }
         let lines: Vec<&str> = receipt.lines().collect();
-        assert_eq!(lines.len(), 18, "{receipt}");
+        assert_eq!(lines.len(), 14, "{receipt}");
         assert!(
             lines[3..10].iter().all(|l| l.starts_with("path ")),
             "{receipt}"
         );
         assert!(
-            lines[10..14].iter().all(|l| l.starts_with("resolved ")),
+            lines[10..].iter().all(|l| l.starts_with("resolved ")),
             "{receipt}"
         );
-        assert!(lines[14].starts_with("created .local "), "{receipt}");
-        assert!(lines[15].starts_with("created .local/bin "), "{receipt}");
-        assert!(lines[16].starts_with("created .local/share "), "{receipt}");
-        assert!(lines[17].starts_with("created Applications "), "{receipt}");
         if recorded {
             fs::rename(fx.share("watane-dev"), fx.home.join("old-dev")).unwrap();
             write_file(&fx.home.join("Documents/vendor/marker"), "mine");
@@ -272,9 +268,9 @@ fn ac5_status_reads_receipt_while_lock_is_held() {
     assert_eq!(snapshot(&fx.home), before);
 }
 
-/// TECHNICAL 8.1: status recovers stale entries under its lock and prints only install paths.
+/// TECHNICAL 8.1: status reports abandoned staging and prints only recognised install paths.
 #[test]
-fn ac5_status_cleans_dead_staging_and_filters_receipt_paths() {
+fn ac5_status_reports_dead_staging_and_filters_receipt_paths() {
     let fx = Fx::installed();
     let dead = dead_pid();
     let stale = fx.home.join(format!(".local/bin/watane.old.{dead}"));
@@ -298,8 +294,16 @@ fn ac5_status_cleans_dead_staging_and_filters_receipt_paths() {
     assert!(out.stderr.is_empty(), "{out:?}");
     assert!(out.has_line("~/.local/bin/watane"), "{out:?}");
     assert!(!out.stdout.contains("/outside/"), "{out:?}");
-    assert!(!stale.exists() && !lock.exists());
-    assert!(!journal.exists() && !staged_receipt.exists());
+    assert!(
+        out.has_line(&format!("leftover: ~/.local/bin/watane.old.{dead}")),
+        "{out:?}"
+    );
+    assert!(
+        out.has_line(&format!("leftover: ~/.local/share/watane/journal.{dead}")),
+        "{out:?}"
+    );
+    assert!(stale.is_file() && !lock.exists());
+    assert!(journal.is_file() && staged_receipt.is_file());
     assert!(unrelated.is_file());
 }
 
@@ -479,16 +483,24 @@ fn adv_s130_status_recovery_empties_a_folder_linked_in_the_home() {
     symlink(&moved, fx.share("watane-dev")).expect("link");
     let dead = dead_pid();
     write_file(&moved.join(format!("vendor.new.{dead}/marker")), "keep");
-    let before = snapshot(&fx.home);
     let out = fx.run(&["--status"]);
     assert_eq!(out.code, 0, "{out:?}");
-    assert_eq!(snapshot(&fx.home), before);
+    let marker = moved.join(format!("vendor.new.{dead}/marker"));
+    assert!(marker.is_file());
+    let refused = fx.run(&["--no-toolchain"]);
+    assert_eq!(refused.code, 8, "{refused:?}");
+    assert!(marker.is_file());
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(marker.is_file());
+    assert!(moved.join("vendor/serde-1.0.0/Cargo.toml").is_file());
 }
 
 /// TECHNICAL 8.4: receipts do not authorize removing a general-purpose directory.
 #[test]
 fn adv_s130_refused_receipt_still_drives_folder_removal() {
     let fx = Fx::installed();
+    crate::s89::add_legacy_created_lines(&fx);
     fs::remove_dir_all(fx.app()).expect("empty Applications");
     let moved = fx.home.join("moved-watane");
     fs::rename(fx.share("watane"), &moved).expect("move receipt folder");
@@ -500,4 +512,20 @@ fn adv_s130_refused_receipt_still_drives_folder_removal() {
         "{out:?}"
     );
     assert!(fx.home.join("Applications").is_dir(), "{out:?}");
+}
+
+/// TECHNICAL 8.4: even a receipt at the expected location cannot remove user directories.
+#[test]
+fn adv_s130_forged_created_line_removes_a_folder_the_person_made() {
+    let fx = Fx::new();
+    for folder in [".local/bin", ".local/share", "Applications"] {
+        fs::create_dir_all(fx.home.join(folder)).expect("user directory");
+    }
+    assert_eq!(fx.run(&["--no-toolchain"]).code, 0);
+    crate::s89::add_legacy_created_lines(&fx);
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    for folder in [".local/bin", ".local/share", "Applications"] {
+        assert!(fx.home.join(folder).is_dir(), "{folder}: {out:?}");
+    }
 }

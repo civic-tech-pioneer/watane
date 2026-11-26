@@ -7,7 +7,7 @@ pub mod unit;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
+use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -301,6 +301,8 @@ fn cache_pruning_keeps_current_busy_and_unrelated_directories() {
     let lock = fs::File::open(&busy).expect("busy directory");
     lock.lock_shared().expect("busy reader");
 
+    prune_install_caches(base.path(), &active, Duration::from_secs(7 * 24 * 60 * 60));
+    assert!(stale.is_dir());
     prune_install_caches(base.path(), &active, Duration::ZERO);
     assert!(active.is_dir() && busy.is_dir() && unrelated.is_dir());
     assert!(!stale.exists());
@@ -879,22 +881,7 @@ fn write_installed(tmpl: &Template, home: &Path) {
     for (from, to) in &swaps {
         text = text.replace(from.as_str(), to);
     }
-    let mut receipt = String::new();
-    for line in text.lines() {
-        if let Some((folder, _)) = line
-            .strip_prefix("created ")
-            .and_then(|line| line.rsplit_once(' '))
-        {
-            let inode = fs::metadata(home.join(folder))
-                .expect("created directory")
-                .ino();
-            receipt.push_str(&format!("created {folder} {inode}\n"));
-        } else {
-            receipt.push_str(line);
-            receipt.push('\n');
-        }
-    }
-    fs::write(&p, receipt).expect("write receipt");
+    fs::write(&p, text).expect("write receipt");
 }
 
 /// One node of a home, as `tree_entries` records it.
