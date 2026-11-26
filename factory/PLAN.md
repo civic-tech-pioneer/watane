@@ -1219,7 +1219,7 @@ names the same interface in its sketch and fakes it until this one merges.
 - [x] **S125 (upkeep, guard) host's and app's flaky tests, and S122's judge polish.** DONE 2026-11-25: PR #44 rebase-merged by deputy-5 (337a8466, no bypass); builder codex, reviewer claude, 1 round (0/10); ~2.3 h in flight. The host releases its home lock explicitly when it closes (a reopen no longer meets `Busy`); the streams hand-off and Windows timer tests wait on the right events; a kept judge key stays visible and removable after `claude-code` is withdrawn; the judge editor names what is wrong; S122's judge polish done; S118 had already fixed the consent flakes. R1.1 to R1.4 accepted (Deputy decisions); P1.1 to P1.10 and three new flake sightings in Leftovers. Windows rerun once (two host timing flakes outside the slice). Sketch in factory/DONE.md.
 - [~] **S130 (upkeep) install.sh's leftovers: what Alice sees around a Ctrl-C, `--status` and uninstall.** (in flight,
   cloud, builder codex, reviewer claude; rule 3: last two S129 codex, S127 claude; the upkeep lane, sketched 2026-11-25 by
-  deputy-6 from Leftovers `### install`; Codex task https://chatgpt.com/local/6b073806-b674-83ed-b83e-d3e470c2605f, ~19:35 UTC; DELIVERED ~19:42 UTC as PR #47 (+367/-83); r1: Claude review routine `trig_01FEHfiVhzUVxTQfXgBV4xpg`, 19:44 UTC.) Outcomes, each item's check (re-check each line against main first; drop the
+  deputy-6 from Leftovers `### install`; Codex task https://chatgpt.com/local/6b073806-b674-83ed-b83e-d3e470c2605f, ~19:35 UTC; DELIVERED ~19:42 UTC as PR #47 (+367/-83); r1: Claude review routine `trig_01FEHfiVhzUVxTQfXgBV4xpg`, 19:44 UTC; r1: 3/10 findings, `changes (3)` (adversary BREACHED, user-sim REJECTED 16/17); answer r1 sent to the Codex task 2026-11-26 06:30 UTC.) Outcomes, each item's check (re-check each line against main first; drop the
   ones already true and say so): (1) S123 r2 P2.1, r1 P1.2, P1.4, P1.5; (2) S94: a `pid_gone` unit case, `install-cache-*`
   folders pruned; (3) S89, S50b-fix, S50b-fix2, S50c user-sim lines that still hold: a hint after every Ctrl-C (also at
   each question and in the first 0.1 s where a trap can exist), `--status` cleans leftovers and survives a closed pipe,
@@ -1228,21 +1228,7 @@ names the same interface in its sketch and fakes it until this one merges.
   with a reason. Touches: `install/` only. Mac checks: the existing macOS CI job (`clean_mac`). Constraints: no change to
   the receipt or journal format beyond what S123 made; Windows stays report-only. Protects: *polish* (guard: none). Size:
   an upkeep slice.
-- [~] **S129 A maker previews a checked provider against dev's scripted judge (host 19.9, dev 18.4; agentic-harness stage E's
-  "done when").** (in flight, cloud, builder codex, reviewer claude; rule 3: last two S128 codex, S127 claude, but S127
-  was Claude; the main line, sketched 2026-11-25 by deputy-6 from S127's question (agentic-harness PR #56, option (a)).
-  Codex task https://chatgpt.com/local/6b073053-19c8-83ed-bff6-6bf7de4f307d, 19:02 UTC; DELIVERED ~19:40 UTC as PR #46 (+503/-86); r1: Claude review routine `trig_01EkdTKe86qd8kaf1wmkhMj1`, 19:43 UTC. Size: small, a reason: it closes stage E's outcome 1 on a real host.) Story: a maker runs `watane-dev serve` on a
-  checked provider with the scripted Responses program; the preview's judge account answers from the program's judge
-  origin, so a safe call runs and an unsafe one denies, with no key of the maker's and no real judge. Outcomes: (1) in a
-  development preview with `--scripted-openai`, an `account: "judge"` request of an installed mod goes to the program's
-  judge origin (`https://judge.test`) with a fixture key (the script's `judge_key`, else a fixed default), after every
-  check of 19.4 except the account lookup, exactly as the OpenAI binding of 19.9 does; (2) the provider's page and the
-  app show that preview judge as entered, so `judge_origin` and the `[http]` grant match `https://judge.test` (a test
-  build of the provider lists it); (3) real homes and release builds refuse it, as 19.9's OpenAI binding; (4) dev's
-  `serve` passes nothing new when a script has no plays (`judge_key` and `plays` are already script fields, dev 18.3).
-  Touches: host (the 19.9 preview binding, 19.4's lookup), dev (18.3/18.4 docs, a serve test). Not: S126's files
-  (adv_s96, streams/runtime tests, `remove`, timer sweep). Boundary: W39 "a judge key goes only to its judge" (adversary).
-  No test calls an external provider. Protects: *core*.
+- [x] **S129 A maker previews a checked provider against dev's scripted judge (host 19.9, dev 18.4).** DONE 2026-11-26: PR #46 rebase-merged by deputy-7 (5f66e805, no bypass); builder codex, reviewer claude, 1 round (0/8); ~11 h in flight (review out in 40 min, merge waited on the handover overnight). In a `--scripted-openai` preview a checked provider's `account: "judge"` call reaches the program's `https://judge.test` with a fixture key, so a safe call runs and an unsafe one denies with no real judge; real homes and release builds refuse it; serve reports `judge_origin`. Adversary HELD, user-sim ACCEPTED, validator RETURN (polish only). R1.1 to R1.3 accepted (Deputy decisions); P1.1 to P1.8 in Leftovers. Suite: host +0.01 s, dev +2.9 s (the 15/21 min were load noise). Sketch in factory/DONE.md.
 - [x] **S126 (upkeep, guard) host's last flakes and its S125/S119/S118 polish.** DONE 2026-11-25: PR #45 rebase-merged by deputy-6 (a610f9ba, no bypass); builder codex, reviewer claude, 1 round (0/5); ~2.3 h in flight. `remove` waits for a busy mod's call up to its deadline and names the mod; a restart sweeps timer rows left by a crash during `remove`; the three S125 flakes are fixed (one race, two test-only timing assertions removed; 20/20 per OS in CI); judge-origin limits recorded in host 19.4 and 3.1; S125/S119/S118 polish done. R1.1, R1.2 accepted (Deputy decisions); P1.1 to P1.5 in Leftovers. Sketch in factory/DONE.md.
 - [x] **S120 Design: the factory as mods (VISION step 6).** DONE 2026-11-25: PR #39 rebase-merged by deputy-4 (fb24648, no bypass); builder codex, reviewer claude, 2 rounds (4/6, 0/1); ~45 min in flight. A draft subsystem design in `spec/design/factory/` (VISION, FUNCTIONAL JF1/JF2 with FF1-FF4, TECHNICAL): today's factory mapped to mods, toolsets and consents, and 9 open decisions in its TECHNICAL 5 (1 Door H, 8 Door C), none settled. Its first build journey JF1 waits on agentic-harness stages E (V7, the judge) and F (N5): the main line has no buildable step until then. Sketch in factory/DONE.md.
 - [x] **S102 Alice connects her agent accounts in Settings (app stage L, part: 19.1, 19.3).** DONE 2026-11-23: PR #18
@@ -1588,6 +1574,9 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dist | S6 find | 4 | done (S28) |
 
 ## Leftovers
+
+### S129 polish (PR #46 r1)
+- P1.1 to P1.8 of https://github.com/civic-tech-pioneer/watane/pull/46 (review r1): fast host tests for the judge arm, the default token pinned, a duplicate test, one `Ready` type, `Option<String>` ready fields, `judge_key` checked at configure, `set_scripted_openai` wrapper, a serve hint when `[http]` lacks `judge.test`.
 
 Upkeep (polish from S105's reviews r5 and r6, 2026-11-24):
 - [S105 P5.3] `dist/src/holder.rs:162`: a Kept ingest of the participant's own channel settles too, so it fails while the store is unsynced; settle only when `channel != identity`, or say so in dist TECHNICAL 4.4.
@@ -1967,6 +1956,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 - 2026-11-24 host 18 **Q38: (b)**, the human ("b is fine for q38"). A workspace or account consent is kept per (origin client, `via` = the provider's identity, folder or account); a new provider asks again. S103 built (b); its next answer round writes host 18 Q38 as decided by the human, 2026-11-24, and the 19.7 rows to match. agentic-harness TECHNICAL 8 already cites 19.7.
 
 ## Deputy decisions
+
+- 2026-11-26 (deputy-7) S129 R1.1 to R1.3 accepted: R1.1 is host 19.9's stated intent (a fixture key, preview only); R1.2 the ready line's writer is the maker's own binary (spec/TECHNICAL 6 out of scope); R1.3 outcome (2) is checked in watane only as serve's `judge_origin`, the provider page is agentic-harness S127's. undo: a test slice for (2) on the app.
 - 2026-11-25 (deputy-6, S126 r1) accepted: R1.1 a failed `timers_removed` inside a running host (a redb write fault, no crash) leaves timer rows a same-identity reinstall inherits until the next open sweeps them (no named attacker can fail the write); R1.2 `remove` can be starved by a mod that keeps its call lock busy (availability only; `disable` first lets it through). Undo: sweep or refuse an identity with rows before an install commits; a busy error kind.
 - 2026-11-25 (deputy-6, S125 R1.4) accepted, rung 1: a judge origin with an unspecified, loopback or private literal (`https://0.0.0.0`, `https://0x`) is not refused; the participant types it and the provider needs a matching consented Http grant, and a self-hosted judge on the LAN stays possible (host 19.4 judge binding; dist 5.9 guards reads, not this). S126 writes it under host 19.4 "Not protected". Undo: refuse those literals in `judge_origin`.
 - 2026-11-25 (S125 r1) accepted: R1.1 two Windows host timing flakes outside the slice (rerun green; Leftovers guard); R1.2 run threads may outlive the home lock at drop (unchanged behaviour; a live run caught at drop); R1.3 the explicit unlock assumes no fork without exec (no such path); R1.4 a judge origin of `0.0.0.0` or `0x` (needs the participant's own Http grant for it; predates S125; Leftovers spec call). Undo: the Leftovers items.

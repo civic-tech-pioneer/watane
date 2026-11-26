@@ -120,3 +120,19 @@ describes except for where it runs. Moving it inside makes the thing that built 
 serious thing built on watane, and is the sharpest test of the premise: if the substrate cannot host
 its own factory, the premise is weaker than it looks. Not sketched; it needs its own design slice.
 
+
+- [~] **S129 A maker previews a checked provider against dev's scripted judge (host 19.9, dev 18.4; agentic-harness stage E's
+  "done when").** (in flight, cloud, builder codex, reviewer claude; rule 3: last two S128 codex, S127 claude, but S127
+  was Claude; the main line, sketched 2026-11-25 by deputy-6 from S127's question (agentic-harness PR #56, option (a)).
+  Codex task https://chatgpt.com/local/6b073053-19c8-83ed-bff6-6bf7de4f307d, 19:02 UTC; DELIVERED ~19:40 UTC as PR #46 (+503/-86); r1: Claude review routine `trig_01EkdTKe86qd8kaf1wmkhMj1`, 19:43 UTC. Size: small, a reason: it closes stage E's outcome 1 on a real host.) Story: a maker runs `watane-dev serve` on a
+  checked provider with the scripted Responses program; the preview's judge account answers from the program's judge
+  origin, so a safe call runs and an unsafe one denies, with no key of the maker's and no real judge. Outcomes: (1) in a
+  development preview with `--scripted-openai`, an `account: "judge"` request of an installed mod goes to the program's
+  judge origin (`https://judge.test`) with a fixture key (the script's `judge_key`, else a fixed default), after every
+  check of 19.4 except the account lookup, exactly as the OpenAI binding of 19.9 does; (2) the provider's page and the
+  app show that preview judge as entered, so `judge_origin` and the `[http]` grant match `https://judge.test` (a test
+  build of the provider lists it); (3) real homes and release builds refuse it, as 19.9's OpenAI binding; (4) dev's
+  `serve` passes nothing new when a script has no plays (`judge_key` and `plays` are already script fields, dev 18.3).
+  Touches: host (the 19.9 preview binding, 19.4's lookup), dev (18.3/18.4 docs, a serve test). Not: S126's files
+  (adv_s96, streams/runtime tests, `remove`, timer sweep). Boundary: W39 "a judge key goes only to its judge" (adversary).
+  No test calls an external provider. Protects: *core*.
