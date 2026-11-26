@@ -217,6 +217,16 @@ their host references. If they finish within that bound, dropping the last
 caller handle releases the home synchronously. If the bound expires, shutdown returns anyway; running work can still hold
 the home until it ends.
 
+The mod-facing WIT addition to the `timers` interface of 19.1
+(`watane:host/timers@0.1.0`) is:
+
+```wit
+firing-origin: func() -> option<string>;
+```
+
+This read uses the same grant-free import as `after` and `cancel`.
+See 19.6 for its scope and result.
+
 ### 2.2 Errors
 
 ```rust
@@ -3852,6 +3862,38 @@ unchanged reinstall of a mod in the error state loads its component like an
 update). Streams and jobs are memory only (19.2): after a restart their
 requests are gone, and the mod that wants them again starts them from a
 fired timer or a call.
+
+`timers.firing-origin()` (2.1) exposes the result of the origin check
+of HOST-F-73. It returns `some(identity)` in the top-level
+`timer-sink.fired(id)` invocation of the mod that owns the timer. The identity is the pkg 4.1 mod identity already
+resolved for this firing's chain. The host takes it from the same resolution
+that sets the chain's origin client, after taking the mod's call lock and
+rechecking the timer row and origin client. The read is stable within that
+invocation. It gives no live status or guarantee that the origin still
+passes the checks when a request lands.
+
+If the stored origin is installed and enabled at resolution, the read
+returns that origin's identity. If the stored origin is missing or disabled,
+the existing fallback makes the timer's own mod the origin and the read
+returns that mod's identity. A removal rewrite, including one completed
+at startup, likewise yields the timer owner's identity. The read gives no
+previous origin, local name, generation or reason for fallback. It returns
+`none` in every other invocation, including calls nested under the firing,
+even a re-entry into the timer's own mod. It takes no timer id and reads no
+other timer. The firing's caller stays `host`. The returned text is data.
+The host accepts no origin override and still checks grants, consents and
+the origin client at apply.
+
+The host adds no startup callback. A durable timer set during a call
+carrying the intended origin client can deliver work after restart through
+the same `fired` export and resolution. A mod ties the timer
+id to the expected owner in its own state when it arms the timer. It starts
+owner-scoped work only when the resolved origin matches that owner and its
+own checks allow the work. With a mismatch or no firing origin, it can do
+local cleanup or wait for an ordinary call carrying that owner's authority.
+A startup pass running for another owner cannot use the stored identity to
+choose the origin of a new timer or request. This path gives no startup
+delivery for work without an armed timer.
 
 ### 19.7 Consents
 
