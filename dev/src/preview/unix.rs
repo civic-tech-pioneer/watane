@@ -337,7 +337,7 @@ pub(crate) fn serve_with_script(
                     format!("the preview judge is at {origin}, but no served mod has an HTTP grant for {host}"),
                 )
                 .fix(format!(
-                    "Add {host} to [http].hosts in mod.toml of the mod that calls the judge, then run: {rerun}"
+                    "In the mod that calls the judge, add {host} to [http].hosts in mod.toml and import watane:host/https-stream in wit/world.wit, then run: {rerun}"
                 )),
             );
         }
@@ -485,6 +485,51 @@ pub fn stop(dir: &Path, env: &Env) -> Result<Value, Vec<Problem>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn s141_missing_http_import_keeps_the_explicit_script_in_the_rerun() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let dir = root.join("client");
+        crate::template::new_mod(&dir, "client").unwrap();
+        let mut manifest = fs::OpenOptions::new()
+            .append(true)
+            .open(dir.join("mod.toml"))
+            .unwrap();
+        writeln!(manifest, "\n[http]\nhosts = [\"judge.test\"]").unwrap();
+        let script = root.join("judge plays.json");
+        fs::write(&script, br#"{"plays":[{"safe":[]}]}"#).unwrap();
+        let cache = root.join("cache");
+        let mut stdout = Vec::new();
+        let status = crate::cli::main_with(
+            &[
+                "watane-dev",
+                "serve",
+                "--json",
+                "--dir",
+                "client",
+                "--script",
+                "judge plays.json",
+            ]
+            .map(Into::into),
+            &[("WATANE_DEV_CACHE", Some(cache.as_os_str()))],
+            Some(&root),
+            &mut stdout,
+        );
+        let envelope: Value = serde_json::from_slice(&stdout).unwrap();
+        assert_eq!(status, 1, "{envelope}");
+        let error = &envelope["errors"][0];
+        assert_eq!(error["code"], "mod.invalid");
+        assert!(
+            error["message"]
+                .as_str()
+                .unwrap()
+                .contains("watane:host/https-stream")
+        );
+        let rerun = format!(" --script '{}'", script.display());
+        assert!(error["fix"].as_str().unwrap().ends_with(&rerun));
+        assert!(envelope["next"].as_str().unwrap().ends_with(&rerun));
+    }
 
     #[test]
     fn s114_restart_waits_for_the_home_lock_without_a_run_marker() {
