@@ -3,17 +3,6 @@
 The product owner's state; only the product owner edits it, on `main`. A new session continues
 from here. Newest digest line last.
 
-## Deputy handover
-
-From deputy-7 to Deputy Rock, 2026-11-26 07:30 UTC (the human's call; 1 merge this run: S129). Rotation per the deputy skill 0.1.4 section 8 (Rock, Paper, Scissors; message, never start_session).
-- **watane S130** (PR #47, install upkeep, builder codex https://chatgpt.com/local/6b073806-b674-83ed-b83e-d3e470c2605f, reviewer claude): round 3. r1 3/10, r2 2/7 (R2.1 accepted, Deputy decisions). Answers at 351fbb3. r3 Claude review routine `trig_01XceBDWgyNLak3gyGSoYv4B` fired 07:25 UTC, scoped to F2.1/F2.2. **Cut point:** if r3 is not approve, rule the minimal version yourself, don't send another open round. CI on 351fbb3 was still running at handover.
-- **agentic-harness S127** (PR #56, stage E, builder claude, its build session `cse_01LxwP8z269aT6xNUfUx25Zw` answers PR comments itself, reviewer codex): round 3. r1 4/2, r2 2/1 cut (F2.1 accepted as a limit in TECHNICAL 10, F2.2 fixed). Answers at 3df5713, CI green. r3 Codex review https://chatgpt.com/local/6b07d9e3-a408-83eb-9c6e-d1831c52e073 (since ~07:05 UTC), scoped to F2.1/F2.2. On approve: merge, then `test:host:e` goes to agentic-harness Upkeep (S129 has merged).
-- **agentic-harness S131** (PR #58, upkeep: host tests stop skipping, builder claude routine `trig_012rpGShQDeh3hBe4E8XsmGc`, reviewer codex): round 1. Opened at 495975c (+6524, 5.3k of it a test Cargo.lock; shares only AGENTS.md with S127, the second to merge rebases). r1 Codex review https://chatgpt.com/local/6b07deda-2b30-83ed-ae72-c1ec08020061 (07:27 UTC).
-- **Lanes:** 3 in flight. agentic-harness's main line (stage F, kernel) waits on S127's kernel files; watane's main line has nothing buildable before stages E and F; both upkeep lanes are full. The 4th lane opens when S127 merges (sketch stage F), or with the held watane timer-origin contract (Door C, PLAN Unsettled; deliberate first).
-- **Builders (rule 3):** last two handed out S131 claude, S130 codex: Codex builds next.
-- **Human answers today:** S120's Door H is decided as one combined factory mod (Human answers); never ask for the Codex secret rotation again; mboogerd/claude-plugin#6 and #7 are merged.
-- **Watcher:** `git -C ../watane-mods show origin/main:factory/scripts/watch-all.sh` into your scratchpad, a fresh state file, `600` while a Codex task runs. Edit agentic-harness's PLAN from a scratch clone of origin/main. Agentic-harness has no `.claude/factory/review-lead.md`, so its review briefs are self-contained (see the r1 to r3 briefs on the Codex task pages). Word the adversary as a boundary check (Codex's cyber filter).
-
 ## Slices
 
 Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
