@@ -59,18 +59,24 @@ tests/                  integration tests (section 15) and tests/fixtures/
 name = "watane-dev"
 version = "0.1.0"
 edition = "2024"
+license = "MIT OR Apache-2.0"
 rust-version = "1.95"
 publish = false
 
 [features]
 default = ["fake-host", "fake-claude"]
 fake-host = ["dep:tiny_http"]
-fake-claude = ["dep:rustls", "dep:rcgen", "dep:base64"]   # step 11 (18.1): ships in the release; `fake-claude` itself needs no crate
+fake-claude = ["dep:rustls", "dep:rcgen", "dep:base64"]
+
+[lib]
+# No doc examples: skip the rustdoc pass of every `cargo test`.
+doctest = false
 
 [dependencies]
+tiny_http = { version = "0.12", optional = true }
 watane-pkg = { path = "../pkg" }
 watane-host = { path = "../host" }
-clap = { version = "4.6", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "1"
@@ -79,40 +85,46 @@ blake3 = "1.8"
 ureq = { version = "3", default-features = false, features = ["json"] }
 wasmtime = { version = "=48.0.10", default-features = false, features = ["component-model", "cranelift", "runtime", "std"] }
 wasmtime-wasi = { version = "=48.0.10", default-features = false, features = ["p2"] }
-tiny_http = { version = "0.12", optional = true }
-# step 11, feature `fake-claude` (18.1); versions are fixed by the stage 14 and 15 briefs
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }   # the TLS server of scripted-responses (blocking, one thread per connection: no async runtime)
-rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"], optional = true }             # the test authority and its certificates
-base64 = { version = "0.22", optional = true }                    # `body_b64` of the request log
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"], optional = true }
+rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"], optional = true }
+base64 = { version = "0.22", optional = true }
+workspace-hack = { version = "0.1", path = "../workspace-hack" }
+
+[target.'cfg(windows)'.dependencies]
+find-msvc-tools = "0.1.15"
 
 [dev-dependencies]
-tempfile = "3.27"
-claude-codes = { version = "=2.1.330", default-features = false, features = ["types"] }   # the kernel's version: the oracle that parses every line of fake-claude (18.1)
-regex = "1"
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls-manual-roots"] }   # the https client of the tests of 18.3 (build it with `.no_proxy()`)
-rustls-native-certs = "0.8"                                       # the system roots a test client trusts alone (DEV-S-61)
-watane-host = { path = "../host", features = ["test-net"] }        # scripted_host.rs routes the host's test connection to the fake
-tokio = { version = "1", default-features = false, features = ["rt"] }   # the runtime for Host::install
+tempfile = "3"
+# the https client of the tests of 18.3; the system roots of DEV-S-61
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls-manual-roots"] }
+rustls-native-certs = "0.8"
+watane-host = { path = "../host", features = ["test-net"] }   # scripted_host.rs: a host that routes api.openai.com to ScriptedResponses (host 19.9); a dev-dependency only
+tokio = { version = "1", default-features = false, features = ["rt"] }   # a runtime for Host::install, which is async
+# the oracle of fake-claude's tests: the kernel's own types read every line it writes (18.1)
+claude-codes = { version = "=2.1.330", default-features = false, features = ["types"] }
 
 [[bin]]
 name = "fake-watane"
 path = "src/bin/fake-watane.rs"
 required-features = ["fake-host"]
 
-[[bin]]                                 # step 6
-name = "fake-gh"
-path = "src/bin/fake-gh.rs"
-required-features = ["fake-host"]
-
-[[bin]]                                 # step 11
+[[bin]]
 name = "fake-claude"
 path = "src/bin/fake-claude.rs"
 required-features = ["fake-claude"]
 
-[[bin]]                                 # step 11
+[[bin]]
+name = "fake-gh"
+path = "src/bin/fake-gh.rs"
+required-features = ["fake-host"]
+
+[[bin]]
 name = "scripted-responses"
 path = "src/bin/scripted-responses.rs"
 required-features = ["fake-claude"]
+
+[lints]
+workspace = true
 ```
 
 Step 11 adds the feature `fake-claude` (18.1), on by default. Unlike
@@ -253,7 +265,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `mod.self_dependency` | 1 | `add` of the mod itself | `a mod cannot depend on itself` | `Pass the folder of another mod to add` (for `add --release`: `Pick the link or release of another mod, then run: watane-dev add --release <link> --dir <canonical mod folder>[ --home <resolved home>]`; `<link>` is literal, `--home` only when given) |
 | `mod.dependency_cycle` | 1 | the local providers make a cycle | `<a> -> <b> -> <a> is a cycle` | From `add`: `Do not add <provider slug>: it already depends on this mod`. From traversal: `Remove mods:<slug> from deps.json and wit/deps/<slug>/ in <absolute folder>` (without ` and wit/deps/<slug>/` when that folder does not exist) for the edge that closes the cycle. |
 | `mod.provider_missing` | 1 | a local provider has no folder in `.watane-dev.json`, or the folder is gone | `the local provider <slug> has no known folder` | `Run: watane-dev add <folder of <slug>>` |
-| `build.resolve` | 1 | cargo cannot resolve with the allowlist | cargo's text | `Use only the crates and features of the allowlist: <list>` |
+| `build.resolve` | 1 | cargo cannot resolve with the allowlist | cargo's text | `Use only the crates and features of the allowlist: <list>, then run: <rerun>` |
 | `build.compile` | 1 | each rustc error | the rustc message, with its location | `Correct the Rust error at the reported location, then run: <rerun>` |
 | `build.reads_outside` | 1 | the compiler read a file outside the folders of 6.4 step 6 | `the build read <path>, outside the mod`; for n > 1 outside `.wit` paths, one problem: `the build read <n> .wit files under <folder>, outside the mod` | `Remove the include_bytes!, include_str!, include! or #[path] that names it`; for a path ending in `.wit`: `Point wit_bindgen::generate! in logic/src at this mod's own wit/ folder (path: "../wit"), not at <path>` (`<folder>`, their deepest common ancestor, for n > 1); each ends `, then run: <rerun>` |
 | `build.imports` | 1 | each `Violation` of `Mod::check_component` | `[component] <message>` | — |
@@ -1623,8 +1635,12 @@ remove any `<cache>/providers/<id>.<pid>.tmp` left by this process id.
 When `<cache>/providers/<id>` is absent, unpack into that temporary folder
 and rename it to `<cache>/providers/<id>`.
 When the destination already exists, keep it and remove the temporary folder;
-a concurrent store winning the rename is handled the same way. A killed
-run's `<id>.<other>.tmp` is never read and never blocks a store.
+a concurrent store winning the rename is handled the same way. Before
+it, `store` removes any other process's `<cache>/providers/<id>.<pid>.tmp`
+(any id) whose modification time is over one hour old, a killed run's
+leftover (dev has no cross-platform liveness check; a live unpack takes
+seconds); a younger one is kept, and a failed removal never fails the store.
+No `<id>.<other>.tmp` is ever read or blocks a store.
 The paths come only from the id dev computed.
 
 `fetch_providers(dir)`: for each provider of `Deps::read(dir)` with a
@@ -2602,7 +2618,7 @@ lines and bytes written in the test.
 | `scripted::ac4_chunked_body_is_recorded_whole`, `scripted::tests::ac4_chunk_extensions_and_split_reads_preserve_the_body` | whole request bodies across chunk framing, including a chunk with an extension and a separate body read | HTTPS client and parser input |
 | `scripted::ac1_two_origins_and_one_authority`, `scripted::ac7_dropping_the_server_closes_both_listeners` | certificate trust and loopback binding on both origins, and both listeners close after drop | HTTPS client and TCP connections |
 | `scripted::ac5_judge_plays`, `scripted::ac5_judge_key_and_repeat` | verdicts, slow and failed plays, redirect, raw reply, key authorization and request counts | HTTPS client and literal JSON values |
-| `scripted::ac6_program_default_and_log`, `scripted::ac6_program_script_file`, `scripted::ac6_program_refuses_unknown_script_fields`, `scripted::ac6_program_ends_on_sigterm` (Unix) | the startup line's exact key set, both TLS origins and logs, a supplied script, unknown field errors, and termination | child process |
+| `scripted::ac6_program_default_and_log`, `scripted::ac6_program_script_file`, `scripted::ac6_program_refuses_unknown_script_fields`, `scripted::ac6_program_ends_on_sigterm` (Unix) | the startup line's exact key set, both TLS origins and logs, a supplied script, one unknown-field refusal (exit 1, empty stdout, the stderr text; the nesting is `scripted_format::tests::ac3_unknown_fields_are_refused_at_every_level`), and termination | child process |
 | `scripted_host::ac1_case_3_a_scripted_turn_streams_into_the_mod_with_the_accounts_token`, `scripted_host::ac2_case_19_*`, `scripted_host::ac3_*` | the first consent notice and later streams under a saved consent, account binding and stream outcomes | real host and scripted Responses origin |
 
 Other tests that need the host or app are in their own suites (host 19,
@@ -2903,7 +2919,7 @@ and serves until it is killed (SIGTERM). `--script` is a JSON file
 whose `Reply`, `SseEvent` and `Play` values are the serde forms of the types
 above (externally tagged, kebab-case names; the default script is one `Sse`
 with `Delta("ok")` and `Completed`, and one `Safe([])`). The program and
-preview validation use the same `scripted_format::Script` type and refuse unknown fields in the script and its nested objects. With `--log`, it
+preview validation use the same `scripted_format::Script` type and refuse unknown fields in the script and its nested objects; a key such as a comment is refused too (since S119). With `--log`, it
 writes each request it receives as `<dir>/responses/<n>.json` or
 `<dir>/judge/<n>.json` (`n` from 1: `{"method","path","headers","body_b64"}`),
 so a test reads `requests()` and `count()` as the files of the folder.
@@ -3015,7 +3031,9 @@ once. The maker tools offer the fake `claude` instead:
   an ordinary preview when no script was supplied. A host refusal is remembered
   for the selected program fingerprint (a hash of the program's path and the
   supplied script's bytes, not of the program's contents) and the live preview port, preserving
-  the API and MCP connection on the next serve without a script. With a supplied script,
+  the API and MCP connection on the next serve without a script. A scripted
+  refusal's marker keeps the host's cause after its first line (the first line alone is compared),
+  and the reuse warning's message ends in `: <cause>`; a marker without a cause still reads. With a supplied script,
   invalid input or unavailable scripted preview support fails with
   `env.preview_start` and names the maker's file.
   An unchanged script reuses a live preview. Changing the script or enabling
