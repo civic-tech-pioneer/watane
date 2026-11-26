@@ -527,23 +527,24 @@ EOF
 # clean_stale [report]: remove or report staging names of dead processes (3.8).
 clean_stale() {
   while IFS= read -r cs_e; do
-    allowed "$cs_e" || continue
     for cs_k in new old; do
       for cs_f in "$cs_e.$cs_k".*; do
         exists "$cs_f" || continue
         cs_n=${cs_f#"$cs_e.$cs_k."}
         case $cs_n in '' | *[!0-9]*) continue ;; esac
         pid_gone "$cs_n" || continue
+        # a name of a dead run that stays is counted: uninstall says so (8.4 step 1)
+        allowed "$cs_e" || { CS_LEFT=1; continue; }
         read_recovery_receipt "$cs_n"
-        recovery_allowed "$RECEIPT" "" "$R_RESOLVED" || continue
-        recovery_allowed "$cs_e" "" "$R_RESOLVED" || continue
+        recovery_allowed "$RECEIPT" "" "$R_RESOLVED" || { CS_LEFT=1; continue; }
+        recovery_allowed "$cs_e" "" "$R_RESOLVED" || { CS_LEFT=1; continue; }
         if [ "${1:-}" = report ]; then
           say "leftover: $(tilde "$cs_f")"
           CS_REPORTED=1
         else
           # A journal that recovery could not retire still needs its staging evidence.
           cs_j=$SHAREW/journal.$cs_n
-          if [ -f "$cs_j" ] && [ ! -L "$cs_j" ]; then continue; fi
+          if [ -f "$cs_j" ] && [ ! -L "$cs_j" ]; then CS_LEFT=1; continue; fi
           rm_path "$cs_f" || return
           RECOVERED=1
         fi
@@ -570,6 +571,7 @@ prune_watane_dirs() {
 recover() {
   RECOVERED=0
   RECOVERED_SAID=0
+  CS_LEFT=0
   rc_pending=0
   rc_prune=""
   # the journals and receipt.* lie beside the receipt: none is used through a link out (8.5)
@@ -1519,6 +1521,7 @@ do_status() {
   ds_has_lock=0
   ds_has_left=0
   ds_seen=""
+  ds_owned=0
   CS_REPORTED=0
   if exists "$ds_lock"; then
     ds_has_lock=1
@@ -1530,6 +1533,7 @@ do_status() {
   ds_installed=$R_OK
   if [ "$ds_installed" = 1 ]; then
     say "watane $R_VERSION ($R_TARGET)"
+    if in_list "$R_LINES" "path $SHAREW/install.sh"; then ds_owned=1; fi
     while IFS= read -r ds_l; do
       ds_p=${ds_l#path }
       if valid_entry "$ds_p"; then
@@ -1549,6 +1553,7 @@ EOF
       pid_gone "$ds_n" || continue
       read_recovery_receipt "$ds_n"
       recovery_allowed "$RECEIPT" "$ds_n" "$R_RESOLVED" || continue
+      if [ "$R_OK" = 1 ] && in_list "$R_LINES" "path $SHAREW/install.sh"; then ds_owned=1; fi
       say "leftover: $(tilde "$SHAREW/journal.$ds_n")"
       ds_has_left=1
       if exists "$RECEIPT.new.$ds_n"; then
@@ -1576,8 +1581,8 @@ EOF
     clean_stale report
     if [ "$CS_REPORTED" = 1 ]; then ds_has_left=1; fi
   fi
-  # the script is named only where it is: a kill before its entry was swapped leaves none
-  if [ -f "$SHAREW/install.sh" ] && [ ! -L "$SHAREW/install.sh" ]; then
+  # the script is named only when it is watane's own: a regular file that a readable receipt lists
+  if [ "$ds_owned" = 1 ] && [ -f "$SHAREW/install.sh" ] && [ ! -L "$SHAREW/install.sh" ]; then
     ds_run="run: sh $(tilde "$SHAREW/install.sh")"
   else
     ds_run="run the install command again"
@@ -1620,7 +1625,7 @@ do_uninstall() {
   recover prune
   read_receipt "$RECEIPT"
   if [ "$R_OK" != 1 ]; then
-    if [ "$RECOVERED_SAID" = 1 ]; then
+    if [ "$RECOVERED_SAID" = 1 ] && [ "$CS_LEFT" = 0 ]; then
       die 7 "nothing to uninstall: no receipt at $(tilde "$RECEIPT")" "The files of the interrupted install were removed."
     fi
     die 7 "nothing to uninstall: no receipt at $(tilde "$RECEIPT")"
