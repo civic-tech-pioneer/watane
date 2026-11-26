@@ -435,7 +435,9 @@ fn unit_check_folders_refuses_an_install_folder_outside_the_home() {
         assert_eq!(u.code, 2, "{u:?}");
         assert_eq!(
             u.err,
-            format!("watane install: {shown} resolves to your home folder itself\n{tail}")
+            format!(
+                "watane install: {shown} resolves to your home folder itself\nUse a real subfolder of your home folder, then run this again.\n"
+            )
         );
     }
     let u = case(&units, "inside");
@@ -1225,18 +1227,36 @@ fn unit_status_and_usage() {
             ),
             ("bad", "HOME=$ROOT/bad; check_home; set_entries; do_status"),
             (
+                "bad_uninstall",
+                "HOME=$ROOT/bad; check_home; set_entries; do_uninstall",
+            ),
+            (
                 "installed",
                 "HOME=$ROOT/installed; check_home; set_entries; do_status",
             ),
             ("usage", "usage"),
         ],
     );
-    let want = "not installed: no receipt at ~/.local/share/watane/receipt";
-    for n in ["none", "bad"] {
-        let u = case(&units, n);
-        assert_eq!(u.code, 7, "{n}: {u:?}");
-        assert_eq!(u.err, format!("watane install: {want}\n"), "{n}");
+    for (name, want) in [
+        ("none", "not installed: no receipt"),
+        ("bad", "not installed: unrecognised receipt"),
+        (
+            "bad_uninstall",
+            "nothing to uninstall: unrecognised receipt",
+        ),
+    ] {
+        let u = case(&units, name);
+        assert_eq!(u.code, 7, "{name}: {u:?}");
+        assert_eq!(
+            u.err,
+            format!("watane install: {want} at ~/.local/share/watane/receipt\n"),
+            "{name}"
+        );
     }
+    assert_eq!(
+        fs::read_to_string(bad.join(".local/share/watane/receipt")).expect("unrecognised receipt"),
+        "watane-receipt 2\nversion 9\n",
+    );
     let u = case(&units, "installed");
     assert_eq!(u.code, 0, "{u:?}");
     assert_eq!(

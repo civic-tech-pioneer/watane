@@ -286,6 +286,15 @@ read_receipt() {
   return 0
 }
 
+# receipt_problem <command failure> [<hint>]: exit 7 with the reason the receipt was rejected.
+receipt_problem() {
+  rp_prefix=$1
+  shift
+  rp_reason="no receipt"
+  if exists "$RECEIPT"; then rp_reason="unrecognised receipt"; fi
+  die 7 "$rp_prefix: $rp_reason at $(tilde "$RECEIPT")" "$@"
+}
+
 # Use the staged receipt only if the published receipt is absent.
 read_recovery_receipt() {
   if exists "$RECEIPT"; then
@@ -532,6 +541,7 @@ EOF
 # clean_stale [report]: remove or report staging names of dead processes (3.8).
 clean_stale() {
   while IFS= read -r cs_e; do
+    cs_skipped=0
     for cs_k in new old; do
       for cs_f in "$cs_e.$cs_k".*; do
         exists "$cs_f" || continue
@@ -539,10 +549,16 @@ clean_stale() {
         case $cs_n in '' | *[!0-9]*) continue ;; esac
         pid_gone "$cs_n" || continue
         # a name of a dead run that stays is counted: uninstall says so (8.4 step 1)
-        allowed "$cs_e" || { CS_LEFT=1; continue; }
+        if ! allowed "$cs_e"; then
+          cs_skipped=1
+          continue
+        fi
         read_recovery_receipt "$cs_n"
-        recovery_allowed "$RECEIPT" "" "$R_RESOLVED" || { CS_LEFT=1; continue; }
-        recovery_allowed "$cs_e" "" "$R_RESOLVED" || { CS_LEFT=1; continue; }
+        if ! recovery_allowed "$RECEIPT" "" "$R_RESOLVED" ||
+          ! recovery_allowed "$cs_e" "" "$R_RESOLVED"; then
+          cs_skipped=1
+          continue
+        fi
         if [ "${1:-}" = report ]; then
           say "leftover: $(tilde "$cs_f")"
           CS_REPORTED=1
@@ -555,6 +571,12 @@ clean_stale() {
         fi
       done
     done
+    if [ "$cs_skipped" = 1 ]; then
+      CS_LEFT=1
+      if [ "${1:-}" = report ]; then
+        warn "staging files were skipped for $(tilde "$cs_e"): the install folder is not where recovery expects it"
+      fi
+    fi
   done <<EOF
 $ENTRIES_ALL
 EOF
@@ -609,7 +631,12 @@ recover() {
     else
       finish_commit "$rc_n" || { check_signal "$?"; die 5 "could not recover interrupted install (pid $rc_n)" "Recovery stopped; fix the filesystem error and run this again."; }
     fi
-    if exists "$SHAREW/journal.$rc_n"; then rc_pending=1; else RECOVERED=1; fi
+    if exists "$SHAREW/journal.$rc_n"; then
+      rc_pending=1
+      CS_LEFT=1
+    else
+      RECOVERED=1
+    fi
   done <<EOF
 $JOURNALS
 EOF
@@ -820,9 +847,11 @@ check_folders() {
   FOLDERS_RESOLVED=""
   for ch_f in "$HOME/.local/bin" "$HOME/.local/share/watane" "$HOME/.local/share/watane-dev" "$HOME/Applications"; do
     if ! resolve_dir "$ch_f" || ! below_home "$RES"; then
-      ch_m="resolves to $(tilde_r "$RES"), outside your home folder"
-      [ "$RES" != "$HOME_R" ] || ch_m="resolves to your home folder itself"
-      die 2 "$(tilde "$ch_f") $ch_m" \
+      if [ "$RES" = "$HOME_R" ]; then
+        die 2 "$(tilde "$ch_f") resolves to your home folder itself" \
+          "Use a real subfolder of your home folder, then run this again."
+      fi
+      die 2 "$(tilde "$ch_f") resolves to $(tilde_r "$RES"), outside your home folder" \
         "watane writes only under your home folder. Make it a real folder there, then run this again."
     fi
     FOLDERS_RESOLVED=$(add_item "$FOLDERS_RESOLVED" "resolved ${ch_f#"$HOME/"} $RES")
@@ -1554,8 +1583,12 @@ do_status() {
     while IFS= read -r ds_l; do
       ds_p=${ds_l#path }
       if valid_entry "$ds_p"; then
-        say "$(tilde "$ds_p")"
-        ds_seen=$(add_item "$ds_seen" "$ds_p")
+        if exists "$ds_p"; then
+          say "$(tilde "$ds_p")"
+          ds_seen=$(add_item "$ds_seen" "$ds_p")
+        else
+          say "missing: $(tilde "$ds_p")"
+        fi
       else
         check_signal "$?"
       fi
@@ -1615,7 +1648,7 @@ EOF
   elif [ "$ds_has_left" = 1 ]; then
     say "Next: $ds_run (it recovers the interrupted install first)"
   fi
-  [ "$ds_installed" = 1 ] || die 7 "not installed: no receipt at $(tilde "$RECEIPT")"
+  if [ "$ds_installed" != 1 ]; then receipt_problem "not installed"; fi
   return 0
 }
 
@@ -1645,12 +1678,19 @@ do_uninstall() {
   check_no_live_install
   recover prune
   read_receipt "$RECEIPT"
-  if [ "$R_OK" != 1 ]; then
-    if [ "$RECOVERED_SAID" = 1 ] && [ "$CS_LEFT" = 0 ]; then
-      die 7 "nothing to uninstall: no receipt at $(tilde "$RECEIPT")" "The files of the interrupted install were removed."
-    fi
-    die 7 "nothing to uninstall: no receipt at $(tilde "$RECEIPT")"
+  du_recovery=""
+  if [ "$CS_LEFT" = 1 ]; then
+    du_recovery="Some files from the interrupted install may remain. Check the original install folders."
+  elif [ "$RECOVERED_SAID" = 1 ]; then
+    du_recovery="The files of the interrupted install were removed."
   fi
+  if [ "$R_OK" != 1 ]; then
+    if [ -n "$du_recovery" ]; then
+      receipt_problem "nothing to uninstall" "$du_recovery"
+    fi
+    receipt_problem "nothing to uninstall"
+  fi
+  if [ "$CS_LEFT" = 1 ]; then warn "$du_recovery"; fi
   du_ver=$R_VERSION
   du_partial=0
   while IFS= read -r du_l; do

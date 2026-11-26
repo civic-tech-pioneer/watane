@@ -227,7 +227,9 @@ watane writes only under your home folder. Make it a real folder there, then run
 ```
 
 before any download (INST-S-31); for a folder that resolves to the home itself
-the first line reads `watane install: ~/.local/bin resolves to your home folder itself`. A person whose folders live on another disk
+the first line reads `watane install: ~/.local/bin resolves to your home folder itself`
+and the next line reads `Use a real subfolder of your home folder, then run this again.`
+A person whose folders live on another disk
 makes the link point inside the home, or installs by hand; the script does not
 follow a link out, because a link can be put there by another program of the
 same user and the script would then write, as the person, where the person did
@@ -857,7 +859,7 @@ do. Exit codes:
 | 4 | the checksum does not match, or `SHA256SUMS` has no line for the archive |
 | 5 | the archive is not a watane archive, the files could not be put in place (rolled back), interrupted-install recovery failed (3.6 step 4), or another install is running (3.6.1) |
 | 6 | the toolchain step failed (watane itself is installed) |
-| 7 | no receipt (`--status`, `--uninstall`) |
+| 7 | absent or unrecognised receipt (`--status`, `--uninstall`) |
 | 8 | files that watane did not install are where it would install (3.4.2); nothing was changed |
 | 129, 130, 141, 143 | `HUP`, `INT`, `PIPE` (the reader of the output went away), `TERM` |
 
@@ -1190,8 +1192,12 @@ watane 0.1.0 (aarch64-apple-darwin)
 ```
 
 Status prints only receipt paths in the current install set whose
-folders pass 8.5 rules 1 to 3. It also reports dead journals and staging
-names in the expected physical install directories as `leftover: <path>`.
+folders pass 8.5 rules 1 to 3. Listed entries absent at their destination,
+including entries moved aside during a swap, print as `missing: <path>`.
+Status reports dead journals and staging names in the expected physical install
+directories as `leftover: <path>`. If a staging name is skipped by a folder
+check, stderr warns once for its destination that the install folder is not
+where recovery expects it. That warning does not recommend a recovery command.
 For a pre-commit journal it also lists the destination paths that the
 staged receipt names and the swap has moved into place. These have a
 `moved` line and no `.new.<n>` name remaining, with a `new` line or a
@@ -1213,8 +1219,11 @@ holds some other file at that path), so a file that watane did not
 install is never named; a run killed before its entry was swapped leaves none, and then
 the line says `run the install command again` in its place
 (`Next: run the install command again (it recovers the interrupted install first)`,
-or `..., then run the install command again` after the lock removal). A clean status prints none. Status makes no changes. Install and
-uninstall perform recovery under their lock (3.6).
+or `..., then run the install command again` after the lock removal). A clean
+status prints no next step. When the receipt path exists but is unrecognised,
+status exits 7 with `watane install: not installed: unrecognised receipt at
+~/.local/share/watane/receipt`. Status makes no changes. Install and uninstall
+perform recovery under their lock (3.6).
 
 The receipt, `<prefix>/share/watane/receipt`, text, staged as
 `receipt.new.<pid>` in step 10 and moved into place as the last entry of the
@@ -1278,8 +1287,10 @@ is a feature of `app`, not of `install` (Q11).
 1. Take the lock (3.6.2). Stop, as an install does, on a journal of a live process other than
    itself (3.6.1, exit 5). Recover first, as 3.6 step 0 (a journal of a dead process is undone or
    finished), so that a killed upgrade leaves neither a missing receipt nor
-   `.old.<n>` names behind. Then read the receipt; none is exit 7
-   (INST-S-18). When this undoes a fresh pre-commit swap with a readable
+   `.old.<n>` names behind. Then read the receipt; an absent or unrecognised
+   receipt is exit 7 (INST-S-18). An unrecognised receipt is kept and the
+   message says `watane install: nothing to uninstall: unrecognised receipt at
+   ~/.local/share/watane/receipt`. When this undoes a fresh pre-commit swap with a readable
    staged receipt, also remove the two Watane-specific directories with
    `rmdir` if they are empty and their physical paths match that receipt (the
    same routine as step 2's). That run then has no receipt to read: it exits 7
@@ -1289,10 +1300,11 @@ is a feature of `app`, not of `install` (Q11).
    (INST-S-33) and recovery left no staging name of a dead run behind (a folder
    whose recorded location differs keeps its `.new.<n>` names, 3.6 step 4) and
    skipped no journal entry (a folder relinked outside the home is not entered, 8.5)
-   and could read each dead run's journal (only uninstall inspects them; an
-   unreadable one suppresses this line and changes nothing else of the recovery);
-   otherwise it says nothing about removal. When another journal stays
-   pending, the `recovered` line and this one are both left out.
+   and could read each dead run's journal during recovery (an unreadable
+   journal changes nothing else about recovery). When any of those checks
+   fail or another journal stays pending, stderr says `Some files from the
+   interrupted install may remain. Check the original install folders.`
+   A pending journal also suppresses the `recovered` line.
 2. `rm -rf` each `path` of the receipt that the rule of 8.5 allows; a path
    it refuses is left in place, with `watane install: skipped <path>: not a
    path that watane installs` on stderr (INST-S-27). Then remove the
