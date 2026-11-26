@@ -585,9 +585,17 @@ recover() {
   while IFS= read -r rc_n; do
     [ -n "$rc_n" ] || continue
     pid_gone "$rc_n" || continue
-    # an entry the undo cannot reach may stay behind: uninstall then claims no removal (8.4 step 1)
-    read_journal "$SHAREW/journal.$rc_n"
-    if [ "$J_SKIPPED" = 1 ]; then CS_LEFT=1; fi
+    # uninstall only: an entry the recovery cannot reach may stay behind, and so may one of a
+    # journal it cannot read; uninstall then claims no removal (8.4 step 1)
+    if [ "${1:-}" = prune ]; then
+      rc_j=$SHAREW/journal.$rc_n
+      rc_read=1
+      if [ -f "$rc_j" ] && [ ! -L "$rc_j" ]; then
+        (: <"$rc_j") 2>/dev/null || { check_signal "$?"; rc_read=0; }
+      fi
+      if [ "$rc_read" = 1 ]; then read_journal "$rc_j"; fi
+      if [ "$rc_read" = 0 ] || [ "$J_SKIPPED" = 1 ]; then CS_LEFT=1; fi
+    fi
     if exists "$RECEIPT.new.$rc_n"; then
       rc_locations=""
       if [ "${1:-}" = prune ] && ! exists "$RECEIPT"; then
