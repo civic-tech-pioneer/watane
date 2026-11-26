@@ -529,6 +529,11 @@ pub(crate) fn run_start(host: &Host, start: Start) -> Done {
 }
 
 impl Invocation {
+    /// The resolved origin is visible only in the timer owner's top-level firing (19.6).
+    pub(crate) fn firing_origin(&self) -> Option<&str> {
+        (self.depth == 0 && self.chain.timer.is_some()).then_some(self.origin.as_str())
+    }
+
     pub(super) fn storage(&self) -> Result<(), CallError> {
         let catalog = self
             .chain

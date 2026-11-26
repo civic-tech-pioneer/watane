@@ -453,7 +453,9 @@ otherwise `relay` holds no grant beyond storage and its call of `latch`.
   `timers.after("t", 50)` and opens a `claude-code` start in `notes`'s
   consented folder `F`. When the participant disables `notes`, then the
   start's stream ends `gone` and `fake-claude` is not running; when `t`
-  fires, its start for `F` asks a consent with `origin` `z`. When `notes` is
+  fires, its start for `F` asks a consent with `origin` `z`. The firing
+  reads `some(<z identity>)` from `timers.firing-origin()`. A nested call
+  under the firing reads `none`. When `notes` is
   removed and a local mod is installed under the local name `notes` and given
   a consent for `F`, then `z`'s fired timer still asks with `origin` `z`.
 - **S63 Protected reads** (HOST-F-74). A launch with `allow`
@@ -505,6 +507,7 @@ otherwise `relay` holds no grant beyond storage and its call of `latch`.
   as a local mod (identity `local/notes`, local name `notes`) and given a
   consent for `F`, and `t` fires, then the fake app's `ConsentRequest` names
   `origin` `z`, and with `Refused` the start ends `consent-refused("workspace:local/z:F")`.
+  The firing reads `some("local/z")` from `timers.firing-origin()`.
 - **S67 Bare file-tool allow** (HOST-F-74). A launch with `allow` `Read`,
   `Write`, `Edit`, `Glob`, `Grep` or `NotebookEdit` (no parentheses) fails
   `bad-launch {field: "allow"}`; `Read(**)` passes. When `fake-claude` sends a

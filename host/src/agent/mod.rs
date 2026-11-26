@@ -530,6 +530,9 @@ pub(crate) fn call(
             format!("{interface}.{function} outlives a call on borrowed authority"),
         ));
     }
+    if (interface, function) == ("timers", "firing-origin") {
+        return Ok(json!(inv.firing_origin()));
+    }
     let me = inv.me();
     match (interface, function) {
         ("claude-code", "start") => claude::start(inv, claude::launch::Kind::Code, args),
@@ -786,7 +789,7 @@ fn fake(
             }
             result = Value::Null;
         }
-        ("streams", "close" | "cancel") => result = Value::Null,
+        ("streams", "close" | "cancel") | ("timers", "firing-origin") => result = Value::Null,
         ("agent-tools", "open") => {
             let n = inv
                 .chain

@@ -336,6 +336,60 @@ mod tests {
         }
     }
 
+    /// S62 and S66: resolution uses the fallback after disable, removal and reinstall.
+    #[test]
+    fn firing_origin_uses_the_timer_owner_when_the_client_is_gone() {
+        use crate::{Caller, LocalName};
+        use serde_json::json;
+        use std::path::Path;
+
+        for remove in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+            let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mods");
+            let client = fixtures.join("relay-front");
+            host.install_folders(
+                &[
+                    fixtures.join("latch"),
+                    fixtures.join("relay"),
+                    client.clone(),
+                ],
+                0,
+            )
+            .unwrap();
+            let relay = LocalName::parse("relay").unwrap();
+            let front = LocalName::parse("relay-front").unwrap();
+            let result = host.call(
+                &Caller::Mod(front.clone()),
+                &relay,
+                "api.after",
+                json!({"id":"origin-probe","ms":60000}),
+            );
+            assert_eq!(result.unwrap(), json!({"ok":null}));
+
+            let key = crate::state::timer_key("local/relay", "origin-probe");
+            let (due, origin) = host.state.timer_row(&key).unwrap().unwrap();
+            assert_eq!(origin, "local/relay-front");
+            if remove {
+                host.remove(&front, false).unwrap();
+                assert_eq!(
+                    host.state.timer_row(&key).unwrap(),
+                    Some((due, "local/relay".to_owned()))
+                );
+                host.install_folders(&[client], 0).unwrap();
+            } else {
+                host.disable(&front).unwrap();
+            }
+            // Fire deterministically, after the change to the origin and before the scheduler.
+            super::fire(&host, &key, due);
+            assert_eq!(
+                host.call(&Caller::Page, &relay, "api.firing-context", json!(null))
+                    .unwrap(),
+                json!([r#"Some("local/relay") None host"#])
+            );
+        }
+    }
+
     /// A timer armed after `reload` read the rows (its row committed after that read) stays
     /// armed: `reload` keeps what is armed already, and arms a row once (19.6).
     #[test]
