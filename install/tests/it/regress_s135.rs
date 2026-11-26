@@ -268,7 +268,7 @@ fn regress_s135_status_lists_a_moved_path_once_and_only_when_every_filter_holds(
 /// names the command to run; a clean status has none.
 #[test]
 fn regress_s135_status_ends_with_the_next_step_it_reports() {
-    let base = r#"rcpt "$RECEIPT" "$bin""#;
+    let base = r#"rcpt "$RECEIPT" "$bin" "$SHAREW/install.sh""#;
     let lock = r#"mkdir "$HOME/.watane-install.lock""#;
     let left = r#": >"$bin.old.$pid"; : >"$SHAREW/install.sh""#;
     let left_no_script = r#": >"$bin.old.$pid""#;
@@ -544,7 +544,7 @@ kept "$ROOT/out/watane"; kept "$ROOT/out/watane-dev""#,
 fn regress_s135_status_next_step_for_a_journal_alone() {
     let units = run(&[(
         "journal_only",
-        r#"rcpt "$RECEIPT" "$bin"; printf 'moved %s\n' "$bin" >"$SHAREW/journal.$pid"; : >"$SHAREW/install.sh"; do_status"#,
+        r#"rcpt "$RECEIPT" "$bin" "$SHAREW/install.sh"; printf 'moved %s\n' "$bin" >"$SHAREW/journal.$pid"; : >"$SHAREW/install.sh"; do_status"#,
     )]);
     let u = case(&units, "journal_only");
     assert!(
@@ -601,7 +601,7 @@ fn regress_s135_status_next_step_does_not_name_a_linked_script() {
         &[],
         &[(
             "linked_script",
-            r#"rcpt "$RECEIPT" "$bin"; : >"$bin.old.$pid"; do_status"#,
+            r#"rcpt "$RECEIPT" "$bin" "$SHAREW/install.sh"; : >"$bin.old.$pid"; do_status"#,
         )],
     );
     let u = case(&units, "linked_script");
@@ -610,4 +610,65 @@ fn regress_s135_status_next_step_does_not_name_a_linked_script() {
         Some("Next: run the install command again (it recovers the interrupted install first)"),
         "{u:?}"
     );
+}
+
+/// TECHNICAL 8.1 (S137-fix1 AC1): the script is named only when a readable receipt lists it: a
+/// regular `install.sh` that no receipt lists (here an empty staged receipt and a stale lock) is
+/// not watane's, and a staged receipt that lists it counts when there is no published one.
+/// Mutant: drop `[ "$ds_owned" = 1 ] &&` in `do_status`.
+#[test]
+fn regress_s135_status_names_the_script_only_when_a_readable_receipt_lists_it() {
+    let plant = r#"mkdir "$HOME/.watane-install.lock"; : >"$SHAREW/install.sh"
+printf 'moved %s\n' "$bin" >"$SHAREW/journal.$pid""#;
+    let units = run(&[
+        (
+            "unlisted",
+            &format!("{plant}\n: >\"$RECEIPT.new.$pid\"\ndo_status"),
+        ),
+        (
+            "staged_lists_it",
+            &format!(
+                "{plant}\nrcpt \"$RECEIPT.new.$pid\" \"$bin\" \"$SHAREW/install.sh\"\ndo_status"
+            ),
+        ),
+    ]);
+    let again = "Next: if no install is running, run: rm -rf ~/.watane-install.lock, then run the install command again";
+    let named = "Next: if no install is running, run: rm -rf ~/.watane-install.lock, then run: sh ~/.local/share/watane/install.sh";
+    assert_eq!(case(&units, "unlisted").out.lines().last(), Some(again));
+    assert_eq!(
+        case(&units, "staged_lists_it").out.lines().last(),
+        Some(named),
+        "{:?}",
+        case(&units, "staged_lists_it")
+    );
+}
+
+/// TECHNICAL 8.4 step 1 (S137-fix1 AC2): when the `.new` cleanup skips a folder, so a staging name
+/// stays, uninstall prints no claim that the files were removed; the line still prints when nothing
+/// was left. Mutant: drop `&& [ "$CS_LEFT" = 0 ]` in `do_uninstall`.
+#[test]
+fn regress_s135_uninstall_does_not_claim_removal_when_a_staging_name_stays() {
+    let units = run(&[
+        (
+            // the staged receipt records ~/.local/bin elsewhere: its stale name stays
+            "left_behind",
+            r#"BINRES=/elsewhere rcpt "$RECEIPT.new.$pid" "$bin"
+: >"$bin.new.$pid"; : >"$SHAREW/VERSION.new.99999998"
+do_uninstall"#,
+        ),
+        (
+            "nothing_left",
+            r#"rcpt "$RECEIPT.new.$pid" "$bin"; : >"$SHAREW/VERSION.new.99999998"
+do_uninstall"#,
+        ),
+    ]);
+    let line = "The files of the interrupted install were removed.";
+    let kept = case(&units, "left_behind");
+    assert_eq!(kept.code, 7, "{kept:?}");
+    assert!(
+        kept.has_out_line("recovered interrupted watane install"),
+        "{kept:?}"
+    );
+    assert!(!kept.has_err_line(line), "{kept:?}");
+    assert!(case(&units, "nothing_left").has_err_line(line));
 }
