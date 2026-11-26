@@ -270,12 +270,27 @@ fn regress_s135_status_lists_a_moved_path_once_and_only_when_every_filter_holds(
 fn regress_s135_status_ends_with_the_next_step_it_reports() {
     let base = r#"rcpt "$RECEIPT" "$bin""#;
     let lock = r#"mkdir "$HOME/.watane-install.lock""#;
-    let left = r#": >"$bin.old.$pid""#;
+    let left = r#": >"$bin.old.$pid"; : >"$SHAREW/install.sh""#;
+    let left_no_script = r#": >"$bin.old.$pid""#;
     let cases = [
         ("clean", format!("{base}\ndo_status")),
         ("lock", format!("{base}\n{lock}\ndo_status")),
         ("left", format!("{base}\n{left}\ndo_status")),
         ("both", format!("{base}\n{lock}\n{left}\ndo_status")),
+        (
+            "left_no_script",
+            format!("{base}\n{left_no_script}\ndo_status"),
+        ),
+        (
+            "both_no_script",
+            format!("{base}\n{lock}\n{left_no_script}\ndo_status"),
+        ),
+        // a fresh install killed at its first move: no receipt, and `install.sh` is only staged
+        (
+            "fresh_kill_before_the_script",
+            "printf 'new %s\\nmoved %s\\n' \"$bin\" \"$bin\" >\"$SHAREW/journal.$pid\"\n: >\"$bin\"; : >\"$SHAREW/install.sh.new.$pid\"\ndo_status"
+                .to_string(),
+        ),
     ];
     let refs: Vec<(&str, &str)> = cases.iter().map(|(n, b)| (*n, b.as_str())).collect();
     let units = run(&refs);
@@ -306,6 +321,21 @@ fn regress_s135_status_ends_with_the_next_step_it_reports() {
     assert_eq!(
         last("both"),
         "Next: if no install is running, run: rm -rf ~/.watane-install.lock, then run: sh ~/.local/share/watane/install.sh"
+    );
+    assert_eq!(
+        last("left_no_script"),
+        "Next: run the install command again (it recovers the interrupted install first)"
+    );
+    assert_eq!(
+        last("both_no_script"),
+        "Next: if no install is running, run: rm -rf ~/.watane-install.lock, then run the install command again"
+    );
+    let fresh = case(&units, "fresh_kill_before_the_script");
+    assert_eq!(fresh.code, 7, "{fresh:?}");
+    assert_eq!(
+        fresh.out.lines().last(),
+        Some("Next: run the install command again (it recovers the interrupted install first)"),
+        "{fresh:?}"
     );
     for name in ["lock", "left", "both"] {
         assert_eq!(next(name), 1, "{name}");
@@ -514,7 +544,7 @@ kept "$ROOT/out/watane"; kept "$ROOT/out/watane-dev""#,
 fn regress_s135_status_next_step_for_a_journal_alone() {
     let units = run(&[(
         "journal_only",
-        r#"rcpt "$RECEIPT" "$bin"; printf 'moved %s\n' "$bin" >"$SHAREW/journal.$pid"; do_status"#,
+        r#"rcpt "$RECEIPT" "$bin"; printf 'moved %s\n' "$bin" >"$SHAREW/journal.$pid"; : >"$SHAREW/install.sh"; do_status"#,
     )]);
     let u = case(&units, "journal_only");
     assert!(
@@ -528,4 +558,32 @@ fn regress_s135_status_next_step_for_a_journal_alone() {
         ),
         "{u:?}"
     );
+}
+
+/// TECHNICAL 8.4 step 1 (validator, S137-1 item 3): the line `The files of the interrupted install
+/// were removed.` follows the `recovered interrupted watane install` line and is left out with it
+/// while another journal stays pending.
+#[test]
+fn regress_s135_uninstall_says_what_it_removed_only_when_it_said_recovered() {
+    let units = run(&[
+        (
+            "pending",
+            r#"BINRES=/elsewhere rcpt "$RECEIPT.new.$pid" "$bin" "$node"
+: >"$node"; fresh_journal "$node"; : >"$SHAREW/VERSION.new.99999998"
+do_uninstall"#,
+        ),
+        (
+            "tidied",
+            r#"rcpt "$RECEIPT.new.$pid" "$bin"; : >"$SHAREW/VERSION.new.99999998"
+do_uninstall"#,
+        ),
+    ]);
+    let line = "The files of the interrupted install were removed.";
+    let pending = case(&units, "pending");
+    assert_eq!(pending.code, 7, "{pending:?}");
+    assert!(!pending.has_err_line(line), "{pending:?}");
+    assert!(!pending.has_out_line("recovered interrupted watane install"));
+    let tidied = case(&units, "tidied");
+    assert!(tidied.has_err_line(line), "{tidied:?}");
+    assert!(tidied.has_out_line("recovered interrupted watane install"));
 }

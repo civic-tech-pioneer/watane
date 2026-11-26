@@ -1900,12 +1900,57 @@ fn recover_a_killed_fresh_install_through_a_linked_local() {
     assert!(leftovers(&fx).is_empty(), "{:?}", leftovers(&fx));
 }
 
+/// The files of an upgrade killed at the receipt move (TECHNICAL 3.6 steps 2 and 3), planted with a
+/// dead pid over an installed home: each path of the receipt moved aside to `.old.<pid>` when it
+/// existed and replaced by new content, the old receipt copied, the new one staged, and the journal
+/// that names them all. The real-kill journal format is pinned by the `inst_s33_*` kill tests.
+fn plant_upgrade_kill(fx: &Fx, staged_bin: Option<&Path>) -> u32 {
+    let dead = dead_pid();
+    let receipt = fx.read(&fx.receipt());
+    let (mut entries, mut moved) = (String::new(), String::new());
+    for path in receipt.lines().filter_map(|l| l.strip_prefix("path ")) {
+        let p = Path::new(path);
+        let old = p.symlink_metadata().is_ok();
+        let was_dir = p.is_dir();
+        entries.push_str(&format!("{} {path}\n", if old { "old" } else { "new" }));
+        if old {
+            fs::rename(p, format!("{path}.old.{dead}")).expect("move aside");
+        }
+        if was_dir {
+            write_file(&p.join("marker"), "new");
+        } else {
+            write_file(p, "new");
+        }
+        moved.push_str(&format!("moved {path}\n"));
+    }
+    let own = fx.receipt();
+    entries.push_str(&format!("old {}\n", own.display()));
+    moved.push_str(&format!("moved {}\n", own.display()));
+    let mut new_receipt = receipt.replace("\nversion 0.1.0\n", "\nversion 0.2.0\n");
+    if let Some(bin) = staged_bin {
+        // the run saw `~/.local/bin` where it then led: its receipt records that folder
+        let at = new_receipt.find("resolved .local/bin ").expect("bin line");
+        let end = at + new_receipt[at..].find('\n').expect("end");
+        let line = format!("resolved .local/bin {}", bin.display());
+        new_receipt.replace_range(at..end, &line);
+    }
+    write_file(&fx.share(&format!("watane/receipt.old.{dead}")), &receipt);
+    write_file(
+        &fx.share(&format!("watane/receipt.new.{dead}")),
+        &new_receipt,
+    );
+    write_file(
+        &fx.share(&format!("watane/journal.{dead}")),
+        &format!("{entries}{moved}"),
+    );
+    dead
+}
+
 /// TECHNICAL 3.6 step 4: when a relink is reverted, undo may restore only paths from the receipt.
 #[test]
-#[ignore = "slow: only a real SIGKILL at the receipt move of an upgrade leaves the journal, `.old.` names and `receipt.old.` that the undo reads here, and only a whole run then shows that a relinked `~/.local/bin` is left alone until it is restored"]
 fn recovery_after_reverting_a_relink_uses_receipt_ownership() {
-    let (fx, _) = swap_start();
-    kill_at(&fx, "mv", "*receipt.new.*", &["--release", "0.2.0"]);
+    let fx = installed();
+    plant_upgrade_kill(&fx, None);
     let bin = fx.home.join(".local/bin");
     let aside = fx.home.join("aside");
     let replacement = fx.home.join("replacement");
@@ -1969,9 +2014,8 @@ recover
 /// TECHNICAL 3.6 step 4: reverting a link after a crash does not turn an old installed file
 /// into an entry created by the interrupted upgrade.
 #[test]
-#[ignore = "slow: only a real upgrade through a relinked `~/.local/bin`, killed at the receipt move, writes the journal whose `old` lines name files that were installed before; the test shows that restoring the link does not turn them into entries of the interrupted run"]
 fn recovery_does_not_undo_old_files_after_reverting_a_bin_link() {
-    let (fx, _) = swap_start();
+    let fx = installed();
     let bin = fx.home.join(".local/bin");
     let aside = fx.home.join("aside");
     let replacement = fx.home.join("replacement");
@@ -1979,7 +2023,10 @@ fn recovery_does_not_undo_old_files_after_reverting_a_bin_link() {
     fs::rename(&bin, &aside).expect("keep the installed bin");
     fs::create_dir(&replacement).expect("replacement bin");
     symlink(&replacement, &bin).expect("link to a fresh bin");
-    kill_at(&fx, "mv", "*receipt.new.*", &["--release", "0.2.0"]);
+    plant_upgrade_kill(
+        &fx,
+        Some(&fs::canonicalize(&replacement).expect("physical")),
+    );
     assert_ne!(fx.read(&fx.bin("watane")), old_bin);
     fs::remove_file(&bin).expect("remove the link");
     fs::rename(&aside, &bin).expect("restore the installed bin");
