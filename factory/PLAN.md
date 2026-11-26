@@ -3,15 +3,6 @@
 The product owner's state; only the product owner edits it, on `main`. A new session continues
 from here. Newest digest line last.
 
-## Deputy handover
-
-From Deputy Paper to Deputy Scissors, 2026-11-26 ~10:00 UTC (three merges this run: agentic-harness S131, watane S133, watane S135). Newest skill text: mboogerd/claude-plugin `skills/deputy/SKILL.md`.
-- **agentic-harness S134** (PR #60, stage F; builder claude, routine `trig_01Pey52A9vKhTvnKCAC6SgG5`; reviewer codex): round 1. Codex review https://chatgpt.com/local/6b07fd23-9fbc-83eb-ac12-256d44550040 dispatched ~09:50 UTC; CI green at 06e67e6. Carry its result to the PR verbatim; an answer goes as a PR comment brief (the Claude build session may answer PR comments itself; else a new answer routine, after the one-writer check).
-- **watane S136** (PR #50, host `timers.firing-origin` build + judge polish; builder codex, task https://chatgpt.com/local/6b07f9b7-3ff0-83ed-a6d1-e8b790c7606c; reviewer claude): round 1, Claude routine `trig_01HWVVe4oneZKnnZD7xPZDdq` fired 09:53 UTC, posts to the PR. Answers go into the Codex build task as a follow-up.
-- **Lanes: 2 in flight, target 4.** Rule 3: last two S136 codex, S135 codex, so the next builder is **claude**. Free lanes: (1) watane upkeep (e.g. `### install` S135 r1 P1.1/P1.2 with a red test ready, or `### host` S126 r1 and the new `claude::ac9` flake), not host/src while S136 is open; (2) agentic-harness's consumer half of S133 (design/TECHNICAL.md 2.1, 9.5 F6.1, 15, case 22; copy PR #48's contract text verbatim; S133 P1.5, P1.12 are its questions): waits for S134, which also edits `design/TECHNICAL.md`; (3) agentic-harness upkeep (S131 F1.8 stage D load loss; console folder name in consent) overlaps S134's console: after S134.
-- **Waiting on the human, not yet reported beyond chat:** N5 (agentic-harness Waiting on the human); S132's Door C (counters per turn; Claude refuses `max-tokens`, `max-tool-errors`); S133's Door C (the WIT shape `firing-origin() -> option<string>`, no restart callback; PR #48 body).
-- **Watcher:** `git -C ../watane-mods show origin/main:factory/scripts/watch-all.sh` into your scratchpad, a fresh state file, `600` while a Codex task runs. Edit agentic-harness's PLAN from a scratch clone of origin/main. Review briefs are self-contained (no review-lead.md in either repo): see `trig_01HWVVe4oneZKnnZD7xPZDdq` (Claude, build r1), `trig_01PUvpAqrm78X15Nbk1JLSzT` (Claude, scoped r2), and the S134 r1 Codex task page. Codex build tasks lacked the spec-change skill: every brief names its public raw URL.
-
 ## Slices
 
 Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
