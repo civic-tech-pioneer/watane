@@ -1570,7 +1570,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 
 - [~] **S141 (upkeep, guard first) host's S136/S126/S111 polish, the ac9 flake, and install's S137 rough spots.**
   (sketched 2026-11-26 by Deputy Rock, the upkeep lane; builder codex by rule 3 (last two S140 claude, S138 codex),
-  reviewer claude; in flight, cloud, Codex task https://chatgpt.com/local/6b082b7f-3a70-83ed-872a-f8da2c5e3050, 12:55 UTC; spec-check not run: no spec rule changes beyond a doc line where an item names one. Upkeep is exempt from the size rule.)
+  reviewer claude; in flight, cloud, Codex task https://chatgpt.com/local/6b082b7f-3a70-83ed-872a-f8da2c5e3050, 12:55 UTC; DELIVERED as PR #52 at 31d9a25 (13:50 UTC, +376/-61; S129 items already done by S136; S136 P1.3 (WIT comments) and P1.7 deferred; user-sim and adversary not run); r1: Claude routine `trig_01248AmqwLvZQ4ZGrbzwhrTo`, 13:52 UTC; spec-check not run: no spec rule changes beyond a doc line where an item names one. Upkeep is exempt from the size rule.)
   Outcomes (each item's check, re-checked against main first; an item already fixed is dropped with a line):
   (1) *guard* the ubuntu flake `claude::ac9_say_refuses_slash_commands_strangers_and_unknown_streams`
   (host/tests/it/claude.rs:587, left 0, right 1, S133 CI): the race found and fixed, or the assertion waits on the event it
