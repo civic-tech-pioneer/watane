@@ -238,18 +238,18 @@ recovery_allowed() {
     in_list "${FOLDERS_RESOLVED:-}" "resolved $ra_relative $al_rr"
     return
   fi
-  [ "$al_rr" = "$HOME_R/$ra_relative" ] || return 1
-  # Even a usual physical directory may have replaced the location of a past run.
+  ra_recorded=0
   while IFS= read -r ra_record; do
     case $ra_record in
       "resolved $ra_relative "*)
+        ra_recorded=1
         [ "$ra_record" = "resolved $ra_relative $al_rr" ] || return 1
         ;;
     esac
   done <<EOF
 ${3:-}
 EOF
-  return 0
+  [ "$ra_recorded" = 1 ] || [ "$al_rr" = "$HOME_R/$ra_relative" ]
 }
 
 # read_receipt <file>: R_OK, R_VERSION, R_TARGET and the raw path and resolved lines
@@ -276,6 +276,15 @@ read_receipt() {
     esac
   done <"$1"
   return 0
+}
+
+# Use the staged receipt only if the published receipt is absent.
+read_recovery_receipt() {
+  if exists "$RECEIPT"; then
+    read_receipt "$RECEIPT"
+  else
+    read_receipt "$RECEIPT.new.$1"
+  fi
 }
 
 # read_journal <file>: J_OLD, J_NEW, J_MOVED hold the lines that count (TECHNICAL 3.6.1)
@@ -387,11 +396,9 @@ undo_swap() {
     # shellcheck disable=SC2030
     EXITING=0
     set +e
-    recovery_allowed "$RECEIPT" "$1" || exit 0
-    read_receipt "$RECEIPT"
+    allowed "$RECEIPT" || exit 0
+    read_recovery_receipt "$1"
     ub_locations=$R_RESOLVED
-    read_receipt "$RECEIPT.new.$1"
-    ub_locations=$ub_locations$NL$R_RESOLVED
     recovery_allowed "$RECEIPT" "$1" "$ub_locations" || exit 0
     ub_j=$SHAREW/journal.$1
     if [ -f "$ub_j" ] && [ ! -L "$ub_j" ]; then
@@ -460,7 +467,7 @@ finish_commit() {
         fc_p=${fc_l#path }
         if in_list "$fc_cur" "$fc_l"; then continue; fi
         receipt_allowed "$fc_p" || { check_signal "$?"; continue; }
-        recovery_allowed "$fc_p" "$1" || continue
+        recovery_allowed "$fc_p" "$1" "$R_RESOLVED" || continue
         if exists "$fc_p"; then rm_path "$fc_p" || return; fi
       done <<EOF
 $R_LINES
@@ -471,7 +478,7 @@ EOF
   read_receipt "$RECEIPT"
   while IFS= read -r fc_p; do
     receipt_allowed "$fc_p" || { check_signal "$?"; continue; }
-    recovery_allowed "$fc_p" "$1" || continue
+    recovery_allowed "$fc_p" "$1" "$R_RESOLVED" || continue
     if exists "$fc_p.old.$1"; then rm_path "$fc_p.old.$1" || return; fi
   done <<EOF
 $ENTRIES
@@ -488,16 +495,22 @@ EOF
 # clean_stale [report]: remove or report staging names of dead processes (3.8).
 clean_stale() {
   while IFS= read -r cs_e; do
-    recovery_allowed "$cs_e" "" "$R_RESOLVED" || continue
+    allowed "$cs_e" || continue
     for cs_k in new old; do
       for cs_f in "$cs_e.$cs_k".*; do
         exists "$cs_f" || continue
         cs_n=${cs_f#"$cs_e.$cs_k."}
         case $cs_n in '' | *[!0-9]*) continue ;; esac
         pid_gone "$cs_n" || continue
+        read_recovery_receipt "$cs_n"
+        recovery_allowed "$RECEIPT" "" "$R_RESOLVED" || continue
+        recovery_allowed "$cs_e" "" "$R_RESOLVED" || continue
         if [ "${1:-}" = report ]; then
           say "leftover: $(tilde "$cs_f")"
         else
+          # A journal that recovery could not retire still needs its staging evidence.
+          cs_j=$SHAREW/journal.$cs_n
+          if [ -f "$cs_j" ] && [ ! -L "$cs_j" ]; then continue; fi
           rm_path "$cs_f" || return
         fi
       done
@@ -511,9 +524,7 @@ EOF
 # recover: undo or finish what a dead process left (3.6 step 0), then clean its names
 recover() {
   # the journals and receipt.* lie beside the receipt: none is used through a link out (8.5)
-  recovery_allowed "$RECEIPT" "" || return 0
-  read_receipt "$RECEIPT"
-  recovery_allowed "$RECEIPT" "" "$R_RESOLVED" || return 0
+  allowed "$RECEIPT" || return 0
   find_journals
   while IFS= read -r rc_n; do
     [ -n "$rc_n" ] || continue
@@ -526,7 +537,6 @@ recover() {
   done <<EOF
 $JOURNALS
 EOF
-  read_receipt "$RECEIPT"
   clean_stale || { check_signal "$?"; die 5 "could not recover stale install files" "Recovery stopped; fix the filesystem error and run this again."; }
   return 0
 }
@@ -792,6 +802,8 @@ EOF
   while IFS= read -r cf_n; do
     [ -n "$cf_n" ] || continue
     pid_gone "$cf_n" || continue
+    allowed "$RECEIPT" || continue
+    read_recovery_receipt "$cf_n"
     recovery_allowed "$RECEIPT" "$cf_n" "$R_RESOLVED" || continue
     read_journal "$SHAREW/journal.$cf_n"
     while IFS= read -r cf_p; do
@@ -1422,7 +1434,8 @@ do_install() {
 
 do_status() {
   read_receipt "$RECEIPT"
-  if [ "$R_OK" = 1 ]; then
+  ds_installed=$R_OK
+  if [ "$ds_installed" = 1 ]; then
     say "watane $R_VERSION ($R_TARGET)"
     while IFS= read -r ds_l; do
       ds_p=${ds_l#path }
@@ -1435,18 +1448,20 @@ do_status() {
 $R_LINES
 EOF
   fi
-  if recovery_allowed "$RECEIPT" "" "$R_RESOLVED"; then
+  if allowed "$RECEIPT"; then
     find_journals
     while IFS= read -r ds_n; do
       [ -n "$ds_n" ] || continue
       pid_gone "$ds_n" || continue
+      read_recovery_receipt "$ds_n"
+      recovery_allowed "$RECEIPT" "$ds_n" "$R_RESOLVED" || continue
       say "leftover: $(tilde "$SHAREW/journal.$ds_n")"
     done <<EOF
 $JOURNALS
 EOF
     clean_stale report
   fi
-  [ "$R_OK" = 1 ] || die 7 "not installed: no receipt at $(tilde "$RECEIPT")"
+  [ "$ds_installed" = 1 ] || die 7 "not installed: no receipt at $(tilde "$RECEIPT")"
   return 0
 }
 
