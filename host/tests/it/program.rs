@@ -468,6 +468,36 @@ fn ac7_public_types_validate_and_round_trip() {
     serde_type::<watane_host::ReadyMod>();
 }
 
+// Leave the write half open so the response cannot be the result of a body read.
+async fn assert_declared_oversize_refused(
+    port: u16,
+    method: &str,
+    path: &str,
+    size: usize,
+    extra_headers: &str,
+) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+        .await
+        .unwrap();
+    let head = format!(
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nContent-Type: application/json\r\nContent-Length: {size}\r\n{extra_headers}\r\n"
+    );
+    stream.write_all(head.as_bytes()).await.unwrap();
+    let mut reply = String::new();
+    tokio::time::timeout(Duration::from_secs(30), stream.read_to_string(&mut reply))
+        .await
+        .expect("413 before the client sends a body")
+        .unwrap();
+    let (headers, body) = reply.split_once("\r\n\r\n").unwrap();
+    assert!(headers.starts_with("HTTP/1.1 413 "), "{headers:?}");
+    assert!(headers.lines().any(|line| line == "connection: close"));
+    assert_eq!(
+        serde_json::from_str::<Value>(body).unwrap()["error"]["code"],
+        "bad_request"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn ac6_preview_ready_token_is_live_and_never_persisted() {
     let home = tempfile::tempdir().unwrap();
@@ -519,6 +549,14 @@ async fn ac6_preview_ready_token_is_live_and_never_persisted() {
             .status(),
         403
     );
+    assert_declared_oversize_refused(
+        preview.ready.port,
+        "POST",
+        "/mcp/preview",
+        (1 << 20) + 1,
+        &format!("Authorization: Bearer {token}\r\n"),
+    )
+    .await;
     let mut locked = Vec::new();
     let mut dirs = vec![home.path().to_path_buf()];
     while let Some(dir) = dirs.pop() {

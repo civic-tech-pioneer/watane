@@ -4,7 +4,7 @@
 use crate::agent::tools::{AgentFailure, AgentRun};
 use crate::{Caller, Host, HostError, LocalName, api, home};
 use axum::Json;
-use axum::body::{Body, to_bytes};
+use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
@@ -544,9 +544,9 @@ pub(crate) async fn respond(host: &Arc<Host>, request: Request<Body>) -> Respons
     {
         return api::error(415, "bad_request", "use application/json");
     }
-    let bytes = match to_bytes(request.into_body(), 1 << 20).await {
-        Ok(b) => b,
-        Err(e) => return api::error(413, "bad_request", e),
+    let bytes = match api::read_body(request.into_body(), 1 << 20).await {
+        Ok(bytes) => bytes,
+        Err(response) => return response,
     };
     let value: Value = match serde_json::from_slice(&bytes) {
         Ok(v) => v,

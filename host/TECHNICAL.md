@@ -1294,9 +1294,9 @@ Any other path outside `/api/` and `/mcp/`, and any unknown path under
 A transport refusal (a wrong `Origin`, method, route, type or size) answers
 `{"error":{"code":"forbidden"|"not_found"|"bad_request","message":"..."}}`
 with its status, before any handler runs.
-A 413 refusal does not read the refused body to its end: the server answers,
-discards through the body decoder what has already arrived, and closes the
-connection when more is still to come. A client that is still writing may
+A built-in route refuses a declared length above its limit before reading any
+body bytes. A 413 refusal sends the response and closes the connection without
+waiting for unread body bytes. A client that is still writing may
 see a reset before it reads the 413; the status is enough for the client to
 know that the body was too large, and no unread byte is ever read as a
 request (S91 adversary: a request hidden in the overflow is not served).
