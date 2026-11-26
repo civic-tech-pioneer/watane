@@ -1742,11 +1742,11 @@ fn ac7_a_consumer_that_defers_stops_the_host_reading_and_resume_loses_nothing() 
         Duration::from_secs(60),
         || rig.host().test_stream_deferred_and_full(&s),
     );
-    // The 4 MiB host queue holds about 32 events. Allow another 4 MiB for
-    // the writer, the socket buffers and the TLS/HTTP reader.
+    // The host queue holds 4 MiB. Allow a further 12 MiB for writes still
+    // completing into autotuned sockets and the TLS/HTTP reader while deferred.
     let written = server.written.load(Ordering::SeqCst);
     assert!(
-        written < (8 << 20) / SIZE,
+        written < (16 << 20) / SIZE,
         "the server wrote {written} events while the stream was deferred"
     );
     assert_eq!(
