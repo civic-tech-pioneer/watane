@@ -771,16 +771,18 @@ fn regress_s137_status_names_the_script_only_in_the_folder_the_receipt_records()
 /// TECHNICAL 8.1: a relinked bin may contain names that look like staging files.
 #[test]
 fn regress_s141_status_warns_when_staging_files_cannot_be_recovered() {
-    let units = run(&[(
-        "relinked",
-        r#"rcpt "$RECEIPT" "$bin"
-mv "$HOME/.local/bin" "$HOME/.local/bin.aside"
-mkdir "$HOME/elsewhere"
-ln -s "$HOME/elsewhere" "$HOME/.local/bin"
-printf 'marker' >"$bin.new.$pid"
-do_status
-cat "$bin.new.$pid""#,
-    )]);
+    let fx = Fx::new();
+    let elsewhere = fx.home.join("elsewhere");
+    fs::create_dir_all(fx.home.join(".local")).expect("local");
+    fs::create_dir(&elsewhere).expect("elsewhere");
+    symlink(&elsewhere, fx.home.join(".local/bin")).expect("bin link");
+    let staging = elsewhere.join("watane.new.99999999");
+    fs::write(&staging, "marker").expect("staging");
+    let units = fx.units(
+        PRELUDE,
+        &[],
+        &[("relinked", r#"rcpt "$RECEIPT" "$bin"; do_status"#)],
+    );
     let status = case(&units, "relinked");
     assert_eq!(status.code, 0, "{status:?}");
     assert!(
@@ -791,7 +793,7 @@ cat "$bin.new.$pid""#,
     );
     assert!(!status.out.contains("Next:"), "{status:?}");
     assert!(!status.out.contains(".new."), "{status:?}");
-    assert!(status.out.ends_with("marker"), "{status:?}");
+    assert_eq!(fs::read_to_string(staging).expect("staging"), "marker");
 }
 
 /// TECHNICAL 8.1: a receipt path is marked missing while only its backup exists.
