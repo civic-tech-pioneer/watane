@@ -1797,3 +1797,34 @@ fn inst_s34_command_line_tools_for_each_answer() {
         assert_no_xcode_call(&fx);
     }
 }
+
+/// TECHNICAL 3.6: a fresh install can recover through a link recorded in its staged receipt.
+#[test]
+#[ignore = "slow: kills a fresh install mid-swap, then runs status and a second install"]
+fn recover_a_killed_fresh_install_through_a_linked_local() {
+    let fx = Fx::new();
+    fs::create_dir(fx.home.join("real_local")).expect("physical install folder");
+    symlink("real_local", fx.home.join(".local")).expect("link inside the home");
+    // The first binary has moved, but the second and the receipt are still staged.
+    kill_at(&fx, "mv", "*watane-dev.new.*", &["--no-toolchain"]);
+    assert!(fx.bin("watane").is_file());
+    assert!(!fx.bin("watane-dev").exists());
+    assert!(!fx.receipt().exists());
+    assert!(has_leftover(&fx, "journal."));
+    assert!(has_leftover(&fx, "receipt.new."));
+
+    let status = fx.run(&["--status"]);
+    assert_eq!(status.code, 7, "{status:?}");
+    assert!(
+        status
+            .stdout
+            .contains("leftover: ~/.local/share/watane/journal."),
+        "{status:?}"
+    );
+    assert!(fx.bin("watane").is_file());
+
+    let out = fx.run(&["--no-toolchain"]);
+    assert_eq!(out.code, 0, "{out:?}");
+    fx.assert_installed("0.1.0");
+    assert!(leftovers(&fx).is_empty(), "{:?}", leftovers(&fx));
+}
