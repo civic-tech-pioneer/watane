@@ -18,6 +18,8 @@ mod clean_mac;
 #[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.
 mod package;
 #[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.
+mod recovery_guards;
+#[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.
 mod regress_s50b;
 #[cfg(unix)] // Exercises POSIX shell tools and installer fixtures.
 mod regress_s50b_fix;
