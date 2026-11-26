@@ -1284,7 +1284,7 @@ Each is one JSON object. Unknown fields are errors.
 
 | Field | Meaning |
 |---|---|
-| `fakes` | Optional. Key: an interface of another package without version (`mods:<slug>/<iface>`); a key with `@` is `test.contract_file`. Value: function name → the JSON value that the fake returns, always. This is `watane_host::Fakes` as it is. Step 9: the key may also be an outlet of the mod's own package, for its collects; the value is the whole joined list, as the host would return it. A collect with no fake returns `[]`. Step 10: the key may also be `watane:host/manage`, the management interface of the host (host 6.10); with no fake its reads return `[]` and `pending`, and its reductions, `open-page` (S82) and requests succeed (a request with the ids `r1`, `r2`, ... in call order). A fake of a function that an imported interface does not have is `test.contract_file`, naming the function, the interface and its functions (read from the built component's imports). |
+| `fakes` | Optional. Key: an interface of another package without version (`mods:<slug>/<iface>`); a key with `@` is `test.contract_file`. Value: function name → the JSON value that the fake returns, always. This is `watane_host::Fakes` as it is. Step 9: the key may also be an outlet of the mod's own package, for its collects; the value is the whole joined list, as the host would return it. A collect with no fake returns `[]`. Step 10: the key may also be `watane:host/manage`, the management interface of the host (host 6.10); with no fake its reads return `[]` and `pending`, and its reductions, `open-page` (S82) and requests succeed (a request with the ids `r1`, `r2`, ... in call order). The key may also be `watane:host/timers`; without a fake, `firing-origin` returns `none` (host 19.6). A fake of a function that an imported interface does not have is `test.contract_file`, naming the function, the interface and its functions (read from the built component's imports). |
 | `steps` | Required, at least one. Run in order, on one host, so state carries from step to step. |
 | `call` | An export function as `watane.js` names it (`<iface>.<fn>`). Runs as the page. |
 | `deliver` | Instead of `call`: a subscription export (`<iface>.<fn>`, the short name of the provider's interface), called as the host calls it for an event. Step 9: for a collect, its `returns` checks the mod's own answer. |
@@ -3000,7 +3000,8 @@ once. The maker tools offer the fake `claude` instead:
   results carry only the origin. If none of the served mods has a granted
   HTTP entry for the judge host, `serve` gives `preview.judge_grant_missing`
   and tells the maker to add the host to `[http].hosts` in the judge client's
-  `mod.toml` and rerun `serve`. A script without plays, including one with only
+  `mod.toml`, import `watane:host/https-stream` in `wit/world.wit`, and rerun
+  `serve` with its original options. A script without plays, including one with only
   `judge_key` or an empty `plays` list, leaves the judge account unavailable
   and omits `judge_origin`. Dev passes the same arguments and snapshot in either
   case. When a provider expects its judge API's own response format, use

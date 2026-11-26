@@ -565,7 +565,7 @@ hosts = ["judge.test", "second.test"]
             "the preview judge is at https://judge.test, but no served mod has an HTTP grant for judge.test"
         );
         assert!(warning["fix"].as_str().unwrap().starts_with(
-            "Add judge.test to [http].hosts in mod.toml of the mod that calls the judge, then run: watane-dev serve --json --dir "
+            "In the mod that calls the judge, add judge.test to [http].hosts in mod.toml and import watane:host/https-stream in wit/world.wit, then run: watane-dev serve --json --dir "
         ));
         assert_eq!(
             start(&envelope["result"], url, "POST", Value::Null),
