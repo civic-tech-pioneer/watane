@@ -328,7 +328,9 @@ without `src`; the content policy blocks it), `test.uncovered` (an
 exported function is called by no contract step), `preview.fake_claude_missing` (step 11: `serve` or `doctor`
 found no `fake-claude`; message `the program fake-claude was not found (<where>); a preview cannot start Claude Code`, fix `Install watane-dev with its agent layer fakes, or set WATANE_FAKE_CLAUDE to the program`),
 `preview.scripted_openai_missing` (`serve` used the ordinary preview because
-automatic scripted Responses setup was unavailable, 18.4), `preview.previous` (a
+automatic scripted Responses setup was unavailable, 18.4),
+`preview.judge_grant_missing` (a scripted judge is configured but no served mod
+has the matching HTTP grant, 18.4), `preview.previous` (a
 `serve` refused by the test pipeline while a preview for that folder still
 answers; message `the preview at <page url> still serves the previous build`
 (the API URL only when the served mod has no page),
@@ -1997,6 +1999,7 @@ pub enum Code { UsageArgs, UsageNotAMod, UsageSlug, UsageExists, UsageProvider,
     BuildResolve, BuildCompile, BuildReadsOutside, BuildImports, TestUnit, TestUnitLimit,
     TestContractFile, TestContract, PublishLocalDependency, HostDeclined, HostRefused, HostFailed,
     HostNoAnswer, Internal, UiExternal, UiInlineScript, TestUncovered, PreviewPrevious, PreviewFakeClaudeMissing,
+    PreviewScriptedOpenaiMissing, PreviewJudgeGrantMissing,
     EnvGitMissing, EnvGhMissing, EnvGhAuth, EnvGitIdentity, PublishOriginDiffers,
     PublishRepositoryExists, PublishPushFailed,   // step 6
     NewPrebuiltRenamed, // renamed prebuilt logic warning
@@ -2994,7 +2997,10 @@ once. The maker tools offer the fake `claude` instead:
   it is installed in a participant home under the usual app account rules.
   The host reports the entered origin as `judge_origin` in its ready line, and
   dev includes it in the `serve --json` result, including on reuse. These
-  results carry only the origin. A script without plays, including one with only
+  results carry only the origin. If none of the served mods has a granted
+  HTTP entry for the judge host, `serve` gives `preview.judge_grant_missing`
+  and tells the maker to add the host to `[http].hosts` in the judge client's
+  `mod.toml` and rerun `serve`. A script without plays, including one with only
   `judge_key` or an empty `plays` list, leaves the judge account unavailable
   and omits `judge_origin`. Dev passes the same arguments and snapshot in either
   case. When a provider expects its judge API's own response format, use
