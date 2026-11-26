@@ -1692,7 +1692,10 @@ fn unit_recover_skips_a_fresh_entry_whose_parent_is_gone() {
     );
     let u = case(&units, "twice");
     assert_eq!((u.code, u.err.as_str()), (0, ""), "{u:?}");
-    assert_eq!(u.out, "first=0\nsecond=0\nno_bin_folder\n", "{u:?}");
+    assert_eq!(
+        u.out, "recovered interrupted watane install\nfirst=0\nsecond=0\nno_bin_folder\n",
+        "{u:?}"
+    );
 }
 
 /// TECHNICAL 8.5, 3.6 step 4 (`valid_entry`, `undo_swap`, S50c ac3): a dead run's journal that

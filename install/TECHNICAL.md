@@ -189,12 +189,12 @@ version validation uses builtins only.
 
 | # | Step | On failure |
 |---|---|---|
-| 1 | Set the traps (3.8), parse flags and variables (3.2); check the version (3.2). Print `watane <v>: installing for <target>` once the target is known (step 4). | exit 1 |
+| 1 | Set the traps (3.8), parse flags and variables (3.2); check the version (3.2). Print `watane <v>: installing for <target>` once the target and folders have been checked (step 4). | exit 1 |
 | 2 | Refuse root: `id -u` is 0. | exit 1 |
 | 3 | The tools of 3.3. | exit 2 |
-| 4 | Platform: `uname -s` is `Darwin`; `uname -m` is `arm64`, or `x86_64` while `sysctl -n hw.optional.arm64` prints `1` (a shell under Rosetta); `sw_vers -productVersion` is 14.0 or later; `HOME` is absolute, is not `/`, and holds no newline and no `.` or `..` component (8.5). The target is `aarch64-apple-darwin`. Each install folder resolves inside the home (3.4.1). | exit 2 |
+| 4 | Platform: `uname -s` is `Darwin`; `uname -m` is `arm64`, or `x86_64` while `sysctl -n hw.optional.arm64` prints `1` (a shell under Rosetta); `sw_vers -productVersion` is 14.0 or later; `HOME` is absolute, is not `/`, and holds no newline and no `.` or `..` component (8.5). The target is `aarch64-apple-darwin`. Take the lock (3.6.2) after checking the home and before checking that each install folder resolves inside it (3.4.1). | exit 2, exit 5 (the lock) |
 | 5 | Make `$TMPDIR/watane-install.XXXXXX` (`mktemp -d`; `/tmp` when `TMPDIR` is unset). | exit 1 |
-| 6 | Take the lock (3.6.2). Read the receipt, if any: the installed version, for the `upgrading` message. Then the foreign-file check (3.4.2). Nothing is removed or written in this step but the lock. | exit 5 (the lock), exit 8 |
+| 6 | Read the receipt, if any: the installed version, for the `upgrading` message. Then the foreign-file check (3.4.2). | exit 5 (a live journal), exit 8 |
 | 7 | Download `SHA256SUMS` into the temporary folder. Print `downloading watane-<v>-<target>.tar.gz`, then download the archive (3.5). | exit 3 |
 | 8 | Verify (5): print `checked: sha256 matches SHA256SUMS of release v<v>`. | exit 4 |
 | 9 | Extract: refuse a member name that is absolute or holds `..`, and any member that is a symbolic or hard link (a `tar -tvzf` line that starts with `l` or `h`; IN-34); `tar -xzf` into the temporary folder; the top folder must be `watane-<v>-<target>` and hold `VERSION` with the text `<v>` and the three programs. | exit 5 |
@@ -242,7 +242,7 @@ as the set of paths that watane installed: its `path` lines that the rule of
 upgrades), rule 4 included: a path whose install folder now resolves
 elsewhere than the receipt's `resolved` line (or has none) is not in the
 set, so an existing file there is foreign (exit 8) and an upgrade never
-swaps out what a link made after the install now points at (IN-42); a missing, unreadable or unrecognised receipt is the empty set. A path of a journal left by a dead process (3.6) is added to the set only when the journal's rules of 3.6.1 say the swap moved it in: a valid `new <path>` line, a valid `moved <path>` line, and no `<path>.new.<n>`. A `new` line alone is not enough: it says that the path did not exist when the killed run began, not that watane put it there, and a file that the person put at that path afterwards (a `watane.app` dragged from a browser) must stay foreign (INST-S-35).
+swaps out what a link made after the install now points at (IN-42); a missing, unreadable or unrecognised receipt is the empty set. A path of a journal left by a dead process (3.6) is added to the set only when the journal's rules of 3.6.1 say the swap moved it in: a valid `new <path>` line, a valid `moved <path>` line, and no `<path>.new.<n>`. A `new` line alone is not enough: it says that the path did not exist when the killed run began, not that watane put it there, and a file that the person put at that path afterwards (a `watane.app` dragged from a browser) must stay foreign (INST-S-35). If the staged receipt is readable, it must also name the path. When only the published receipt is readable, check its paths instead.
 The receipt's own path counts as a foreign file when it exists (`-e` or `-L`)
 and is not a recognised receipt, since step 10's `mv` onto a folder would put
 the receipt inside it. For each entry that is not in that set, if `[ -e <path> ] || [ -L <path> ]`
@@ -318,7 +318,9 @@ files (INST-F-20, INST-S-14, 32, 33).
    its literal path under the resolved home. If the receipt directory resolves
    elsewhere, leave its journals and all staging evidence alone. If another
    install directory resolves elsewhere, skip that directory's entries.
-   Leave staging evidence for any journal that recovery could not retire.
+   Leave staging evidence for any journal that recovery could not retire. If recovery
+   retired a journal or removed stale names and no journal was skipped, print
+   `recovered interrupted watane install`.
    The live run's own undo and commit cleanup check the physical locations
    it saved before staging. If `<path>.new.<pid>` or
    `<path>.old.<pid>` (this run's own pid) still exists (`-e` or `-L`), exit
@@ -384,7 +386,12 @@ files (INST-F-20, INST-S-14, 32, 33).
    `watane install: could not recover stale install files`. Both are followed
    by `Recovery stopped; fix the filesystem error and run this again.`
    The filesystem tool's error, when present, identifies the failed operation.
-   Only lines valid by 3.6.1 are used. Each removal only where the rule of 8.5
+   Only lines valid by 3.6.1 are used. When a receipt is readable, the
+   published receipt must name an `old` path, and the staged receipt
+   must name a `new` path. When only the published receipt is readable,
+   use its paths for `new` lines as well. A new entry must match the
+   folder locations both receipts record for it. The receipt itself is governed
+   by the separate journal rule above. Each removal only where the rule of 8.5
    allows; then remove
    the journal **before** deleting any `.new.<pid>` (including
    `receipt.new.<pid>`). If removing the journal fails, keep all `.new` names
@@ -469,7 +476,7 @@ journal check stays, for a run of an older script that takes no lock.
 #### 3.6.2 The lock
 
 An install and an uninstall take a lock before they read the receipt
-(step 6; 8.4 step 1), so two runs started at once cannot both pass the
+(step 4; 8.4 step 1), so two runs started at once cannot both pass the
 journal check of 3.6.1, which runs long before either journal exists.
 `--status` reads without taking the lock. The lock is the folder
 `$HOME/.watane-install.lock`, made with `mkdir` (no `-p`: it fails when
@@ -488,8 +495,8 @@ did not make it never removes it. If writing `pid` fails, the run exits 5
 with `watane install: could not write install lock`; the exit trap still
 removes the lock it made. A signal status is preserved as in 3.8.
 
-When `mkdir` fails, the run stops with exit 5 before it downloads or
-changes anything, and prints, to stderr:
+When `mkdir` fails, the run stops with exit 5. It prints the lock message
+before the install banner or folder checks, to stderr:
 
 ```text
 watane install: another install may be running (pid 4242)
@@ -497,7 +504,7 @@ If no install is running, remove its lock and run this again:
   rm -rf ~/.watane-install.lock
 ```
 
-`(pid <n>)` only when `pid` is a regular file whose one line is digits;
+`(pid <n>)` only for a lock that is a real directory and whose `pid` is a regular file with one line of digits;
 otherwise the first line ends at `running`. The script never removes a lock it did not
 make, even one whose pid is dead: it cannot tell a dead pid from a reused
 one, nor a lock just made from one whose `pid` was never written, and two
@@ -1179,6 +1186,11 @@ watane 0.1.0 (aarch64-apple-darwin)
 Status prints only receipt paths in the current install set whose
 folders pass 8.5 rules 1 to 3. It also reports dead journals and staging
 names in the expected physical install directories as `leftover: <path>`.
+For a pre-commit journal it also lists the destination paths that the
+staged receipt names and the swap has moved into place. These have a
+`moved` line and no `.new.<n>` name remaining, with a `new` line or a
+backup at `.old.<n>`. If the install lock exists, status prints
+`install lock: ~/.watane-install.lock` first, with the pid when 3.6.2 allows it.
 Status makes no changes. Install and uninstall perform recovery under
 their lock (3.6).
 
@@ -1245,7 +1257,9 @@ is a feature of `app`, not of `install` (Q11).
    itself (3.6.1, exit 5). Recover first, as 3.6 step 0 (a journal of a dead process is undone or
    finished), so that a killed upgrade leaves neither a missing receipt nor
    `.old.<n>` names behind. Then read the receipt; none is exit 7
-   (INST-S-18).
+   (INST-S-18). When this undoes a fresh pre-commit swap with a readable
+   staged receipt, also remove the two Watane-specific directories with
+   `rmdir` if they are empty and their physical paths match that receipt.
 2. `rm -rf` each `path` of the receipt that the rule of 8.5 allows; a path
    it refuses is left in place, with `watane install: skipped <path>: not a
    path that watane installs` on stderr (INST-S-27). Then remove the

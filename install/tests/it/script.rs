@@ -104,6 +104,17 @@ fn kill_at_checking(fx: &Fx, tool: &str, glob: &str, args: &[&str], check_lock: 
     let requests = fx.rel.requests();
     let blocked = fx.run(args);
     assert_eq!(blocked.code, 5, "{blocked:?}");
+    assert!(
+        blocked.stdout.is_empty(),
+        "report the lock first: {blocked:?}"
+    );
+    let status = fx.run(&["--status"]);
+    assert!(
+        status.has_line(&format!(
+            "install lock: ~/.watane-install.lock (pid {child_pid})"
+        )),
+        "{status:?}"
+    );
     assert_eq!(
         blocked.first_err(),
         format!(
@@ -1178,14 +1189,52 @@ fn inst_s33_a_kill_at_the_receipt() {
 #[ignore = "slow: a SIGKILL at the receipt move of a fresh install, then the run that recovers it; the foreign rule alone is `unit::unit_check_foreign_refuses_a_file_watane_did_not_install` (killed)"]
 fn inst_s33_a_kill_at_the_receipt_of_a_fresh_install() {
     let fx = Fx::new();
-    kill_at(&fx, "mv", "*receipt.new.*", &[]);
+    kill_at_checking(&fx, "mv", "*receipt.new.*", &[], true);
     assert!(!fx.receipt().exists());
     assert!(has_leftover(&fx, "journal."));
+    let before = snapshot(&fx.home);
+    let status = fx.run(&["--status"]);
+    assert_eq!(status.code, 7, "{status:?}");
+    for path in [
+        "~/.local/bin/watane",
+        "~/.local/bin/watane-dev",
+        "~/.local/bin/watane-node",
+        "~/.local/share/watane-dev/vendor",
+        "~/.local/share/watane/install.sh",
+        "~/.local/share/watane/VERSION",
+        "~/Applications/watane.app",
+    ] {
+        assert!(status.has_line(&format!("leftover: {path}")), "{status:?}");
+    }
+    assert_eq!(snapshot(&fx.home), before, "status is read-only");
     let out = fx.run(&[]);
     assert_eq!(out.code, 0, "{out:?}");
+    assert!(
+        out.has_line("recovered interrupted watane install"),
+        "{out:?}"
+    );
     assert!(!out.stderr.contains("did not install"), "{out:?}");
     fx.assert_installed("0.1.0");
     assert!(leftovers(&fx).is_empty(), "{:?}", leftovers(&fx));
+}
+
+/// TECHNICAL 8.4: uninstall recovers a fresh pre-commit kill and prunes the empty Watane directories.
+#[test]
+#[ignore = "slow: kills a fresh install at its receipt, then runs uninstall"]
+fn uninstall_recovers_a_fresh_kill_and_prunes_watane_folders() {
+    let fx = Fx::new();
+    fs::create_dir_all(fx.home.join(".local/share")).expect("pre-existing share");
+    kill_at(&fx, "mv", "*receipt.new.*", &["--no-toolchain"]);
+    let out = fx.run(&["--uninstall"]);
+    assert_eq!(out.code, 7, "{out:?}");
+    assert!(
+        out.has_line("recovered interrupted watane install"),
+        "{out:?}"
+    );
+    assert!(!fx.share("watane").exists());
+    assert!(!fx.share("watane-dev").exists());
+    assert!(fx.home.join(".local/share").is_dir());
+    assert!(!fx.bin("watane").exists());
 }
 
 /// INST-S-33 and TECHNICAL 3.6 step 5: a kill after the receipt move (in step 5, at a path only the old receipt held)
@@ -1827,4 +1876,117 @@ fn recover_a_killed_fresh_install_through_a_linked_local() {
     assert_eq!(out.code, 0, "{out:?}");
     fx.assert_installed("0.1.0");
     assert!(leftovers(&fx).is_empty(), "{:?}", leftovers(&fx));
+}
+
+/// TECHNICAL 3.6 step 4: when a relink is reverted, undo may restore only paths from the receipt.
+#[test]
+#[ignore = "slow: kills an upgrade, relinks and restores bin, then runs recovery twice"]
+fn recovery_after_reverting_a_relink_uses_receipt_ownership() {
+    let (fx, _) = swap_start();
+    kill_at(&fx, "mv", "*receipt.new.*", &["--release", "0.2.0"]);
+    let bin = fx.home.join(".local/bin");
+    let aside = fx.home.join("aside");
+    let replacement = fx.home.join("replacement");
+    fs::rename(&bin, &aside).expect("move the bin with staging evidence");
+    write_file(&replacement.join("watane"), "replacement");
+    symlink(&replacement, &bin).expect("relink bin");
+
+    // One old receipt path is deliberately absent from the receipt. The journal
+    // still names it, so a journal-only undo would overwrite the person's file.
+    let receipt = fx.read(&fx.receipt());
+    let foreign = fx.bin("watane-node");
+    let foreign_line = format!("path {}", foreign.display());
+    let filtered: String = receipt
+        .lines()
+        .filter(|line| *line != foreign_line)
+        .map(|line| format!("{line}\n"))
+        .collect();
+    write_file(&fx.receipt(), &filtered);
+    let old_receipt = fs::read_dir(fx.share("watane"))
+        .expect("share")
+        .map(|entry| entry.expect("entry").path())
+        .find(|path| {
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("receipt.old.")
+        })
+        .expect("old receipt backup");
+    write_file(&old_receipt, &filtered);
+    write_file(&aside.join("watane-node"), "my copy");
+
+    let original_script = fx.read(&fx.script);
+    let recovery = r#"
+check_home
+set_entries
+recover
+"#;
+    fs::write(&fx.script, original_script.replace("main \"$@\"", recovery))
+        .expect("source recovery alone");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(
+        !out.has_line("recovered interrupted watane install"),
+        "{out:?}"
+    );
+    assert_eq!(fx.read(&replacement.join("watane")), "replacement");
+    assert!(has_leftover(&fx, "journal."));
+
+    fs::remove_file(&bin).expect("remove current link");
+    fs::rename(&aside, &bin).expect("restore the recorded bin path");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(
+        out.has_line("recovered interrupted watane install"),
+        "{out:?}"
+    );
+    assert_eq!(fx.read(&foreign), "my copy");
+    assert!(!has_leftover(&fx, "journal."));
+}
+
+/// TECHNICAL 3.6 step 4: reverting a link after a crash does not turn an old installed file
+/// into an entry created by the interrupted upgrade.
+#[test]
+#[ignore = "slow: upgrades through a relinked bin, then restores the original bin and runs recovery"]
+fn recovery_does_not_undo_old_files_after_reverting_a_bin_link() {
+    let (fx, _) = swap_start();
+    let bin = fx.home.join(".local/bin");
+    let aside = fx.home.join("aside");
+    let replacement = fx.home.join("replacement");
+    let old_bin = fx.read(&fx.bin("watane"));
+    fs::rename(&bin, &aside).expect("keep the installed bin");
+    fs::create_dir(&replacement).expect("replacement bin");
+    symlink(&replacement, &bin).expect("link to a fresh bin");
+    kill_at(&fx, "mv", "*receipt.new.*", &["--release", "0.2.0"]);
+    assert_ne!(fx.read(&fx.bin("watane")), old_bin);
+    fs::remove_file(&bin).expect("remove the link");
+    fs::rename(&aside, &bin).expect("restore the installed bin");
+
+    let original_script = fx.read(&fx.script);
+    fs::write(
+        &fx.script,
+        original_script.replace("main \"$@\"", "check_home\nset_entries\nrecover\n"),
+    )
+    .expect("source recovery alone");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(
+        !out.has_line("recovered interrupted watane install"),
+        "{out:?}"
+    );
+    assert_eq!(fx.read(&fx.bin("watane")), old_bin);
+    assert!(has_leftover(&fx, "journal."));
+
+    // The staged receipt cannot override the published location either.
+    fs::rename(&bin, &aside).expect("set aside the installed bin again");
+    symlink(&replacement, &bin).expect("restore the recorded staging link");
+    let out = fx.run(&[]);
+    assert_eq!(out.code, 0, "{out:?}");
+    assert!(
+        !out.has_line("recovered interrupted watane install"),
+        "{out:?}"
+    );
+    assert!(has_leftover(&fx, "journal."));
+    assert!(replacement.join("watane").is_file());
+    assert_eq!(fx.read(&aside.join("watane")), old_bin);
 }
