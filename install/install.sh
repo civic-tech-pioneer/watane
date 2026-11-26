@@ -1065,7 +1065,9 @@ swap_entries() {
   for sw_f in "$HOME/.local/bin" "$HOME/.local/share/watane" "$HOME/.local/share/watane-dev" "$HOME/Applications"; do
     resolve_dir "$sw_f" || { check_signal "$?"; }
     if ! in_list "$FOLDERS_RESOLVED" "resolved ${sw_f#"$HOME/"} $RES"; then
-      SWAP_CHANGED="$(tilde "$sw_f") changed during the install: it now resolves to $(tilde_r "$RES")"
+      sw_now=$(tilde_r "$RES")
+      [ "$RES" != "$HOME_R" ] || sw_now="your home folder itself"
+      SWAP_CHANGED="$(tilde "$sw_f") changed during the install: it now resolves to $sw_now"
       return 1
     fi
   done
