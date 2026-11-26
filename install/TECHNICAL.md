@@ -1329,7 +1329,8 @@ no `.` or `..` component). A path is allowed only when:
    (rules 1 to 3) names `<path>` the same way. So a link made after the install inside the home
    (`~/.local/share/watane-dev -> ~/Documents`), which rule 3 allows, does
    not make a receipt line empty the folder it now points at (IN-42).
-   The Install row’s “whatever the receipt says” assumes Watane wrote the receipt.
+   The Install row’s “whatever the receipt says” assumes Watane wrote the receipt
+   and that `receipt.new.<n>` and the receipt folder have not been tampered with.
 
 A prefix test alone is not the rule: `$HOME/.local/../Documents` starts
 with `$HOME/.local/` and is refused by 1; `$HOME/.local/share/fish` is
