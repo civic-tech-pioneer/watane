@@ -1653,6 +1653,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### host
 
+- **(flake, seen on S146, 2026-11-26)** `host::agent::claude::run::join_tests::s100_fix12_ac1_the_next_queued_line_is_not_started_after_the_deadline` failed on macOS CI (`host/src/agent/claude/run.rs:1498`) on a spec-only PR; rerun.
+
 - **(S136 r1 polish, left by S141)** P1.3 a doc comment on `firing-origin` in `host/wit/host.wit:133` and the maker's copy (a WIT change: S141 allowed none).
 
 - [S126 r1] (polish; P1.1 and P1.4 done by S141) P1.1 `host/tests/it/https_stream.rs:1674` the "host stops reading" bound weakened to `written < EVENTS`: add a buffer-sized bound; P1.2 a removal timeout answers `internal` (host 4.4 names no code; a busy-mod kind is an interface change); P1.3 `.github/workflows/ci.yml:85,104` the S126 repeat steps are dead after merge: remove; P1.4 `judge_set` with an invalid origin lacks the editor's explanation; P1.5 `app/ui/app.js:132-136` "needs ." with empty hosts (unreachable today).
