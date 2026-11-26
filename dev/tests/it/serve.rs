@@ -747,3 +747,63 @@ fn regress_s11_provider_failure_next_reproduces_it() {
     );
     assert_eq!(v["ok"], false, "{v}");
 }
+
+/// S143 r1: a local provider that cargo cannot resolve (an unknown feature of an allowlisted
+/// crate) gives `serve` a `next` that, run as emitted where the agent stands, is one command
+/// that reaches that provider's `build.resolve` again.
+#[cfg(unix)] // Runs `next` through a POSIX shell, as an agent would.
+#[test]
+#[ignore = "slow: S143 r1 builds a provider and executes serve's next as emitted"]
+fn regress_s143_provider_resolve_next_runs_as_emitted() {
+    let mut m = Mod::new(false);
+    m.cache = support::cache().to_path_buf();
+    let out = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+        .current_dir(m.temp.path())
+        .args(["new", "provider", "--json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let (code, v) = m.run(&["add", "../provider", "--json"]);
+    assert_eq!(code, 0, "{v}");
+    let manifest = m.temp.path().join("provider/logic/Cargo.toml");
+    let text = fs::read_to_string(&manifest).unwrap().replace(
+        "serde_json = \"1\"",
+        "serde_json = { version = \"1\", features = [\"no-such-feature\"] }",
+    );
+    fs::write(&manifest, text).unwrap();
+    let (code, served) = m.run(&["serve", "--json"]);
+    assert_eq!(code, 1, "{served}");
+    assert_eq!(served["errors"][0]["code"], "build.resolve", "{served}");
+    let next = served["next"].as_str().expect("a next command");
+    let bin = std::path::Path::new(env!("CARGO_BIN_EXE_watane-dev"))
+        .parent()
+        .unwrap();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let out = Command::new("sh")
+        .arg("-c")
+        .arg(next)
+        .current_dir(&m.dir)
+        .env("PATH", path)
+        .env("WATANE_DEV_CACHE", &m.cache)
+        .env("WATANE_BIN", &m.host)
+        .output()
+        .unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
+        panic!(
+            "next `{next}` printed no JSON ({e}): {}\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
+    });
+    assert_eq!(out.status.code(), Some(1), "next `{next}`: {v}");
+    assert_eq!(
+        v["errors"][0]["code"], "build.resolve",
+        "next `{next}`: {v}"
+    );
+    assert!(
+        v["dir"]
+            .as_str()
+            .is_some_and(|dir| dir.ends_with("/provider")),
+        "next `{next}` must test the provider: {v}"
+    );
+}

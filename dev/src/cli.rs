@@ -299,6 +299,7 @@ fn fallback_rerun(cli: &Cli, cwd: Option<&Path>) -> String {
 
 /// Fixes that end in the command's rerun where the code that made them does not
 /// know it (`build.compile`, `build.resolve`, `build.reads_outside`, `internal`): `<fix>, then run: <rerun>`.
+/// A fix that is already a command (a local provider's own `test --dir` rerun) stays as it is.
 fn end_in_rerun(mut outcome: Outcome, rerun: &str) -> Outcome {
     use crate::outcome::Code;
     for error in &mut outcome.errors {
@@ -308,7 +309,11 @@ fn end_in_rerun(mut outcome: Outcome, rerun: &str) -> Outcome {
         ) {
             continue;
         }
-        let Some(old) = error.fix.clone().filter(|fix| !fix.contains(", then run:")) else {
+        let Some(old) = error
+            .fix
+            .clone()
+            .filter(|fix| !fix.contains(", then run:") && !fix.starts_with("watane-dev "))
+        else {
             continue;
         };
         let new = format!("{old}, then run: {rerun}");
@@ -1533,6 +1538,19 @@ mod tests {
         let fix = "Use only the crates and features of the allowlist: serde, then run: watane-dev test --json --dir /m";
         assert_eq!(outcome.errors[0].fix.as_deref(), Some(fix));
         assert_eq!(outcome.next.as_deref(), Some(fix));
+    }
+
+    #[test]
+    fn s143_r1_a_providers_rerun_fix_stays_one_command() {
+        use crate::outcome::Code;
+        let rerun = "watane-dev test --json --dir /p";
+        let mut outcome = Outcome::new("serve", None).fail(vec![
+            Problem::new(Code::BuildResolve, "provider: no match").fix(rerun),
+        ]);
+        outcome.next = Some(rerun.to_string());
+        let outcome = end_in_rerun(outcome, "watane-dev serve --json");
+        assert_eq!(outcome.errors[0].fix.as_deref(), Some(rerun));
+        assert_eq!(outcome.next.as_deref(), Some(rerun));
     }
 
     #[cfg(unix)]
