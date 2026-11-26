@@ -531,16 +531,12 @@ fn adv_s130_forged_created_line_removes_a_folder_the_person_made() {
     }
 }
 
-/// TECHNICAL 3.6: both rollback and commit cleanup respect the recorded bin location.
+/// TECHNICAL 3.6: rollback checks the entry location and commit cleanup checks the journal location.
 #[test]
 fn recorded_location_mismatch_preserves_undo_and_commit_backups() {
     for operation in ["undo_swap", "finish_commit"] {
         let fx = Fx::installed();
         let dead = dead_pid();
-        let bin = fx.home.join(".local/bin");
-        let old_bin = fx.home.join("old-bin");
-        fs::rename(&bin, &old_bin).expect("move recorded bin");
-        fs::create_dir(&bin).expect("replacement bin");
         let current = fx.bin("watane");
         let backup = fx.bin(&format!("watane.old.{dead}"));
         write_file(&current, "replacement");
@@ -548,13 +544,18 @@ fn recorded_location_mismatch_preserves_undo_and_commit_backups() {
         let journal = fx.share(&format!("watane/journal.{dead}"));
         write_file(&journal, &format!("old {}\n", current.display()));
         let receipt = fx.read(&fx.receipt());
-        let recorded = fs::canonicalize(&bin).expect("current bin");
-        let old_location = fs::canonicalize(&old_bin).expect("old bin");
+        let folder = if operation == "undo_swap" {
+            ".local/bin"
+        } else {
+            ".local/share/watane"
+        };
+        let actual = fs::canonicalize(fx.home.join(folder)).expect("current directory");
+        let earlier = actual.with_file_name("earlier-location");
         write_file(
             &fx.receipt(),
             &receipt.replace(
-                &format!("resolved .local/bin {}", recorded.display()),
-                &format!("resolved .local/bin {}", old_location.display()),
+                &format!("resolved {folder} {}", actual.display()),
+                &format!("resolved {folder} {}", earlier.display()),
             ),
         );
         if operation == "undo_swap" {
@@ -565,6 +566,7 @@ fn recorded_location_mismatch_preserves_undo_and_commit_backups() {
         assert_eq!(case(&units, "recovery").code, 0, "{units:?}");
         assert_eq!(fx.read(&current), "replacement");
         assert_eq!(fx.read(&backup), "backup");
+        assert!(journal.is_file());
     }
 }
 

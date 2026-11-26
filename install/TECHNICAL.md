@@ -312,11 +312,13 @@ files (INST-F-20, INST-S-14, 32, 33).
    commit happened, so do step 5 with `<n>` in place of `<pid>` and the old
    receipt at `receipt.old.<n>` (its paths that the receipt does not hold, if
    it still exists, then its `.old.<n>` names); then remove the journal. Then remove the stale names of 3.8.
-   Recovery of an earlier run requires the expected physical install
-   directories under the resolved home. Any recorded physical path must
-   also match the current directory. If the receipt directory resolves
+   Recovery of an earlier run checks each install folder against the
+   physical location recorded in the receipt, or in `receipt.new.<n>`
+   when the receipt is absent. If there is no record for a folder, use
+   its literal path under the resolved home. If the receipt directory resolves
    elsewhere, leave its journals and all staging evidence alone. If another
    install directory resolves elsewhere, skip that directory's entries.
+   Leave staging evidence for any journal that recovery could not retire.
    The live run's own undo and commit cleanup check the physical locations
    it saved before staging. If `<path>.new.<pid>` or
    `<path>.old.<pid>` (this run's own pid) still exists (`-e` or `-L`), exit
@@ -708,7 +710,7 @@ IN-47). Ctrl-C before the commit prints
 new line. While the shell is still reading the script, its initial INT
 trap records the signal. When the input pipe closes, the early EXIT trap
 uses that flag to print the hint and exit 130, including after a parse error
-from an incomplete function.
+from an incomplete function. The shell may print its own parse error first.
 These lines are printed once, by the exit trap, whichever way the
 signal reached it (IN-45). At the uninstall home question it instead prints
 the uninstall outcome (8.4) and that the watane home was kept.
@@ -1327,6 +1329,7 @@ no `.` or `..` component). A path is allowed only when:
    (rules 1 to 3) names `<path>` the same way. So a link made after the install inside the home
    (`~/.local/share/watane-dev -> ~/Documents`), which rule 3 allows, does
    not make a receipt line empty the folder it now points at (IN-42).
+   The Install row’s “whatever the receipt says” assumes Watane wrote the receipt.
 
 A prefix test alone is not the rule: `$HOME/.local/../Documents` starts
 with `$HOME/.local/` and is refused by 1; `$HOME/.local/share/fish` is
