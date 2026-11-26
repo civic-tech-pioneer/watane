@@ -1,7 +1,10 @@
-# Factory mods · draft
+# Factory mod · draft
 
 S120 designs [watane's step 6](../../VISION.md#order-of-work). The draft
-leaves the product owner's decisions open in [TECHNICAL §5](TECHNICAL.md#5-open-decisions).
+leaves the product owner's decisions open in [TECHNICAL §5](TECHNICAL.md#5-open-decisions),
+except those the human has made there. For now the factory is one combined
+mod with a planning page and a foreman page, and its source is that mod's
+own repository (W29).
 
 ## Why
 
@@ -19,8 +22,8 @@ uses to change any other mod.
 - The factory can propose changes to its own source. Alice reviews the
   change, merges it, and installs a released package through the ordinary
   watane path. Each of those actions has its own authority.
-- The factory runs as ordinary mods on the agent layer. Sessions use
-  Alice's accounts and the host's grants and consents. She can see the
+- The factory runs as one ordinary mod on the agent layer. Sessions use
+  Alice's accounts and the host's grants and consents given to that mod. She can see the
   requested reach, stop work and withdraw it.
 - Project decisions can become statements between people under V7
   when the human settles their meaning and trust rules. The factory
