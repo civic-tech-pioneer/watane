@@ -47,7 +47,9 @@ pub enum Account {
 /// Canonicalize the HTTPS origin the participant entered (TECHNICAL 19.4).
 pub fn judge_origin(text: &str) -> Result<String, crate::HostError> {
     fn bad_origin() -> crate::HostError {
-        crate::HostError::BadRequest("not an https origin".into())
+        crate::HostError::BadRequest(
+            "Enter an HTTPS origin such as https://judge.example. Leave out the username, any trailing dot in the host, and any path, query or fragment.".into(),
+        )
     }
 
     let (scheme, authority) = text.split_once("://").ok_or_else(bad_origin)?;
@@ -105,6 +107,12 @@ mod tests {
         assert_eq!(
             judge_origin("https://127.0.0.1").unwrap(),
             "https://127.0.0.1"
+        );
+        assert_eq!(
+            judge_origin("https://user@judge.example")
+                .unwrap_err()
+                .to_string(),
+            "Enter an HTTPS origin such as https://judge.example. Leave out the username, any trailing dot in the host, and any path, query or fragment."
         );
         for text in [
             "http://judge.example",

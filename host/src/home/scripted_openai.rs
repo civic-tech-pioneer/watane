@@ -24,18 +24,6 @@ impl std::fmt::Debug for ScriptedOpenAi {
 }
 
 impl Host {
-    /// Bind the fake account for this preview only (19.9).
-    #[doc(hidden)]
-    pub fn set_scripted_openai(
-        &self,
-        address: SocketAddrV4,
-        root_pem: &str,
-        token: String,
-    ) -> Result<(), HostError> {
-        self.set_scripted_responses(address, root_pem, token, None)
-            .map(|_| ())
-    }
-
     /// Bind both accounts before serving. Return the canonical judge origin when configured (19.9).
     #[doc(hidden)]
     pub fn set_scripted_responses(
@@ -55,7 +43,7 @@ impl Host {
                 "scripted OpenAI requires a nonzero port on 127.0.0.1".into(),
             ));
         }
-        if token.is_empty() || !token.bytes().all(|byte| byte.is_ascii_graphic()) {
+        if !valid_credential(&token) {
             return Err(HostError::BadRequest(
                 "invalid scripted OpenAI token".into(),
             ));
@@ -65,6 +53,9 @@ impl Host {
                 return Err(HostError::BadRequest(
                     "scripted judge requires a nonzero port on 127.0.0.1".into(),
                 ));
+            }
+            if !valid_credential(&account.key) {
+                return Err(HostError::BadRequest("invalid scripted judge key".into()));
             }
             account.origin = judge_origin(&account.origin)
                 .ok()
@@ -97,6 +88,10 @@ impl Host {
     }
 }
 
+fn valid_credential(value: &str) -> bool {
+    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_graphic())
+}
+
 fn is_loopback(address: SocketAddrV4) -> bool {
     *address.ip() == Ipv4Addr::LOCALHOST && address.port() != 0
 }
@@ -110,7 +105,7 @@ mod tests {
             .expect("open preview");
         let address = "10.0.0.1:1234".parse().expect("private socket address");
         let error = host
-            .set_scripted_openai(address, "", "fixture".into())
+            .set_scripted_responses(address, "", "fixture".into(), None)
             .expect_err("non-loopback endpoint");
         assert_eq!(
             error.to_string(),
@@ -119,36 +114,52 @@ mod tests {
     }
 
     #[test]
-    fn scripted_judge_refuses_non_loopback_sockets_and_other_origins() {
+    fn scripted_judge_refuses_invalid_sockets_origins_and_keys() {
         let dir = tempfile::tempdir().expect("temporary preview");
         let host = crate::Host::open(dir.path(), crate::Mode::Preview, crate::Limits::default())
             .expect("open preview");
         let responses = "127.0.0.1:1234".parse().expect("responses socket");
-        for (address, origin, expected) in [
+        for (address, origin, key, expected) in [
             (
                 "10.0.0.1:2345",
                 "https://judge.test",
+                "fixture",
                 "scripted judge requires a nonzero port on 127.0.0.1",
             ),
             (
                 "127.0.0.1:0",
                 "https://judge.test",
+                "fixture",
                 "scripted judge requires a nonzero port on 127.0.0.1",
             ),
             (
                 "127.0.0.1:2345",
                 "https://api.openai.com",
+                "fixture",
                 "invalid scripted judge origin",
             ),
             (
                 "127.0.0.1:2345",
                 "https://judge.test/other",
+                "fixture",
                 "invalid scripted judge origin",
+            ),
+            (
+                "127.0.0.1:2345",
+                "https://judge.test",
+                "",
+                "invalid scripted judge key",
+            ),
+            (
+                "127.0.0.1:2345",
+                "https://judge.test",
+                "invalid\nkey",
+                "invalid scripted judge key",
             ),
         ] {
             let judge = crate::JudgeAccount {
                 origin: origin.into(),
-                key: "fixture".into(),
+                key: key.into(),
             };
             let error = host
                 .set_scripted_responses(

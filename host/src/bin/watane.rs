@@ -169,12 +169,9 @@ async fn run(args: Args) -> Result<(), watane_host::HostError> {
         ready.token = Some(token.as_str().into());
     }
     #[cfg(all(unix, watane_dev_profile, debug_assertions))]
-    let ready = scripted_openai::PreviewReady {
-        ready,
-        judge_origin: scripted_openai
-            .as_ref()
-            .and_then(|child| child.judge_origin.as_deref()),
-    };
+    if let Some(child) = &scripted_openai {
+        ready.judge_origin.clone_from(&child.judge_origin);
+    }
     println!("{}", serde_json::to_string(&ready)?);
     std::io::stdout().flush()?;
     tokio::select! { _ = term.recv() => (), _ = interrupt.recv() => () }
