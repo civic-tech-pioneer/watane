@@ -99,7 +99,7 @@ async fn call_response(
     }
     let bytes = match api::read_body(request.into_body(), 1 << 20).await {
         Ok(bytes) => bytes,
-        Err(response) => return response,
+        Err(message) => return api::body_too_large(message),
     };
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]

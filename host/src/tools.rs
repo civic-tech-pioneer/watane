@@ -546,7 +546,7 @@ pub(crate) async fn respond(host: &Arc<Host>, request: Request<Body>) -> Respons
     }
     let bytes = match api::read_body(request.into_body(), 1 << 20).await {
         Ok(bytes) => bytes,
-        Err(response) => return response,
+        Err(message) => return api::body_too_large(message),
     };
     let value: Value = match serde_json::from_slice(&bytes) {
         Ok(v) => v,
