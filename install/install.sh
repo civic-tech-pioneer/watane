@@ -404,7 +404,7 @@ undo_swap() {
     allowed "$RECEIPT" || exit 0
     read_recovery_receipt "$1"
     ub_locations=$R_RESOLVED
-    ub_new_locations=$ub_locations
+    ub_new_ok=0
     recovery_allowed "$RECEIPT" "$1" "$ub_locations" || exit 0
     ub_j=$SHAREW/journal.$1
     if [ -f "$ub_j" ] && [ ! -L "$ub_j" ]; then
@@ -416,9 +416,7 @@ undo_swap() {
       read_receipt "$RECEIPT.new.$1"
       ub_new_ok=$R_OK
       ub_new_paths=$R_LINES
-      # A staged receipt may veto a move, but cannot authorize a location
-      # that the published receipt records differently.
-      if [ "$ub_new_ok" = 1 ]; then ub_new_locations=$ub_locations$NL$R_RESOLVED; fi
+      ub_new_locations=$R_RESOLVED
       read_journal "$ub_j"
       ub_blocked=0
       while IFS= read -r ub_p; do
@@ -445,7 +443,11 @@ EOF
         elif [ "$ub_old_ok" = 1 ]; then
           in_list "$ub_old_paths" "path $ub_p" || continue
         fi
-        recovery_allowed "$ub_p" "$1" "$ub_new_locations" || { ub_blocked=1; continue; }
+        recovery_allowed "$ub_p" "$1" "$ub_locations" || { ub_blocked=1; continue; }
+        # The staged receipt may veto a move even where the published receipt allows it.
+        if [ "$ub_new_ok" = 1 ]; then
+          recovery_allowed "$ub_p" "$1" "$ub_new_locations" || { ub_blocked=1; continue; }
+        fi
         exists "$ub_p.new.$1" && continue
         # Move back to staging before deleting: a repeated undo then has proof
         # that this fresh entry was already taken out of the installed paths.
@@ -465,7 +467,10 @@ EOF
     # A retry after this point cleans staging only; it cannot claim a person's file.
     rm -f "$SHAREW/journal.$1" || exit "$?"
     while IFS= read -r ub_p; do
-      recovery_allowed "$ub_p" "$1" "$ub_new_locations" || continue
+      recovery_allowed "$ub_p" "$1" "$ub_locations" || continue
+      if [ "$ub_new_ok" = 1 ]; then
+        recovery_allowed "$ub_p" "$1" "$ub_new_locations" || continue
+      fi
       if exists "$ub_p.new.$1"; then rm_path "$ub_p.new.$1" || exit "$?"; fi
     done <<EOF
 $ENTRIES_ALL
@@ -857,18 +862,23 @@ EOF
     cf_locations=$R_RESOLVED
     cf_ownership=$R_OK
     cf_paths=$R_LINES
+    cf_staged=0
     if exists "$RECEIPT.new.$cf_n"; then
       read_receipt "$RECEIPT.new.$cf_n"
       if [ "$R_OK" = 1 ]; then
         cf_ownership=1
         cf_paths=$R_LINES
-        cf_locations=$cf_locations$NL$R_RESOLVED
+        cf_staged=1
+        cf_staged_locations=$R_RESOLVED
       fi
     fi
     read_journal "$SHAREW/journal.$cf_n"
     while IFS= read -r cf_p; do
       [ -n "$cf_p" ] || continue
       recovery_allowed "$cf_p" "$cf_n" "$cf_locations" || continue
+      if [ "$cf_staged" = 1 ]; then
+        recovery_allowed "$cf_p" "$cf_n" "$cf_staged_locations" || continue
+      fi
       if [ "$cf_ownership" = 1 ]; then in_list "$cf_paths" "path $cf_p" || continue; fi
       in_list "$J_MOVED" "$cf_p" || continue
       if exists "$cf_p.new.$cf_n"; then continue; fi
@@ -1529,12 +1539,12 @@ EOF
         ds_locations=$R_RESOLVED
         read_receipt "$RECEIPT.new.$ds_n"
         [ "$R_OK" = 1 ] || continue
-        ds_locations=$ds_locations$NL$R_RESOLVED
         read_journal "$SHAREW/journal.$ds_n"
         while IFS= read -r ds_p; do
           [ "$ds_p" != "$RECEIPT" ] || continue
           in_list "$R_LINES" "path $ds_p" || continue
           recovery_allowed "$ds_p" "$ds_n" "$ds_locations" || continue
+          recovery_allowed "$ds_p" "$ds_n" "$R_RESOLVED" || continue
           exists "$ds_p.new.$ds_n" && continue
           exists "$ds_p" || continue
           if ! in_list "$J_NEW" "$ds_p" && ! exists "$ds_p.old.$ds_n"; then continue; fi
