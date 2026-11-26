@@ -1886,9 +1886,6 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 - (2026-11-25, deputy-5, S122 merged: agentic-harness stage E's watane half is done) **A real judge account for V7.** Stage E's checked provider (agentic-harness) needs a judge service the provider can call with a key Alice enters; nothing in the factory can open one (an account is the human's). Which judge (Jev or another), and may the factory use a key of yours in its cloud tests? Blocks agentic-harness stage E, so step 6's JF1. **N5 revisit** (agentic-harness PLAN, "N5 The factory's implementer needs a shell"): you asked to revisit it when stage E starts, leaning (b); it blocks stage F.
 
-- (2026-11-25, deputy-4, from S120) **Where the factory mods live (Door H, `spec/design/factory/TECHNICAL.md` 5, first row).** W29 gives each mod with source its own repository, so a planning mod and a foreman mod are two new projects; one combined factory mod is one new project. Options, consequences and the recommendation are in that row. Not blocking: JF1 waits on agentic-harness stages E and F first. The 8 Door C rows go to deliberation when a build slice first depends on one.
-
-
 - **V8 writer busy share (S96).** One durable write per batch costs 24.5% writer busy at stage A's load
   (budget 10%, which S96 applies to the no-write run). Options: (a) keep "durable first" (19.6) and
   accept the write run's share as N4's price (rec: a kernel batch rarely writes); (b) group commits
@@ -1947,6 +1944,8 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Human answers
+
+- 2026-11-26: S120's Door H (where the factory mods live, `spec/design/factory/TECHNICAL.md` 5, first row): **one combined factory mod in one new repository**, W29 kept, "for now". Isolation of the foreman's authority comes from agentic-harness profile narrowing at stage F, not a second mod. The next factory design or build slice writes it into that row with spec-change and settles the "Planning and foreman split" Door C row to match.
 
 - 2026-11-26: the Codex `watane` environment's secrets will not be rotated; never ask again. mboogerd/claude-plugin#6 (10-minute Codex timer) merged by the human.
 
