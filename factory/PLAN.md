@@ -1236,6 +1236,19 @@ names the same interface in its sketch and fakes it until this one merges.
   Constraints: design only, through the `spec-change` skill. List each Door C choice (the WIT shape, the callback) in
   the PR body with its options, for the human's veto. A new host export or callback is a public interface: prefer the
   narrowest (read-only, own timers only).
+- [ ] **S135 (upkeep) install.sh's last S130 and S123 polish.** (sketched 2026-11-26 by Deputy Paper, the watane upkeep
+  lane; builder codex, reviewer claude by rule 3 (last two S134 claude, S133 codex); no spec-check: install's own
+  3.x wording at most. Exempt from size: upkeep.)
+  Outcomes, each item's check (re-check each against main first; drop the ones already true and say so):
+  (1) S130 P3.2: `undo_swap` reverts through the receipt's records only for watane's own files, a test on the
+  relink-revert edge; (2) P3.3: each unpinned guard (`install.sh` :238, :402, :506, :513, :807, :811, :1457 at
+  c8eb2a1f) has a test that fails without it; (3) P3.4: after a crash the stale-lock message comes first and
+  `--status` names the lock; kill point D lists its files at their real paths; a successful recovery says so; a
+  pre-commit kill then `--uninstall` leaves no empty `share/watane*/` folders; (4) S123 P2.1 (the relinked-folder guards
+  tested through `keep_created_roots`), P1.2 (receipts record a `~/.local/bin` or `~/.local/share` watane made, and
+  uninstall leaves one the person made), P1.4, P1.5.
+  Touches: `install/` (install.sh, its tests, `install/TECHNICAL.md` and FUNCTIONAL wording). Not host, app, dev.
+  Protects: *polish* (Alice's words after a Ctrl-C) and *guard* (P3.3). The older From-S94/S89/S50 lines stay in Upkeep.
 - [x] **S130 (upkeep) install.sh's leftovers: what Alice sees around a Ctrl-C, `--status` and uninstall.** DONE 2026-11-26: PR #47 rebase-merged by Deputy Rock (c8eb2a1f, no bypass); builder codex, reviewer claude, 4 rounds (3/10, 2/7, 1/4, 0/0); ~13 h in flight. A killed install leaves leftovers that `--status` lists without touching, a re-run recovers them (also through a linked `~/.local`), and uninstall removes only watane's files. R2.1 accepted (deputy-7) and P3.1 under it (Deputy Rock); cut at r3: F3.1 one test, polish P3.2 to P3.4 in Upkeep (`### install`). Sketch in factory/DONE.md.
 - [x] **S129 A maker previews a checked provider against dev's scripted judge (host 19.9, dev 18.4).** DONE 2026-11-26: PR #46 rebase-merged by deputy-7 (5f66e805, no bypass); builder codex, reviewer claude, 1 round (0/8); ~11 h in flight (review out in 40 min, merge waited on the handover overnight). In a `--scripted-openai` preview a checked provider's `account: "judge"` call reaches the program's `https://judge.test` with a fixture key, so a safe call runs and an unsafe one denies with no real judge; real homes and release builds refuse it; serve reports `judge_origin`. Adversary HELD, user-sim ACCEPTED, validator RETURN (polish only). R1.1 to R1.3 accepted (Deputy decisions); P1.1 to P1.8 in Leftovers. Suite: host +0.01 s, dev +2.9 s (the 15/21 min were load noise). Sketch in factory/DONE.md.
 - [x] **S126 (upkeep, guard) host's last flakes and its S125/S119/S118 polish.** DONE 2026-11-25: PR #45 rebase-merged by deputy-6 (a610f9ba, no bypass); builder codex, reviewer claude, 1 round (0/5); ~2.3 h in flight. `remove` waits for a busy mod's call up to its deadline and names the mod; a restart sweeps timer rows left by a crash during `remove`; the three S125 flakes are fixed (one race, two test-only timing assertions removed; 20/20 per OS in CI); judge-origin limits recorded in host 19.4 and 3.1; S125/S119/S118 polish done. R1.1, R1.2 accepted (Deputy decisions); P1.1 to P1.5 in Leftovers. Sketch in factory/DONE.md.
