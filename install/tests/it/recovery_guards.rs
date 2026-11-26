@@ -99,6 +99,9 @@ fn recovery_callers_obey_the_destination_check() {
                 "foreign_entry",
                 r#"
                 denied=$bin
+                # A legacy journal has no readable receipt, so this isolates
+                # the primary destination check from the staged-receipt veto.
+                read_receipt() { R_OK=0; R_LINES=; R_RESOLVED=; R_VERSION=; }
                 RELEASE=0.1.0
                 check_foreign
             "#,
