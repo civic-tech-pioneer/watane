@@ -1207,7 +1207,9 @@ interrupted install first)` (leftovers only), or
 `Next: if no install is running, run: rm -rf ~/.watane-install.lock, then run: sh ~/.local/share/watane/install.sh`
 (both). That script is named only when `<prefix>/share/watane/install.sh` is a
 regular file (not a link) that a readable receipt lists (the published one, or
-the staged one of a dead run when there is none), so a file that watane did not
+the staged one of a dead run when there is none), in the physical folder that
+receipt's `resolved` line records for `.local/share/watane` (a relinked folder
+holds some other file at that path), so a file that watane did not
 install is never named; a run killed before its entry was swapped leaves none, and then
 the line says `run the install command again` in its place
 (`Next: run the install command again (it recovers the interrupted install first)`,
@@ -1285,7 +1287,8 @@ is a feature of `app`, not of `install` (Q11).
    `The files of the interrupted install were removed.`, only when the
    `recovered interrupted watane install` line was printed before it
    (INST-S-33) and recovery left no staging name of a dead run behind (a folder
-   whose recorded location differs keeps its `.new.<n>` names, 3.6 step 4);
+   whose recorded location differs keeps its `.new.<n>` names, 3.6 step 4) and
+skipped no journal entry (a folder relinked outside the home is not entered, 8.5);
    otherwise it says nothing about removal. When another journal stays
    pending, the `recovered` line and this one are both left out.
 2. `rm -rf` each `path` of the receipt that the rule of 8.5 allows; a path

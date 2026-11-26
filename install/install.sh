@@ -295,11 +295,13 @@ read_recovery_receipt() {
   fi
 }
 
-# read_journal <file>: J_OLD, J_NEW, J_MOVED hold the lines that count (TECHNICAL 3.6.1)
+# read_journal <file>: J_OLD, J_NEW, J_MOVED hold the lines that count (TECHNICAL 3.6.1);
+# J_SKIPPED is 1 when a line names an entry whose folder 8.5 now refuses
 read_journal() {
   J_OLD=""
   J_NEW=""
   J_MOVED=""
+  J_SKIPPED=0
   [ -f "$1" ] && [ ! -L "$1" ] || return 0
   while IFS= read -r rj_l; do
     case $rj_l in
@@ -314,6 +316,9 @@ read_journal() {
         new) J_NEW=$(add_item "$J_NEW" "$rj_p") ;;
         moved) J_MOVED=$(add_item "$J_MOVED" "$rj_p") ;;
       esac
+    else
+      check_signal "$?"
+      if in_list "$ENTRIES_ALL" "$rj_p"; then J_SKIPPED=1; fi
     fi
   done <"$1"
   return 0
@@ -580,6 +585,9 @@ recover() {
   while IFS= read -r rc_n; do
     [ -n "$rc_n" ] || continue
     pid_gone "$rc_n" || continue
+    # an entry the undo cannot reach may stay behind: uninstall then claims no removal (8.4 step 1)
+    read_journal "$SHAREW/journal.$rc_n"
+    if [ "$J_SKIPPED" = 1 ]; then CS_LEFT=1; fi
     if exists "$RECEIPT.new.$rc_n"; then
       rc_locations=""
       if [ "${1:-}" = prune ] && ! exists "$RECEIPT"; then
@@ -1522,6 +1530,7 @@ do_status() {
   ds_has_left=0
   ds_seen=""
   ds_owned=0
+  ds_owned_at=""
   CS_REPORTED=0
   if exists "$ds_lock"; then
     ds_has_lock=1
@@ -1533,7 +1542,7 @@ do_status() {
   ds_installed=$R_OK
   if [ "$ds_installed" = 1 ]; then
     say "watane $R_VERSION ($R_TARGET)"
-    if in_list "$R_LINES" "path $SHAREW/install.sh"; then ds_owned=1; fi
+    if in_list "$R_LINES" "path $SHAREW/install.sh"; then ds_owned=1 ds_owned_at=$R_RESOLVED; fi
     while IFS= read -r ds_l; do
       ds_p=${ds_l#path }
       if valid_entry "$ds_p"; then
@@ -1553,7 +1562,9 @@ EOF
       pid_gone "$ds_n" || continue
       read_recovery_receipt "$ds_n"
       recovery_allowed "$RECEIPT" "$ds_n" "$R_RESOLVED" || continue
-      if [ "$R_OK" = 1 ] && in_list "$R_LINES" "path $SHAREW/install.sh"; then ds_owned=1; fi
+      if [ "$ds_owned" = 0 ] && [ "$R_OK" = 1 ] && in_list "$R_LINES" "path $SHAREW/install.sh"; then
+        ds_owned=1 ds_owned_at=$R_RESOLVED
+      fi
       say "leftover: $(tilde "$SHAREW/journal.$ds_n")"
       ds_has_left=1
       if exists "$RECEIPT.new.$ds_n"; then
@@ -1581,8 +1592,10 @@ EOF
     clean_stale report
     if [ "$CS_REPORTED" = 1 ]; then ds_has_left=1; fi
   fi
-  # the script is named only when it is watane's own: a regular file that a readable receipt lists
-  if [ "$ds_owned" = 1 ] && [ -f "$SHAREW/install.sh" ] && [ ! -L "$SHAREW/install.sh" ]; then
+  # the script is named only when it is watane's own: a regular file that a readable receipt
+  # lists, in the physical folder that receipt records (8.1)
+  if [ "$ds_owned" = 1 ] && [ -f "$SHAREW/install.sh" ] && [ ! -L "$SHAREW/install.sh" ] &&
+    allowed "$SHAREW/install.sh" && in_list "$ds_owned_at" "resolved ${al_root#"$HOME/"} $al_rr"; then
     ds_run="run: sh $(tilde "$SHAREW/install.sh")"
   else
     ds_run="run the install command again"

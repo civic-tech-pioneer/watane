@@ -12,7 +12,8 @@
 
 `cargo test -p watane-install` (no network, no Mac needed);
 `cargo clippy --all-targets -- -D warnings && cargo +nightly fmt --check`;
-`shellcheck -s sh install.sh package.sh tests/clean_mac.sh tests/vm_mac.sh` when it is installed.
+`shellcheck -s sh -x -P SCRIPTDIR install.sh package.sh tests/clean_mac.sh tests/vm_mac.sh` when it is
+installed (`-x` follows `tests/vm_lib.sh`).
 `sh tests/clean_mac.sh --from <release-dir> --fresh-home` runs the local
 release smoke without a terminal, toolchain install or app launch.
 `sh tests/vm_mac.sh [--prepare] [--from <release-dir>]` runs both guest
