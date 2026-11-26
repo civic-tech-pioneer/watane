@@ -1401,6 +1401,47 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    fn a_nested_invocation_of_the_timer_owner_cannot_read_the_firing_origin() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
+        let snapshot = Arc::new(host.catalog.lock().unwrap().clone());
+        let top = Invocation {
+            chain: Arc::new(Chain {
+                deadline: deadline(&host).unwrap(),
+                host,
+                snapshot,
+                fakes: None,
+                effects: Mutex::new(Effects::default()),
+                publish: true,
+                ready: AtomicBool::new(false),
+                job: Arc::new(Job::new()),
+                failed_fuel: AtomicU64::new(0),
+                log: Mutex::new(Vec::new()),
+                connection: None,
+                defers: false,
+                deferred: AtomicBool::new(false),
+                timer: Some(("tick".into(), 100)),
+                unavailable: AtomicBool::new(false),
+                agent: None,
+                denied: Mutex::new(None),
+            }),
+            local: LocalName::parse("relay").unwrap(),
+            identity: "local/relay".into(),
+            depth: 0,
+            hop: 0,
+            link: false,
+            origin: "local/relay-front".into(),
+            origin_gen: None,
+            via: None,
+        };
+        assert_eq!(top.firing_origin(), Some("local/relay-front"));
+        // Exercise the read at re-entry depth directly. Calling back through the
+        // fixture would wait on the mod lock that the outer firing already holds.
+        let reentry = Invocation { depth: 2, ..top };
+        assert_eq!(reentry.firing_origin(), None);
+    }
+
+    #[test]
     fn s126_timer_commit_uses_the_current_origin_install() {
         let dir = tempfile::tempdir().unwrap();
         let host = Host::open(dir.path(), Mode::Preview, Limits::default()).unwrap();
