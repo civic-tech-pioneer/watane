@@ -722,3 +722,66 @@ printf 'resolved .local/share/watane /elsewhere\n' >>"$RECEIPT.new.$pid"
     }
     assert!(out.join("watane.new.99999999").exists());
 }
+
+/// TECHNICAL 8.1 (S137 r1 F1.1): the script is named only when the receipt that lists it records
+/// the physical folder it is in: a receipt with no `resolved .local/share/watane` line, or one
+/// that records another folder, gets the fallback line. Mutant: drop the `in_list "$ds_owned_at"`
+/// check in `do_status`.
+#[test]
+fn regress_s137_status_names_the_script_only_in_the_folder_the_receipt_records() {
+    let plant = r#"rcpt "$RECEIPT" "$bin" "$SHAREW/install.sh"; : >"$SHAREW/install.sh"; : >"$bin.old.$pid""#;
+    let units = run(&[
+        ("recorded", &format!("{plant}\ndo_status")),
+        (
+            "unrecorded",
+            &format!(
+                "{plant}\ngrep -v '^resolved .local/share/watane ' \"$RECEIPT\" >\"$RECEIPT.t\" && mv \"$RECEIPT.t\" \"$RECEIPT\" || exit 99\ndo_status"
+            ),
+        ),
+    ]);
+    let tail = "(it recovers the interrupted install first)";
+    let recorded = case(&units, "recorded");
+    assert_eq!(
+        recorded.out.lines().last(),
+        Some(format!("Next: run: sh ~/.local/share/watane/install.sh {tail}").as_str()),
+        "{recorded:?}"
+    );
+    let unrecorded = case(&units, "unrecorded");
+    assert_eq!(
+        unrecorded.out.lines().last(),
+        Some(format!("Next: run the install command again {tail}").as_str()),
+        "{unrecorded:?}"
+    );
+}
+
+/// TECHNICAL 8.4 step 1 (S137 r1 F1.2): after a fresh pre-commit crash, `~/.local/bin` moved
+/// aside and relinked outside the home: the undo leaves the moved entry alone (it skips it) and
+/// retires the journal, and uninstall then makes no claim that the files were removed. Without
+/// the relink the claim still prints. Mutant: drop `CS_LEFT=1` after `read_journal` in `recover`.
+#[test]
+fn regress_s137_uninstall_does_not_claim_removal_when_recovery_skipped_an_entry() {
+    let staged = r#"rcpt "$RECEIPT.new.$pid" "$node"; fresh_journal "$node""#;
+    let fx = Fx::new();
+    let out = fx.root.path().join("out");
+    fs::create_dir_all(&out).expect("out");
+    let aside = fx.home.join(".local/bin.aside");
+    fs::create_dir_all(&aside).expect("aside");
+    fs::write(aside.join("watane-node"), "").expect("moved entry");
+    symlink(&out, fx.home.join(".local/bin")).expect("bin link");
+    let relinked = format!("{staged}\ndo_uninstall");
+    let mut units = fx.units(PRELUDE, &[], &[("relinked", relinked.as_str())]);
+    let in_place = format!("{staged}; : >\"$node\"\ndo_uninstall");
+    units.extend(run(&[("in_place", in_place.as_str())]));
+    let line = "The files of the interrupted install were removed.";
+    let u = case(&units, "relinked");
+    assert_eq!(u.code, 7, "{u:?}");
+    assert!(
+        u.has_out_line("recovered interrupted watane install"),
+        "{u:?}"
+    );
+    assert!(!u.has_err_line(line), "{u:?}");
+    assert!(aside.join("watane-node").exists());
+    let kept = case(&units, "in_place");
+    assert_eq!(kept.code, 7, "{kept:?}");
+    assert!(kept.has_err_line(line), "{kept:?}");
+}
