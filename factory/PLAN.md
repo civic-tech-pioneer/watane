@@ -1694,6 +1694,7 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 ### host
 
+- (flake, S133 CI 2026-11-26) `claude::ac9_say_refuses_slash_commands_strangers_and_unknown_streams` failed on ubuntu at host/tests/it/claude.rs:587 (left 0, right 1) on a docs-only PR; rerun.
 - [S126 r1] (polish) P1.1 `host/tests/it/https_stream.rs:1674` the "host stops reading" bound weakened to `written < EVENTS`: add a buffer-sized bound; P1.2 a removal timeout answers `internal` (host 4.4 names no code; a busy-mod kind is an interface change); P1.3 `.github/workflows/ci.yml:85,104` the S126 repeat steps are dead after merge: remove; P1.4 `judge_set` with an invalid origin lacks the editor's explanation; P1.5 `app/ui/app.js:132-136` "needs ." with empty hosts (unreachable today).
 
 
