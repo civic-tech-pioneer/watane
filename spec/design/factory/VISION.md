@@ -23,8 +23,8 @@ uses to change any other mod.
   change, merges it, and installs a released package through the ordinary
   watane path. Each of those actions has its own authority.
 - The factory runs as one ordinary mod on the agent layer. Sessions use
-  Alice's accounts and the host's grants and consents given to that mod. She can see the
-  requested reach, stop work and withdraw it.
+  Alice's accounts and the grants and consents she gives that mod. She
+  can see the requested reach, stop work and withdraw it.
 - Project decisions can become statements between people under V7
   when the human settles their meaning and trust rules. The factory
   needs no shared control service or global trust authority.

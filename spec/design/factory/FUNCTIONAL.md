@@ -29,7 +29,7 @@ through the usual release and installation controls.
 
 ## 2. Journeys
 
-### JF1 · Take one real slice through the mods
+### JF1 · Take one real slice through the factory
 
 Covers FF1–FF3.
 
@@ -69,9 +69,9 @@ those handoffs. Existing required project gates still apply.
 
 Covers FF4.
 
-1. Alice points the same process at the factory mod's source repository. The running
-   release continues to serve the work while the implementer changes a
-   separate candidate checkout. Review and checks bind to the candidate
+1. Alice points the same process at the factory mod's source repository.
+   The running release continues to serve the work while the implementer
+   changes a separate candidate checkout. Review and checks bind to the candidate
    revision, including the proposed changes in authority.
 2. Alice approves the merge and chooses whether to publish or obtain the
    corresponding package. For a GitHub publication she uses
