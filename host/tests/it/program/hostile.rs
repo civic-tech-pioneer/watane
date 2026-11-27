@@ -105,7 +105,7 @@ async fn ac3_call_refuses_wrong_method_origin_type_size_and_body() {
     assert_eq!(response.json::<Value>().await.unwrap(), json!({"value":0}));
 }
 
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::net::TcpStream;
 
 fn no_cors(headers: &reqwest::header::HeaderMap) {
@@ -389,15 +389,18 @@ fn ac4_chunked_and_declared_oversized_bodies_never_change_state() {
 }
 
 // A chunked body of `size` bytes with no `Connection: close` from the client,
-// then a second request on the same connection. Panics unless the whole write
-// succeeds and the host then closes the connection (EOF or reset, not a read
-// timeout). Returns every byte the host sent and how the connection ended.
+// then a second request on the same connection. The write either completes,
+// the trailing request included, or is reset by the host closing after its
+// 413 (macOS does this while the trailing bytes are still going out). Panics
+// on any other write error, and unless the host then closes the connection
+// (EOF or reset, not a read timeout). Returns every byte the host sent, how the
+// write ended and how the connection ended.
 fn chunked_oversize_then_pipelined(
     preview: &Preview,
     path: &str,
     extra: &str,
     size: usize,
-) -> (String, &'static str) {
+) -> (String, &'static str, &'static str) {
     let port = preview.ready.port;
     let mut bytes = format!(
         "POST {path} HTTP/1.1\r\nHost: localhost:{port}\r\n{extra}Content-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n"
@@ -419,32 +422,41 @@ fn chunked_oversize_then_pipelined(
     stream
         .set_write_timeout(Some(Duration::from_secs(3)))
         .unwrap();
-    // The whole write, the trailing request included, must reach the host.
-    stream
-        .write_all(&bytes)
-        .expect("the pipelined request was sent");
+    let wrote = match stream.write_all(&bytes) {
+        Ok(()) => "sent",
+        // A reset (EPIPE is how a later write reports one) means the host
+        // closed after its 413; it can serve nothing more on this connection.
+        Err(e) if matches!(e.kind(), ErrorKind::ConnectionReset | ErrorKind::BrokenPipe) => "reset",
+        Err(e) => panic!("the pipelined request could not be written: {e}"),
+    };
     let mut reply = Vec::new();
     let mut buf = [0u8; 16 << 10];
     let end = loop {
         match stream.read(&mut buf) {
             Ok(0) => break "eof",
             Ok(n) => reply.extend_from_slice(&buf[..n]),
-            Err(e) if e.kind() == std::io::ErrorKind::ConnectionReset => break "reset",
+            Err(e) if e.kind() == ErrorKind::ConnectionReset => break "reset",
             Err(e) => panic!("the host did not close the connection: {e} after {reply:?}"),
         }
     };
-    (String::from_utf8(reply).unwrap(), end)
+    (String::from_utf8(reply).unwrap(), wrote, end)
 }
 
-fn assert_closed_413_without_second_response((reply, end): (String, &str)) {
+fn assert_closed_413_without_second_response((reply, wrote, end): (String, &str, &str)) {
     assert!(matches!(end, "eof" | "reset"), "{end}");
+    // Never a second response: the trailing request was not served.
+    assert!(reply.matches("HTTP/1.1 ").count() <= 1, "{reply:?}");
+    // A reset during the write may discard the 413 before it is read; any
+    // bytes that did arrive must still be that 413 with `connection: close`.
+    if wrote == "reset" && reply.is_empty() {
+        return;
+    }
     let (head, _) = reply.split_once("\r\n\r\n").expect("a 413 response");
     assert!(head.starts_with("HTTP/1.1 413 "), "{head:?}");
     assert!(
         head.lines().any(|line| line == "connection: close"),
         "{head:?}"
     );
-    assert_eq!(reply.matches("HTTP/1.1 ").count(), 1, "{reply:?}");
 }
 
 #[test]
