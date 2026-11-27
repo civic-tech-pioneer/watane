@@ -263,15 +263,25 @@ impl Dist {
         Ok(())
     }
 
-    pub(crate) fn check_listed_base(&self, base: &str) -> Result<(), DistError> {
+    /// Tests only: `url` is on a test server that counts as non-local.
+    pub(crate) fn test_local_ok_url(&self, url: &str) -> bool {
         #[cfg(test)]
-        if self
-            .test_local_ok
-            .lock()
-            .expect("lock poisoned: another thread panicked while holding it")
-            .iter()
-            .any(|prefix| base.starts_with(prefix.as_str()))
         {
+            self.test_local_ok
+                .lock()
+                .expect("lock poisoned: another thread panicked while holding it")
+                .iter()
+                .any(|prefix| url.starts_with(prefix.as_str()))
+        }
+        #[cfg(not(test))]
+        {
+            let _ = url;
+            false
+        }
+    }
+
+    pub(crate) fn check_listed_base(&self, base: &str) -> Result<(), DistError> {
+        if self.test_local_ok_url(base) {
             return Ok(());
         }
         if !self.options.listed_local && index::local_base(base) {

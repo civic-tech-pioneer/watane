@@ -594,7 +594,9 @@ impl Walk {
     }
 }
 
-pub(crate) fn local_base(base: &str) -> bool {
+/// The one address rule of a listed read (TECHNICAL 5.9): the literal check of
+/// `local_base` and the resolved check of `resolve.rs` both call it.
+pub(crate) fn local_ip(ip: std::net::IpAddr) -> bool {
     fn local_v4(ip: std::net::Ipv4Addr) -> bool {
         let [first, second, ..] = ip.octets();
         ip.is_loopback()
@@ -619,17 +621,9 @@ pub(crate) fn local_base(base: &str) -> bool {
         }
     }
 
-    match url::Url::parse(base)
-        .ok()
-        .and_then(|u| u.host().map(|h| h.to_owned()))
-    {
-        Some(url::Host::Domain(name)) => {
-            // `localhost.` is the same name: trailing dots do not make a host non-local.
-            let name = name.trim_end_matches('.');
-            name == "localhost" || name.ends_with(".localhost")
-        }
-        Some(url::Host::Ipv4(ip)) => local_v4(ip),
-        Some(url::Host::Ipv6(ip)) => {
+    match ip {
+        std::net::IpAddr::V4(ip) => local_v4(ip),
+        std::net::IpAddr::V6(ip) => {
             let [first, second, third, ..] = ip.segments();
             ip.is_loopback()
                 || ip.is_unspecified()
@@ -641,6 +635,21 @@ pub(crate) fn local_base(base: &str) -> bool {
                 || [first, second, third] == [0x64, 0xff9b, 1]
                 || embedded_v4(ip).is_some_and(local_v4)
         }
+    }
+}
+
+pub(crate) fn local_base(base: &str) -> bool {
+    match url::Url::parse(base)
+        .ok()
+        .and_then(|u| u.host().map(|h| h.to_owned()))
+    {
+        Some(url::Host::Domain(name)) => {
+            // `localhost.` is the same name: trailing dots do not make a host non-local.
+            let name = name.trim_end_matches('.');
+            name == "localhost" || name.ends_with(".localhost")
+        }
+        Some(url::Host::Ipv4(ip)) => local_ip(ip.into()),
+        Some(url::Host::Ipv6(ip)) => local_ip(ip.into()),
         None => true,
     }
 }
@@ -709,6 +718,29 @@ mod tests {
         }
         for host in ["example.org", "example.org.", "8.8.8.8", "172.32.0.1"] {
             assert!(!local_base(&format!("http://{host}/")), "{host}");
+        }
+    }
+
+    #[test]
+    fn ac6_the_range_table_runs_through_the_ip_function() {
+        for (host, local) in [
+            ("0.255.255.255", true),
+            ("1.0.0.0", false),
+            ("100.64.0.0", true),
+            ("100.128.0.0", false),
+            ("198.18.0.0", true),
+            ("198.20.0.0", false),
+            ("fec0::", true),
+            ("fe7f::1", false),
+            ("::ffff:100.64.0.1", true),
+            ("64:ff9b::192.168.1.1", true),
+            ("64:ff9b::8.8.8.8", false),
+            ("2002:7f00:1::", true),
+            ("2002:808:808::", false),
+            ("127.0.0.1", true),
+            ("8.8.8.8", false),
+        ] {
+            assert_eq!(local_ip(host.parse().unwrap()), local, "{host}");
         }
     }
 }
