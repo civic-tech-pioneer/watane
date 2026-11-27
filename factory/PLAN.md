@@ -1579,7 +1579,7 @@ rest to a later step. Leftover `ponytail:` comments count as missing parts (`git
 | dev | 11 new --from clone and fork | 6 | done (S43) |
 | log | L1 to L5 | 3 | done (S19: L1 to L4; S21a, S21b: L5) |
 | dist | S1 to S5 | 3 | done (S21a) |
-| dist | S6 find | 4 | done (S28) |
+| dist | S6 find | 4 | done (S28; r1 (13:38 UTC): 2/1, changes (2), Codex: F1.1 dist checks the truncated DNS result (16 kept), F1.2 SQLite may create channels.db outside the checked log dir; both guards, kept blocking by Deputy Scissors; posted on the PR; answer r1 Claude routine `trig_014eoWaLGdJUsJTSuPHfK9bT` 13:50 UTC) |
 
 ## Leftovers
 
