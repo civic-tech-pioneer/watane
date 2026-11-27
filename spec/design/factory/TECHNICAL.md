@@ -31,20 +31,27 @@ or shared mutable draft between the pages.
 | `slice` | Nonempty slice identifier from the plan, used with `project` and `plan_revision` to locate the sketch. |
 | `plan_revision` | Full commit object ID in that repository at which Alice read `factory/PLAN.md`. Planning asks Alice to supply it. |
 | `base` | Full commit object ID from which Alice prepares the checkout, independently of `plan_revision`. |
-| `branch` | Valid Git short branch name for the slice, distinct from the PR target. |
+| `branch` | Valid Git short branch name for the slice. |
 | `scope` | Nonempty text describing the allowed change and its limits. |
 | `acceptance` | Ordered array of one or more nonempty observable criteria. Their one-based positions are the criterion IDs. |
 | `decisions` | Array of objects with `status` (`settled` or `open`) and nonempty `text`. Empty when there are none. |
 
 Object IDs are full hexadecimal Git IDs (40 or 64 digits, normalized to
-lowercase), with one object format per run. Import rejects unknown versions,
-duplicate or unknown keys, missing fields and malformed values, identifies
-the problem and creates no run. The plan binding is the repository, plan
+lowercase), with one object format per run. Planning limits the exported
+snapshot to 32 KiB (32,768 bytes) of UTF-8 JSON. Foreman applies the same
+limit to the entire pasted input, including whitespace, before parsing.
+Import rejects oversized input, unknown versions, duplicate or unknown keys,
+missing fields and malformed values. It identifies the problem and creates
+no run. The plan binding is the repository, plan
 commit and slice identifier recorded with the exact imported fields. Alice
 compares them with the committed plan before dispatch and confirms the
 preview before import. The pages do not fetch Git data or establish that the
 commit exists. To change an imported sketch, dispatch and import a new
-snapshot and abandon the superseded run.
+snapshot and abandon the superseded run. A snapshot with an open decision
+can be imported and inspected. The run stays at Dispatched and the
+implementer start action is refused while any decision is open. Foreman
+shows the open decisions and asks Alice to dispatch and import a new
+snapshot with all decisions settled.
 
 ### 1.2 Run and evidence
 
@@ -60,7 +67,7 @@ both the snapshot and reviewer input.
 | Record | Required data |
 |---|---|
 | Session attempt | Local attempt ID, role, stored profile name, expected backend, actual backend and kernel session ID when known, request keys for pending calls, last processed transcript cursor, session status and any wait or failure reason. Review attempts also carry the evidence revision and exact input they were started with. |
-| PR observation | Repository (must match the snapshot), positive GitHub PR number, target branch, source branch (must match the snapshot and originate in the same repository), full head object ID and observation time. Alice supplies and confirms these values from the open PR. The repository, number and target branch are fixed for this run once recorded. |
+| PR observation | Repository (must match the snapshot), positive GitHub PR number, target branch, source branch (must match the snapshot and originate in the same repository), full head object ID and observation time. When Alice records the open PR, Foreman checks that the target and source branches differ. The repository, number and target branch are fixed for this run once recorded. |
 | Check evidence | On a PR observation, Alice supplies the set of project-required checks, plus a result per check with name, pass/fail/pending, and a command or CI run reference and short result summary. Include specialist gates where required. A missing result is pending. If there are no required checks, Alice explicitly confirms an empty set. |
 | Review evidence | On that same observation, the diff text Alice supplies, the submitted brief and checks, the reviewing session ID and vendor, the transcript entry range containing the response, and a verdict with findings. The verdict is approve or request changes. Each finding gives its location (or whole-slice scope) and reason. Alice confirms the transcription of the verdict and findings against the response. |
 | Merge receipt | Same repository and PR number, the approved PR head, full resulting merge commit ID and observation time. Alice confirms the repository reports the PR merged at that head before recording the receipt. The approved head and resulting commit are separate fields, even when equal. |
@@ -80,10 +87,12 @@ review and rechecks it in the repository immediately before merging.
 Evidence is Alice's report of Git and repository state. A session response
 or an old observation cannot itself change that state or authorize a merge.
 
+Alice can edit the sketch in Planning before dispatch. Foreman creates a
+run only when she confirms import.
+
 | Run state | Entry and allowed next action |
 |---|---|
-| Sketch | Planning draft. Alice can edit or confirm and export it. |
-| Dispatched | Planning has exported the snapshot. Foreman import creates the run in this state. Alice can select the checkout and start the implementer. |
+| Dispatched | Planning has exported the snapshot. Foreman import creates the run in this state. Alice can select the checkout and start the implementer once every decision in the snapshot is settled. |
 | Building | Alice starts or retries an implementer on the confirmed checkout. On a usable result she inspects the diff and advances to checking. A confirmed request for changes returns here for a new attempt. |
 | Checking | Alice applies the diff in her trusted checkout, opens or updates the PR, and supplies head, diff and checks. With complete passing evidence she can start review. A failed check can be replaced with a fresh observation or returned to building. |
 | Reviewing | Alice starts the independent review for the current evidence. A confirmed request for changes returns to building and clears the active evidence for readiness. A confirmed approval with matching passing checks makes the run ready for Alice. A changed observation goes back to checking. |
@@ -254,7 +263,7 @@ human's veto. The table records what remains open.
 | C · Authoritative plan during migration | Keep Git's `PLAN.md` authoritative and treat the mod copy as a working view, with manual reconciliation. Or make the factory mod's planning page authoritative after an explicit cutover, which requires exporting or archiving a coherent plan for legacy deputies and preserving decision history. | Use the Git plan during JF1 (§1.2). Ask the human before any cutover. |
 | C · Factory profiles at F | Human provisioning in the kernel would give Alice explicit control but needs a supported interface for writing role profiles and `access/<identity>`. Adoption from an offer could reduce setup, but still needs a way for Alice to authorize the specific profile for a specific mod identity. Automatic provisioning by the requesting mod would change the consent boundary. Door H changes this row: there is one identity, the factory mod's, so one `access/<identity>` entry authorizes every top-level session either page starts, and the roles differ only by their profiles. A delegated child is admitted under §9.7 instead (planning and foreman split row). | Settle the writer, consent, scope and withdrawal in harness F before JF1-2 can start a session. Keep absent entries denied. |
 | C · N5, implementer shell | The Claude shell option needs a shell-capable provider path to `claude-code-shell.start`, the `claude-code-shell` grant on the provider mod, and a human decision on V27. V27 found that allowlisted names can resolve to local addresses (harness §§4.2, 14, 16). With shell network closed, Alice may have to prefetch dependencies or run checks herself. `codex app-server` would be a third native process kind and needs a host contract and implementation for account, protocol, grants, sandbox and recovery. A file-tools-only Claude implementer could use the current `claude-code` provider without waiting for an N5 shell choice or V27. It would still need factory profiles and the E/F sequence, and could edit files but could not run or iterate on tests itself. | Compare the harness's Claude shell recommendation with the smaller file-tools-only option when selecting the first real slice. Leave the provider path, provider grant and V27 prerequisites open. |
-| C · E/F sequencing | Harness §17 orders E before F. E landed in S127. | Keep that sequence. JF1 session work still waits for F’s factory profiles. |
+| C · E/F sequencing | Harness §17 orders E before F. [Harness PLAN, Done (S127)](https://github.com/civic-tech-pioneer/agentic-harness/blob/5082f2095c3167a6fc71d8bfba73973549b6fa18/factory/PLAN.md#done) records E complete ([PR #56](https://github.com/civic-tech-pioneer/agentic-harness/pull/56), merged 2026-11-26). | Keep that sequence. JF1 session work still waits for F's factory profiles. |
 | C · Update and authority | Propose source changes, then have Alice review, merge, publish or select the release, and install through the ordinary path. This costs explicit actions and works with existing controls. A richer update proposal could use the normal manager request path where available, but needs a separate authority review. Unattended activation or widening would change the confirmation boundary. Door H changes this row: the pages are released together, so an update changes both, and one candidate's grants cover both pages. | Use ordinary updates with explicit human control. Defer any manager grant. Keep an old release available through normal package mechanisms where possible. |
 | C · V7 statements and sequencing | Local notes and GitHub evidence suffice to exercise the draft journey but carry GitHub's trust and availability assumptions. Portable signed statements would let another person verify the slice intent and scope, reviewer verdict at a head, owner merge decision, and release provenance and requested authority against a chosen signer. This requires decisions about signers, visibility, subject identity, supersession and withdrawal. Requiring all statements first delays the real journey but avoids a migration from local evidence. | Agree which statements step 6 requires before building, and whether a supervised GitHub-backed first cut can precede them under VISION. Prefer explicit subject and revision identities and signatures made by people through approved controls. Until the human agrees, the V7 dependency stands. Never publish transcripts or credentials as statements by default. |
 
