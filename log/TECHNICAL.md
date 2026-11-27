@@ -394,10 +394,14 @@ Sweep: a crash between creating the temporary file and its rename leaves a file 
 key seed. `open`, `open_keyless` and `restore_identity`, under the directory lock and through the
 anchor, remove each entry whose name is exactly `.identity.key.<32 lowercase hex>.tmp`. Nothing
 else in the directory is touched. An entry that cannot be removed (a directory of that name, a
-permission error) does not fail the call.
+permission error) does not fail the call. `open_keyless` sweeps only after its key check has
+found no `identity.key` (section 5.5); a keyed directory is refused before the sweep.
 
 Replace the key (restore only): take the same directory lock and publish the
-new key over `identity.key` using the same write, rename and sync sequence.
+new key over `identity.key` using the same write, rename and sync sequence. The rename is the
+publish: once it succeeds, the new key is the one in memory, also when the directory sync after
+it fails, and that sync error is still returned (section 5.4, `restore_identity` step 5). A
+failure before the rename leaves the old key on disk and in memory.
 
 What stays by path on Unix: the missing-directory creation and the first check of step 3 (before
 the anchor exists), and SQLite's own open of `channels.db` and its `-wal` and `-shm` files
@@ -409,7 +413,9 @@ owner-only DACL. Open the final directory without following a reparse
 point, check the owner and DACL on the handle, and hold that handle during
 key work. Serialize key lookup, creation and replacement with an
 exclusive lock on a private `.identity.lock` file. `open_keyless` takes it
-too, for the sweep, so a keyless directory also holds that file. The lock file remains
+too, for the sweep, but only after it has checked that `identity.key` is absent (and checks
+again under the lock): a keyed directory is refused with `HasIdentity` and gains no file, and a
+keyless directory holds that file. The lock file remains
 in the directory. It must have exactly one link and an owner-only DACL.
 
 The shared `windows-fs::private_dir` reports OS failures in creation,
@@ -426,6 +432,10 @@ with `MOVEFILE_WRITE_THROUGH` and adds `MOVEFILE_REPLACE_EXISTING` when
 `replace` is true. Identity publication passes true under the lock.
 If the filesystem cannot supply the required protections, opening or
 creating an identity fails with an error at the path.
+
+Known limits: on Unix, when a key operation fails and the unlock of the anchor after it fails
+too, the unlock error is returned and the earlier write or sync error is lost (two failures in
+one operation; accepted, S162 r1).
 
 ### 4.8 The channel store
 
