@@ -52,6 +52,20 @@ pub struct NewReport {
 }
 
 pub(crate) fn cannot_create(dir: &Path, error: std::io::Error) -> Problem {
+    if error.kind() == std::io::ErrorKind::NotFound
+        && let Some(parent) = dir.parent().filter(|p| !p.as_os_str().is_empty())
+    {
+        return Problem::new(
+            Code::UsageArgs,
+            format!(
+                "cannot create {}: its parent {} does not exist",
+                dir.display(),
+                parent.display()
+            ),
+        )
+        .at(dir.display().to_string(), None, None)
+        .fix("Create the parent folder");
+    }
     Problem::new(
         Code::Internal,
         format!("cannot create {}: {error}", dir.display()),
@@ -66,19 +80,6 @@ pub fn new_mod(dir: &Path, slug: &str) -> Result<NewReport, Problem> {
         return Err(if e.kind() == std::io::ErrorKind::AlreadyExists {
             Problem::new(Code::UsageExists, format!("{} exists", dir.display()))
                 .fix("Choose another slug, or pass --dir <new folder>")
-        } else if e.kind() == std::io::ErrorKind::NotFound
-            && let Some(parent) = dir.parent().filter(|p| !p.as_os_str().is_empty())
-        {
-            Problem::new(
-                Code::Internal,
-                format!(
-                    "cannot create {}: its parent {} does not exist",
-                    dir.display(),
-                    parent.display()
-                ),
-            )
-            .at(dir.display().to_string(), None, None)
-            .fix("Create the parent folder, or pass --dir with an existing parent")
         } else {
             cannot_create(dir, e)
         });
@@ -117,7 +118,7 @@ mod tests {
         let parent = root.path().join("missing parent");
         let dir = parent.join("new-mod");
         let problem = new_mod(&dir, "different-slug").unwrap_err();
-        assert_eq!(problem.code, Code::Internal);
+        assert_eq!(problem.code, Code::UsageArgs);
         assert_eq!(
             problem.message,
             format!(
@@ -127,10 +128,7 @@ mod tests {
             )
         );
         assert_eq!(problem.file.as_deref(), dir.to_str());
-        assert_eq!(
-            problem.fix.as_deref(),
-            Some("Create the parent folder, or pass --dir with an existing parent")
-        );
+        assert_eq!(problem.fix.as_deref(), Some("Create the parent folder"));
     }
 
     #[test]

@@ -244,7 +244,7 @@ The exit status is the class of the first error; 0 when there is none.
 
 | Code | Class | When | Message (template) | Fix |
 |---|---|---|---|---|
-| `usage.args` | 2 | clap rejects the arguments | clap's error text without its leading `error: ` and without its usage and help lines, on one line (`the following required arguments were not provided: <PROVIDER>`); with no command, `no command given: watane-dev needs one of new, check, test, serve, doctor, add, install, publish, search` | `watane-dev --help` |
+| `usage.args` | 2 | clap rejects the arguments, or a template destination has no parent folder | clap's error text without its leading `error: ` and without its usage and help lines, on one line (`the following required arguments were not provided: <PROVIDER>`); with no command, `no command given: watane-dev needs one of new, check, test, serve, doctor, add, install, publish, search` | `watane-dev --help` for clap failures. For the missing parent, see 2.4. |
 | `usage.not_a_mod` | 2 | the folder has no `mod.toml` | `<dir> is not a mod folder: it has no mod.toml` | `Run the command in a mod folder, or pass --dir <folder>. Create a mod with: watane-dev new <slug>` |
 | `usage.slug` | 2 | `watane_pkg::Slug::from_str` refuses it | `"<s>" is not a valid slug: <pkg reason>` | `Use lowercase words of letters and digits joined by "-", each starting with a letter, at most 40 bytes, not a WIT keyword. Example: reading-list` |
 | `usage.exists` | 2 | `new` into an existing path | `<path> exists` | `Choose another slug, or pass --dir <new folder>` |
@@ -406,9 +406,9 @@ They end with `<command>: failed`, never a blank command name.
 ```json
 {"slug": "reading-list", "dir": "/abs/reading-list", "files": ["AGENTS.md", "CLAUDE.md", "..."]}
 ```
-`files` are relative paths, sorted. A missing destination parent produces an
-`internal` error naming both paths and asks the maker to create the parent
-or pass a destination with an existing parent. If resolving the destination
+`files` are relative paths, sorted. If the template destination's parent
+does not exist, `usage.args` names the destination and its parent. The fix and `next`
+ask the maker to create the parent and give the original command with the destination. If resolving the destination
 fails, the error names the requested path and the cause. S2 `next`: `Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json`. Without `--dir`, it ends ` --dir <the new folder, quoted>` so it runs from where `new` ran.
 
 **check** (also the `check` field of `test`)
@@ -427,8 +427,10 @@ are the fields of `watane_pkg::World` (`collects` are the outlets whose
 function returns a list). `path` is the value recorded for
 the slug in `.watane-dev.json`, or null when none is recorded.
 When the first error is mod-class (including `mod.invalid`), `next` is
-`Fix the errors, then run: watane-dev check --json`. Env-class failures
-retain `watane-dev doctor --json`.
+`Fix the errors, then run: watane-dev check --json` with the original
+`--dir` when given. Text-mode fixes also include the check rerun. Env-class
+failures that point to `watane-dev doctor --json` retain an explicit `--dir`
+so doctor can suggest serving the same mod.
 
 **test**
 ```json
@@ -516,6 +518,7 @@ answer with `watane: 1` within 2 seconds; `app` is that answer's boolean.
 On success, `next` is `watane-dev serve --json` when the current folder
 (or `--dir`) contains `mod.toml`, otherwise `watane-dev new <slug> --json`.
 On a gap, it is `Run each error's fix, then run: watane-dev doctor --json`.
+The doctor and serve commands in `next` carry `--dir` when it was given.
 
 **new --from** (step 5)
 ```json
@@ -2401,7 +2404,7 @@ rules belong to 15.1.
 | DEV-S-63 | `scripted::ac5_judge_key_and_repeat` | https client |
 | DEV-S-64 | `preview::unix::tests::ac7_link_writes_default_script_once_and_keeps_the_makers`, `preview::unix::tests::ac7_link_is_replaced_and_copied_where_linking_fails`, `preview::unix::tests::ac7_find_fake_claude_reads_the_variable`, `preview::unix::tests::ac7_spawn_arguments_with_and_without_the_fake`, `doctor::tests::ac7_fake_claude_field_and_warning`; `fake_claude::ac7_serve_passes_the_flag_to_the_host` (slow) | unit: temp folder, literal script and argument vector; slow: the full `serve` against `fake-watane` |
 | DEV-S-67 | `scripted_preview::*`, `preview::unix::tests::s114_restart_*` | CLI diagnostics, loopback scripted preview, and the home lock across shutdown |
-| DEV-S-65 | `scripted::ac6_program_default_and_log`, `scripted::ac6_program_ends_on_sigterm` (Unix) | child process |
+| DEV-S-65 | `scripted::ac6_program_default_and_log`, `scripted::ac6_program_script_file`, `scripted::ac6_program_refuses_unknown_script_fields`, `scripted::ac6_program_ends_on_sigterm` (Unix), `scripted_format::tests::ac3_unknown_fields_are_refused_at_every_level`, `preview::openai::tests::ac2_read_script_names_an_unknown_field_the_file_and_the_fix` (Unix) | child process and script validation |
 | J1 | `journey::ac1_j1_reading_list_on_real_programs` | journey: slow, needs WATANE_BIN |
 | S11 | `journey_s11::ac4_s11_call_and_event_across_two_served_mods` | journey: slow, needs WATANE_BIN |
 
@@ -3036,8 +3039,8 @@ once. The maker tools offer the fake `claude` instead:
   before testing the mod. A missing program or a host that rejects the
   setting gives `preview.scripted_openai_missing` and starts or reuses
   an ordinary preview when no script was supplied. A host refusal is remembered
-  for the selected program fingerprint (a hash of the program's path and the
-  supplied script's bytes, not of the program's contents) and the live preview port, preserving
+  for a hash of the selected program path and the supplied script's bytes
+  and for the live preview port, preserving
   the API and MCP connection on the next serve without a script. A scripted
   refusal's marker keeps the host's cause verbatim after its first line, written in the same step as
   the marker (the first line alone is compared), and the reuse warning's message ends in `: <cause>`; a marker without a cause still reads. With a supplied script,

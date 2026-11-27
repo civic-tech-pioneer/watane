@@ -10,6 +10,10 @@ use serde_json::{Value, json};
 use std::path::Path;
 
 pub fn doctor(dir: &Path) -> Outcome {
+    doctor_with_args(dir, "")
+}
+
+pub(crate) fn doctor_with_args(dir: &Path, args: &str) -> Outcome {
     let mut outcome = Outcome::new("doctor", None);
     let mut errors = Vec::new();
     let toolchain = match Env::from_process().and_then(|env| toolchain::discover(&env)) {
@@ -69,7 +73,7 @@ pub fn doctor(dir: &Path) -> Outcome {
     };
     outcome.result = Some(json!({"toolchain":toolchain,"allowlist":allowlist,
         "watane":watane,"fake_claude":fake_claude,"home":home}));
-    outcome.next = Some(doctor_next(dir, errors.is_empty()).into());
+    outcome.next = Some(doctor_next(dir, errors.is_empty(), args));
     if errors.is_empty() {
         outcome
     } else {
@@ -77,13 +81,13 @@ pub fn doctor(dir: &Path) -> Outcome {
     }
 }
 
-fn doctor_next(dir: &Path, ok: bool) -> &'static str {
+fn doctor_next(dir: &Path, ok: bool, args: &str) -> String {
     if !ok {
-        "Run each error's fix, then run: watane-dev doctor --json"
+        format!("Run each error's fix, then run: watane-dev doctor --json{args}")
     } else if dir.join("mod.toml").is_file() {
-        "watane-dev serve --json"
+        format!("watane-dev serve --json{args}")
     } else {
-        "watane-dev new <slug> --json"
+        "watane-dev new <slug> --json".into()
     }
 }
 
@@ -95,14 +99,22 @@ mod tests {
     fn ac3_doctor_next_serves_existing_mod_and_creates_outside() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(
-            doctor_next(dir.path(), true),
+            doctor_next(dir.path(), true, ""),
             "watane-dev new <slug> --json"
         );
         std::fs::write(dir.path().join("mod.toml"), "").unwrap();
-        assert_eq!(doctor_next(dir.path(), true), "watane-dev serve --json");
+        assert_eq!(doctor_next(dir.path(), true, ""), "watane-dev serve --json");
         assert_eq!(
-            doctor_next(dir.path(), false),
+            doctor_next(dir.path(), false, ""),
             "Run each error's fix, then run: watane-dev doctor --json"
+        );
+        assert_eq!(
+            doctor_next(dir.path(), true, " --dir /m"),
+            "watane-dev serve --json --dir /m"
+        );
+        assert_eq!(
+            doctor_next(dir.path(), false, " --dir /m"),
+            "Run each error's fix, then run: watane-dev doctor --json --dir /m"
         );
     }
 
