@@ -3,6 +3,16 @@
 The product owner's state; only the product owner edits it, on `main`. A new session continues
 from here. Newest digest line last.
 
+## Deputy handover
+
+From Deputy Paper to Deputy Scissors, 2026-11-27 ~07:55 UTC (context 274k, handing over before 300k; two merges: agentic-harness S145, watane S150). Deputy skill 0.1.6. Edit agentic-harness's PLAN from a scratch clone of origin/main. github.com dropped for a while at ~07:25 UTC: use `timeout` on gh and git.
+- **agentic-harness S148** (PR #67, stage F `skill` on OpenAI; builder codex, task https://chatgpt.com/local/6b08ad95-8eb0-83ed-bcee-2e4bc0c8706b; reviewer claude): r1 1/8, r2 2/4 (F1.1's budget class on two more paths: the area is stalled, so I cut at r2: F2.1 a 1024-character description bound refused at check; F2.2 accepted as a stated per-child cost in TECHNICAL 16; five risks accepted). Answer r2 sent 07:47 UTC. Next: on `S148 r2: answers`, review r3 to a Claude routine as a short check of the cut. User-sim ACCEPTED (builder's scripted preview), adversary HELD twice. After it merges: hand out S151 (sketched in harness PLAN; same `design/TECHNICAL.md`).
+- **agentic-harness S152** (PR #68, console upkeep; builder codex, task https://chatgpt.com/local/6b092968-e6e4-83ed-822d-9837a9f94063; reviewer claude): delivered 07:17 UTC without a DELIVERED commit (Codex's last message says done). CI `gate` red on `console/src/replaced_S36_3.test.tsx:153` (the test S145 F1.1 fixed); its own gate passed, so I reran run 45957470181 once at 07:52 UTC. Green: review r1 to a Claude routine. Red again: an answer brief with it as `F1.ci` (a flake that S145's fix did not close).
+- **watane S149** (PR #58, upkeep; builder claude, routine `trig_01AAZGaXwoNLX8rH6CfuwUHt`; reviewer codex, task https://chatgpt.com/local/6b093686-b734-83eb-88aa-48203316104a, dispatched 07:50 UTC): +226/-0, most items already fixed on main; CI green. Waiting on the Codex review: read it on the task page and post it verbatim to the PR.
+- **Lanes: 3 in flight, target 4.** The fourth lane frees when S148 merges (S151) or the human makes the factory repository: JF1-1 now waits only on STEP6-REPO (evidence #56, holds since S150 merged). watane upkeep is S149; harness upkeep is S152. Rule 3: last two handed out S152 codex, S150 codex, so **Claude builds the next one**.
+- **Report to the human, still open:** Door C for veto: S150's three rows (manual sketch handoff for JF1; E/F sequencing; PLAN.md authoritative during JF1), S146's planning/foreman split, D001, S134 F1.5, N5, S132's and S133's choices; STEP6-REPO now blocks the main line. Cuts: S148 r2 (above). Factory proposals: agentic-harness CI `gate` 15-min limit; `review-lead.md` missing (every review this run says so). Friction: S147 skipped the adversary on a boundary diff; S143's r1 answer missed a red Windows job; the Codex composer now shows "Ask for approval".
+- **Watcher:** `git -C ../watane-mods show origin/main:factory/scripts/watch-all.sh` into your scratchpad, a fresh state file, `600` while a Codex task runs. Never run it with `0` and discard its output: that swallows a wake.
+
 ## Slices
 
 Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
