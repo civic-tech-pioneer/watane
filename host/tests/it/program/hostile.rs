@@ -3,7 +3,7 @@
 use super::*;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn ac3_call_refuses_wrong_method_origin_type_size_and_body() {
+async fn ac3_call_refuses_wrong_method_origin_type_and_body() {
     let home = tempfile::tempdir().unwrap();
     let preview = Preview::start(home.path());
     installed(preview.install(&fixture("counter")).await);
@@ -57,16 +57,6 @@ async fn ac3_call_refuses_wrong_method_origin_type_size_and_body() {
         .await
         .unwrap();
     call_error(response, 403, "forbidden").await;
-    // The size refusal may close the connection before the body is written.
-    let oversized = format!(
-        "POST /call HTTP/1.1\r\nHost: counter.localhost:{}\r\nOrigin: {origin}\r\nContent-Type: application/json\r\nContent-Length: 2097152\r\nConnection: close\r\n\r\n{}",
-        preview.ready.port,
-        " ".repeat(2 << 20)
-    );
-    if let Some(reply) = raw(&preview, "127.0.0.1", oversized.as_bytes()) {
-        assert_eq!(reply.header("connection"), Some("close"));
-        reply.error(413, "bad_request");
-    }
     for body in [
         r#"{"fn":"api.add","args":null,"caller":"agent:evil"}"#,
         r#"{"fn":42,"args":null}"#,
@@ -364,8 +354,7 @@ fn ac4_chunked_and_declared_oversized_bodies_never_change_state() {
         preview.ready.port,
         origin(&preview, "counter")
     );
-    let mut chunked =
-        format!("{prefix}Connection: close\r\nTransfer-Encoding: chunked\r\n\r\n").into_bytes();
+    let mut chunked = format!("{prefix}Transfer-Encoding: chunked\r\n\r\n").into_bytes();
     // A valid mutating call padded to 2 MiB, split into 16 KiB chunks.
     let mut body = br#"{"fn":"api.add","args":null}"#.to_vec();
     body.resize(2 << 20, b' ');
@@ -375,9 +364,9 @@ fn ac4_chunked_and_declared_oversized_bodies_never_change_state() {
         chunked.extend_from_slice(b"\r\n");
     }
     chunked.extend_from_slice(b"0\r\n\r\n");
-    raw(&preview, "127.0.0.1", &chunked)
-        .expect("413 response")
-        .error(413, "bad_request");
+    let reply = raw(&preview, "127.0.0.1", &chunked).expect("413 response");
+    assert_eq!(reply.header("connection"), Some("close"));
+    reply.error(413, "bad_request");
     counter_call(&preview, "api.get", 0);
     // Leave the request's write side open without sending any body bytes.
     // The response must close the connection even though the client did not ask for it.

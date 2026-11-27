@@ -236,6 +236,11 @@ impl Served {
                 .collect(),
         }
     }
+    /// Stops serving and removes `run.json`.
+    ///
+    /// Router tasks get up to four seconds to stop. Connection and blocking work can
+    /// finish within the remaining time in the five-second shutdown budget. Work
+    /// still running when the wait ends can retain the home until it finishes.
     pub async fn shutdown(mut self) {
         let started = tokio::time::Instant::now();
         let _ = self.shutdown.send(true);
