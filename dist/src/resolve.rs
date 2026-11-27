@@ -151,6 +151,20 @@ mod tests {
         ));
     }
     #[test]
+    fn s158_a_proxy_endpoint_without_a_port_gets_its_scheme_default() {
+        // ureq resolves `Proxy::uri()` itself, which keeps no port when none was given.
+        let r = resolver("proxy.test", &["127.0.0.1"]);
+        for proxy in ["http://proxy.test", "https://proxy.test"] {
+            let config = config(Some(Proxy::new(proxy).unwrap()));
+            resolve(&r, proxy, &config).unwrap();
+        }
+        let config = config(Some(Proxy::new("http://proxy.test").unwrap()));
+        assert!(is_local_refusal(
+            &resolve(&r, "https://proxy.test/", &config).unwrap_err()
+        ));
+        assert_eq!(LocalAddress.to_string(), "local address");
+    }
+    #[test]
     fn s158_the_default_port_follows_the_scheme() {
         let r = resolver("global.test", &["8.8.8.8"]);
         let config = config(None);

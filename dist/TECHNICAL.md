@@ -749,7 +749,9 @@ for the first base, the redirect cause above for a redirect target. Check and
 connect share one resolution, so no name can change between them.
 `Options::listed_local` turns it off with the literal check. Every target
 address ureq asks the resolver for is checked; only the resolution of the configured
-proxy endpoint itself is not (a local proxy must stay usable). When ureq goes through
+proxy endpoint itself is not (a local proxy must stay usable). A listed URL whose
+host and port are the proxy's own is therefore read: it reaches only the proxy the
+participant configured, and no other local port, which is accepted. When ureq goes through
 an HTTP CONNECT proxy from the environment the proxy resolves the name and dist cannot
 see the address: that case is not checked (section 6, "Not protected"). Followed and
 chosen reads use the plain agent. The redirecting URL is the one whose response gave the
@@ -1408,6 +1410,7 @@ sets the site URL again.
 
 Not protected (see `spec/TECHNICAL.md` section 6): a listed host name that
 an HTTP CONNECT proxy from the environment resolves (the proxy, not dist, sees the address; 4.5);
+a listed URL on the configured proxy's own host and port (it reaches only that proxy; 4.5);
 a host that withholds new entries; another program of the same user; the use of one identity on
 two devices, which forks the channel (question Q7).
 
