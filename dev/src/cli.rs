@@ -1872,8 +1872,8 @@ mod tests {
         assert_eq!(
             outcome.next,
             Some(format!(
-                "Create the parent folder, then run: watane-dev new notes --json --dir {}",
-                shell_path(&dir)
+                "Create the parent folder, then run: watane-dev new notes --json --dir '{}'",
+                dir.display().to_string().replace('\'', "'\"'\"'")
             ))
         );
     }
