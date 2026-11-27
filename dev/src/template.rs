@@ -50,6 +50,16 @@ pub struct NewReport {
     pub dir: PathBuf,
     pub files: Vec<String>,
 }
+
+pub(crate) fn cannot_create(dir: &Path, error: std::io::Error) -> Problem {
+    Problem::new(
+        Code::Internal,
+        format!("cannot create {}: {error}", dir.display()),
+    )
+    .at(dir.display().to_string(), None, None)
+    .fix("Check the paths and permissions")
+}
+
 pub fn new_mod(dir: &Path, slug: &str) -> Result<NewReport, Problem> {
     let slug=Slug::from_str(slug).map_err(|e|Problem::new(Code::UsageSlug,format!("{slug:?} is not a valid slug: {e}")).fix("Use lowercase words of letters and digits joined by \"-\", each starting with a letter, at most 40 bytes, not a WIT keyword. Example: reading-list"))?;
     if let Err(e) = fs::create_dir(dir) {
@@ -70,12 +80,7 @@ pub fn new_mod(dir: &Path, slug: &str) -> Result<NewReport, Problem> {
             .at(dir.display().to_string(), None, None)
             .fix("Create the parent folder, or pass --dir with an existing parent")
         } else {
-            Problem::new(
-                Code::Internal,
-                format!("cannot create {}: {e}", dir.display()),
-            )
-            .at(dir.display().to_string(), None, None)
-            .fix("Check the paths and permissions")
+            cannot_create(dir, e)
         });
     }
     let write = || -> Result<(), std::io::Error> {

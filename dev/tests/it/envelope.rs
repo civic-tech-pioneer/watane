@@ -616,3 +616,24 @@ fn ac4_local_dependency_names_the_known_folder() {
         )
     );
 }
+
+/// S155: `new` that cannot create its folder names the path, also when the parent is a file.
+#[cfg(unix)] // A regular file as a path component gives ENOTDIR.
+#[test]
+fn regress_s155_new_under_a_file_names_the_path() {
+    let temp = tempfile::tempdir().unwrap();
+    fs::write(temp.path().join("afile"), "not a folder").unwrap();
+    let (code, v) = run(
+        temp.path(),
+        &["new", "notes", "--json", "--dir", "afile/notes"],
+    );
+    assert_ne!(code, 0, "{v}");
+    let message = v["errors"][0]["message"].as_str().unwrap();
+    assert!(message.contains("afile"), "the error names no path: {v}");
+    let dir = temp.path().canonicalize().unwrap().join("afile/notes");
+    assert!(
+        message.starts_with(&format!("cannot create {}: ", dir.display())),
+        "{v}"
+    );
+    assert_eq!(v["errors"][0]["file"], dir.to_str().unwrap(), "{v}");
+}
