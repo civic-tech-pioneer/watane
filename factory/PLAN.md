@@ -1487,6 +1487,18 @@ names the same interface in its sketch and fakes it until this one merges.
   and S105 merge: a build brief "continue from branch slice/s110; rebase onto main" into the same Codex task. Resumed ~07:28 UTC 2026-11-24 in the same task (edits in dist/ and host/src/agent/ kept to cfg gates and refusals, since S107 and S103 run there). Windows failures per run: 358, 85, 30, 16, 15, 2, 0; DELIVERED ~11:45 UTC at 68d1dd4 (Windows green on attempts 1-3 of run 45370144960; Linux and macOS suite times within 10% of a parallel main run); r1: Claude review routine `trig_01CRaJJrcV955wX2NNsZP4NR`, fires 11:52 UTC; r1 (12:38): 2/10, changes (2) (validators PASS 1, RETURN 3; adversary HELD; user-sim ACCEPTED; no gate skips a named attacker's check): F1.1 the windows-fs crate's place in the spec, F1.2 two refusal tests; answer r1 dispatched 12:41 UTC into the Codex task; r1 answered at 3bd1122 (F1.1, F1.2, P1.1, P1.3, P1.5, P1.8, P1.9; the rest to Leftovers); r2: small Claude review routine `trig_01NGu5yhZEMyyvF8HwWxeKwD`, fires 12:49 UTC; r2 (13:05): 1/1, changes (1) (adversary HELD; the two new Windows refusal tests ran green on Windows): F2.1 a test assertion from my r1 polish wording, Windows red; answer r2 (option a, plus the forbid-to-deny docs) dispatched 13:10 UTC; r2 answered at 348a068 (+11/-6); r3: tiny Claude review (reads the diff, waits for Windows CI) routine `trig_017KsQQkRmNXpZNcNLSz74Gf`, fires 13:13 UTC; r3 (13:28): 0/0, VERDICT approve, all four CI jobs green at 348a068 (Windows included); waits on the human's merge word.
 
 - [x] **S150 Design: JF1 can be built from the documents (step 6).** DONE 2026-11-27: PR #57 rebase-merged at d0a5b4f4 by Deputy Paper, no bypass; builder codex, reviewer claude, 2 rounds (2/3, 0/1); ~35 min in flight. Alice's sketch snapshot (fields, version, 32 KiB limit, bound to a plan revision), the run record's states and evidence, JF1's six FUNCTIONAL outcomes and build rows JF1-1 to JF1-3, each naming what it waits on (harness F's factory profiles, STEP6-REPO, V27, V7). Door C settled for veto: manual sketch handoff for JF1; E/F sequencing (E done in S127, keep it); `factory/PLAN.md` stays authoritative during JF1. Sketch in factory/DONE.md.
+- [~] **S155 (upkeep) dev and app polish from Leftovers.** In flight (cloud, builder codex by rule 3: of the last two
+  handed out, S151 was Claude; reviewer claude). Sketched 2026-11-27 by Deputy Rock.
+  Re-check each item on main first and drop what is already fixed; say so in the PR.
+  1. dev (`### dev`): S119 r1 P1.2, P1.3; S114 r3 (the three `dev/src/preview/openai.rs` and `dev/TECHNICAL.md:2993`
+     items); S111 r1 P1.6 to P1.10, P1.12, P1.13 (`scripted-responses`); the S86 prose and rerun items; S93.
+  2. app (`### app`): S117 r1 (the three items), S116 r1 P1.1, P1.2, P1.4.
+  3. pkg (`### pkg`): S119 r1 P1.4 and S110 R2 (Windows reserved device names refused on every OS) where still open.
+  Each outcome is its item's check. Touches: `dev/`, `app/`, `pkg/`, `log/tests/` (S117's ACL oracle); never
+  `host/src/agent/` or `dev/src/bin/fake-claude.rs` (uncommitted work in the main checkout), never `spec/design/`. No
+  boundary moves: no adversary unless a change alters what a check refuses (S110 R2 does: then the Claude review runs it).
+  Protects: *polish*. Size: an upkeep slice.
+
 ## Suite time
 
 Wall time of each subsystem's tests on `main` (`factory/README.md`, "Time and value"): the
