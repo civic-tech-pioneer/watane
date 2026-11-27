@@ -247,3 +247,16 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   human. Constraints: no change to the agent layer's contracts (host 19, harness 2 and 9); a Door C choice is listed
   first in the PR for the deputy. Touches: `spec/design/factory/`. Docs only. Size: a design slice (it settles a
   Door C row before code depends on it).
+
+- [x] **S149 (upkeep, guard first) host, pkg, log and dist polish queued behind S147.** In flight (cloud, builder
+  claude, reviewer codex; rule 3: S148 and S147 were Codex; routine `trig_01AAZGaXwoNLX8rH6CfuwUHt`, fires 06:40 UTC; DELIVERED as PR #58 at 3697902f (most items already fixed on main), CI green; r1 Codex review https://chatgpt.com/local/6b093686-b734-83eb-88aa-48203316104a 07:50 UTC; r1: 2/0 findings, 07:50 UTC (posted by Deputy Scissors; its verdict line read `another round`, taken as changes (2)); answer r1 routine `trig_01Cmj2k8JH4HuNNW89FpyqST` 08:01 UTC, rulings: F1.1 narrows docs/test name only, F1.2 helper checks its I/O); answers 80cf29a6 ~08:20; r2 Codex review https://chatgpt.com/local/6b093f58-a2d8-83ed-bc1a-8e949a2e5067 08:29 UTC; r2: 0/0 approve, but macOS red: F2.ci (the F1.2 helper fails on a reset during the write; plus an unrelated app support_selftest flake); answer r2 routine `trig_0117t8L18c1Awo5DqQ4xsuwR` 08:46 UTC; answers e9b8b78f 09:01; r3 Codex review https://chatgpt.com/local/6b094722-246c-83eb-b5ee-958ce19de048 09:03 UTC, a short check of F2.ci; r3: 1/0 (a reset with zero bytes passes without a 413); **cut at r3 by Deputy Scissors** (same helper three rounds): split into (a) an oversize body alone always gets 413 + close, (b) the pipelined check proves only no second response; answer r3 routine `trig_01FVxd68TV6LaZgXkmZDqc7Z` 09:17 UTC; answers 22f321f9 09:35; r4 worth it (Deputy Rock): the trend is 2, 0, 1, and r4 only checks the cut's two tests, no new scope); r4 Codex review https://chatgpt.com/local/6b094f28-355c-83ed-94e7-dd8e59ecf062 09:39 UTC). Sketched 2026-11-27 by Deputy Paper from Leftovers.
+  Re-check each item on main first (S112 already closed the dist local ranges, the trailing dot and redirects to a
+  local address); drop what is already fixed and say so in the PR.
+  1. (guard, CI on main) `host::agent::claude::run::join_tests::s100_fix12_ac1_the_next_queued_line_is_not_started_after_the_deadline`
+     (`host/src/agent/claude/run.rs:1498`) stops flaking on macOS: the cause named and fixed, not a wider timeout alone.
+  2. host S147 r1 polish P1 to P3 (`### host`), S126 r1 P1.3 (dead S126 repeat steps in `.github/workflows/ci.yml`).
+  3. pkg S119 r1 P1.4 and S108 P2.1, P2.2; log S109 P2.1 to P2.3; dist S105 P5.3, P5.4, P6.1 to P6.3 where still open.
+  Each outcome is its item's check. Touches: `host/`, `pkg/`, `log/`, `dist/`, `.github/workflows/ci.yml`; not `app/`,
+  not `spec/design/`. No boundary moves: no adversary unless a change alters what a check refuses. Protects: *guard*
+  (item 1), *polish* (the rest). Size: an upkeep slice.
+  DONE 2026-11-27: PR #58 merged (rebase) by Deputy Rock after r4 approve and green CI on 22f321f9.
