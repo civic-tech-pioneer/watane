@@ -94,15 +94,23 @@ fn sweep(dir: &Path) {
     }
 }
 
-pub(crate) fn open_keyless(dir: &Path) -> Result<(), Error> {
-    let _directory = directory(dir, true)?;
-    let _lock = lock_directory(dir)?;
+/// Refuses with `HasIdentity` when `identity.key` exists in any form (TECHNICAL 5.5).
+fn refuse_key(dir: &Path) -> Result<(), Error> {
     let path = dir.join("identity.key");
     match fs::symlink_metadata(&path) {
-        Ok(_) => return Err(Error::HasIdentity { path }),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-        Err(e) => return Err(io_error(&path, e)),
+        Ok(_) => Err(Error::HasIdentity { path }),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(io_error(&path, e)),
     }
+}
+
+/// The key check runs before the lock file is created, so a keyed directory stays unchanged,
+/// and again under the lock, before the sweep.
+pub(crate) fn open_keyless(dir: &Path) -> Result<(), Error> {
+    let _directory = directory(dir, true)?;
+    refuse_key(dir)?;
+    let _lock = lock_directory(dir)?;
+    refuse_key(dir)?;
     sweep(dir);
     Ok(())
 }
