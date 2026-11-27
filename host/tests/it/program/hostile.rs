@@ -875,3 +875,44 @@ async fn ac8_s12a_storage_after_revoke_cannot_read_old_state() {
         3
     );
 }
+
+/// host TECHNICAL 8.1 says h2c is accepted and refusing it is a later spec
+/// call. An h2c request carries its authority in `:authority`, not `Host`, so
+/// the host check of `dispatch` answers every h2c request 421 "unknown host".
+#[test]
+fn regress_s149_h2c_api_status_is_served() {
+    let (_home, preview) = setup();
+    let port = preview.ready.port;
+    let authority = format!("localhost:{port}");
+    let path = "/api/status";
+    // HPACK without Huffman: :method GET (0x82), :scheme http (0x86),
+    // :path and :authority as literals with an indexed name (4 and 1).
+    let mut block = vec![0x82, 0x86, 0x04, path.len() as u8];
+    block.extend_from_slice(path.as_bytes());
+    block.extend_from_slice(&[0x01, authority.len() as u8]);
+    block.extend_from_slice(authority.as_bytes());
+    let mut bytes = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".to_vec();
+    bytes.extend_from_slice(&[0, 0, 0, 0x04, 0, 0, 0, 0, 0]); // empty SETTINGS
+    let len = block.len();
+    // HEADERS, END_STREAM | END_HEADERS, stream 1.
+    bytes.extend_from_slice(&[0, (len >> 8) as u8, len as u8, 0x01, 0x05, 0, 0, 0, 1]);
+    bytes.extend_from_slice(&block);
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    stream.write_all(&bytes).unwrap();
+    let mut header = [0u8; 9];
+    let first = loop {
+        stream.read_exact(&mut header).unwrap();
+        let len =
+            (usize::from(header[0]) << 16) | (usize::from(header[1]) << 8) | usize::from(header[2]);
+        let mut payload = vec![0u8; len];
+        stream.read_exact(&mut payload).unwrap();
+        if header[3] == 0x01 && header[5..9] == [0, 0, 0, 1] {
+            break payload[0];
+        }
+    };
+    // 0x88 is the indexed static entry ":status 200"; 421 is sent as a literal.
+    assert_eq!(first, 0x88, "h2c GET {path} was not answered 200");
+}
