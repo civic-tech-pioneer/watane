@@ -93,7 +93,7 @@ product owner (Claude, /product-owner, on main)   your deputy; owns factory/PLAN
 | `.claude/agents/implementer.md` | Sonnet in Sol's place, for cloud foremen (no Codex there); same instructions |
 | `factory/cloud-setup.sh` | SessionStart hook: wasm target and vendor folder in a cloud container; no-op on the Mac |
 | `factory/watch-cloud.sh` | Waits for a cloud foreman's pushed `DELIVERED`/`BLOCKED` commit |
-| `factory/PLAN.md` | Slices, open questions, deputy decisions, friction, digest |
+| `factory/PLAN.md` | The present only, at most 500 lines (CI): slices in flight and next, waiting on the human, decisions in their veto window, open friction. History is in `factory/DONE.md`, upkeep in issues labelled `upkeep` and `flaky` |
 | `factory/tasks/` | One brief per task, committed on the slice branch |
 | `factory/runs/` | Sol logs, session ids and `ledger.jsonl`, in the main checkout (not in git) |
 
@@ -209,17 +209,22 @@ stays as it is, and the slow one runs while the product owner and foremen do oth
 
 - On delivery the foreman, local or cloud, pushes `slice/<id>`, opens a PR to `main` and arms
   auto-merge (`gh pr merge --auto --rebase`; foreman skill, section 5). `main`'s ruleset
-  ("main: CI green before merge") requires `lint`, `test (ubuntu-latest)` and `test (macos-26)`,
+  ("main: CI green before merge") requires `lint` and `test` on ubuntu-latest, macos-26 and windows-latest,
   so the PR merges itself when they pass. Nobody merges by hand. A red run is a failure on
   another OS: the local foreman fixes it on its branch; for a cloud slice the product owner
   starts a new routine (product-owner skill, section 5).
-- The ruleset's admin bypass lets the product owner push its own commits (`PLAN.md`, a small
-  fix) straight to `main`; it also forbids force-pushing or deleting `main`. GitHub deletes a
-  merged PR's branch.
+- `main`'s ruleset has no bypass, for admins either: every change, the deputy's `PLAN.md`
+  commits too, reaches `main` through a PR with the four checks green (`lint` and the three
+  `test` jobs). A PR that touches only planning files (`factory/PLAN.md`, `DONE.md`,
+  `decisions/`) skips build and tests and passes in about a minute. The ruleset also forbids
+  force-pushing or deleting `main`. GitHub deletes a merged PR's branch.
 - After the merge, the Mac runs only what CI cannot: `factory/check-main.sh` (the timing tests,
   one at a time) and a cloud slice's `not run (cloud)` tests (`front`, DEV-S-13).
-- A test red in CI but green in the slice's runs is rerun once before it counts (product-owner
-  skill, section 5); one that repeats is a flake to weigh ("Time and value").
+- **Flaky tests.** CI's test step (`.github/scripts/test-flaky.sh`) reruns the tests that failed,
+  twice, on the same commit. One that then passes is flaky: the job stays green, and CI opens an
+  issue `flaky: <test>` (labels `flaky`, `upkeep`), or comments on the open one. One that fails
+  every time fails the job. The deputy's upkeep lane takes `flaky` issues first; what one protects
+  decides how far it is chased ("Time and value").
 - CI runs the default tests only. `slow`, journey, `front`, `timing` and `real` tests stay
   `#[ignore]`d there, as in `check.sh`.
 - App window (`driver`) tests: on macOS in CI, `macos-26` (runners have a GUI session; on
