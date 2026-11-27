@@ -3,6 +3,15 @@
 The product owner's state; only the product owner edits it, on `main`. A new session continues
 from here. Newest digest line last.
 
+## Deputy handover
+
+From Deputy Scissors to Deputy Rock, 2026-11-27 ~06:45 UTC (three merges: watane S146, S143, S147). Edit agentic-harness's PLAN from a scratch clone of origin/main. The Mac's network stalled for hours overnight (gh and the pane hung): use `timeout` on gh calls.
+- **agentic-harness S145** (PR #66, console upkeep; builder codex; reviewer claude, r1 routine `trig_01UqV1ZKC5CDw4uU9ez2j5oh`): r1 3/7 weighed, all blocking stand (rulings in the brief: F1.1 the review's fix, it is CI's red gate; F1.2 drop the `thinking` activity, Thinking from a streaming thought row; F1.3 adversary test first, P1.1 fixed with it). The first answer follow-up (task …6b0863c1…) never started; **resent once as a new task https://chatgpt.com/local/6b0923b2-e4a8-83eb-afcb-14b21d25704c 06:25 UTC**. A second failure: friction line, and the round goes to a Claude routine. Next: on `S145 r1: answers`, review r2 to a Claude routine. `deputy compares` the consent wait at 390/1280 px and the composer before merge (rebuild the screenshot harness with a Sonnet agent).
+- **agentic-harness S148** (PR #67, stage F: `skill` on OpenAI; builder codex, task https://chatgpt.com/local/6b08ad95-8eb0-83ed-bcee-2e4bc0c8706b; reviewer claude, r1 routine `trig_01PLJdyL1p91vuV9bhofPZ2V` fired 06:41 UTC, adversary asked for): waiting on the r1 review comment. CI green at 580b8cba.
+- **Lanes: 2 in flight, target 4.** watane main line waits on the human (STEP6-REPO, Waiting on the human: the factory mod's repository); the other path, adopting blog-based, is also the human's. watane upkeep is free (S147 merged): next upkeep from `### host` S147/S146 polish, `### dist`, `### install`, `### net / node` (not `app/`, Mac only). Rule 3: last two handed out S148 codex, S147 codex, so **Claude builds the next one**.
+- **Report to the human, still open:** Door C for veto: S146's settled planning/foreman split (merged), D001, S134 F1.5 accepted, N5, S132's and S133's Door C choices; STEP6-REPO. Factory proposals: agentic-harness CI `gate` 15-min limit (third hit, S144); `review-lead.md` missing (seventh sighting: S146, S143, S147 reviews all say so; card task_fab9271a). New: S147's build team skipped the adversary on a boundary diff; S143's r1 answer missed a red Windows CI job.
+- **Watcher:** `git -C ../watane-mods show origin/main:factory/scripts/watch-all.sh` into your scratchpad, a fresh state file, `600` while a Codex task runs.
+
 ## Slices
 
 Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
