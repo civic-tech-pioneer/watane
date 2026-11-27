@@ -254,7 +254,7 @@ mod tests {
         );
         assert!(
             matches!(&e, ModError::Invalid(v) if v.len() == 1 && v[0].rule == Rule::Path
-                && v[0].file == "wit/deps/x" && v[0].message == CHANGED),
+                && v[0].file == "wit/deps/x" && v[0].message == "changed while the mod was read; read it again"),
             "{e:?}"
         );
     }
@@ -266,7 +266,7 @@ mod tests {
             listing_error(None, ErrorKind::NotFound),
         );
         assert!(
-            matches!(&e, ModError::Invalid(v) if v[0].file == "wit/deps" && v[0].message == CHANGED),
+            matches!(&e, ModError::Invalid(v) if v[0].file == "wit/deps" && v[0].message == "changed while the mod was read; read it again"),
             "{e:?}"
         );
         let e = listing(
