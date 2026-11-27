@@ -23,6 +23,10 @@ export function signTitle(statement) {
     list: 'List in your index', include: 'Include in your index', unlist: 'End a listing'}[statement];
 }
 
+export function channelCompromise(publisher) {
+  return `${publisher}'s channel no longer matches what it said before, so watane can't trust it. Ask ${publisher} for the link to a new channel.`;
+}
+
 export function partyLabel(party) {
   if (party.you) return 'you';
   return party.name ? `${party.name} (${party.fingerprint})` : party.fingerprint;

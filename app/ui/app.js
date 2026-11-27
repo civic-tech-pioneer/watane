@@ -2,7 +2,7 @@ import { call } from './ipc.js';
 import { setupAgentSettings, agentSettingsView } from './settings-agents.js';
 import {setupMachines, machinesView} from './machines.js';
 import {connections, dependents, matchesLibrary, updateOffers, libraryOrder, badge, problem} from './manager.js';
-import { ownWithdrawal, offerLabel, offerNotice, partyLabel, modCount, viaLabels, derivedAction, actionErrors, visibleIndexes, monogram, searchWords, ago, when, foundCount } from './words.js';
+import { ownWithdrawal, offerLabel, offerNotice, channelCompromise, partyLabel, modCount, viaLabels, derivedAction, actionErrors, visibleIndexes, monogram, searchWords, ago, when, foundCount } from './words.js';
 const launcher = document.querySelector('#launcher');
 const error = document.querySelector('#error');
 const $ = selector => document.querySelector(selector);
@@ -478,6 +478,7 @@ async function channelsView() {
     row.title = channel.base || '';
     row.dataset.channel = channel.channel;
     button(row, 'Unfollow', 'unfollow', () => action('channel_unfollow', {channel: channel.channel}));
+    if (channel.status === 'compromised') element('p', channelCompromise(channel.name || channel.fingerprint), row, 'hint');
     if (!channel.base) continue;
     const link = `watane:${channel.channel}@${channel.base}`;
     button(row, 'Use as index', 'use-index', () => action('index_choose', {link, derived: true}));
@@ -564,7 +565,7 @@ export function renderResults(hits) {
     if (hit.uncheckedSince != null) element('p', `not read since ${ago(hit.uncheckedSince)}`, metadata, 'checked hint');
     else if (hit.checkedAt != null) element('p', `read ${ago(hit.checkedAt)}`, metadata, 'checked hint');
     if (hit.from?.length) element('p', `From your machines: ${hit.from.join(', ')}`, body, 'hint');
-    if (compromised) element('div', `Can't install: ${label}'s channel no longer matches what it said before, so watane can't trust it. Ask ${label} for the link to a new channel.`, body, 'blocked');
+    if (compromised) element('div', `Can't install: ${channelCompromise(label)}`, body, 'blocked');
     else if (installed) {
       const link = element('a', 'Installed', row, 'btn installed-link'); link.href = '#mods';
       link.onclick = () => { $('#library-filter').value = ''; sourceFilter = ''; location.hash = '#mods'; route(); filterLibrary(); selectMod(installed.local, true); };
@@ -707,6 +708,12 @@ export function renderUpdates(mods, done, channels, indexes) {
     const row = element('article','',$('#update-channels'),'card update-card'); row.dataset.channel=channel.channel;
     element('span','',row,'channel-warning').append(icon('warning',20));
     const body = element('div','',row,'update-body');
+    if (channel.status === 'compromised') {
+      element('strong', channel.name ? `${channel.name}'s channel is compromised` : `Channel ${channel.fingerprint} is compromised`, body);
+      element('p', channelCompromise(channel.name || channel.fingerprint), body, 'hint');
+      element('p', `Last read failed: ${channel.cause}`, body, 'channel-cause');
+      continue;
+    }
     element('strong',channel.name ? `Couldn't read ${channel.name}'s channel` : `Couldn't read channel ${channel.fingerprint}`,body);
     const names = mods.filter(m=>m.release?.split('/')[0] === channel.channel).map(m=>m.name);
     const comes = names.length ? `${names.join(' and ')} ${names.length === 1 ? 'comes from it, so its' : 'come from it, so their'} updates wait. ` : '';

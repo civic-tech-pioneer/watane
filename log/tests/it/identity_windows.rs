@@ -71,6 +71,10 @@ fn assert_private_acl(path: &Path, acl_path: &Path, directory: bool) {
                 [int]$dacl[0].AceFlags -ne $flags) {
                 throw 'The path must have a protected owner-only DACL with the expected ACE flags'
             }
+            # SDDL FA is FILE_ALL_ACCESS for files and directories.
+            if ($dacl[0].AccessMask -ne 0x001F01FF) {
+                throw ('Expected FILE_ALL_ACCESS (0x001F01FF), got 0x{0:X8}' -f $dacl[0].AccessMask)
+            }
             if ($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid) {
                 throw 'The path must be owned by the current user'
             }

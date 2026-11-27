@@ -302,6 +302,17 @@ if (['find-updates','ac11','ac12'].includes(which)) {
   context.offered[0].offer='ivy-key/book@3.0.0';
   vm.runInContext('renderUpdates(offered, done, failed, [])',context); assert.equal($('#updates-count').textContent,'3');
   for(const text of ["Couldn't read Ivy's channel",'Tags comes from it, so its updates wait.','watane tries again at the next check.','Last read 2 days ago.','Cause: whole: nested cause','Try again']) assert.ok($('#update-channels').textContent.includes(text),text);
+  context.compromised = {...context.failed[0], status: 'compromised'};
+  vm.runInContext("renderUpdates(offered, done, [compromised], failed)", context);
+  assert.equal($('#update-channels').children.length, 1);
+  const compromisedCard = $('#update-channels article');
+  assert.equal(compromisedCard.querySelector('strong').textContent, "Ivy's channel is compromised");
+  assert.ok(compromisedCard.textContent.includes("Ivy's channel no longer matches what it said before"));
+  assert.ok(compromisedCard.textContent.includes('Ask Ivy for the link to a new channel.'));
+  assert.ok(compromisedCard.textContent.includes('Last read failed: whole: nested cause'));
+  assert.ok(!compromisedCard.textContent.includes('tries again'));
+  assert.equal(compromisedCard.querySelector('.retry-channel'), null);
+  vm.runInContext('renderUpdates(offered, done, failed, [])', context);
   assert.equal($('#update-done').children[0].dataset.local,'newer');
   context.call=(cmd,args={})=>{calls.push({cmd,args}); return Promise.resolve(cmd==='indexes_list' ? [index] : []);};
   context.readRefresh=()=>vm.runInContext('findView()',context);
@@ -390,6 +401,10 @@ if (which === 's90-channels') {
     assert.ok(!row.textContent.includes(channel.base));
     assert.ok(!row.textContent.includes('os error 61'));
     assert.ok(!/\b(ok|failed|compromised)\b/.test(row.textContent));
+    if (status === 'compromised') {
+      assert.ok(row.textContent.includes("Alice's channel no longer matches what it said before"));
+      assert.ok(row.textContent.includes('Ask Alice for the link to a new channel.'));
+    }
   }
   let chosen;
   context.call=async (cmd,args)=>{

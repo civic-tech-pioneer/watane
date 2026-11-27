@@ -316,6 +316,7 @@ fn ac2_s47_removal_deletes_state_and_names_users() {
                 window.readingReceived = true;
                 watane.call('api.received')
                     .then(books => window.receivedBefore = books)
+                    .catch(() => {}) // Try again on the next poll if the call fails.
                     .finally(() => window.readingReceived = false);
             }
             return false;
