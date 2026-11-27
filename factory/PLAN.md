@@ -1497,19 +1497,7 @@ names the same interface in its sketch and fakes it until this one merges.
   Each outcome is its item's check. Touches: `host/`, `pkg/`, `log/`, `dist/`, `.github/workflows/ci.yml`; not `app/`,
   not `spec/design/`. No boundary moves: no adversary unless a change alters what a check refuses. Protects: *guard*
   (item 1), *polish* (the rest). Size: an upkeep slice.
-- [~] **S150 Design: JF1 can be built from the documents (step 6, the parts that do not wait).** Sketched 2026-11-27 by
-  Deputy Paper (evidence #56: JF1 waits on harness F's factory profiles, not on the repository). In flight (cloud, builder codex, reviewer claude;
-  task https://chatgpt.com/local/6b092596-e3e8-83ed-9478-10121134504d, 06:41 UTC; DELIVERED as PR #57 at 88fff76a 06:44 UTC; r1 Claude routine `trig_01JMa2B8UNi42cVXbdxoL5Go` 06:46 UTC; r1: 2/3, changes, both blocking stand, answer r1 into the Codex task; answers 27680a5f; r2 Claude routine `trig_01NgdtPThvsGwPRvdYebLemE` 06:57 UTC). A design slice in `spec/design/factory/` only: (1) the sketch snapshot Alice carries in JF1 (its fields: project,
-  base, branch, scope, acceptance, decisions; how it binds to a plan revision) and the run record's states and evidence
-  fields (TECHNICAL 1), so a build needs no further choice; settle the "Sketch handoff" row for JF1's manual snapshot
-  only (Door C; the automatic link stays open); (2) the two pages' views and Alice's actions in JF1 as FUNCTIONAL
-  outcomes a user-sim can check on the real app; (3) the build rows for JF1, sized for slices, each naming what it waits
-  on (harness F's factory profiles; the repository, STEP6-REPO); (4) S146 r2 P2.1 (TECHNICAL 6 step 3 wording). Outcome:
-  a reviewer can build JF1 from the documents once F lands; every open point is decided in them or listed for the
-  human. Constraints: no change to the agent layer's contracts (host 19, harness 2 and 9); a Door C choice is listed
-  first in the PR for the deputy. Touches: `spec/design/factory/`. Docs only. Size: a design slice (it settles a
-  Door C row before code depends on it).
-
+- [x] **S150 Design: JF1 can be built from the documents (step 6).** DONE 2026-11-27: PR #57 rebase-merged at d0a5b4f4 by Deputy Paper, no bypass; builder codex, reviewer claude, 2 rounds (2/3, 0/1); ~35 min in flight. Alice's sketch snapshot (fields, version, 32 KiB limit, bound to a plan revision), the run record's states and evidence, JF1's six FUNCTIONAL outcomes and build rows JF1-1 to JF1-3, each naming what it waits on (harness F's factory profiles, STEP6-REPO, V27, V7). Door C settled for veto: manual sketch handoff for JF1; E/F sequencing (E done in S127, keep it); `factory/PLAN.md` stays authoritative during JF1. Sketch in factory/DONE.md.
 ## Suite time
 
 Wall time of each subsystem's tests on `main` (`factory/README.md`, "Time and value"): the
@@ -1677,6 +1665,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 
 
 ### host
+
+- **(S150 r2 P1, spec polish)** `spec/design/factory/TECHNICAL.md` 6 "After JF1": item 1 should name only the measured check budget (the harness V7 latency probe) as still open, not "E, including the judge account"; item 3 "JF1's F dependency", not "E and F". (Not host: filed here for the next spec upkeep.)
 
 - **(S147 r1 polish)** P1 a test that chunked oversize on `/api` and `/mcp` gets `connection: close`; P2 host 8.1: one sentence on extra app routes (axum's own limit, no early 413); P3 HTTP/2 without TLS untested (a spec call only if it should be refused).
 
