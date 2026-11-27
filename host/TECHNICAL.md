@@ -1310,8 +1310,12 @@ overlap, at `serve`). They get the host check and the `Origin` refusal.
 The 64 KiB body limit applies only to the routes of section 11; an
 `extra_api` route sets its own `DefaultBodyLimit` (app's publish takes a
 package of up to 64 MiB). A mod origin never reaches them.
-An `extra_api` route keeps axum's own refusal when its limit is passed, with no early 413 and no added `Connection: close`.
-HTTP/2 without TLS (h2c) is accepted by `axum::serve`; it has no `Connection` header, its stream framing keeps an unread body from being read as a request, it is untested because the test crate has no HTTP/2 client, and refusing it is a later spec call.
+An `extra_api` route keeps axum's own refusal when its limit is passed,
+with no early 413 and no added `Connection: close`.
+HTTP/2 without TLS (h2c) is accepted by `axum::serve`; it has no
+`Connection` header, its stream framing keeps an unread body from being
+read as a request, it is untested because the test crate has no HTTP/2
+client, and refusing it is a later spec call.
 
 ### 8.2 `POST /call`
 
