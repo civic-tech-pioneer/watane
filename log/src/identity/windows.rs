@@ -97,13 +97,14 @@ fn sweep(dir: &Path) {
 pub(crate) fn open_keyless(dir: &Path) -> Result<(), Error> {
     let _directory = directory(dir, true)?;
     let _lock = lock_directory(dir)?;
-    sweep(dir);
     let path = dir.join("identity.key");
     match fs::symlink_metadata(&path) {
-        Ok(_) => Err(Error::HasIdentity { path }),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(io_error(&path, e)),
+        Ok(_) => return Err(Error::HasIdentity { path }),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) => return Err(io_error(&path, e)),
     }
+    sweep(dir);
+    Ok(())
 }
 
 fn read(path: &Path) -> Result<Option<SigningKey>, Error> {
