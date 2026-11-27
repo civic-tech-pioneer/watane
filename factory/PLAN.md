@@ -1499,7 +1499,7 @@ names the same interface in its sketch and fakes it until this one merges.
   (item 1), *polish* (the rest). Size: an upkeep slice.
 - [~] **S150 Design: JF1 can be built from the documents (step 6, the parts that do not wait).** Sketched 2026-11-27 by
   Deputy Paper (evidence #56: JF1 waits on harness F's factory profiles, not on the repository). In flight (cloud, builder codex, reviewer claude;
-  task https://chatgpt.com/local/6b092596-e3e8-83ed-9478-10121134504d, 06:41 UTC). A design slice in `spec/design/factory/` only: (1) the sketch snapshot Alice carries in JF1 (its fields: project,
+  task https://chatgpt.com/local/6b092596-e3e8-83ed-9478-10121134504d, 06:41 UTC; DELIVERED as PR #57 at 88fff76a 06:44 UTC; r1 Claude routine `trig_01JMa2B8UNi42cVXbdxoL5Go` 06:46 UTC). A design slice in `spec/design/factory/` only: (1) the sketch snapshot Alice carries in JF1 (its fields: project,
   base, branch, scope, acceptance, decisions; how it binds to a plan revision) and the run record's states and evidence
   fields (TECHNICAL 1), so a build needs no further choice; settle the "Sketch handoff" row for JF1's manual snapshot
   only (Door C; the automatic link stays open); (2) the two pages' views and Alice's actions in JF1 as FUNCTIONAL
