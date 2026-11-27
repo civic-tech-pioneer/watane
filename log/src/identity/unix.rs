@@ -562,6 +562,40 @@ mod tests {
         assert_eq!(fs::read_dir(&dir).expect("list").count(), 1);
     }
 
+    /// S158 r1 F1.2: a path swapped to a directory with no database fails the open, and SQLite
+    /// leaves no `channels.db` (nor `-wal`, `-shm`) there: it opens without its create flag.
+    #[test]
+    fn s158_r1_swap_to_a_directory_without_a_database_creates_none_there() {
+        let parent = tempfile::tempdir().expect("create parent");
+        let dir = parent.path().join("log");
+        let other = parent.path().join("other");
+        let moved = parent.path().join("moved");
+        for d in [&dir, &other] {
+            fs::create_dir(d).expect("create directory");
+            fs::set_permissions(d, fs::Permissions::from_mode(0o700)).expect("make private");
+        }
+        let anchor = super::lock_dir(&dir).expect("lock the log directory");
+        fs::rename(&dir, &moved).expect("move the checked directory away");
+        fs::rename(&other, &dir).expect("put the other directory in its place");
+        let result = crate::store::open(&dir, &anchor);
+        assert!(
+            matches!(&result, Err(Error::Io { path, .. }) if *path == dir.join("channels.db")),
+            "{result:?}"
+        );
+        let names: Vec<_> = fs::read_dir(&dir)
+            .expect("list")
+            .map(|e| e.expect("entry").file_name())
+            .collect();
+        assert!(
+            names.is_empty(),
+            "left in the swapped-in directory: {names:?}"
+        );
+        assert_eq!(
+            fs::metadata(moved.join("channels.db")).expect("stat").len(),
+            0
+        );
+    }
+
     /// A link in a parent of the log directory is allowed (TECHNICAL 4.7): macOS's temp dir and
     /// a home reached through a link must open and keep a channel store.
     #[test]
