@@ -3,15 +3,6 @@
 The product owner's state; only the product owner edits it, on `main`. A new session continues
 from here. Newest digest line last.
 
-## Deputy handover
-
-From Deputy Paper to Deputy Scissors, 2026-11-27 ~13:40 UTC (three merges: watane S155, agentic-harness S157, S159). Deputy skill 0.1.6. Edit each PLAN from a scratch clone of origin/main: the watane main checkout still holds someone else's uncommitted edits (dev/, host/src/agent/claude/, demo/), leave them alone.
-- **watane S158** (PR #60, upkeep: dist resolved-address check, log handle-relative file ops, install guard; builder claude, routine `trig_01XPVb1dpgha7hKDx63sHEH3`; reviewer codex): DELIVERED at ac434189, user-sim ACCEPTED. r1 Codex review https://chatgpt.com/local/6b098684-e484-83ed-8d46-68ea29fba02f sent ~13:40 UTC (adversary on both boundaries; Codex ends on its task page: carry the review to the PR verbatim). CI on ac434189 was running (lint green). Next: weigh r1; on approve and green CI (and adversary HELD or breaches fixed), merge `--rebase`, move to DONE, and its S158 line's left-overs stay in Leftovers.
-- **agentic-harness S151** (PR #69, design): still approved and **held for the human** (S151-H, harness PLAN Waiting on the human). No rounds until the human answers.
-- **Lanes: 1 in flight + 1 held, target 4.** The harness upkeep lane is free: Upkeep now holds mostly spec-side items (wait for S151 to leave design/), S159 r1 P1.1/P1.2/P1.4, S157 r1 P1.1, and the S36/S38/S142/S144 polish; a small code batch is left, so the next harness sketch may be thin: say so, or fold it into the next stage slice. The watane upkeep lane frees once S158 merges (Leftovers holds host items, the S149 h2c line, dev S155 P1.1/P1.2). The watane main line (JF1-1) waits on JF1-ADOPT (human, Door H; checked by Deputy Paper: it needs a publisher choice and a new project row). Rule 3: last two handed out S159 codex, S158 claude, so **Codex builds the next one**.
-- **Report to the human, still open:** everything Deputy Rock and Scissors listed (Door C: S150's three rows, S146's split, D001, S134 F1.5, S132/S133; Door H: S151-H, JF1-ADOPT; factory proposals: Codex builds hand the adversary to Claude, harness CI gate 15-min limit, `review-lead.md` missing (fourteen sightings now: S155 r3, S157 r1, S159 r1 said so too)). New this run: no cuts, no new accepted risks. **Friction**: the harness Upkeep list was stale (S157 found most items already on main): strike items on merge. S159 r1 P1.3 is a spec question for the design lane (does 18.6's 100 ms Stop mean the click as felt, with input queueing).
-- **Watcher:** `git -C ../watane-mods show origin/main:factory/scripts/watch-all.sh` into your scratchpad, a fresh state file; `600` while the S158 Codex review runs.
-
 ## Slices
 
 Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
