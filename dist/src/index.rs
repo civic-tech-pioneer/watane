@@ -603,6 +603,7 @@ pub(crate) fn local_ip(ip: std::net::IpAddr) -> bool {
             || ip.is_private()
             || ip.is_link_local()
             || first == 0
+            || first >= 224
             || (first == 100 && (64..=127).contains(&second))
             || (first == 198 && (18..=19).contains(&second))
     }
@@ -617,6 +618,11 @@ pub(crate) fn local_ip(ip: std::net::IpAddr) -> bool {
             [0, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0, a, b, c, d] => Some([a, b, c, d].into()),
             // RFC 3056 6to4 puts the IPv4 address immediately after 2002::/16.
             [0x20, 0x02, a, b, c, d, ..] => Some([a, b, c, d].into()),
+            // RFC 2765 IPv4-translated ::ffff:0:a.b.c.d.
+            [0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 0, 0, a, b, c, d] => Some([a, b, c, d].into()),
+            // RFC 4291 2.5.5.1 IPv4-compatible ::a.b.c.d (deprecated); `::` and `::1` are
+            // local on their own.
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, a, b, c, d] => Some([a, b, c, d].into()),
             _ => None,
         }
     }
@@ -627,6 +633,7 @@ pub(crate) fn local_ip(ip: std::net::IpAddr) -> bool {
             let [first, second, third, ..] = ip.segments();
             ip.is_loopback()
                 || ip.is_unspecified()
+                || ip.is_multicast()
                 || (first & 0xfe00 == 0xfc00)
                 || (first & 0xffc0 == 0xfe80)
                 || (first & 0xffc0 == 0xfec0)
@@ -658,7 +665,7 @@ pub(crate) fn local_base(base: &str) -> bool {
 mod tests {
     use super::*;
     /// IPv4 ranges for shared, benchmark and this-network use, and site-local IPv6.
-    const S112_RANGES: [(&str, bool); 13] = [
+    const S112_RANGES: [(&str, bool); 19] = [
         ("0.255.255.255", true),
         ("1.0.0.0", false),
         ("100.63.255.255", false),
@@ -672,9 +679,17 @@ mod tests {
         ("[fec0::]", true),
         ("[feff::1]", true),
         ("[fe7f::1]", false),
+        ("223.255.255.255", false),
+        ("224.0.0.0", true),
+        ("239.255.255.255", true),
+        ("240.0.0.0", true),
+        ("255.255.255.255", true),
+        ("[ff00::]", true),
     ];
+    /// More IPv6 multicast edges, checked with the other tables.
+    const S158_MULTICAST: [(&str, bool); 2] = [("[ffff:ffff::1]", true), ("[feff:ffff::1]", true)];
     /// Local IPv4 addresses embedded in IPv6.
-    const S112_EMBEDDED: [(&str, bool); 9] = [
+    const S112_EMBEDDED: [(&str, bool); 17] = [
         ("[::ffff:100.64.0.1]", true),
         ("[64:ff9b::192.168.1.1]", true),
         ("[64:ff9b::8.8.8.8]", false),
@@ -684,6 +699,14 @@ mod tests {
         ("[64:ff9b:2::8.8.8.8]", false),
         ("[2002:7f00:1::]", true),
         ("[2002:808:808::]", false),
+        ("[::0.0.0.2]", true),
+        ("[::127.0.0.1]", true),
+        ("[::10.0.0.1]", true),
+        ("[::8.8.8.8]", false),
+        ("[::ffff:0:127.0.0.1]", true),
+        ("[::ffff:0:8.8.8.8]", false),
+        ("[::ffff:224.0.0.1]", true),
+        ("[::ffff:0:255.255.255.255]", true),
     ];
     #[test]
     fn s112_shared_benchmark_and_this_network_ranges_are_local() {
@@ -732,7 +755,12 @@ mod tests {
             ("8.8.8.8", false),
             ("172.32.0.1", false),
         ];
-        for (host, local) in S112_RANGES.into_iter().chain(S112_EMBEDDED).chain(extra) {
+        for (host, local) in S112_RANGES
+            .into_iter()
+            .chain(S112_EMBEDDED)
+            .chain(S158_MULTICAST)
+            .chain(extra)
+        {
             let ip = host.trim_start_matches('[').trim_end_matches(']');
             assert_eq!(local_ip(ip.parse().unwrap()), local, "{host}");
         }

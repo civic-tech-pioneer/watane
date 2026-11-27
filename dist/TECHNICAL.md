@@ -1051,9 +1051,11 @@ default `false`), dist skips a listed base whose host is `localhost`, ends
 in `.localhost`, or is an IP literal that is loopback, unspecified,
 private (10/8, 172.16/12, 192.168/16, fc00::/7), link-local, shared
 (100.64/10), for benchmarking (198.18/15), on this network (0/8), or
-site-local (fec0::/10); any address in the local-use NAT64 block
+site-local (fec0::/10), IPv4 multicast (224/4) or reserved (240/4, which holds
+255.255.255.255), or IPv6 multicast (ff00::/8); any address in the local-use NAT64 block
 64:ff9b:1::/48, whose layout depends on the network, is local too. The same
-IPv4 rules apply to the address embedded in IPv4-mapped IPv6, well-known NAT64
+IPv4 rules apply to the address embedded in IPv4-mapped IPv6, IPv4-translated
+(::ffff:0:a.b.c.d), IPv4-compatible (::a.b.c.d, deprecated), well-known NAT64
 (64:ff9b::/96) or 6to4 (2002::/16). Trailing dots do not change a name:
 `localhost.` and `a.localhost..` are local, and an IPv4 literal with a trailing
 dot (`127.0.0.1.`) is the literal. A third party's listing must not make dist
