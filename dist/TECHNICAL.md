@@ -747,9 +747,11 @@ resolver (`resolve.rs`) looks the name up as ureq does and refuses the hop when
 (`index::local_ip`), before any byte is sent: `BadUrl { cause: "local address" }`
 for the first base, the redirect cause above for a redirect target. Check and
 connect share one resolution, so no name can change between them.
-`Options::listed_local` turns it off with the literal check. When ureq goes through
-an HTTP proxy from the environment the proxy resolves the name and dist cannot see
-the address: that case is not checked (section 6, "Not protected"). Followed and
+`Options::listed_local` turns it off with the literal check. Every target
+address ureq asks the resolver for is checked; only the resolution of the configured
+proxy endpoint itself is not (a local proxy must stay usable). When ureq goes through
+an HTTP CONNECT proxy from the environment the proxy resolves the name and dist cannot
+see the address: that case is not checked (section 6, "Not protected"). Followed and
 chosen reads use the plain agent. The redirecting URL is the one whose response gave the
 refused redirect: the base that issued it, which is not the base first asked
 when an earlier redirect moved the read (A redirects to B, B's redirect is
@@ -1060,7 +1062,7 @@ channel may use any base (DD-6): the
 participant gave that link. A host name is checked on the
 addresses it resolves to, at connect time (4.5), by the same rule
 (`index::local_ip`; any local address among them refuses the name), unless an
-HTTP proxy from the environment resolves it (section 6, "Not protected").
+HTTP CONNECT proxy from the environment resolves it (section 6, "Not protected").
 
 **Cap.** At most `max_listed` (default 512) listed channels in all, and at
 most `max_listed_per_index` (default 128) for each chosen index, counted
@@ -1405,7 +1407,7 @@ sets the site URL again.
 | An origin is only a claim (W24) | `Release.origin` is shown as the publisher's claim; dist never treats it as a statement of the origin's publisher | review |
 
 Not protected (see `spec/TECHNICAL.md` section 6): a listed host name that
-an HTTP proxy from the environment resolves (the proxy, not dist, sees the address; 4.5);
+an HTTP CONNECT proxy from the environment resolves (the proxy, not dist, sees the address; 4.5);
 a host that withholds new entries; another program of the same user; the use of one identity on
 two devices, which forks the channel (question Q7).
 
@@ -1642,7 +1644,7 @@ are `list` and `include` statements of 4.1.
 | DD-23 | Search is a local filter over stored channels: words as lower-case substrings, filters by key and interface, an order made only from the participant's choices, at most 200 hits. | Offline (F-QUAL-1); no global ranking (V6, non-goals); good enough for a few thousand mods. Undo: cheap, reader-only; a later full-text index changes no format. |
 | DD-24 | Installing a hit follows the publisher. | Updates and withdrawals keep coming after an index drops the mod (F-INST-7, F-INST-8). Undo: cheap (app). |
 | DD-25 | A listed channel reads every listed base in order (at most 4 per refresh), ingesting each against the head stored so far. The best outcome wins (`Current` > `Behind` > `Failed`); any `Current` sets `last_success`. The base serving the highest head moves first. Channel caps and per-base entry limits still apply. | A mirror serving exactly the stored head can hide a later withdrawal, including after an outage promoted it; stopping at `Current` is insufficient. Undo: cheap, reader-only. |
-| DD-26 | A listed base on `localhost`, a local IP literal, or a name whose resolved addresses include a local one (checked at connect time by the guarded agent's resolver, S158) is skipped; followed and chosen links may use any base. A name resolved by an HTTP proxy from the environment is not checked. | A third party's listing must not make the participant's device probe its own network; the participant's own links keep DD-6. Undo: cheap (one check, `resolve.rs`). |
+| DD-26 | A listed base on `localhost`, a local IP literal, or a name whose resolved addresses include a local one (checked at connect time by the guarded agent's resolver, S158) is skipped; followed and chosen links may use any base. A name resolved by an HTTP CONNECT proxy from the environment is not checked. | A third party's listing must not make the participant's device probe its own network; the participant's own links keep DD-6. Undo: cheap (one check, `resolve.rs`). |
 | DD-27 | Caps: 512 listed channels, 128 per chosen index, 1000 entry files per read of a listed channel. | Bounded refresh even with hostile indexes; one index cannot starve the others. Undo: cheap (Options). |
 | DD-28 | A provider's base comes from live `list` and `include` statements in the channels already read, not from a link in `deps.json` or the release body. | No new format in published bytes; the consumer's publisher states it with a statement it can end (`unlist`) or repeat with a new base. Undo: cheap, reader-only; a field in a later body version (a new kind) can add a base hint later. |
 | DD-29 | A channel read through a provider base or `read_link` gets no record; the caller uses `follow_derived` on `Fetched.link` after an install. | A failed or declined install leaves no follow behind; an installed provider gets updates like a hit (DD-24). Undo: cheap (app). |

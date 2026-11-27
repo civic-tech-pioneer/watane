@@ -317,7 +317,7 @@ its own local host.
   non-local host is followed, at most 5 times. A redirect to a scheme other than
   http or https (`socks5://127.0.0.1:<p>/`) gets no request from any read.
   A listed base or redirect target that is a host name resolving to a local
-  address is refused the same way (unless an HTTP proxy resolves it). A base of a followed or chosen record
+  address is refused the same way (unless an HTTP CONNECT proxy resolves it). A base of a followed or chosen record
   without explicit permission is read as listed. This covers legacy bases,
   listing bases, search hits and fetched releases. A local base gets no
   request, including the first read of a derived follow or index choice.

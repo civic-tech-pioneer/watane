@@ -304,8 +304,11 @@ impl Dist {
             .max_redirects(0)
             .max_redirects_will_error(false)
             .timeout_connect(Some(options.connect_timeout))
-            .user_agent(concat!("watane-dist/", env!("CARGO_PKG_VERSION")))
-            .build();
+            .user_agent(concat!("watane-dist/", env!("CARGO_PKG_VERSION")));
+        // Tests do not depend on the environment's proxy.
+        #[cfg(test)]
+        let agent_config = agent_config.proxy(None);
+        let agent_config = agent_config.build();
         let resolver = resolve::GuardedResolver::default();
         #[cfg(test)]
         let test_hosts = std::sync::Arc::clone(&resolver.hosts);
