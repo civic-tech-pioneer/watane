@@ -353,7 +353,11 @@ later hardening.
    replace and remove the key, the temporary file of a write, and the creation of `channels.db`)
    is `openat`, `renameat`, `unlinkat` or `statat` relative to it, and the `Log` keeps it. The
    parent path is not checked again, and a parent writable by others is not refused: with every
-   operation relative to the held handle, a swapped parent redirects nothing. Each `replace` or
+   file operation relative to the held handle, a swapped parent redirects none of them. Two
+   things remain: before step 3 and step 4 finish, a swap can point `dir` at another directory
+   of the participant's own with mode 0700 (pre-existing; nothing in it is readable by the
+   attacker), and SQLite opens `channels.db` by path (section 4.8), where a swap is detected, not
+   prevented. Each `replace` or
    `remove` checks the held handle again and locks it for the call. Open the key with
    `openat(anchor, "identity.key", O_NOFOLLOW)` and check the handle with `fstat`:
    - missing: create the key (below);
@@ -430,7 +434,13 @@ is `Storage("unsupported schema version <n>")`, and the file is not changed.
 
 SQLite opens `channels.db` by path, because it needs the directory for `-wal` and `-shm`; a
 handle-relative open needs a custom VFS, which is out of scope. A parent swapped after the check
-can therefore redirect SQLite's open, not the identity key.
+can therefore redirect SQLite's open, not the identity key. The open passes `SQLITE_OPEN_NOFOLLOW`
+(rusqlite passes it to SQLite, which then refuses a path with a link in any component, so a
+parent swapped for a link fails the open). Right after `Connection::open`, on Unix, the store compares
+`(st_dev, st_ino)` of `statat(anchor, "channels.db", AT_SYMLINK_NOFOLLOW)` with `stat` of the path;
+a mismatch is `Io` at the path ("not the channels.db of the checked log directory"), the handle is
+dropped, and nothing else changes. `watane-log` has no `unsafe`, so SQLite's own file handle is out
+of reach: the check narrows the window of a swap, it does not close it (section 7, "Not protected").
 
 ```sql
 CREATE TABLE meta (key TEXT PRIMARY KEY, value BLOB NOT NULL) STRICT;
@@ -672,7 +682,7 @@ colos file `src/zbase32.rs` does exactly this.
 | Property | Enforced by |
 |---|---|
 | The secret key stays on the device | It is read into `Zeroizing` and a `SigningKey` (zeroized on drop). No API returns it. `Debug` shows only the public key. The only output is the encrypted backup. |
-| Other users cannot read or plant the key | The directory and key must deny other users access. Unix uses mode bits and Windows uses an owner-only DACL. The key must be a regular file with one link and the current user as its owner. Creation checks for an absent key and publishes under the lock (4.7). On Unix every key operation is relative to the checked directory handle, so a swapped parent path redirects none; SQLite's open of `channels.db` is by path (4.8). |
+| Other users cannot read or plant the key | The directory and key must deny other users access. Unix uses mode bits and Windows uses an owner-only DACL. The key must be a regular file with one link and the current user as its owner. Creation checks for an absent key and publishes under the lock (4.7). On Unix every key operation is relative to the checked directory handle, so a swapped parent path redirects none of them; SQLite's open of `channels.db` is by path, and a swap is only detected there (4.8, below). |
 | No signing oracle | No public `sign`. A signature only exists inside an entry of the own channel, with a domain prefix (section 4.4). |
 | One rule for everyone | `Entry` has no public constructor except `decode` and `append`, and `decode` applies section 4.6 in full. |
 | One byte form, one id | The decoder re-encodes and compares (section 4.6 step 3). |
@@ -685,6 +695,16 @@ colos file `src/zbase32.rs` does exactly this.
 Not protected, as in `spec/TECHNICAL.md` section 6: another program of the
 same user (it can read the key file), a compromised operating system, and a
 web host that withholds new entries.
+
+Also not protected, because SQLite opens by path and `watane-log` has no VFS (section 4.8): whoever
+can write a parent of the log directory can swap it and swap it back inside the window between the
+anchor check and SQLite's open, or redirect the `-wal` and `-shm` names, which SQLite derives from the
+path. The inode check of 4.8 sees neither. Consequences: SQLite can work on a database that is not
+the one on the anchor, so the own head can come from a database the attacker owns (a second entry at an
+already published seq forks the own channel) and `drop_identity`'s `IdentityInUse` check can be
+bypassed; stored data can be changed through the `-wal` file, and the read check (section 4.8) sees
+only what it reads. A parent writable by another user is outside the threat model of
+`spec/TECHNICAL.md` section 6 (the participant's own folders), so no check refuses it.
 
 ## 8. Test plan
 

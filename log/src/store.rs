@@ -31,7 +31,10 @@ pub(crate) fn open(dir: &Path, anchor: &crate::identity::Anchor) -> Result<Conne
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
         Err(source) => return Err(Error::Io { path, source }),
     }
-    let mut db = Connection::open(&path)?;
+    let flags = rusqlite::OpenFlags::default() | rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW;
+    let mut db = Connection::open_with_flags(&path, flags)?;
+    #[cfg(unix)]
+    same_file(&path, anchor)?;
     db.busy_timeout(Duration::from_secs(5))?;
     check_version(&db)?;
     let start = Instant::now();
@@ -56,6 +59,25 @@ pub(crate) fn open(dir: &Path, anchor: &crate::identity::Anchor) -> Result<Conne
     }
     tx.commit()?;
     Ok(db)
+}
+/// SQLite opened `path`; the file must be the `channels.db` of the checked directory (TECHNICAL 4.8).
+/// `watane-log` has no `unsafe`, so SQLite's own handle is out of reach: this compares the path
+/// right after the open, which narrows the window of a swapped parent and does not close it.
+#[cfg(unix)]
+fn same_file(path: &Path, anchor: &crate::identity::Anchor) -> Result<(), Error> {
+    let io = |source: std::io::Error| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    let expected = rustix::fs::statat(anchor, "channels.db", rustix::fs::AtFlags::SYMLINK_NOFOLLOW)
+        .map_err(|e| io(e.into()))?;
+    let opened = rustix::fs::stat(path).map_err(|e| io(e.into()))?;
+    if (expected.st_dev, expected.st_ino) != (opened.st_dev, opened.st_ino) {
+        return Err(io(std::io::Error::other(
+            "not the channels.db of the checked log directory (the directory path was swapped)",
+        )));
+    }
+    Ok(())
 }
 fn check_version(db: &Connection) -> Result<i64, Error> {
     // Read both facts in one SQLite snapshot while another first open may create the schema.
