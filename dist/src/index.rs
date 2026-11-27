@@ -665,7 +665,7 @@ pub(crate) fn local_base(base: &str) -> bool {
 mod tests {
     use super::*;
     /// IPv4 ranges for shared, benchmark and this-network use, and site-local IPv6.
-    const S112_RANGES: [(&str, bool); 19] = [
+    const S112_RANGES: [(&str, bool); 23] = [
         ("0.255.255.255", true),
         ("1.0.0.0", false),
         ("100.63.255.255", false),
@@ -685,11 +685,14 @@ mod tests {
         ("240.0.0.0", true),
         ("255.255.255.255", true),
         ("[ff00::]", true),
+        ("[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]", true),
+        // Ordinary global IPv6 stays global.
+        ("[2600::1]", false),
+        ("[2001:db8::1]", false),
+        ("[::1:0:0]", false),
     ];
-    /// More IPv6 multicast edges, checked with the other tables.
-    const S158_MULTICAST: [(&str, bool); 2] = [("[ffff:ffff::1]", true), ("[feff:ffff::1]", true)];
     /// Local IPv4 addresses embedded in IPv6.
-    const S112_EMBEDDED: [(&str, bool); 17] = [
+    const S112_EMBEDDED: [(&str, bool); 22] = [
         ("[::ffff:100.64.0.1]", true),
         ("[64:ff9b::192.168.1.1]", true),
         ("[64:ff9b::8.8.8.8]", false),
@@ -707,6 +710,12 @@ mod tests {
         ("[::ffff:0:8.8.8.8]", false),
         ("[::ffff:224.0.0.1]", true),
         ("[::ffff:0:255.255.255.255]", true),
+        ("[::ffff:0:0.0.0.0]", true),
+        ("[::255.255.255.255]", true),
+        // Only the exact prefixes embed an address.
+        ("[::fffe:0:127.0.0.1]", false),
+        ("[::1:0:7f00:1]", false),
+        ("[::1:ffff:0:7f00:1]", false),
     ];
     #[test]
     fn s112_shared_benchmark_and_this_network_ranges_are_local() {
@@ -755,12 +764,7 @@ mod tests {
             ("8.8.8.8", false),
             ("172.32.0.1", false),
         ];
-        for (host, local) in S112_RANGES
-            .into_iter()
-            .chain(S112_EMBEDDED)
-            .chain(S158_MULTICAST)
-            .chain(extra)
-        {
+        for (host, local) in S112_RANGES.into_iter().chain(S112_EMBEDDED).chain(extra) {
             let ip = host.trim_start_matches('[').trim_end_matches(']');
             assert_eq!(local_ip(ip.parse().unwrap()), local, "{host}");
         }
