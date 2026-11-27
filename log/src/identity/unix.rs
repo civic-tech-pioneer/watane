@@ -464,4 +464,44 @@ mod tests {
         assert_eq!(fs::read_dir(&moved).expect("list").count(), 0);
         assert_eq!(fs::read_dir(&other).expect("list other").count(), 0);
     }
+
+    /// S158 AC3: a failed publication removes the temporary file through the handle.
+    #[test]
+    fn ac3_failed_publication_removes_the_temporary_file() {
+        let dir = tempfile::tempdir().expect("create directory");
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).expect("make private");
+        // A directory named `identity.key` makes `renameat` fail.
+        fs::create_dir(dir.path().join("identity.key")).expect("block the key name");
+        let anchor = super::lock_dir(dir.path()).expect("lock the directory");
+        assert!(matches!(
+            write_key(dir.path(), &anchor, &[3; 32]),
+            Err(Error::Io { path, .. }) if path == dir.path().join("identity.key")
+        ));
+        let names: Vec<_> = fs::read_dir(dir.path())
+            .expect("list")
+            .map(|e| e.expect("entry").file_name())
+            .collect();
+        assert_eq!(names, ["identity.key"]);
+    }
+
+    /// S158 AC4: the store file is created inside the checked directory, not by path.
+    #[test]
+    fn ac4_store_file_is_created_through_the_handle() {
+        let parent = tempfile::tempdir().expect("create parent");
+        let dir = parent.path().join("log");
+        let other = parent.path().join("other");
+        let moved = parent.path().join("moved");
+        for d in [&dir, &other] {
+            fs::create_dir(d).expect("create directory");
+            fs::set_permissions(d, fs::Permissions::from_mode(0o700)).expect("make private");
+        }
+        let anchor = super::lock_dir(&dir).expect("lock the log directory");
+        fs::rename(&dir, &moved).expect("move the checked directory away");
+        std::os::unix::fs::symlink(&other, &dir).expect("put a link in its place");
+        // SQLite itself opens by path (TECHNICAL 4.8); only the creation is pinned here.
+        let _ = crate::store::open(&dir, &anchor);
+        let meta = fs::symlink_metadata(moved.join("channels.db")).expect("created in place");
+        assert!(meta.is_file());
+        assert_eq!(meta.mode() & 0o7777, 0o600);
+    }
 }
