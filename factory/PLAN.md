@@ -1488,7 +1488,7 @@ names the same interface in its sketch and fakes it until this one merges.
 
 - [x] **S150 Design: JF1 can be built from the documents (step 6).** DONE 2026-11-27: PR #57 rebase-merged at d0a5b4f4 by Deputy Paper, no bypass; builder codex, reviewer claude, 2 rounds (2/3, 0/1); ~35 min in flight. Alice's sketch snapshot (fields, version, 32 KiB limit, bound to a plan revision), the run record's states and evidence, JF1's six FUNCTIONAL outcomes and build rows JF1-1 to JF1-3, each naming what it waits on (harness F's factory profiles, STEP6-REPO, V27, V7). Door C settled for veto: manual sketch handoff for JF1; E/F sequencing (E done in S127, keep it); `factory/PLAN.md` stays authoritative during JF1. Sketch in factory/DONE.md.
 - [~] **S155 (upkeep) dev and app polish from Leftovers.** In flight (cloud, builder codex by rule 3: of the last two
-  handed out, S151 was Claude; reviewer claude; Codex task https://chatgpt.com/local/6b09542d-c6d8-83ed-baf2-213d64a8905e 10:02 UTC). Sketched 2026-11-27 by Deputy Rock.
+  handed out, S151 was Claude; reviewer claude; Codex task https://chatgpt.com/local/6b09542d-c6d8-83ed-baf2-213d64a8905e 10:02 UTC; DELIVERED as PR #59 at c8a3f200 ~10:44 UTC (+348/-78, most items already on main per the PR body); r1 Claude review routine `trig_01CYQQate4EhxENDExn8mmxd` 10:46 UTC). Sketched 2026-11-27 by Deputy Rock.
   Re-check each item on main first and drop what is already fixed; say so in the PR.
   1. dev (`### dev`): S119 r1 P1.2, P1.3; S114 r3 (the three `dev/src/preview/openai.rs` and `dev/TECHNICAL.md:2993`
      items); S111 r1 P1.6 to P1.10, P1.12, P1.13 (`scripted-responses`); the S86 prose and rerun items; S93.
