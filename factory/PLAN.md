@@ -1487,7 +1487,7 @@ names the same interface in its sketch and fakes it until this one merges.
   and S105 merge: a build brief "continue from branch slice/s110; rebase onto main" into the same Codex task. Resumed ~07:28 UTC 2026-11-24 in the same task (edits in dist/ and host/src/agent/ kept to cfg gates and refusals, since S107 and S103 run there). Windows failures per run: 358, 85, 30, 16, 15, 2, 0; DELIVERED ~11:45 UTC at 68d1dd4 (Windows green on attempts 1-3 of run 45370144960; Linux and macOS suite times within 10% of a parallel main run); r1: Claude review routine `trig_01CRaJJrcV955wX2NNsZP4NR`, fires 11:52 UTC; r1 (12:38): 2/10, changes (2) (validators PASS 1, RETURN 3; adversary HELD; user-sim ACCEPTED; no gate skips a named attacker's check): F1.1 the windows-fs crate's place in the spec, F1.2 two refusal tests; answer r1 dispatched 12:41 UTC into the Codex task; r1 answered at 3bd1122 (F1.1, F1.2, P1.1, P1.3, P1.5, P1.8, P1.9; the rest to Leftovers); r2: small Claude review routine `trig_01NGu5yhZEMyyvF8HwWxeKwD`, fires 12:49 UTC; r2 (13:05): 1/1, changes (1) (adversary HELD; the two new Windows refusal tests ran green on Windows): F2.1 a test assertion from my r1 polish wording, Windows red; answer r2 (option a, plus the forbid-to-deny docs) dispatched 13:10 UTC; r2 answered at 348a068 (+11/-6); r3: tiny Claude review (reads the diff, waits for Windows CI) routine `trig_017KsQQkRmNXpZNcNLSz74Gf`, fires 13:13 UTC; r3 (13:28): 0/0, VERDICT approve, all four CI jobs green at 348a068 (Windows included); waits on the human's merge word.
 
 - [~] **S149 (upkeep, guard first) host, pkg, log and dist polish queued behind S147.** In flight (cloud, builder
-  claude, reviewer codex; rule 3: S148 and S147 were Codex). Sketched 2026-11-27 by Deputy Paper from Leftovers.
+  claude, reviewer codex; rule 3: S148 and S147 were Codex; routine `trig_01AAZGaXwoNLX8rH6CfuwUHt`, fires 06:40 UTC). Sketched 2026-11-27 by Deputy Paper from Leftovers.
   Re-check each item on main first (S112 already closed the dist local ranges, the trailing dot and redirects to a
   local address); drop what is already fixed and say so in the PR.
   1. (guard, CI on main) `host::agent::claude::run::join_tests::s100_fix12_ac1_the_next_queued_line_is_not_started_after_the_deadline`
@@ -1497,9 +1497,9 @@ names the same interface in its sketch and fakes it until this one merges.
   Each outcome is its item's check. Touches: `host/`, `pkg/`, `log/`, `dist/`, `.github/workflows/ci.yml`; not `app/`,
   not `spec/design/`. No boundary moves: no adversary unless a change alters what a check refuses. Protects: *guard*
   (item 1), *polish* (the rest). Size: an upkeep slice.
-- [ ] **S150 Design: JF1 can be built from the documents (step 6, the parts that do not wait).** Sketched 2026-11-27 by
-  Deputy Paper (evidence #56: JF1 waits on harness F's factory profiles, not on the repository). Builder codex, reviewer
-  claude. A design slice in `spec/design/factory/` only: (1) the sketch snapshot Alice carries in JF1 (its fields: project,
+- [~] **S150 Design: JF1 can be built from the documents (step 6, the parts that do not wait).** Sketched 2026-11-27 by
+  Deputy Paper (evidence #56: JF1 waits on harness F's factory profiles, not on the repository). In flight (cloud, builder codex, reviewer claude;
+  task https://chatgpt.com/local/6b092596-e3e8-83ed-9478-10121134504d, 06:41 UTC). A design slice in `spec/design/factory/` only: (1) the sketch snapshot Alice carries in JF1 (its fields: project,
   base, branch, scope, acceptance, decisions; how it binds to a plan revision) and the run record's states and evidence
   fields (TECHNICAL 1), so a build needs no further choice; settle the "Sketch handoff" row for JF1's manual snapshot
   only (Door C; the automatic link stays open); (2) the two pages' views and Alice's actions in JF1 as FUNCTIONAL
