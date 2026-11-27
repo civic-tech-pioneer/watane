@@ -408,7 +408,8 @@ On Windows, create each missing directory component with a protected
 owner-only DACL. Open the final directory without following a reparse
 point, check the owner and DACL on the handle, and hold that handle during
 key work. Serialize key lookup, creation and replacement with an
-exclusive lock on a private `.identity.lock` file. The lock file remains
+exclusive lock on a private `.identity.lock` file. `open_keyless` takes it
+too, for the sweep, so a keyless directory also holds that file. The lock file remains
 in the directory. It must have exactly one link and an owner-only DACL.
 
 The shared `windows-fs::private_dir` reports OS failures in creation,

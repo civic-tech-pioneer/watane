@@ -292,3 +292,17 @@ fn s162_ac3_a_directory_with_the_stray_name_is_left() {
     Log::open(dir).unwrap();
     assert!(dir.join(STRAY).join("x").exists());
 }
+
+#[test]
+fn s162_restore_identity_sweeps_a_stray_temporary_key() {
+    let source = oracle::directory();
+    let other = Log::open(source.path()).unwrap();
+    let backup = other.export_identity("pw").unwrap();
+    let temp = oracle::directory();
+    let dir = temp.path();
+    let log = Log::open(dir).unwrap();
+    plant(dir, STRAY);
+    log.restore_identity(&backup, "pw").unwrap();
+    assert_eq!(log.identity(), other.identity());
+    assert!(!dir.join(STRAY).exists());
+}
