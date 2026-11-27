@@ -27,6 +27,14 @@ fn failed(root: &Path, relative: &str, e: std::io::Error) -> ModError {
         io(&root.join(relative), e)
     }
 }
+// A vanished entry is named at the entry; any other listing error names the folder.
+fn listing(root: &Path, relative: &str, e: open::ListingError) -> ModError {
+    if e.source.kind() == ErrorKind::NotFound {
+        invalid(Rule::Path, &e.relative_path(relative), CHANGED)
+    } else {
+        failed(root, relative, e.source)
+    }
+}
 fn directory(root: &Path, relative: &str) -> Result<Option<Dir>, ModError> {
     match open::dir(root, relative) {
         Ok(dir) => Ok(Some(dir)),
@@ -55,7 +63,7 @@ fn files(root: &Path, relative: &str) -> Result<Files, ModError> {
         return Ok(result);
     };
     for open::Entry { name, stat, .. } in
-        open::entries(&handle).map_err(|e| failed(root, relative, e.source))?
+        open::entries(&handle).map_err(|e| listing(root, relative, e))?
     {
         let name = name.to_string_lossy();
         let rel = format!("{relative}/{name}");
@@ -137,7 +145,7 @@ pub fn add_provider(
     let mut copies = BTreeMap::new();
     if let Some(handle) = directory(source_root, "wit/deps")? {
         for open::Entry { name, stat, .. } in
-            open::entries(&handle).map_err(|e| failed(source_root, "wit/deps", e.source))?
+            open::entries(&handle).map_err(|e| listing(source_root, "wit/deps", e))?
         {
             let name = name.to_string_lossy();
             let relative = format!("wit/deps/{name}");
@@ -230,6 +238,46 @@ mod tests {
         let c = tempfile::tempdir().unwrap();
         copy(&fixture("hello"), c.path());
         (p, c, provider)
+    }
+    fn listing_error(name: Option<&str>, kind: ErrorKind) -> open::ListingError {
+        open::ListingError {
+            name: name.map(Into::into),
+            source: kind.into(),
+        }
+    }
+    #[test]
+    fn ac1_vanished_entry_is_changed_at_the_entry() {
+        let e = listing(
+            Path::new("/m"),
+            "wit/deps",
+            listing_error(Some("x"), ErrorKind::NotFound),
+        );
+        assert!(
+            matches!(&e, ModError::Invalid(v) if v.len() == 1 && v[0].rule == Rule::Path
+                && v[0].file == "wit/deps/x" && v[0].message == CHANGED),
+            "{e:?}"
+        );
+    }
+    #[test]
+    fn ac2_unnamed_listing_error_names_the_folder() {
+        let e = listing(
+            Path::new("/m"),
+            "wit/deps",
+            listing_error(None, ErrorKind::NotFound),
+        );
+        assert!(
+            matches!(&e, ModError::Invalid(v) if v[0].file == "wit/deps" && v[0].message == CHANGED),
+            "{e:?}"
+        );
+        let e = listing(
+            Path::new("/m"),
+            "wit/deps",
+            listing_error(Some("x"), ErrorKind::PermissionDenied),
+        );
+        assert!(
+            matches!(&e, ModError::Io { path, .. } if path == Path::new("/m/wit/deps")),
+            "{e:?}"
+        );
     }
     fn names(dir: &Path) -> Vec<String> {
         let mut v: Vec<_> = fs::read_dir(dir)
