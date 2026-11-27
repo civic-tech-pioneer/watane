@@ -347,9 +347,15 @@ later hardening.
    (`DirBuilder::recursive(true).mode(0o700)`).
 3. `symlink_metadata(dir)`: not a directory is `NotPlain { expected: "directory", link }` (`link` is true for a symbolic link); `mode & 0o077 != 0`
    is `Exposed`. An owner different from the effective UID is `DirectoryOwner`.
-4. Check the opened directory handle again, then take an exclusive lock across key lookup and
-   creation. Open the key path once with `O_NOFOLLOW` and check the handle
-   with `fstat`:
+4. Open `dir` once with `O_DIRECTORY | O_NOFOLLOW`, check that handle with `fstat` (the same
+   kind, mode and owner checks as step 3), and take an exclusive lock across key lookup and
+   creation. This handle is the anchor: every later file operation of the `Log` (read, create,
+   replace and remove the key, the temporary file of a write, and the creation of `channels.db`)
+   is `openat`, `renameat`, `unlinkat` or `statat` relative to it, and the `Log` keeps it. The
+   parent path is not checked again, and a parent writable by others is not refused: with every
+   operation relative to the held handle, a swapped parent redirects nothing. Each `replace` or
+   `remove` checks the held handle again and locks it for the call. Open the key with
+   `openat(anchor, "identity.key", O_NOFOLLOW)` and check the handle with `fstat`:
    - missing: create the key (below);
    - a symbolic link: `NotPlain { expected: "regular file", link: true }`;
    - a FIFO, device, directory, or socket: `NotPlain { expected: "regular file", link: false }`;
@@ -373,14 +379,20 @@ later hardening.
 5. Open the store (section 4.8).
 
 Create the key: 32 bytes from `getrandom::fill`. Write them to
-`.identity.key.<32 hex random>.tmp` with `create_new`. Set mode 0600 on the
-open file and `sync_all` it. While still holding the directory lock, use
-`fs::rename` to publish it as `identity.key`, then `sync_all` the directory.
+`.identity.key.<32 hex random>.tmp`, created with `openat(anchor, .., O_CREAT | O_EXCL |
+O_NOFOLLOW, 0600)`. Set mode 0600 on the open file and `sync_all` it. While still holding the
+directory lock, use `renameat` on the anchor to publish it as `identity.key`, then `fsync` the
+anchor. If a step fails, remove the temporary file with `unlinkat` on the anchor.
 The key has one name as soon as it is published. Hold the seed in
 `zeroize::Zeroizing`.
 
 Replace the key (restore only): take the same directory lock and publish the
 new key over `identity.key` using the same write, rename and sync sequence.
+
+What stays by path on Unix: the missing-directory creation and the first check of step 3 (before
+the anchor exists), and SQLite's own open of `channels.db` and its `-wal` and `-shm` files
+(section 4.8). On Windows the handle-relative form is open: the Windows half still looks the key
+and temporary file up by path under the held directory handle.
 
 On Windows, create each missing directory component with a protected
 owner-only DACL. Open the final directory without following a reparse
@@ -406,8 +418,8 @@ creating an identity fails with an error at the path.
 
 ### 4.8 The channel store
 
-`channels.db`: create the empty file with `create_new` and mode 0600 before
-SQLite opens it, so that SQLite copies that mode to the `-wal` and `-shm`
+`channels.db`: create the empty file with `openat(anchor, "channels.db", O_CREAT | O_EXCL |
+O_NOFOLLOW, 0600)` on the checked directory handle (section 4.7) before SQLite opens it, so that SQLite copies that mode to the `-wal` and `-shm`
 files. Windows creates the empty database with a protected owner-only
 DACL. SQLite's sidecar files inherit the private directory's DACL.
 Pragmas at each open: `journal_mode = WAL`, `synchronous = FULL`,
@@ -415,6 +427,10 @@ Pragmas at each open: `journal_mode = WAL`, `synchronous = FULL`,
 5 s (two first opens race on it). At `user_version` 0 with no table, run
 `schema.sql` in one `BEGIN IMMEDIATE` transaction. Any other version than 1
 is `Storage("unsupported schema version <n>")`, and the file is not changed.
+
+SQLite opens `channels.db` by path, because it needs the directory for `-wal` and `-shm`; a
+handle-relative open needs a custom VFS, which is out of scope. A parent swapped after the check
+can therefore redirect SQLite's open, not the identity key.
 
 ```sql
 CREATE TABLE meta (key TEXT PRIMARY KEY, value BLOB NOT NULL) STRICT;
@@ -619,7 +635,7 @@ minicbor = { version = "2.3", default-features = false, features = ["alloc"] }
 argon2 = { version = "0.6", default-features = false, features = ["alloc"] }
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"] }
 rusqlite = { version = "0.41", features = ["bundled"] }
-rustix = { version = "1", default-features = false, features = ["process"] } # effective UID
+rustix = { version = "1", default-features = false, features = ["process", "fs"] } # effective UID; openat, renameat, unlinkat, statat
 data-encoding = "2.11"           # z-base-32 (custom Specification) and HEXLOWER
 unicode-normalization = "0.1.26"
 zeroize = "1.9"
@@ -656,7 +672,7 @@ colos file `src/zbase32.rs` does exactly this.
 | Property | Enforced by |
 |---|---|
 | The secret key stays on the device | It is read into `Zeroizing` and a `SigningKey` (zeroized on drop). No API returns it. `Debug` shows only the public key. The only output is the encrypted backup. |
-| Other users cannot read or plant the key | The directory and key must deny other users access. Unix uses mode bits and Windows uses an owner-only DACL. The key must be a regular file with one link and the current user as its owner. Creation checks for an absent key and publishes under the lock (4.7). |
+| Other users cannot read or plant the key | The directory and key must deny other users access. Unix uses mode bits and Windows uses an owner-only DACL. The key must be a regular file with one link and the current user as its owner. Creation checks for an absent key and publishes under the lock (4.7). On Unix every key operation is relative to the checked directory handle, so a swapped parent path redirects none; SQLite's open of `channels.db` is by path (4.8). |
 | No signing oracle | No public `sign`. A signature only exists inside an entry of the own channel, with a domain prefix (section 4.4). |
 | One rule for everyone | `Entry` has no public constructor except `decode` and `append`, and `decode` applies section 4.6 in full. |
 | One byte form, one id | The decoder re-encodes and compares (section 4.6 step 3). |

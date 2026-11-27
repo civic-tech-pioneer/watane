@@ -3,11 +3,32 @@
 #[cfg(unix)]
 mod unix;
 #[cfg(unix)]
-pub(crate) use unix::{open, open_keyless, remove, replace};
+pub(crate) use unix::{Anchor, open, open_keyless, remove, replace};
 #[cfg(windows)]
 mod windows;
+/// Windows holds its directory handle inside each call; nothing is passed on.
 #[cfg(windows)]
-pub(crate) use windows::{open, open_keyless, remove, replace};
+pub(crate) struct Anchor;
+#[cfg(windows)]
+pub(crate) fn open(dir: &std::path::Path) -> Result<(SigningKey, Anchor), Error> {
+    windows::open(dir).map(|key| (key, Anchor))
+}
+#[cfg(windows)]
+pub(crate) fn open_keyless(dir: &std::path::Path) -> Result<Anchor, Error> {
+    windows::open_keyless(dir).map(|()| Anchor)
+}
+#[cfg(windows)]
+pub(crate) fn replace(dir: &std::path::Path, _: &Anchor, key: &SigningKey) -> Result<(), Error> {
+    windows::replace(dir, key)
+}
+#[cfg(windows)]
+pub(crate) fn remove(
+    dir: &std::path::Path,
+    _: &Anchor,
+    key: &mut Option<SigningKey>,
+) -> Result<(), Error> {
+    windows::remove(dir, key)
+}
 
 use crate::Error;
 use ed25519_dalek::SigningKey;

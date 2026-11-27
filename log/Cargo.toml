@@ -19,7 +19,7 @@ data-encoding = "2.11"
 zeroize = "1.9"
 thiserror = "2.0"
 libc = "0.2"
-rustix = { version = "1", default-features = false, features = ["process"] }
+rustix = { version = "1", default-features = false, features = ["process", "fs"] }
 
 rusqlite = { version = "0.41", features = ["bundled"] }
 argon2 = { version = "0.6", default-features = false, features = ["alloc"] }
