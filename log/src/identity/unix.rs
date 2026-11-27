@@ -522,8 +522,7 @@ mod tests {
         fs::rename(&dir, &moved).expect("move the checked directory away");
         std::os::unix::fs::symlink(&other, &dir).expect("put a link in its place");
         let result = crate::store::open(&dir, &anchor);
-        // SQLITE_OPEN_NOFOLLOW already refuses a path with a link in it.
-        result.expect_err("a link in the path is refused");
+        assert!(matches!(result, Err(Error::Io { path, .. }) if path == dir.join("channels.db")));
         assert_eq!(fs::read(other.join("channels.db")).expect("read"), foreign);
         assert_eq!(
             fs::metadata(moved.join("channels.db")).expect("stat").len(),
@@ -561,5 +560,23 @@ mod tests {
             0
         );
         assert_eq!(fs::read_dir(&dir).expect("list").count(), 1);
+    }
+
+    /// A link in a parent of the log directory is allowed (TECHNICAL 4.7): macOS's temp dir and
+    /// a home reached through a link must open and keep a channel store.
+    #[test]
+    fn s158_fix1_log_directory_under_a_linked_parent_opens() {
+        let parent = tempfile::tempdir().expect("create parent");
+        let real = parent.path().join("real");
+        fs::create_dir(&real).expect("create the real parent");
+        let link = parent.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).expect("link the parent");
+        let dir = link.join("log");
+        let log = crate::Log::open(&dir).expect("open under a linked parent");
+        log.append("note", b"x")
+            .expect("append under a linked parent");
+        drop(log);
+        assert!(real.join("log").join("channels.db").is_file());
+        crate::Log::open(&dir).expect("open again under a linked parent");
     }
 }
