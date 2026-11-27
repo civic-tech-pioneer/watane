@@ -33,9 +33,14 @@ pub(crate) fn open(dir: &Path, anchor: &crate::identity::Anchor) -> Result<Conne
     }
     // No SQLITE_OPEN_NOFOLLOW: SQLite refuses a link in any component with it, and a link in a
     // parent of the log directory is allowed (TECHNICAL 4.7, 4.8).
-    let mut db = Connection::open(&path)?;
+    // No SQLITE_OPEN_CREATE either: the file was just created through the handle, so a path
+    // swapped to a directory without a database must fail the open, not get a new channels.db.
+    let flags = rusqlite::OpenFlags::default() - rusqlite::OpenFlags::SQLITE_OPEN_CREATE;
+    let opened = Connection::open_with_flags(&path, flags);
+    // A swap is reported as such, also when it made SQLite's open fail.
     #[cfg(unix)]
     same_file(&path, anchor)?;
+    let mut db = opened?;
     db.busy_timeout(Duration::from_secs(5))?;
     check_version(&db)?;
     let start = Instant::now();

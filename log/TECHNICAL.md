@@ -437,7 +437,9 @@ handle-relative open needs a custom VFS, which is out of scope. A parent swapped
 can therefore redirect SQLite's open, not the identity key. The open does not pass
 `SQLITE_OPEN_NOFOLLOW`: with it SQLite refuses a link in any component of the path, and a link in a
 parent of the log directory is allowed (section 4.7; macOS's temporary directory is under such a
-link). Right after `Connection::open`, on Unix, the store compares
+link). Nor does it pass `SQLITE_OPEN_CREATE`: the file already exists, so a path swapped to a
+directory without a database fails the open and SQLite creates no `channels.db` there. Right after
+the open, also a failed one, on Unix, the store compares
 `(st_dev, st_ino)` of `statat(anchor, "channels.db", AT_SYMLINK_NOFOLLOW)` with `stat` of the path;
 a mismatch is `Io` at the path ("not the channels.db of the checked log directory"), the handle is
 dropped, and nothing else changes. `watane-log` has no `unsafe`, so SQLite's own file handle is out
