@@ -1487,18 +1487,6 @@ names the same interface in its sketch and fakes it until this one merges.
   and S105 merge: a build brief "continue from branch slice/s110; rebase onto main" into the same Codex task. Resumed ~07:28 UTC 2026-11-24 in the same task (edits in dist/ and host/src/agent/ kept to cfg gates and refusals, since S107 and S103 run there). Windows failures per run: 358, 85, 30, 16, 15, 2, 0; DELIVERED ~11:45 UTC at 68d1dd4 (Windows green on attempts 1-3 of run 45370144960; Linux and macOS suite times within 10% of a parallel main run); r1: Claude review routine `trig_01CRaJJrcV955wX2NNsZP4NR`, fires 11:52 UTC; r1 (12:38): 2/10, changes (2) (validators PASS 1, RETURN 3; adversary HELD; user-sim ACCEPTED; no gate skips a named attacker's check): F1.1 the windows-fs crate's place in the spec, F1.2 two refusal tests; answer r1 dispatched 12:41 UTC into the Codex task; r1 answered at 3bd1122 (F1.1, F1.2, P1.1, P1.3, P1.5, P1.8, P1.9; the rest to Leftovers); r2: small Claude review routine `trig_01NGu5yhZEMyyvF8HwWxeKwD`, fires 12:49 UTC; r2 (13:05): 1/1, changes (1) (adversary HELD; the two new Windows refusal tests ran green on Windows): F2.1 a test assertion from my r1 polish wording, Windows red; answer r2 (option a, plus the forbid-to-deny docs) dispatched 13:10 UTC; r2 answered at 348a068 (+11/-6); r3: tiny Claude review (reads the diff, waits for Windows CI) routine `trig_017KsQQkRmNXpZNcNLSz74Gf`, fires 13:13 UTC; r3 (13:28): 0/0, VERDICT approve, all four CI jobs green at 348a068 (Windows included); waits on the human's merge word.
 
 - [x] **S150 Design: JF1 can be built from the documents (step 6).** DONE 2026-11-27: PR #57 rebase-merged at d0a5b4f4 by Deputy Paper, no bypass; builder codex, reviewer claude, 2 rounds (2/3, 0/1); ~35 min in flight. Alice's sketch snapshot (fields, version, 32 KiB limit, bound to a plan revision), the run record's states and evidence, JF1's six FUNCTIONAL outcomes and build rows JF1-1 to JF1-3, each naming what it waits on (harness F's factory profiles, STEP6-REPO, V27, V7). Door C settled for veto: manual sketch handoff for JF1; E/F sequencing (E done in S127, keep it); `factory/PLAN.md` stays authoritative during JF1. Sketch in factory/DONE.md.
-- [~] **S155 (upkeep) dev and app polish from Leftovers.** In flight (cloud, builder codex by rule 3: of the last two
-  handed out, S151 was Claude; reviewer claude; Codex task https://chatgpt.com/local/6b09542d-c6d8-83ed-baf2-213d64a8905e 10:02 UTC; DELIVERED as PR #59 at c8a3f200 ~10:44 UTC (+348/-78, most items already on main per the PR body); r1 Claude review routine `trig_01CYQQate4EhxENDExn8mmxd` 10:46 UTC; r1: 0/2 approve, adversary not run (no check refuses anything new), CI green, but no user-sim: user-sim routine `trig_015MG4kuWVwMdHZgzB7fxKuZ` 11:07 UTC before merge; user-sim REJECTED (1) ~11:22: U1.1 `new` under a regular file names no path (resolved_path returns internal); answer r1 to Codex in the same task 11:24 UTC, ruling: name the path, with the user-sim's regress_s155; answers dc96628d ~11:26 (U1.1 fixed, P1.1 deferred to Leftovers); r2 Claude review routine `trig_01Nrk1VZqojDCxAp1Bn2aNEC` 11:28 UTC, a short check plus user-sim; r2: 0/0 approve, user-sim ACCEPTED, CI macOS red F2.ci (test expected /private/var); answer r2 to Codex in the same task ~11:55, ruling: fix the test; answers 48fd5d6a (one test line); r3 Claude review routine `trig_01RdBzq7ejQAKp2vvJJ8kRdr` 11:53 UTC, a recheck of F2.ci only). Deputy Paper took over 2026-11-27 ~11:52 UTC. Sketched 2026-11-27 by Deputy Rock.
-  Re-check each item on main first and drop what is already fixed; say so in the PR.
-  1. dev (`### dev`): S119 r1 P1.2, P1.3; S114 r3 (the three `dev/src/preview/openai.rs` and `dev/TECHNICAL.md:2993`
-     items); S111 r1 P1.6 to P1.10, P1.12, P1.13 (`scripted-responses`); the S86 prose and rerun items; S93.
-  2. app (`### app`): S117 r1 (the three items), S116 r1 P1.1, P1.2, P1.4.
-  3. pkg (`### pkg`): S119 r1 P1.4 and S110 R2 (Windows reserved device names refused on every OS) where still open.
-  Each outcome is its item's check. Touches: `dev/`, `app/`, `pkg/`, `log/tests/` (S117's ACL oracle); never
-  `host/src/agent/` or `dev/src/bin/fake-claude.rs` (uncommitted work in the main checkout), never `spec/design/`. No
-  boundary moves: no adversary unless a change alters what a check refuses (S110 R2 does: then the Claude review runs it).
-  Protects: *polish*. Size: an upkeep slice.
-
 - [~] **S158 (upkeep) install, log and dist from Leftovers.** In flight (cloud, routine `trig_01XPVb1dpgha7hKDx63sHEH3` 11:55 UTC). Sketched 2026-11-27 by Deputy Paper; builder claude by rule 3 (the last two handed out, S157 and S155, were Codex), reviewer codex.
   Re-check each item on main first and drop what is already fixed; say so in the PR. Guards first:
   1. dist (`### dist`): (guard) S112 r2: a redirect to a machine-local host name reaches a local port; check the resolved address at connect time (TECHNICAL DD-26 states the rule for literals; extend its sentence to resolved addresses in `dist/TECHNICAL.md` with the change). S107 P3.3 and the Updates card hint; S26 Q12 (log entries of unlisted channels) only if a `forget` fits log's existing API, else leave it.
@@ -1706,6 +1694,8 @@ These are true but are now what the specs say. Acting on any of them is a spec c
 - [S44] an unknown `/api` route answers 404 `bad_request` (host/src/server.rs:107, 245).
 
 ### dev
+
+- **(S155 r1 polish)** P1.1 an implicit dir for a source-less recovery (deferred); P1.2 `new` under a missing parent answers `internal`, could be `usage.*`.
 
 - **(S136 r1 P1.7, left by S141)** a mod disabled in a preview stays disabled across `serve`: re-enabling it with its state kept needs a new interface.
 
@@ -2793,3 +2783,4 @@ The human may veto each one.
 - S94: a maker's `cargo test -p watane-install` ends in about 2 minutes on the Mac, guards intact.
 - S98: a merge to main no longer needs a macOS rerun; the app quits cleanly under load.
 - S149 (watane upkeep, 2026-11-27): an oversize chunked body always gets 413 and close on every OS, h2c by `:authority` alone gets 421, and the macOS deadline flake is pinned. Builder claude, reviewer codex, 4 rounds (2/0, 0/0 + F2.ci, 1/0, 0/0), cut at r3 by Deputy Scissors; ~5 h in flight; merged by Deputy Rock.
+- S155 (watane upkeep, 2026-11-27): dev names the path when `new` lands under a file, and dev and app polish from Leftovers. Builder codex, reviewer claude, 3 rounds (0/2 + user-sim U1.1, 0/0 + F2.ci, 0/0); ~2 h in flight; merged by Deputy Paper.

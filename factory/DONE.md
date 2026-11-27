@@ -260,3 +260,15 @@ its own factory, the premise is weaker than it looks. Not sketched; it needs its
   not `spec/design/`. No boundary moves: no adversary unless a change alters what a check refuses. Protects: *guard*
   (item 1), *polish* (the rest). Size: an upkeep slice.
   DONE 2026-11-27: PR #58 merged (rebase) by Deputy Rock after r4 approve and green CI on 22f321f9.
+- [x] **S155 (upkeep) dev and app polish from Leftovers.** In flight (cloud, builder codex by rule 3: of the last two
+  handed out, S151 was Claude; reviewer claude; Codex task https://chatgpt.com/local/6b09542d-c6d8-83ed-baf2-213d64a8905e 10:02 UTC; DELIVERED as PR #59 at c8a3f200 ~10:44 UTC (+348/-78, most items already on main per the PR body); r1 Claude review routine `trig_01CYQQate4EhxENDExn8mmxd` 10:46 UTC; r1: 0/2 approve, adversary not run (no check refuses anything new), CI green, but no user-sim: user-sim routine `trig_015MG4kuWVwMdHZgzB7fxKuZ` 11:07 UTC before merge; user-sim REJECTED (1) ~11:22: U1.1 `new` under a regular file names no path (resolved_path returns internal); answer r1 to Codex in the same task 11:24 UTC, ruling: name the path, with the user-sim's regress_s155; answers dc96628d ~11:26 (U1.1 fixed, P1.1 deferred to Leftovers); r2 Claude review routine `trig_01Nrk1VZqojDCxAp1Bn2aNEC` 11:28 UTC, a short check plus user-sim; r2: 0/0 approve, user-sim ACCEPTED, CI macOS red F2.ci (test expected /private/var); answer r2 to Codex in the same task ~11:55, ruling: fix the test; answers 48fd5d6a (one test line); r3 Claude review routine `trig_01RdBzq7ejQAKp2vvJJ8kRdr` 11:53 UTC, a recheck of F2.ci only). Deputy Paper took over 2026-11-27 ~11:52 UTC. Sketched 2026-11-27 by Deputy Rock.
+  Re-check each item on main first and drop what is already fixed; say so in the PR.
+  1. dev (`### dev`): S119 r1 P1.2, P1.3; S114 r3 (the three `dev/src/preview/openai.rs` and `dev/TECHNICAL.md:2993`
+     items); S111 r1 P1.6 to P1.10, P1.12, P1.13 (`scripted-responses`); the S86 prose and rerun items; S93.
+  2. app (`### app`): S117 r1 (the three items), S116 r1 P1.1, P1.2, P1.4.
+  3. pkg (`### pkg`): S119 r1 P1.4 and S110 R2 (Windows reserved device names refused on every OS) where still open.
+  Each outcome is its item's check. Touches: `dev/`, `app/`, `pkg/`, `log/tests/` (S117's ACL oracle); never
+  `host/src/agent/` or `dev/src/bin/fake-claude.rs` (uncommitted work in the main checkout), never `spec/design/`. No
+  boundary moves: no adversary unless a change alters what a check refuses (S110 R2 does: then the Claude review runs it).
+  Protects: *polish*. Size: an upkeep slice.
+  DONE 2026-11-27: PR #59 merged (rebase) by Deputy Paper after r3 approve and green CI on 48fd5d6a.
