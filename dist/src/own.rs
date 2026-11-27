@@ -289,12 +289,14 @@ impl Dist {
             .own_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        let result = restore(&self.log);
-        // A log error after the rename still published the new key (log TECHNICAL 5.4 step 5):
-        // the site URL belonged to the replaced identity, so it goes, and the log error wins.
-        if result.is_err() && self.log.identity() == Some(before) {
-            return Err(result.unwrap_err().into());
-        }
+        let result = match restore(&self.log) {
+            // Nothing was published: the old identity keeps its site URL.
+            Err(error) if self.log.identity() == Some(before) => return Err(error.into()),
+            // A log error after the rename still published the new key (log TECHNICAL 5.4
+            // step 5): the site URL belonged to the replaced identity, so it goes, and the log
+            // error wins.
+            result => result,
+        };
         let mut base = self
             .base
             .lock()
@@ -565,10 +567,8 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let dist = open(home.path());
         dist.set_site_url("https://old.example/").unwrap();
-        assert!(
-            dist.restore_with(|_| Err(watane_log::Error::EmptyPassphrase))
-                .is_err()
-        );
+        dist.restore_with(|_| Err(watane_log::Error::EmptyPassphrase))
+            .unwrap_err();
         assert_eq!(dist.own_link(None).unwrap().base(), "https://old.example/");
     }
 }
