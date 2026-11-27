@@ -2,7 +2,7 @@
 
 Moved out of `PLAN.md` on 2026-11-27. Each one is past the human's veto window. Each still has to
 be written into the spec that owns its fact (an accepted risk under that spec's "Not protected"
-or known limits; a rule in its section) and then deleted from here: ISSUE_PLACEHOLDER. Review
+or known limits; a rule in its section) and then deleted from here: https://github.com/civic-tech-pioneer/watane/issues/62. Review
 leads treat these as precedent, as they did under `Deputy decisions` in `PLAN.md`.
 
 - 2026-11-26 (deputy-7) S130 R2.1 accepted: a forged `resolved` receipt line needs an attacker who can already write the home, outside spec/TECHNICAL 6's Install-row attacker (a tampered download); not new in S130. 8.5 rule 4 gets one sentence that the receipt is assumed watane's. undo: rule 4 also requires `<R>` = the home folder or its in-home link target (a Leftovers line).
