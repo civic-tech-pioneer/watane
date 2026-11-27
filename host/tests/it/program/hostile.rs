@@ -388,6 +388,71 @@ fn ac4_chunked_and_declared_oversized_bodies_never_change_state() {
     counter_call(&preview, "api.get", 0);
 }
 
+// A chunked body of `size` bytes with no `Connection: close` from the client,
+// then a second request on the same connection. Returns every byte the host sends.
+fn chunked_oversize_then_pipelined(
+    preview: &Preview,
+    path: &str,
+    extra: &str,
+    size: usize,
+) -> String {
+    let port = preview.ready.port;
+    let mut bytes = format!(
+        "POST {path} HTTP/1.1\r\nHost: localhost:{port}\r\n{extra}Content-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n"
+    )
+    .into_bytes();
+    for chunk in vec![b' '; size].chunks(16 << 10) {
+        bytes.extend_from_slice(format!("{:x}\r\n", chunk.len()).as_bytes());
+        bytes.extend_from_slice(chunk);
+        bytes.extend_from_slice(b"\r\n");
+    }
+    bytes.extend_from_slice(b"0\r\n\r\n");
+    bytes.extend_from_slice(
+        format!("GET /api/status HTTP/1.1\r\nHost: localhost:{port}\r\n\r\n").as_bytes(),
+    );
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    stream
+        .set_write_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    // The host may reset the connection while the client is still writing.
+    let _ = stream.write_all(&bytes);
+    let mut reply = Vec::new();
+    let _ = stream.read_to_end(&mut reply);
+    String::from_utf8(reply).unwrap()
+}
+
+fn assert_closed_413_without_second_response(reply: &str) {
+    let (head, _) = reply.split_once("\r\n\r\n").expect("a 413 response");
+    assert!(head.starts_with("HTTP/1.1 413 "), "{head:?}");
+    assert!(
+        head.lines().any(|line| line == "connection: close"),
+        "{head:?}"
+    );
+    assert_eq!(reply.matches("HTTP/1.1 ").count(), 1, "{reply:?}");
+}
+
+#[test]
+fn ac1_chunked_oversize_api_body_gets_413_close_and_pipelined_request_is_not_served() {
+    let (_home, preview) = setup();
+    let reply = chunked_oversize_then_pipelined(&preview, "/api/plan", "", 128 << 10);
+    assert_closed_413_without_second_response(&reply);
+    counter_call(&preview, "api.get", 0);
+}
+
+#[test]
+fn ac2_chunked_oversize_mcp_body_gets_413_close_and_pipelined_request_is_not_served() {
+    let (_home, preview) = setup();
+    let extra = format!(
+        "Authorization: Bearer {}\r\n",
+        preview.ready.token.as_ref().unwrap()
+    );
+    let reply = chunked_oversize_then_pipelined(&preview, "/mcp/preview", &extra, 2 << 20);
+    assert_closed_413_without_second_response(&reply);
+}
+
 #[test]
 fn ac5_mod_and_api_routes_do_not_cross_origins() {
     let (home, preview) = setup();
