@@ -664,7 +664,10 @@ sections with a label each, in the order of APP-F-69:
    then `watane tries again at the next check.`, then `Last read <ago>.`
    when `ChannelRow.readAt` is set; under it, 12 px `--muted`, `Cause:
    <cause>` with the whole cause (APP-F-37); `Try again`
-   (`channels_refresh`). Hidden when empty.
+   (`channels_refresh`). If the channel is also compromised, the card
+   says the channel is compromised, gives the same reason and advice as
+   Find (APP-F-44), and shows the full failure as `Last read failed:
+   <cause>`. That card has no `Try again` button. Hidden when empty.
 3. `Updated by itself` (`#update-done`): `These asked for nothing new, so
    they installed without a question.`, then one row per `updates_done`
    entry, newest first: the 28 px monogram, the name, `<from> → <to>`, and
@@ -1422,7 +1425,9 @@ or `Compromised` for `compromised`. For a failure, the row uses the
 - Other HTTP status: `The publisher's site returned an error (HTTP <status>)`.
 - Other failure: `Could not read the channel data`.
 
-Updates keeps the complete cause in its failed-channel card. The base URL
+A compromised row also gives the explanation and advice from Find
+(APP-F-44). Updates keeps the complete cause in its failed-channel card
+(5.3.6). The base URL
 may be the row's `title`; the visible row text uses the party and status words.
 
 ### 9.4 Install from a link
