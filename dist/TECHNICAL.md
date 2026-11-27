@@ -877,7 +877,12 @@ From step 4, this is pass (a) of 5.9.
 `restore(backup, passphrase)`: lock; `log.restore_identity(backup,
 passphrase)` (it refuses with `IdentityInUse` when the own channel has a
 statement); remove `site.json` (the site URL belonged to the replaced
-identity); return the new key. The own head is now unconfirmed.
+identity); return the new key. The own head is now unconfirmed. When
+`restore_identity` fails after it published the new key (the directory sync
+after the rename, log TECHNICAL 5.4 step 5), the identity has still changed:
+the site URL is cleared in memory and `site.json` removed all the same, and
+the log error is returned. A failure that leaves the old identity changes
+neither.
 
 `confirm_own(own)`: lock.
 - With a link: `own.channel() != identity()`: `NotOwnLink` (DD-16).

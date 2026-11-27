@@ -277,23 +277,37 @@ impl Dist {
         Ok(self.log.own_head_confirmed()?)
     }
     pub fn restore(&self, backup: &[u8], passphrase: &str) -> Result<PublicKey, DistError> {
-        self.require_identity()?;
+        self.restore_with(|log| log.restore_identity(backup, passphrase))
+    }
+    /// `restore` with the log call passed in, so a unit test can fail it after the publish.
+    fn restore_with(
+        &self,
+        restore: impl FnOnce(&watane_log::Log) -> Result<PublicKey, watane_log::Error>,
+    ) -> Result<PublicKey, DistError> {
+        let before = self.require_identity()?;
         let _guard = self
             .own_mutex
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        let key = self.log.restore_identity(backup, passphrase)?;
+        let result = restore(&self.log);
+        // A log error after the rename still published the new key (log TECHNICAL 5.4 step 5):
+        // the site URL belonged to the replaced identity, so it goes, and the log error wins.
+        if result.is_err() && self.log.identity() == Some(before) {
+            return Err(result.unwrap_err().into());
+        }
         let mut base = self
             .base
             .lock()
             .expect("lock poisoned: another thread panicked while holding it");
-        let path = self.home.join("dist/site.json");
-        match std::fs::remove_file(&path) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(site::io(&path, e)),
-        }
         *base = None;
+        let path = self.home.join("dist/site.json");
+        let removed = match std::fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(site::io(&path, e)),
+        };
+        let key = result?;
+        removed?;
         Ok(key)
     }
     pub fn confirm_own(&self, own: Option<&Link>) -> Result<(), DistError> {
@@ -505,5 +519,56 @@ impl Dist {
                 cause: Box::new(cause),
             })?;
         Ok(())
+    }
+}
+#[cfg(test)]
+mod tests {
+    use crate::{Confirm, Decision, Dist, DistError, Options, SignRequest};
+    use std::sync::Arc;
+    struct NoSign;
+    impl Confirm for NoSign {
+        fn confirm(&self, _: &SignRequest) -> Decision {
+            panic!("restore must not sign")
+        }
+    }
+    fn open(home: &std::path::Path) -> Dist {
+        Dist::open(home, Arc::new(NoSign), Options::default()).unwrap()
+    }
+    #[test]
+    fn s162_r1_restore_clears_the_old_url_when_a_sync_fails_after_the_publish() {
+        let other = tempfile::tempdir().unwrap();
+        let backup = open(other.path()).backup("pw").unwrap();
+        let home = tempfile::tempdir().unwrap();
+        let dist = open(home.path());
+        dist.set_site_url("https://old.example/").unwrap();
+        // The real restore publishes the new key; then the directory sync after it fails.
+        let error = dist
+            .restore_with(|log| {
+                log.restore_identity(&backup, "pw")?;
+                Err(watane_log::Error::Io {
+                    path: home.path().join("log"),
+                    source: std::io::Error::other("injected sync failure"),
+                })
+            })
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("injected sync failure"),
+            "{error}"
+        );
+        assert!(matches!(dist.own_link(None), Err(DistError::NoSiteUrl)));
+        drop(dist);
+        let reopened = open(home.path());
+        assert!(matches!(reopened.own_link(None), Err(DistError::NoSiteUrl)));
+    }
+    #[test]
+    fn s162_r1_restore_failing_before_the_publish_keeps_the_url() {
+        let home = tempfile::tempdir().unwrap();
+        let dist = open(home.path());
+        dist.set_site_url("https://old.example/").unwrap();
+        assert!(
+            dist.restore_with(|_| Err(watane_log::Error::EmptyPassphrase))
+                .is_err()
+        );
+        assert_eq!(dist.own_link(None).unwrap().base(), "https://old.example/");
     }
 }
