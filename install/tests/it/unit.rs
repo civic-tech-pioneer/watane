@@ -1848,6 +1848,43 @@ fn ac5_check_foreign_uses_only_a_dead_runs_journal() {
     assert_eq!((dead.code, dead.err.as_str()), (0, ""), "{dead:?}");
 }
 
+/// TECHNICAL 3.4.2, 3.6.2 (the live-run rule): `check_foreign` skips the journal of a live run,
+/// with no `pid_gone` stub: a journal named for a real running process does not prove the path
+/// watane's, so the file is foreign (exit 8, listed); the same journal named for a dead pid does
+/// (exit 0, nothing listed). Mutant: delete `pid_gone "$cf_n" || continue` in `check_foreign`.
+#[test]
+fn unit_check_foreign_skips_the_journal_of_a_live_process_without_a_stub() {
+    let fx = Fx::new();
+    let mut live = std::process::Command::new(fx.real.join("sleep"))
+        .arg("600")
+        .spawn()
+        .expect("sleep");
+    let pids = [("live", live.id()), ("dead", dead_pid())];
+    for (name, pid) in pids {
+        let home = home_named(&fx, name);
+        let bin = home.join(".local/bin/watane");
+        write_file(&bin, "an existing program");
+        write_file(
+            &home.join(format!(".local/share/watane/journal.{pid}")),
+            &format!("new {0}\nmoved {0}\n", bin.display()),
+        );
+    }
+    let cases = ["live", "dead"].map(|name| {
+        (
+            name.to_string(),
+            format!("HOME=$ROOT/{name}; check_home; set_entries; check_foreign"),
+        )
+    });
+    let units = table(&fx, "", &cases);
+    live.kill().expect("kill");
+    live.wait().expect("wait");
+    let live = case(&units, "live");
+    assert_eq!(live.code, 8, "{live:?}");
+    foreign_lines(live, &["~/.local/bin/watane"]);
+    let dead = case(&units, "dead");
+    assert_eq!((dead.code, dead.err.as_str()), (0, ""), "{dead:?}");
+}
+
 /// TECHNICAL 3.5, 8.4 (`read_receipt`): a receipt that is a link is not read, whatever it leads
 /// to. Mutant: `read_receipt` without `[ ! -L "$1" ]`.
 #[test]
