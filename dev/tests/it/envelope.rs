@@ -630,7 +630,7 @@ fn regress_s155_new_under_a_file_names_the_path() {
     assert_ne!(code, 0, "{v}");
     let message = v["errors"][0]["message"].as_str().unwrap();
     assert!(message.contains("afile"), "the error names no path: {v}");
-    let dir = temp.path().canonicalize().unwrap().join("afile/notes");
+    let dir = temp.path().join("afile/notes");
     assert!(
         message.starts_with(&format!("cannot create {}: ", dir.display())),
         "{v}"
