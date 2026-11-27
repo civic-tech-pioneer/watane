@@ -11,7 +11,7 @@ the questions for `spec/`.
 | Package | `watane-dist`, lib `watane_dist`, no binary |
 | Edition, toolchain | 2024, stable, `rust-version = "1.91"` (needs `File::try_lock`, stable since 1.89) |
 | Lints | Workspace `unsafe_code = "deny"`. Only `watane-log-windows-fs` may use `#[allow(unsafe_code)]` (spec/TECHNICAL 2). Review enforces this rule. `cargo clippy --all-targets -- -D warnings` is clean. |
-| Threads | No thread, no timer, no async runtime. Every call is blocking. From step 8 the holder methods (5.12) are called from `net`'s blocking threads while other calls run: none of them takes the read lock or the own-channel lock, and no lock is held across a request (5.12). |
+| Threads | No thread, no timer, no async runtime. Every call is blocking. The one exception is the name lookup of the guarded resolver (4.5), on the helper thread ureq spawns for every lookup with a timeout. From step 8 the holder methods (5.12) are called from `net`'s blocking threads while other calls run: none of them takes the read lock or the own-channel lock, and no lock is held across a request (5.12). |
 | Network | Outgoing HTTP GET only. `dist` never listens and never uploads. |
 
 ```text
@@ -746,7 +746,11 @@ resolver (`resolve.rs`) looks the name up as ureq does and refuses the hop when
 **any** resolved address is local by the same rule as the literals
 (`index::local_ip`), before any byte is sent: `BadUrl { cause: "local address" }`
 for the first base, the redirect cause above for a redirect target. Check and
-connect share one resolution, so no name can change between them.
+connect share one resolution, so no name can change between them. The check covers
+**every** address of that one lookup; only then is the result capped to the 16 that ureq
+dials, so a local address past the 16th still refuses the name. With a timeout the lookup
+runs on the one helper thread ureq's own resolver would spawn for it, abandoned at the
+deadline.
 `Options::listed_local` turns it off with the literal check. Every target
 address ureq asks the resolver for is checked; only the resolution of the configured
 proxy endpoint itself is not (a local proxy must stay usable). A listed URL whose

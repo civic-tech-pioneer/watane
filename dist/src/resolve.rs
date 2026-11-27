@@ -2,9 +2,10 @@
 //! name whose resolved addresses include a local one, at connect time.
 
 use crate::index::local_ip;
+use std::net::{SocketAddr, ToSocketAddrs};
 use ureq::config::Config;
 use ureq::http::Uri;
-use ureq::unversioned::resolver::{DefaultResolver, ResolvedSocketAddrs, Resolver};
+use ureq::unversioned::resolver::{ResolvedSocketAddrs, Resolver};
 use ureq::unversioned::transport::NextTimeout;
 
 /// The cause carried inside the `ureq::Error::Io` that a refused name returns.
@@ -38,17 +39,61 @@ pub(crate) struct GuardedResolver {
     pub(crate) hosts: TestHosts,
 }
 
+/// The port ureq dials for `uri`: its own, else its scheme's default (ureq's `SchemeExt`).
+fn port(uri: &Uri) -> Option<u16> {
+    uri.port_u16().or(
+        match uri.scheme_str().map(str::to_ascii_lowercase).as_deref() {
+            Some("https") => Some(443),
+            Some("http") => Some(80),
+            Some("socks4" | "socks4a" | "socks" | "socks5") => Some(1080),
+            _ => None,
+        },
+    )
+}
+
 /// `uri` is the configured proxy's own host and port (ureq's CONNECT and SOCKS connectors
 /// resolve it through the same resolver as a target).
 fn is_proxy_endpoint(uri: &Uri, config: &Config) -> bool {
-    config.proxy().is_some_and(|proxy| {
-        let port = uri.port_u16().or(match uri.scheme_str() {
-            Some("https") => Some(443),
-            Some("http") => Some(80),
-            _ => None,
-        });
-        uri.host() == Some(proxy.host()) && port == Some(proxy.port())
-    })
+    config
+        .proxy()
+        .is_some_and(|proxy| uri.host() == Some(proxy.host()) && port(uri) == Some(proxy.port()))
+}
+
+/// One lookup of `host:port` as ureq's `DefaultResolver` does it, with every address it
+/// returns: with a timeout, on a helper thread that gives up at the deadline (the thread
+/// ureq itself would spawn for this lookup; TECHNICAL 4.5).
+fn lookup(addr: String, timeout: NextTimeout) -> Result<Vec<SocketAddr>, ureq::Error> {
+    if timeout.after.is_not_happening() {
+        return Ok(addr.to_socket_addrs()?.collect());
+    }
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    std::thread::spawn(move || tx.send(addr.to_socket_addrs()).ok());
+    match rx.recv_timeout(*timeout.after) {
+        Ok(found) => Ok(found?.collect()),
+        Err(_) => Err(ureq::Error::Timeout(timeout.reason)),
+    }
+}
+
+impl GuardedResolver {
+    /// Every address of one lookup of `uri`'s host, before any cap.
+    fn lookup_all(&self, uri: &Uri, timeout: NextTimeout) -> Result<Vec<SocketAddr>, ureq::Error> {
+        let (Some(host), Some(port)) = (uri.host(), port(uri)) else {
+            return Err(ureq::Error::BadUri(format!(
+                "{uri} has no host or known scheme"
+            )));
+        };
+        #[cfg(test)]
+        if let Some((_, ips)) = self
+            .hosts
+            .lock()
+            .expect("lock poisoned: another thread panicked while holding it")
+            .iter()
+            .find(|(name, _)| name == host)
+        {
+            return Ok(ips.iter().map(|ip| SocketAddr::new(*ip, port)).collect());
+        }
+        lookup(format!("{host}:{port}"), timeout)
+    }
 }
 
 impl Resolver for GuardedResolver {
@@ -58,46 +103,31 @@ impl Resolver for GuardedResolver {
         config: &Config,
         timeout: NextTimeout,
     ) -> Result<ResolvedSocketAddrs, ureq::Error> {
-        let proxy_endpoint = is_proxy_endpoint(uri, config);
-        #[cfg(test)]
-        let fixed = {
-            let host = uri.host().unwrap_or_default();
-            self.hosts
-                .lock()
-                .expect("lock poisoned: another thread panicked while holding it")
-                .iter()
-                .find(|(name, _)| name == host)
-                .map(|(_, ips)| ips.clone())
-        };
-        #[cfg(test)]
-        let addrs = match fixed {
-            Some(ips) => {
-                let port = uri
-                    .port_u16()
-                    .unwrap_or(if uri.scheme_str() == Some("https") {
-                        443
-                    } else {
-                        80
-                    });
-                let mut out = self.empty();
-                for ip in ips {
-                    out.push(std::net::SocketAddr::new(ip, port));
-                }
-                out
-            }
-            None => DefaultResolver::default().resolve(uri, config, timeout)?,
-        };
-        #[cfg(not(test))]
-        let addrs = DefaultResolver::default().resolve(uri, config, timeout)?;
-        if !proxy_endpoint && addrs.iter().any(|addr| local_ip(addr.ip())) {
+        let all: Vec<SocketAddr> = config
+            .ip_family()
+            .keep_wanted(self.lookup_all(uri, timeout)?.into_iter())
+            .collect();
+        // The whole result of the lookup is checked; only then is it capped to what ureq
+        // keeps, so a local address past the cap still refuses the name.
+        if !is_proxy_endpoint(uri, config) && all.iter().any(|addr| local_ip(addr.ip())) {
             return Err(ureq::Error::Io(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
                 LocalAddress,
             )));
         }
-        Ok(addrs)
+        let mut out = self.empty();
+        for addr in all.into_iter().take(MAX_ADDRS) {
+            out.push(addr);
+        }
+        if out.is_empty() {
+            return Err(ureq::Error::HostNotFound);
+        }
+        Ok(out)
     }
 }
+
+/// The most addresses ureq's `ResolvedSocketAddrs` holds.
+const MAX_ADDRS: usize = 16;
 
 #[cfg(test)]
 mod tests {
@@ -163,6 +193,26 @@ mod tests {
             &resolve(&r, "https://proxy.test/", &config).unwrap_err()
         ));
         assert_eq!(LocalAddress.to_string(), "local address");
+    }
+    #[test]
+    fn s158_r1_a_local_address_past_the_sixteenth_refuses_the_whole_name() {
+        // One lookup: 16 global addresses, then a local one that ureq's cap would drop.
+        let mut ips: Vec<String> = (1..=16).map(|i| format!("8.8.8.{i}")).collect();
+        ips.push("127.0.0.1".into());
+        let ips: Vec<&str> = ips.iter().map(String::as_str).collect();
+        let r = resolver("many.test", &ips);
+        let got = resolve(&r, "http://many.test/", &config(None));
+        assert!(is_local_refusal(&got.unwrap_err()));
+        // 17 global addresses: allowed, capped at what ureq keeps.
+        let ips: Vec<String> = (1..=17).map(|i| format!("8.8.8.{i}")).collect();
+        let ips: Vec<&str> = ips.iter().map(String::as_str).collect();
+        let r = resolver("many.test", &ips);
+        assert_eq!(
+            resolve(&r, "http://many.test/", &config(None))
+                .unwrap()
+                .len(),
+            16
+        );
     }
     #[test]
     fn s158_the_default_port_follows_the_scheme() {

@@ -25,7 +25,8 @@
    Network tests use `tiny_http` on `127.0.0.1:0` only.
 6. Do not redefine a type of `log` or `pkg`. Change a format of section 4
    only by changing section 4 first.
-7. No async runtime, no thread, no timer, no listening socket. Step 5
+7. No async runtime, no thread (but the lookup thread of `resolve.rs`, TECHNICAL.md 4.5),
+   no timer, no listening socket. Step 5
    is designed (section 11, stage S7); build it only in that stage.
    Step 8 (5.12, stage S8) likewise: the holder methods take no read lock.
 
