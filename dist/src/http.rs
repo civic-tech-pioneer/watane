@@ -136,14 +136,33 @@ impl Dist {
         head: bool,
         check: Option<&Check<'_>>,
     ) -> Result<Vec<u8>, DistError> {
+        let listed = check.is_some();
         // Every read follows by hand, so each target meets the scheme rule; an unlisted
         // read has no local-address rule.
         let check = check.unwrap_or(&|_: &str| Ok(()));
         // One deadline for all hops.
         let deadline = Instant::now() + timeout;
+        let guarded = listed && !self.options.listed_local;
+        let mut previous: Option<String> = None;
         follow_hops(url, check, |current| {
             let left = deadline.saturating_duration_since(Instant::now());
-            self.get_hop(current, limit, left, head)
+            let guarded = guarded && !self.test_local_ok_url(current);
+            let result = self.get_hop(current, limit, left, head, guarded);
+            let from = previous.replace(current.to_owned());
+            match (result, from) {
+                // A redirect target that resolved locally: name the URL that redirected.
+                (
+                    Err(DistError::BadUrl {
+                        cause: "local address",
+                        ..
+                    }),
+                    Some(from),
+                ) => Err(DistError::BadUrl {
+                    url: from,
+                    cause: "redirects to a local address",
+                }),
+                (result, _) => result,
+            }
         })
     }
     fn get_hop(
@@ -152,10 +171,20 @@ impl Dist {
         limit: u64,
         timeout: Duration,
         head: bool,
+        guarded: bool,
     ) -> Result<Hop<Vec<u8>>, DistError> {
-        // The agent follows no redirect; `follow_hops` checks each target.
-        let agent = &self.agent;
+        // The agent follows no redirect; `follow_hops` checks each target. A listed read's
+        // agent also checks the addresses a name resolves to (TECHNICAL 5.9).
+        let agent = if guarded {
+            &self.guarded_agent
+        } else {
+            &self.agent
+        };
         let map = |error: ureq::Error| match error {
+            ref e if crate::resolve::is_local_refusal(e) => DistError::BadUrl {
+                url: url.into(),
+                cause: "local address",
+            },
             ureq::Error::Timeout(_) => DistError::Timeout { url: url.into() },
             ureq::Error::BodyExceedsLimit(_) => DistError::TooLarge {
                 url: url.into(),
@@ -468,11 +497,126 @@ mod tests {
         }
         assert!(victim_seen.lock().unwrap().is_empty());
     }
+    /// A dist with the given names fixed to addresses for the guarded agent.
+    fn named(listed_local: bool, names: &[(&str, &[&str])]) -> (tempfile::TempDir, Dist) {
+        let dir = tempfile::tempdir().unwrap();
+        let dist = Dist::open(
+            dir.path(),
+            Arc::new(NoSign),
+            Options {
+                listed_local,
+                ..Options::default()
+            },
+        )
+        .unwrap();
+        *dist.test_hosts.lock().unwrap() = names
+            .iter()
+            .map(|(name, ips)| {
+                (
+                    (*name).to_owned(),
+                    ips.iter().map(|ip| ip.parse().unwrap()).collect(),
+                )
+            })
+            .collect();
+        (dir, dist)
+    }
+    /// `base` of a `serve` server with its host replaced by `name`.
+    fn by_name(base: &str, name: &str) -> String {
+        base.replacen("127.0.0.1", name, 1)
+    }
+    fn read(dist: &Dist, url: &str, listed: bool) -> Result<Vec<u8>, DistError> {
+        dist.get(url, 100, Duration::from_secs(5), false, listed)
+    }
+    #[test]
+    fn ac1_listed_first_base_name_resolving_to_loopback_is_refused() {
+        let (base, seen) = serve(vec![("/a", 200, "ok")]);
+        let (_dir, dist) = named(false, &[("my-router.lan", &["127.0.0.1"])]);
+        let url = format!("{}/a", by_name(&base, "my-router.lan"));
+        match read(&dist, &url, true) {
+            Err(DistError::BadUrl { url: got, cause }) => {
+                assert_eq!(got, url);
+                assert_eq!(cause, "local address");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(seen.lock().unwrap().is_empty());
+    }
+    #[test]
+    fn ac2_listed_redirect_to_a_name_resolving_privately_is_refused_at_that_hop() {
+        let (victim, victim_seen) = serve(vec![("/secret", 200, "internal")]);
+        let target: &'static str =
+            Box::leak(format!("{}/secret", by_name(&victim, "lan.test")).into_boxed_str());
+        let (base, seen) = serve(vec![("/a", 302, target)]);
+        let (_dir, dist) = named(false, &[("lan.test", &["192.168.1.5", "127.0.0.1"])]);
+        // The first hop is a test server exempt from the rule; the target is not.
+        dist.test_local_ok.lock().unwrap().push(base.clone());
+        // The private address is not connectable here; the victim at 127.0.0.1 proves no request.
+        match read(&dist, &format!("{base}/a"), true) {
+            Err(DistError::BadUrl { url, cause }) => {
+                assert_eq!(url, format!("{base}/a"), "names the base that redirected");
+                assert_eq!(cause, "redirects to a local address");
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(*seen.lock().unwrap(), ["/a"]);
+        assert!(victim_seen.lock().unwrap().is_empty());
+    }
+    #[test]
+    fn ac3_a_name_with_one_global_and_one_local_address_is_refused() {
+        let (base, seen) = serve(vec![("/a", 200, "ok")]);
+        let (_dir, dist) = named(false, &[("mixed.test", &["8.8.8.8", "127.0.0.1"])]);
+        let got = read(&dist, &format!("{}/a", by_name(&base, "mixed.test")), true);
+        assert!(
+            matches!(
+                got,
+                Err(DistError::BadUrl {
+                    cause: "local address",
+                    ..
+                })
+            ),
+            "{got:?}"
+        );
+        assert!(seen.lock().unwrap().is_empty());
+    }
+    #[test]
+    fn ac4_an_unlisted_read_to_a_local_name_connects() {
+        let (base, seen) = serve(vec![("/a", 200, "ok")]);
+        let (_dir, dist) = named(false, &[]);
+        let url = format!("{}/a", base.replacen("127.0.0.1", "localhost", 1));
+        assert_eq!(read(&dist, &url, false).unwrap(), b"ok");
+        assert_eq!(*seen.lock().unwrap(), ["/a"]);
+    }
+    #[test]
+    fn ac5_listed_local_turns_the_resolved_check_off() {
+        // `localhost` is a name that resolves to loopback without the network.
+        let (base, seen) = serve(vec![("/a", 200, "ok")]);
+        let url = format!("{}/a", base.replacen("127.0.0.1", "localhost", 1));
+        let (_dir, strict) = named(false, &[]);
+        assert!(matches!(
+            read(&strict, &url, true),
+            Err(DistError::BadUrl {
+                cause: "local address",
+                ..
+            })
+        ));
+        assert!(seen.lock().unwrap().is_empty());
+        let (_dir, open) = named(true, &[]);
+        assert_eq!(read(&open, &url, true).unwrap(), b"ok");
+        assert_eq!(*seen.lock().unwrap(), ["/a"]);
+    }
     #[test]
     fn ac1_get_guarded_follows_a_checked_target_over_http() {
         let (base, seen) = serve(vec![("/a", 302, "/b"), ("/b", 200, "ok")]);
         let dir = tempfile::tempdir().unwrap();
-        let dist = Dist::open(dir.path(), Arc::new(NoSign), Options::default()).unwrap();
+        let dist = Dist::open(
+            dir.path(),
+            Arc::new(NoSign),
+            Options {
+                listed_local: true,
+                ..Options::default()
+            },
+        )
+        .unwrap();
         let allow = |_: &str| Ok(());
         let got = dist
             .get_guarded(
@@ -490,7 +634,15 @@ mod tests {
     fn ac2_get_guarded_follows_a_300_with_a_location() {
         let (base, seen) = serve(vec![("/a", 300, "/b"), ("/b", 200, "ok")]);
         let dir = tempfile::tempdir().unwrap();
-        let dist = Dist::open(dir.path(), Arc::new(NoSign), Options::default()).unwrap();
+        let dist = Dist::open(
+            dir.path(),
+            Arc::new(NoSign),
+            Options {
+                listed_local: true,
+                ..Options::default()
+            },
+        )
+        .unwrap();
         let allow = |_: &str| Ok(());
         let got = dist
             .get_guarded(
@@ -515,7 +667,15 @@ mod tests {
             }
         });
         let dir = tempfile::tempdir().unwrap();
-        let dist = Dist::open(dir.path(), Arc::new(NoSign), Options::default()).unwrap();
+        let dist = Dist::open(
+            dir.path(),
+            Arc::new(NoSign),
+            Options {
+                listed_local: true,
+                ..Options::default()
+            },
+        )
+        .unwrap();
         let allow = |_: &str| Ok(());
         let got = dist.get_guarded(
             &format!("{base}/a"),
@@ -556,7 +716,15 @@ mod tests {
         // Four hops of 100 ms: each is under the 300 ms timeout, the chain is not.
         let base = serve_slow(Duration::from_millis(100), "ok");
         let dir = tempfile::tempdir().unwrap();
-        let dist = Dist::open(dir.path(), Arc::new(NoSign), Options::default()).unwrap();
+        let dist = Dist::open(
+            dir.path(),
+            Arc::new(NoSign),
+            Options {
+                listed_local: true,
+                ..Options::default()
+            },
+        )
+        .unwrap();
         let allow = |_: &str| Ok(());
         let got = dist.get_guarded(
             &format!("{base}/h0"),
@@ -580,7 +748,15 @@ mod tests {
     fn ac3_the_body_limit_binds_the_response_after_a_redirect() {
         let base = serve_slow(Duration::ZERO, "0123456789abcdef");
         let dir = tempfile::tempdir().unwrap();
-        let dist = Dist::open(dir.path(), Arc::new(NoSign), Options::default()).unwrap();
+        let dist = Dist::open(
+            dir.path(),
+            Arc::new(NoSign),
+            Options {
+                listed_local: true,
+                ..Options::default()
+            },
+        )
+        .unwrap();
         let allow = |_: &str| Ok(());
         let get = |limit| {
             dist.get_guarded(
@@ -602,7 +778,8 @@ mod tests {
         let (base, seen) = serve(vec![("/a", 302, "/secret"), ("/secret", 200, "no")]);
         let dir = tempfile::tempdir().unwrap();
         let dist = Dist::open(dir.path(), Arc::new(NoSign), Options::default()).unwrap();
-        // The first hop is the test server (local); only the targets are checked.
+        // Only the first URL is exempt; its redirect target is checked.
+        dist.test_local_ok.lock().unwrap().push(format!("{base}/a"));
         let got = dist.get(
             &format!("{base}/a"),
             100,

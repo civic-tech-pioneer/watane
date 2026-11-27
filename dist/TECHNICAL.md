@@ -27,6 +27,7 @@ dist/
     own.rs        identity, sign_and_append, publish, withdraw, set_name, restore; list, include, unlist
     site.rs       export: the site folder (section 4.3); atomic file writes
     http.rs       Reader: GET with limits and timeouts (section 4.5)
+    resolve.rs    the guarded agent's resolver: a local address refuses a listed hop (4.5)
     follow.rs     follows.json, site.json, read_channel, follow, refresh
     fetch.rs      package cache, unpacked() (section 5.2), fetch, open_link
     index.rs      the read set (5.9); choose_index, drop_index, indexes             (step 4)
@@ -739,7 +740,17 @@ A read whose base came from a listing or a provider hint (a listed read: 5.9,
 5.11, `read_link`) also checks each target: unless `Options::listed_local` is
 set, a target whose host is local (`index::local_base`, 5.9) is refused before
 any request to it with `BadUrl { url: <redirecting URL>, cause: "redirects
-to a local address" }`. The redirecting URL is the one whose response gave the
+to a local address" }`. The check also covers a host *name*, at connect time: a
+listed read (every hop, the first base too) uses a second ureq agent whose
+resolver (`resolve.rs`) looks the name up as ureq does and refuses the hop when
+**any** resolved address is local by the same rule as the literals
+(`index::local_ip`), before any byte is sent: `BadUrl { cause: "local address" }`
+for the first base, the redirect cause above for a redirect target. Check and
+connect share one resolution, so no name can change between them.
+`Options::listed_local` turns it off with the literal check. When ureq goes through
+an HTTP proxy from the environment the proxy resolves the name and dist cannot see
+the address: that case is not checked (section 6, "Not protected"). Followed and
+chosen reads use the plain agent. The redirecting URL is the one whose response gave the
 refused redirect: the base that issued it, which is not the base first asked
 when an earlier redirect moved the read (A redirects to B, B's redirect is
 refused: the error names B; S105 P5.4, S121). A followed or chosen channel's
@@ -1046,8 +1057,10 @@ send requests into the participant's own network, also through a redirect:
 every redirect target of a listed read passes the same rule, and no redirect
 target of any read may leave `http` or `https` (4.5). A followed or chosen
 channel may use any base (DD-6): the
-participant gave that link. A host name that resolves to a local address
-is not checked (section 6, "Not protected").
+participant gave that link. A host name is checked on the
+addresses it resolves to, at connect time (4.5), by the same rule
+(`index::local_ip`; any local address among them refuses the name), unless an
+HTTP proxy from the environment resolves it (section 6, "Not protected").
 
 **Cap.** At most `max_listed` (default 512) listed channels in all, and at
 most `max_listed_per_index` (default 128) for each chosen index, counted
@@ -1376,7 +1389,7 @@ sets the site URL again.
 | An index cannot hide a withdrawal | the release of a hit is the newest that the publisher's channel does not withdraw | A24 |
 | An index cannot make dist read without bound | one level of includes; at most `max_listed` listed channels, `max_listed_per_index` per index, `max_listed_entries` per read; each read has the limits of 4.5 | A26, A31 |
 | A stale mirror cannot hide a withdrawal | a listed channel is read from each listed base until one is `Current`; only `Current` counts as checked | A34 |
-| A listing cannot reach the local network | listed bases on `localhost` (also `localhost.`) or local IP literals are skipped, and so is every redirect target of a listed read, also a base of unknown origin; a listed read checks its first base before any request (4.5, 5.9, DD-43, DD-47, DD-48) | A35 |
+| A listing cannot reach the local network | listed bases on `localhost` (also `localhost.`), local IP literals or a name that resolves to a local address are skipped, and so is every redirect target of a listed read, also a base of unknown origin; a listed read checks its first base before any request and each hop's resolved addresses at connect time (4.5, 5.9, DD-26, DD-43, DD-47, DD-48) | A35 |
 | The own channel is never read from a listing | the own key is skipped in every read set | `index_own_skipped` |
 | A stale result is marked | `unchecked_since` when the newest read of the publisher failed | A25 |
 | A listing cannot redirect a follow | the base of a followed or chosen channel wins over any listing | `index_base_*` |
@@ -1392,8 +1405,8 @@ sets the site URL again.
 | An origin is only a claim (W24) | `Release.origin` is shown as the publisher's claim; dist never treats it as a statement of the origin's publisher | review |
 
 Not protected (see `spec/TECHNICAL.md` section 6): a listed host name that
-resolves to a local address (step 4; only IP literals and `localhost` are
-skipped; a redirect to such a name is not checked either); a host that withholds new entries; another program of the same user; the use of one identity on
+an HTTP proxy from the environment resolves (the proxy, not dist, sees the address; 4.5);
+a host that withholds new entries; another program of the same user; the use of one identity on
 two devices, which forks the channel (question Q7).
 
 ## 7. Test plan
@@ -1629,7 +1642,7 @@ are `list` and `include` statements of 4.1.
 | DD-23 | Search is a local filter over stored channels: words as lower-case substrings, filters by key and interface, an order made only from the participant's choices, at most 200 hits. | Offline (F-QUAL-1); no global ranking (V6, non-goals); good enough for a few thousand mods. Undo: cheap, reader-only; a later full-text index changes no format. |
 | DD-24 | Installing a hit follows the publisher. | Updates and withdrawals keep coming after an index drops the mod (F-INST-7, F-INST-8). Undo: cheap (app). |
 | DD-25 | A listed channel reads every listed base in order (at most 4 per refresh), ingesting each against the head stored so far. The best outcome wins (`Current` > `Behind` > `Failed`); any `Current` sets `last_success`. The base serving the highest head moves first. Channel caps and per-base entry limits still apply. | A mirror serving exactly the stored head can hide a later withdrawal, including after an outage promoted it; stopping at `Current` is insufficient. Undo: cheap, reader-only. |
-| DD-26 | A listed base on `localhost` or a local IP literal is skipped; followed and chosen links may use any base. | A third party's listing must not make the participant's device probe its own network; the participant's own links keep DD-6. Undo: cheap (one check); DNS names that resolve locally stay open. |
+| DD-26 | A listed base on `localhost`, a local IP literal, or a name whose resolved addresses include a local one (checked at connect time by the guarded agent's resolver, S158) is skipped; followed and chosen links may use any base. A name resolved by an HTTP proxy from the environment is not checked. | A third party's listing must not make the participant's device probe its own network; the participant's own links keep DD-6. Undo: cheap (one check, `resolve.rs`). |
 | DD-27 | Caps: 512 listed channels, 128 per chosen index, 1000 entry files per read of a listed channel. | Bounded refresh even with hostile indexes; one index cannot starve the others. Undo: cheap (Options). |
 | DD-28 | A provider's base comes from live `list` and `include` statements in the channels already read, not from a link in `deps.json` or the release body. | No new format in published bytes; the consumer's publisher states it with a statement it can end (`unlist`) or repeat with a new base. Undo: cheap, reader-only; a field in a later body version (a new kind) can add a base hint later. |
 | DD-29 | A channel read through a provider base or `read_link` gets no record; the caller uses `follow_derived` on `Fetched.link` after an install. | A failed or declined install leaves no follow behind; an installed provider gets updates like a hit (DD-24). Undo: cheap (app). |

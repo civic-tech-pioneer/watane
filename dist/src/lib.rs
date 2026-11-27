@@ -121,6 +121,12 @@ pub struct Dist {
     read_mutex: Mutex<()>,
     /// Never follows a redirect; `http::follow_hops` does, checking each target.
     agent: ureq::Agent,
+    /// The agent of a listed read: the same, but a name that resolves to a local address
+    /// is refused at connect time (`resolve.rs`).
+    guarded_agent: ureq::Agent,
+    /// Tests only: the fixed addresses of names for `guarded_agent`.
+    #[cfg(test)]
+    test_hosts: resolve::TestHosts,
     /// Tests only: URL prefixes of test servers that count as non-local, so that a first
     /// hop can be local-free while its redirect targets are still checked.
     #[cfg(test)]
@@ -293,6 +299,16 @@ impl Dist {
                 )
             }
         };
+        let agent_config = ureq::Agent::config_builder()
+            .http_status_as_error(false)
+            .max_redirects(0)
+            .max_redirects_will_error(false)
+            .timeout_connect(Some(options.connect_timeout))
+            .user_agent(concat!("watane-dist/", env!("CARGO_PKG_VERSION")))
+            .build();
+        let resolver = resolve::GuardedResolver::default();
+        #[cfg(test)]
+        let test_hosts = std::sync::Arc::clone(&resolver.hosts);
         Ok(Self {
             home: home.to_owned(),
             _lock: lock,
@@ -304,14 +320,14 @@ impl Dist {
             test_local_ok: Mutex::new(Vec::new()),
             #[cfg(test)]
             test_fail_saves: Mutex::new(None),
-            agent: ureq::Agent::config_builder()
-                .http_status_as_error(false)
-                .max_redirects(0)
-                .max_redirects_will_error(false)
-                .timeout_connect(Some(options.connect_timeout))
-                .user_agent(concat!("watane-dist/", env!("CARGO_PKG_VERSION")))
-                .build()
-                .into(),
+            agent: ureq::Agent::new_with_config(agent_config.clone()),
+            guarded_agent: ureq::Agent::with_parts(
+                agent_config,
+                ureq::unversioned::transport::DefaultConnector::default(),
+                resolver,
+            ),
+            #[cfg(test)]
+            test_hosts,
             options,
             follows: Mutex::new(follows),
             unsynced: Mutex::new(follow::Unsynced::default()),
@@ -442,6 +458,7 @@ pub struct Exported {
 
 mod follow;
 mod http;
+mod resolve;
 #[derive(Debug)]
 pub struct RefreshReport {
     pub channel: PublicKey,
