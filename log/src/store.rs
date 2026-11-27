@@ -31,8 +31,9 @@ pub(crate) fn open(dir: &Path, anchor: &crate::identity::Anchor) -> Result<Conne
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
         Err(source) => return Err(Error::Io { path, source }),
     }
-    let flags = rusqlite::OpenFlags::default() | rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW;
-    let mut db = Connection::open_with_flags(&path, flags)?;
+    // No SQLITE_OPEN_NOFOLLOW: SQLite refuses a link in any component with it, and a link in a
+    // parent of the log directory is allowed (TECHNICAL 4.7, 4.8).
+    let mut db = Connection::open(&path)?;
     #[cfg(unix)]
     same_file(&path, anchor)?;
     db.busy_timeout(Duration::from_secs(5))?;

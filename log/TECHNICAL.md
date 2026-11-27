@@ -434,9 +434,10 @@ is `Storage("unsupported schema version <n>")`, and the file is not changed.
 
 SQLite opens `channels.db` by path, because it needs the directory for `-wal` and `-shm`; a
 handle-relative open needs a custom VFS, which is out of scope. A parent swapped after the check
-can therefore redirect SQLite's open, not the identity key. The open passes `SQLITE_OPEN_NOFOLLOW`
-(rusqlite passes it to SQLite, which then refuses a path with a link in any component, so a
-parent swapped for a link fails the open). Right after `Connection::open`, on Unix, the store compares
+can therefore redirect SQLite's open, not the identity key. The open does not pass
+`SQLITE_OPEN_NOFOLLOW`: with it SQLite refuses a link in any component of the path, and a link in a
+parent of the log directory is allowed (section 4.7; macOS's temporary directory is under such a
+link). Right after `Connection::open`, on Unix, the store compares
 `(st_dev, st_ino)` of `statat(anchor, "channels.db", AT_SYMLINK_NOFOLLOW)` with `stat` of the path;
 a mismatch is `Io` at the path ("not the channels.db of the checked log directory"), the handle is
 dropped, and nothing else changes. `watane-log` has no `unsafe`, so SQLite's own file handle is out
