@@ -1499,6 +1499,13 @@ names the same interface in its sketch and fakes it until this one merges.
   boundary moves: no adversary unless a change alters what a check refuses (S110 R2 does: then the Claude review runs it).
   Protects: *polish*. Size: an upkeep slice.
 
+- [ ] **S158 (upkeep) install, log and dist from Leftovers.** Sketched 2026-11-27 by Deputy Paper; builder claude by rule 3 (the last two handed out, S157 and S155, were Codex), reviewer codex.
+  Re-check each item on main first and drop what is already fixed; say so in the PR. Guards first:
+  1. dist (`### dist`): (guard) S112 r2: a redirect to a machine-local host name reaches a local port; check the resolved address at connect time (TECHNICAL DD-26 states the rule for literals; extend its sentence to resolved addresses in `dist/TECHNICAL.md` with the change). S107 P3.3 and the Updates card hint; S26 Q12 (log entries of unlisted channels) only if a `forget` fits log's existing API, else leave it.
+  2. log (`### log`): S112 R1.1, the identity and store operations on the checked folder handle (`openat`/`renameat`/`unlinkat`, Unix and Windows).
+  3. install (`### install`): S135 r1 P1.1 to P1.14 (P1.1 with the user-sim's `regress_s135_changed_during_install_to_the_home_has_no_bare_tilde`), S123 r1 P1.2, P1.4, P1.5 and r2 P2.1, and the S94 `pid_gone` unit case.
+  Each outcome is its item's check. Touches: `dist/`, `log/`, `install/`; never `dev/`, `app/`, `pkg/` (S155), `host/src/agent/` or `demo/` (uncommitted work in the main checkout), `spec/design/`. Boundary: item 1 narrows what dist fetches and item 2 the log's file access (`spec/TECHNICAL.md` section 6), so the adversary runs. Protects: *guard* (1, 2), *polish* (3). Size: an upkeep slice.
+
 ## Suite time
 
 Wall time of each subsystem's tests on `main` (`factory/README.md`, "Time and value"): the
