@@ -235,3 +235,60 @@ fn ac5_channels_reject_invalid_stored_authors() {
         );
     }
 }
+
+const STRAY: &str = ".identity.key.0123456789abcdef0123456789abcdef.tmp";
+
+fn plant(dir: &Path, name: &str) {
+    fs::write(dir.join(name), [5; 32]).unwrap();
+    #[cfg(unix)]
+    fs::set_permissions(dir.join(name), fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+#[test]
+fn s162_ac1_open_sweeps_a_stray_temporary_key() {
+    let temp = oracle::directory();
+    let dir = temp.path();
+    let identity = Log::open(dir).unwrap().identity().unwrap();
+    plant(dir, STRAY);
+    assert_eq!(Log::open(dir).unwrap().identity().unwrap(), identity);
+    assert!(!dir.join(STRAY).exists());
+}
+
+#[test]
+fn s162_ac1_open_keyless_sweeps_a_stray_temporary_key() {
+    let temp = oracle::directory();
+    let dir = temp.path();
+    plant(dir, STRAY);
+    Log::open_keyless(dir).unwrap();
+    assert!(!dir.join(STRAY).exists());
+    assert!(!dir.join("identity.key").exists());
+}
+
+#[test]
+fn s162_ac2_other_names_are_left_in_place() {
+    let temp = oracle::directory();
+    let dir = temp.path();
+    let names = [
+        ".identity.key.notes.tmp",
+        "identity.key.bak",
+        ".identity.key.0123456789abcdef0123456789abcde.tmp",
+        ".identity.key.0123456789ABCDEF0123456789ABCDEF.tmp",
+    ];
+    for name in names {
+        plant(dir, name);
+    }
+    Log::open(dir).unwrap();
+    for name in names {
+        assert!(dir.join(name).exists(), "{name}");
+    }
+}
+
+#[test]
+fn s162_ac3_a_directory_with_the_stray_name_is_left() {
+    let temp = oracle::directory();
+    let dir = temp.path();
+    fs::create_dir(dir.join(STRAY)).unwrap();
+    fs::write(dir.join(STRAY).join("x"), b"x").unwrap();
+    Log::open(dir).unwrap();
+    assert!(dir.join(STRAY).join("x").exists());
+}
