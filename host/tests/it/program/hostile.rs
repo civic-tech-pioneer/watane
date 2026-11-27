@@ -389,13 +389,15 @@ fn ac4_chunked_and_declared_oversized_bodies_never_change_state() {
 }
 
 // A chunked body of `size` bytes with no `Connection: close` from the client,
-// then a second request on the same connection. Returns every byte the host sends.
+// then a second request on the same connection. Panics unless the whole write
+// succeeds and the host then closes the connection (EOF or reset, not a read
+// timeout). Returns every byte the host sent and how the connection ended.
 fn chunked_oversize_then_pipelined(
     preview: &Preview,
     path: &str,
     extra: &str,
     size: usize,
-) -> String {
+) -> (String, &'static str) {
     let port = preview.ready.port;
     let mut bytes = format!(
         "POST {path} HTTP/1.1\r\nHost: localhost:{port}\r\n{extra}Content-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n"
@@ -417,14 +419,25 @@ fn chunked_oversize_then_pipelined(
     stream
         .set_write_timeout(Some(Duration::from_secs(3)))
         .unwrap();
-    // The host may reset the connection while the client is still writing.
-    let _ = stream.write_all(&bytes);
+    // The whole write, the trailing request included, must reach the host.
+    stream
+        .write_all(&bytes)
+        .expect("the pipelined request was sent");
     let mut reply = Vec::new();
-    let _ = stream.read_to_end(&mut reply);
-    String::from_utf8(reply).unwrap()
+    let mut buf = [0u8; 16 << 10];
+    let end = loop {
+        match stream.read(&mut buf) {
+            Ok(0) => break "eof",
+            Ok(n) => reply.extend_from_slice(&buf[..n]),
+            Err(e) if e.kind() == std::io::ErrorKind::ConnectionReset => break "reset",
+            Err(e) => panic!("the host did not close the connection: {e} after {reply:?}"),
+        }
+    };
+    (String::from_utf8(reply).unwrap(), end)
 }
 
-fn assert_closed_413_without_second_response(reply: &str) {
+fn assert_closed_413_without_second_response((reply, end): (String, &str)) {
+    assert!(matches!(end, "eof" | "reset"), "{end}");
     let (head, _) = reply.split_once("\r\n\r\n").expect("a 413 response");
     assert!(head.starts_with("HTTP/1.1 413 "), "{head:?}");
     assert!(
@@ -438,7 +451,7 @@ fn assert_closed_413_without_second_response(reply: &str) {
 fn ac1_chunked_oversize_api_body_gets_413_close_and_pipelined_request_is_not_served() {
     let (_home, preview) = setup();
     let reply = chunked_oversize_then_pipelined(&preview, "/api/plan", "", 128 << 10);
-    assert_closed_413_without_second_response(&reply);
+    assert_closed_413_without_second_response(reply);
     counter_call(&preview, "api.get", 0);
 }
 
@@ -450,7 +463,7 @@ fn ac2_chunked_oversize_mcp_body_gets_413_close_and_pipelined_request_is_not_ser
         preview.ready.token.as_ref().unwrap()
     );
     let reply = chunked_oversize_then_pipelined(&preview, "/mcp/preview", &extra, 2 << 20);
-    assert_closed_413_without_second_response(&reply);
+    assert_closed_413_without_second_response(reply);
 }
 
 #[test]
@@ -877,8 +890,8 @@ async fn ac8_s12a_storage_after_revoke_cannot_read_old_state() {
 }
 
 /// host TECHNICAL 8.1: h2c is accepted by `axum::serve`, but the host check
-/// reads only the `Host` header, which HTTP/2 does not send, so every h2c
-/// request is answered 421. Sends an h2c prior-knowledge GET and returns the
+/// reads only the `Host` header, never `:authority`, so an h2c request that
+/// sends `:authority` alone is answered 421. Sends an h2c prior-knowledge GET and returns the
 /// bytes of the `:status` header of the response (an HPACK block).
 fn h2c_status_literal(port: u16, authority: &str, path: &str) -> Vec<u8> {
     // HPACK without Huffman: :method GET (0x82), :scheme http (0x86),
@@ -921,7 +934,7 @@ fn is_status_421(block: &[u8]) -> bool {
 }
 
 #[test]
-fn regress_s149_h2c_is_answered_421_on_every_host() {
+fn regress_s149_h2c_with_authority_only_is_answered_421() {
     let (_home, preview) = setup();
     let port = preview.ready.port;
     for (authority, path) in [
