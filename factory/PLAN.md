@@ -1499,7 +1499,7 @@ names the same interface in its sketch and fakes it until this one merges.
   boundary moves: no adversary unless a change alters what a check refuses (S110 R2 does: then the Claude review runs it).
   Protects: *polish*. Size: an upkeep slice.
 
-- [ ] **S158 (upkeep) install, log and dist from Leftovers.** Sketched 2026-11-27 by Deputy Paper; builder claude by rule 3 (the last two handed out, S157 and S155, were Codex), reviewer codex.
+- [~] **S158 (upkeep) install, log and dist from Leftovers.** In flight (cloud, routine `trig_01XPVb1dpgha7hKDx63sHEH3` 11:55 UTC). Sketched 2026-11-27 by Deputy Paper; builder claude by rule 3 (the last two handed out, S157 and S155, were Codex), reviewer codex.
   Re-check each item on main first and drop what is already fixed; say so in the PR. Guards first:
   1. dist (`### dist`): (guard) S112 r2: a redirect to a machine-local host name reaches a local port; check the resolved address at connect time (TECHNICAL DD-26 states the rule for literals; extend its sentence to resolved addresses in `dist/TECHNICAL.md` with the change). S107 P3.3 and the Updates card hint; S26 Q12 (log entries of unlisted channels) only if a `forget` fits log's existing API, else leave it.
   2. log (`### log`): S112 R1.1, the identity and store operations on the checked folder handle (`openat`/`renameat`/`unlinkat`, Unix and Windows).
