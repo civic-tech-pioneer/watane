@@ -1312,10 +1312,11 @@ The 64 KiB body limit applies only to the routes of section 11; an
 package of up to 64 MiB). A mod origin never reaches them.
 An `extra_api` route keeps axum's own refusal when its limit is passed,
 with no early 413 and no added `Connection: close`.
-HTTP/2 without TLS (h2c) is accepted by `axum::serve`, but the host check
-reads only the `Host` header, which HTTP/2 does not send, so every h2c
-request is answered 421; serving h2c (reading `:authority`) is a later spec
-call.
+HTTP/2 without TLS (h2c) is accepted by `axum::serve`. The host check reads
+only the `Host` header, never `:authority`, so an h2c request without a
+usable `Host` header (one that sends `:authority` alone) is answered 421.
+An h2c request that also sends a `Host` header gets the same routing checks
+as HTTP/1.1. Reading `:authority` is a later spec call.
 
 ### 8.2 `POST /call`
 
