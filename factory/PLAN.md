@@ -3,17 +3,6 @@
 The product owner's state; only the product owner edits it, on `main`. A new session continues
 from here. Newest digest line last.
 
-## Deputy handover
-
-**Deputy Rock passed this straight on to Deputy Paper at ~06:35 UTC** (Rock's context was 376k, past the 300k handover limit; nothing was dispatched in between). Run the deputy skill from plugin 0.1.6 (`~/.claude/plugins/cache/mboogerd/mboogerd/0.1.6/skills/deputy/SKILL.md`): Scissors ran 0.1.4 text, which lacks "Blocked is a claim" and "When the next step is blocked, look for the most valuable move the vision allows". Under 0.1.6, check STEP6-REPO as a claim, and before upkeep weigh a design slice for a later outcome (for example step 10's W35 authority split, which the plan says waits only for a design slice). The Mac slept with its lid closed 17:29-21:32 and 22:13-06:30 UTC, which explains the stalls.
-
-From Deputy Scissors to Deputy Rock, 2026-11-27 ~06:45 UTC (three merges: watane S146, S143, S147). Edit agentic-harness's PLAN from a scratch clone of origin/main. The Mac's network stalled for hours overnight (gh and the pane hung): use `timeout` on gh calls.
-- **agentic-harness S145** (PR #66, console upkeep; builder codex; reviewer claude, r1 routine `trig_01UqV1ZKC5CDw4uU9ez2j5oh`): r1 3/7 weighed, all blocking stand (rulings in the brief: F1.1 the review's fix, it is CI's red gate; F1.2 drop the `thinking` activity, Thinking from a streaming thought row; F1.3 adversary test first, P1.1 fixed with it). The first answer follow-up (task …6b0863c1…) never started; **resent once as a new task https://chatgpt.com/local/6b0923b2-e4a8-83eb-afcb-14b21d25704c 06:25 UTC**. A second failure: friction line, and the round goes to a Claude routine. Next: on `S145 r1: answers`, review r2 to a Claude routine. `deputy compares` the consent wait at 390/1280 px and the composer before merge (rebuild the screenshot harness with a Sonnet agent).
-- **agentic-harness S148** (PR #67, stage F: `skill` on OpenAI; builder codex, task https://chatgpt.com/local/6b08ad95-8eb0-83ed-bcee-2e4bc0c8706b; reviewer claude, r1 routine `trig_01PLJdyL1p91vuV9bhofPZ2V` fired 06:41 UTC, adversary asked for): waiting on the r1 review comment. CI green at 580b8cba.
-- **Lanes: 2 in flight, target 4.** watane main line waits on the human (STEP6-REPO, Waiting on the human: the factory mod's repository); the other path, adopting blog-based, is also the human's. watane upkeep is free (S147 merged): next upkeep from `### host` S147/S146 polish, `### dist`, `### install`, `### net / node` (not `app/`, Mac only). Rule 3: last two handed out S148 codex, S147 codex, so **Claude builds the next one**.
-- **Report to the human, still open:** Door C for veto: S146's settled planning/foreman split (merged), D001, S134 F1.5 accepted, N5, S132's and S133's Door C choices; STEP6-REPO. Factory proposals: agentic-harness CI `gate` 15-min limit (third hit, S144); `review-lead.md` missing (seventh sighting: S146, S143, S147 reviews all say so; card task_fab9271a). New: S147's build team skipped the adversary on a boundary diff; S143's r1 answer missed a red Windows CI job.
-- **Watcher:** `git -C ../watane-mods show origin/main:factory/scripts/watch-all.sh` into your scratchpad, a fresh state file, `600` while a Codex task runs.
-
 ## Slices
 
 Status: `[ ]` sketched, `[~]` in flight (with its branch), `[x]` delivered.
@@ -1497,6 +1486,30 @@ names the same interface in its sketch and fakes it until this one merges.
   refusal tests), net, pkg, install ported; Windows build now fails only in host/src/agent/ and dist/. Resume after S100
   and S105 merge: a build brief "continue from branch slice/s110; rebase onto main" into the same Codex task. Resumed ~07:28 UTC 2026-11-24 in the same task (edits in dist/ and host/src/agent/ kept to cfg gates and refusals, since S107 and S103 run there). Windows failures per run: 358, 85, 30, 16, 15, 2, 0; DELIVERED ~11:45 UTC at 68d1dd4 (Windows green on attempts 1-3 of run 45370144960; Linux and macOS suite times within 10% of a parallel main run); r1: Claude review routine `trig_01CRaJJrcV955wX2NNsZP4NR`, fires 11:52 UTC; r1 (12:38): 2/10, changes (2) (validators PASS 1, RETURN 3; adversary HELD; user-sim ACCEPTED; no gate skips a named attacker's check): F1.1 the windows-fs crate's place in the spec, F1.2 two refusal tests; answer r1 dispatched 12:41 UTC into the Codex task; r1 answered at 3bd1122 (F1.1, F1.2, P1.1, P1.3, P1.5, P1.8, P1.9; the rest to Leftovers); r2: small Claude review routine `trig_01NGu5yhZEMyyvF8HwWxeKwD`, fires 12:49 UTC; r2 (13:05): 1/1, changes (1) (adversary HELD; the two new Windows refusal tests ran green on Windows): F2.1 a test assertion from my r1 polish wording, Windows red; answer r2 (option a, plus the forbid-to-deny docs) dispatched 13:10 UTC; r2 answered at 348a068 (+11/-6); r3: tiny Claude review (reads the diff, waits for Windows CI) routine `trig_017KsQQkRmNXpZNcNLSz74Gf`, fires 13:13 UTC; r3 (13:28): 0/0, VERDICT approve, all four CI jobs green at 348a068 (Windows included); waits on the human's merge word.
 
+- [~] **S149 (upkeep, guard first) host, pkg, log and dist polish queued behind S147.** In flight (cloud, builder
+  claude, reviewer codex; rule 3: S148 and S147 were Codex). Sketched 2026-11-27 by Deputy Paper from Leftovers.
+  Re-check each item on main first (S112 already closed the dist local ranges, the trailing dot and redirects to a
+  local address); drop what is already fixed and say so in the PR.
+  1. (guard, CI on main) `host::agent::claude::run::join_tests::s100_fix12_ac1_the_next_queued_line_is_not_started_after_the_deadline`
+     (`host/src/agent/claude/run.rs:1498`) stops flaking on macOS: the cause named and fixed, not a wider timeout alone.
+  2. host S147 r1 polish P1 to P3 (`### host`), S126 r1 P1.3 (dead S126 repeat steps in `.github/workflows/ci.yml`).
+  3. pkg S119 r1 P1.4 and S108 P2.1, P2.2; log S109 P2.1 to P2.3; dist S105 P5.3, P5.4, P6.1 to P6.3 where still open.
+  Each outcome is its item's check. Touches: `host/`, `pkg/`, `log/`, `dist/`, `.github/workflows/ci.yml`; not `app/`,
+  not `spec/design/`. No boundary moves: no adversary unless a change alters what a check refuses. Protects: *guard*
+  (item 1), *polish* (the rest). Size: an upkeep slice.
+- [ ] **S150 Design: JF1 can be built from the documents (step 6, the parts that do not wait).** Sketched 2026-11-27 by
+  Deputy Paper (evidence #56: JF1 waits on harness F's factory profiles, not on the repository). Builder codex, reviewer
+  claude. A design slice in `spec/design/factory/` only: (1) the sketch snapshot Alice carries in JF1 (its fields: project,
+  base, branch, scope, acceptance, decisions; how it binds to a plan revision) and the run record's states and evidence
+  fields (TECHNICAL 1), so a build needs no further choice; settle the "Sketch handoff" row for JF1's manual snapshot
+  only (Door C; the automatic link stays open); (2) the two pages' views and Alice's actions in JF1 as FUNCTIONAL
+  outcomes a user-sim can check on the real app; (3) the build rows for JF1, sized for slices, each naming what it waits
+  on (harness F's factory profiles; the repository, STEP6-REPO); (4) S146 r2 P2.1 (TECHNICAL 6 step 3 wording). Outcome:
+  a reviewer can build JF1 from the documents once F lands; every open point is decided in them or listed for the
+  human. Constraints: no change to the agent layer's contracts (host 19, harness 2 and 9); a Door C choice is listed
+  first in the PR for the deputy. Touches: `spec/design/factory/`. Docs only. Size: a design slice (it settles a
+  Door C row before code depends on it).
+
 ## Suite time
 
 Wall time of each subsystem's tests on `main` (`factory/README.md`, "Time and value"): the
@@ -1904,7 +1917,7 @@ Background CLI sessions; transcripts in `~/.claude/projects/<worktree folder>/<s
 
 ## Waiting on the human
 
-- **STEP6-REPO (2026-11-26, Deputy Scissors): the factory mod's repository, so step 6 can build.** S146 settled one combined factory mod whose source lives in its own repository (W29, `spec/design/factory/TECHNICAL.md` 1: "chosen when the repository is made"). Making a repository is an account act (Door H), so watane's main line waits on it: (a) you make it (say `civic-tech-pioneer/watane-factory`, or under `watane-mods`) and name the publisher; the next slice then builds the mod's skeleton there with a consumer half here; (b) the factory mod starts as a folder in watane until you make it, which goes against W29's "its own repository". Rec: (a). Meanwhile the fourth lane is empty: the other free path is adopting blog-based (`watane-mods/factory/bin/adopt.sh blog-based civic-tech-pioneer/blog-based`), also yours to start.
+- **STEP6-REPO (2026-11-26, Deputy Scissors): the factory mod's repository, so step 6 can build.** (2026-11-27, Deputy Paper: not what blocks step 6 now; JF1 waits on harness F's factory profiles first, evidence #56. Needed by JF1's first build slice.) S146 settled one combined factory mod whose source lives in its own repository (W29, `spec/design/factory/TECHNICAL.md` 1: "chosen when the repository is made"). Making a repository is an account act (Door H), so watane's main line waits on it: (a) you make it (say `civic-tech-pioneer/watane-factory`, or under `watane-mods`) and name the publisher; the next slice then builds the mod's skeleton there with a consumer half here; (b) the factory mod starts as a folder in watane until you make it, which goes against W29's "its own repository". Rec: (a). Meanwhile the fourth lane is empty: the other free path is adopting blog-based (`watane-mods/factory/bin/adopt.sh blog-based civic-tech-pioneer/blog-based`), also yours to start.
 
 - (2026-11-25, deputy-5, S122 merged: agentic-harness stage E's watane half is done) **A real judge account for V7.** Stage E's checked provider (agentic-harness) needs a judge service the provider can call with a key Alice enters; nothing in the factory can open one (an account is the human's). Which judge (Jev or another), and may the factory use a key of yours in its cloud tests? Blocks agentic-harness stage E, so step 6's JF1. **N5 revisit** (agentic-harness PLAN, "N5 The factory's implementer needs a shell"): you asked to revisit it when stage E starts, leaning (b); it blocks stage F.
 
