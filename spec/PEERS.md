@@ -331,7 +331,7 @@ are a sketch: a later step designs each one.
 | Sybil keys | no rule counts nodes; unknown callers get nothing in D1 and one small byte pool later | fair service among honest strangers during a flood (D3) |
 | Eclipse | own machines are reached from pinned keys and stored addresses, not only from the DHT | a participant with no rated node that holds the channel |
 | Amplification | pull only; no forwarding; a gossip hint causes reads only from own machines | none known |
-| Probes of the local network | listed locations as `dist` 5.9; unrated nodes are dialed on global addresses only (D3) | a host name that an HTTP proxy from the environment resolves (`dist` 4.5) |
+| Probes of the local network | listed locations as `dist` 5.9; unrated nodes are dialed on global addresses only (D3) | a host name that an HTTP CONNECT proxy from the environment resolves (`dist` 4.5) |
 | Exhaustion | byte, connection and stream limits per key and per class, before work | an own machine has no limit |
 | Link from a participant to an address | no public statement names a node; no participant key in `hello`; the DHT and relays off unless chosen | a participant who turns on the DHT publishes a node key's addresses; one who serves strangers (D3) publishes that node key |
 | A stolen pairing code | 128 bits, 10 minutes, one use, and the participant confirms the joiner's short key | none |
