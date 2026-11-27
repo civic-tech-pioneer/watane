@@ -876,15 +876,11 @@ async fn ac8_s12a_storage_after_revoke_cannot_read_old_state() {
     );
 }
 
-/// host TECHNICAL 8.1 says h2c is accepted and refusing it is a later spec
-/// call. An h2c request carries its authority in `:authority`, not `Host`, so
-/// the host check of `dispatch` answers every h2c request 421 "unknown host".
-#[test]
-fn regress_s149_h2c_api_status_is_served() {
-    let (_home, preview) = setup();
-    let port = preview.ready.port;
-    let authority = format!("localhost:{port}");
-    let path = "/api/status";
+/// host TECHNICAL 8.1: h2c is accepted by `axum::serve`, but the host check
+/// reads only the `Host` header, which HTTP/2 does not send, so every h2c
+/// request is answered 421. Sends an h2c prior-knowledge GET and returns the
+/// bytes of the `:status` header of the response (an HPACK block).
+fn h2c_status_literal(port: u16, authority: &str, path: &str) -> Vec<u8> {
     // HPACK without Huffman: :method GET (0x82), :scheme http (0x86),
     // :path and :authority as literals with an indexed name (4 and 1).
     let mut block = vec![0x82, 0x86, 0x04, path.len() as u8];
@@ -903,16 +899,39 @@ fn regress_s149_h2c_api_status_is_served() {
         .unwrap();
     stream.write_all(&bytes).unwrap();
     let mut header = [0u8; 9];
-    let first = loop {
+    loop {
         stream.read_exact(&mut header).unwrap();
         let len =
             (usize::from(header[0]) << 16) | (usize::from(header[1]) << 8) | usize::from(header[2]);
         let mut payload = vec![0u8; len];
         stream.read_exact(&mut payload).unwrap();
         if header[3] == 0x01 && header[5..9] == [0, 0, 0, 1] {
-            break payload[0];
+            return payload;
         }
-    };
-    // 0x88 is the indexed static entry ":status 200"; 421 is sent as a literal.
-    assert_eq!(first, 0x88, "h2c GET {path} was not answered 200");
+    }
+}
+
+/// True when the HPACK block starts with the literal `:status 421` (indexed
+/// name 8), its value raw or Huffman coded ("421" is 0x68 0x41 in Huffman).
+fn is_status_421(block: &[u8]) -> bool {
+    matches!(
+        block,
+        [0x48, 0x03, b'4', b'2', b'1', ..] | [0x48, 0x82, 0x68, 0x41, ..]
+    )
+}
+
+#[test]
+fn regress_s149_h2c_is_answered_421_on_every_host() {
+    let (_home, preview) = setup();
+    let port = preview.ready.port;
+    for (authority, path) in [
+        (format!("localhost:{port}"), "/api/status"),
+        (format!("counter.localhost:{port}"), "/"),
+    ] {
+        let block = h2c_status_literal(port, &authority, path);
+        assert!(
+            is_status_421(&block),
+            "h2c GET {path} on {authority} was not answered 421: {block:02x?}"
+        );
+    }
 }
