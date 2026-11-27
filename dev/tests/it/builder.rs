@@ -487,6 +487,25 @@ fn ac8_test_and_serve_env_gaps_point_to_doctor() {
     }
 }
 
+#[test]
+fn s161_environment_recovery_keeps_the_explicit_mod_folder() {
+    let f = Fixture::new();
+    let out = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+        .current_dir(f.temp.path())
+        .args(["test", "--dir", "hello"])
+        .env("WATANE_DEV_CACHE", f.temp.path().join("cache"))
+        .env("WATANE_DEV_TOOLCHAIN", f.fake_toolchain(false))
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3));
+    let text = String::from_utf8(out.stdout).unwrap();
+    let dir = crate::support::shell_path(f.dir.canonicalize().unwrap());
+    assert!(
+        text.contains(&format!("next: watane-dev doctor --json --dir {dir}\n")),
+        "{text}"
+    );
+}
+
 // S47 user-sim: `new --from` keeps logic.wasm when the package has no logic
 // source, and its `next` says `watane-dev test --json`. That run must neither
 // delete the only logic the mod has nor fail with an opaque internal error.

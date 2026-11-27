@@ -115,6 +115,39 @@ fn ac1_complete_machine_reports_environment() {
     assert_eq!(v["next"], "watane-dev new <slug> --json");
 }
 #[test]
+fn s161_doctor_next_keeps_the_explicit_mod_folder() {
+    let m = Machine::new();
+    let dir = m.temp.path().join("spare mod");
+    watane_dev::template::new_mod(&dir, "notes").unwrap();
+    let dir = crate::support::shell_path(dir.canonicalize().unwrap());
+    let output = m
+        .command()
+        .args(["doctor", "--dir", "spare mod"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(output.status.code(), Some(0), "{text}");
+    assert!(
+        text.contains(&format!("next: watane-dev serve --json --dir {dir}\n")),
+        "{text}"
+    );
+
+    let output = m
+        .gaps()
+        .args(["doctor", "--dir", "spare mod"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(output.status.code(), Some(3), "{text}");
+    assert!(
+        text.contains(&format!(
+            "next: Run each error's fix, then run: watane-dev doctor --json --dir {dir}\n"
+        )),
+        "{text}"
+    );
+}
+
+#[test]
 fn ac2_missing_watane_retains_other_parts() {
     let m = Machine::new();
     let missing = m.temp.path().join("missing-watane");

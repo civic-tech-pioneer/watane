@@ -207,9 +207,32 @@ pub fn main_with(
 pub fn run(cli: Cli) -> Outcome {
     run_in(cli, std::env::current_dir())
 }
+const DOCTOR_RERUN: &str = "watane-dev doctor --json";
+
 fn run_in(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
+    let dir_given = cli.dir.is_some();
+    let template = matches!(cli.command, Command::New { from: None, .. });
     let rerun = fallback_rerun(&cli, cwd.as_ref().ok().map(PathBuf::as_path));
-    end_in_rerun(run_command(cli, cwd), &rerun)
+    let mut outcome = end_in_rerun(run_command(cli, cwd), &rerun);
+    if let Some(dir) = &outcome.dir {
+        if template
+            && let Some(error) = outcome.errors.first_mut()
+            && error.code == crate::outcome::Code::UsageArgs
+            && let Some(fix) = &mut error.fix
+        {
+            *fix = if dir_given {
+                format!("{fix}, then run: {rerun}")
+            } else {
+                format!("{fix}, then run: {rerun} --dir {}", quote(dir))
+            };
+            outcome.next = Some(fix.clone());
+        }
+        // Env failures share the same fallback. The command has now resolved its mod folder.
+        if dir_given && outcome.next.as_deref() == Some(DOCTOR_RERUN) {
+            outcome.next = Some(format!("{DOCTOR_RERUN} --dir {}", quote(dir)));
+        }
+    }
+    outcome
 }
 
 /// The command as it was given, as a rerun (`--dir` and `--home` only as given).
@@ -237,7 +260,7 @@ fn fallback_rerun(cli: &Cli, cwd: Option<&Path>) -> String {
             home_of(home)
         ),
         Command::Check => format!("watane-dev check --json{dir}"),
-        Command::Doctor => format!("watane-dev doctor --json{dir}"),
+        Command::Doctor => format!("{DOCTOR_RERUN}{dir}"),
         Command::Test { home } => format!("watane-dev test --json{dir}{}", home_of(home)),
         Command::Serve { stop, home, script } => format!(
             "watane-dev serve{} --json{dir}{}{}",
@@ -401,7 +424,7 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
     let mut outcome = Outcome::new(name, Some(dir.clone()));
     let result = match cli.command {
         Command::Search { .. } => unreachable!("search needs no mod folder"),
-        Command::Doctor => return crate::doctor::doctor(&dir),
+        Command::Doctor => return crate::doctor::doctor_with_args(&dir, &args),
         Command::Install { home, wait } => return install(&dir, home, wait, &args),
         Command::Publish { no_source, push, owner, home, wait } => return publish(&dir, no_source, push, owner.as_deref(), home, wait, &args),
         Command::New { slug, .. } => template::new_mod(&dir, slug.as_deref().expect("clap requires a slug"))
@@ -520,7 +543,7 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
             }
             outcome
         }
-        Err(e) => {
+        Err(mut e) => {
             if let Some(problem) = e
                 .first()
                 .filter(|p| p.code.class() == crate::outcome::Class::Env)
@@ -534,15 +557,17 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
                         .as_ref()
                         .map(|fix| format!("{fix}, then run: watane-dev serve --json{args}"))
                 } else {
-                    Some("watane-dev doctor --json".into())
+                    Some(DOCTOR_RERUN.into())
                 };
             } else if name == "check"
                 && e.first()
                     .is_some_and(|p| p.code.class() == crate::outcome::Class::Mod)
             {
-                outcome.next = Some(format!(
-                    "Fix the errors, then run: watane-dev check --json{args}"
-                ));
+                let rerun = format!("watane-dev check --json{args}");
+                outcome.next = Some(format!("Fix the errors, then run: {rerun}"));
+                if !cli.json {
+                    end_prose_in_rerun(&mut e, &mut outcome.next, &rerun);
+                }
             }
             outcome.fail(e)
         }
@@ -876,7 +901,7 @@ fn test_with(dir: &Path, args: &str) -> Outcome {
             .first()
             .is_some_and(|p| p.code.class() == crate::outcome::Class::Env)
         {
-            outcome.next = Some("watane-dev doctor --json".into());
+            outcome.next = Some(DOCTOR_RERUN.into());
         } else {
             outcome.next = Some(failed_test_next(&errors, "test", args));
             for error in &mut errors {
@@ -1032,7 +1057,7 @@ fn install(dir: &Path, home: Option<PathBuf>, wait: Option<u64>, args: &str) -> 
                 p.code.class() == crate::outcome::Class::Env
                     && p.code != crate::outcome::Code::EnvHostNotRunning
             }) {
-                outcome.next = Some("watane-dev doctor --json".into());
+                outcome.next = Some(DOCTOR_RERUN.into());
             }
             if outcome.next.is_none() {
                 outcome.next = errors
@@ -1452,7 +1477,7 @@ fn publish(
                             | Code::EnvGitIdentity
                     )
             }) {
-                outcome.next = Some("watane-dev doctor --json".into());
+                outcome.next = Some(DOCTOR_RERUN.into());
             }
             if outcome.next.is_none() {
                 outcome.next = errors
@@ -1823,6 +1848,34 @@ mod tests {
             assert!(fix.ends_with(&format!(", then run: {rerun}")), "{fix}");
             assert_eq!(outcome.next, Some(fix));
         }
+    }
+
+    #[test]
+    fn s161_new_under_a_missing_working_folder_names_the_implicit_destination() {
+        let temp = tempfile::tempdir().unwrap();
+        let parent = temp.path().canonicalize().unwrap().join("missing parent");
+        let dir = parent.join("notes");
+        let command = Cli::try_parse_from(["watane-dev", "new", "notes"]).unwrap();
+        let outcome = run_in(command, Ok(parent.clone()));
+
+        assert_eq!(outcome.exit_code(), 2);
+        assert_eq!(outcome.dir.as_deref(), Some(dir.as_path()));
+        assert_eq!(outcome.errors[0].code, crate::outcome::Code::UsageArgs);
+        assert_eq!(
+            outcome.errors[0].message,
+            format!(
+                "cannot create {}: its parent {} does not exist",
+                dir.display(),
+                parent.display()
+            )
+        );
+        assert_eq!(
+            outcome.next,
+            Some(format!(
+                "Create the parent folder, then run: watane-dev new notes --json --dir {}",
+                shell_path(&dir)
+            ))
+        );
     }
 
     #[test]

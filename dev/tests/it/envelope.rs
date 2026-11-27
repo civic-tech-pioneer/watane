@@ -637,3 +637,79 @@ fn regress_s155_new_under_a_file_names_the_path() {
     );
     assert_eq!(v["errors"][0]["file"], dir.to_str().unwrap(), "{v}");
 }
+
+#[test]
+fn s161_new_under_a_missing_parent_reports_usage_and_reruns() {
+    let temp = tempfile::tempdir().unwrap();
+    let cwd = temp.path().canonicalize().unwrap();
+    let parent = cwd.join("missing parent");
+    let dir = parent.join("notes");
+    let run = |json| {
+        Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+            .current_dir(&cwd)
+            .args(["new", "notes", "--dir", "missing parent/notes"])
+            .args(if json { &["--json"][..] } else { &[][..] })
+            .output()
+            .unwrap()
+    };
+
+    let fix = format!(
+        "Create the parent folder, then run: watane-dev new notes --json --dir {}",
+        crate::support::shell_path(&dir)
+    );
+    let message = format!(
+        "cannot create {}: its parent {} does not exist",
+        dir.display(),
+        parent.display()
+    );
+    let output = run(true);
+    assert_eq!(output.status.code(), Some(2));
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["errors"][0]["code"], "usage.args");
+    assert_eq!(value["errors"][0]["message"], message);
+    assert_eq!(value["errors"][0]["file"], json!(dir));
+    assert_eq!(value["errors"][0]["fix"], fix);
+    assert_eq!(value["next"], fix);
+    let output = run(false);
+    assert_eq!(output.status.code(), Some(2));
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        text.contains(&format!("error[usage.args]: {message}\n")),
+        "{text}"
+    );
+    assert!(text.contains(&format!("  fix: {fix}\n")), "{text}");
+    assert!(text.contains(&format!("next: {fix}\n")), "{text}");
+    assert!(!parent.exists());
+    fs::create_dir(&parent).unwrap();
+    assert!(run(false).status.success());
+    assert!(dir.join("mod.toml").is_file());
+}
+
+#[test]
+fn s161_text_check_fix_and_next_keep_the_mod_folder() {
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().canonicalize().unwrap().join("my mod");
+    watane_dev::template::new_mod(&dir, "notes").unwrap();
+    fs::write(dir.join("logic/build.rs"), "fn main() {}").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_watane-dev"))
+        .current_dir(temp.path())
+        .args(["check", "--dir", "my mod"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let text = String::from_utf8(output.stdout).unwrap();
+    let rerun = format!(
+        "watane-dev check --json --dir {}",
+        crate::support::shell_path(&dir)
+    );
+    assert!(
+        text.lines()
+            .any(|line| line.starts_with("  fix: ") && line.ends_with(&rerun)),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!("next: Fix the errors, then run: {rerun}\n")),
+        "{text}"
+    );
+}
