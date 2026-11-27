@@ -44,10 +44,13 @@ installed app. The snapshot and record rules are in
    revision, slice, base, branch, scope, acceptance and decisions. Alice
    checks them against the committed plan, dispatches and copies the
    snapshot. In Foreman she pastes it, sees those same fields in a
-   preview, and confirms import. A malformed or unsupported snapshot
-   shows a field or format error and creates no run. On reload the
+   preview, and confirms import. A malformed, unsupported or oversized snapshot
+   shows the problem and creates no run. On reload the
    exported snapshot and the imported run are still available. Editing
-   the planning draft leaves the imported brief as it was.
+   the planning draft leaves the imported brief as it was. A snapshot
+   with an open decision imports successfully and shows what needs to
+   be settled. Starting the implementer is blocked until Alice dispatches
+   and imports a new snapshot with all decisions settled.
 2. **Build in the chosen checkout.** Foreman shows the brief, authorized
    implementer profile, dedicated checkout and current attempt. Alice
    confirms the checkout against the project, base and branch, starts a
