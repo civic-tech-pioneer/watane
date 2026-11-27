@@ -504,4 +504,62 @@ mod tests {
         assert!(meta.is_file());
         assert_eq!(meta.mode() & 0o7777, 0o600);
     }
+
+    /// S158-fix1 AC2: a swapped parent path makes the store open fail; no database is written.
+    #[test]
+    fn ac2_swapped_parent_fails_the_store_open_and_writes_nothing() {
+        let parent = tempfile::tempdir().expect("create parent");
+        let dir = parent.path().join("log");
+        let other = parent.path().join("other");
+        let moved = parent.path().join("moved");
+        for d in [&dir, &other] {
+            fs::create_dir(d).expect("create directory");
+            fs::set_permissions(d, fs::Permissions::from_mode(0o700)).expect("make private");
+        }
+        let foreign = b"not a database, owned by the other folder";
+        fs::write(other.join("channels.db"), foreign).expect("plant a database");
+        let anchor = super::lock_dir(&dir).expect("lock the log directory");
+        fs::rename(&dir, &moved).expect("move the checked directory away");
+        std::os::unix::fs::symlink(&other, &dir).expect("put a link in its place");
+        let result = crate::store::open(&dir, &anchor);
+        // SQLITE_OPEN_NOFOLLOW already refuses a path with a link in it.
+        result.expect_err("a link in the path is refused");
+        assert_eq!(fs::read(other.join("channels.db")).expect("read"), foreign);
+        assert_eq!(
+            fs::metadata(moved.join("channels.db")).expect("stat").len(),
+            0
+        );
+        let names: Vec<_> = fs::read_dir(&other).expect("list").collect();
+        assert_eq!(
+            names.len(),
+            1,
+            "no -wal or -shm next to the foreign database"
+        );
+    }
+
+    /// S158-fix1 AC2: a swapped parent that is a real directory fails the inode check.
+    #[test]
+    fn ac2_swapped_parent_directory_fails_the_inode_check() {
+        let parent = tempfile::tempdir().expect("create parent");
+        let dir = parent.path().join("log");
+        let other = parent.path().join("other");
+        let moved = parent.path().join("moved");
+        for d in [&dir, &other] {
+            fs::create_dir(d).expect("create directory");
+            fs::set_permissions(d, fs::Permissions::from_mode(0o700)).expect("make private");
+        }
+        let foreign = b"not a database, owned by the other folder";
+        fs::write(other.join("channels.db"), foreign).expect("plant a database");
+        let anchor = super::lock_dir(&dir).expect("lock the log directory");
+        fs::rename(&dir, &moved).expect("move the checked directory away");
+        fs::rename(&other, &dir).expect("put the other directory in its place");
+        let result = crate::store::open(&dir, &anchor);
+        assert!(matches!(result, Err(Error::Io { path, .. }) if path == dir.join("channels.db")));
+        assert_eq!(fs::read(dir.join("channels.db")).expect("read"), foreign);
+        assert_eq!(
+            fs::metadata(moved.join("channels.db")).expect("stat").len(),
+            0
+        );
+        assert_eq!(fs::read_dir(&dir).expect("list").count(), 1);
+    }
 }
