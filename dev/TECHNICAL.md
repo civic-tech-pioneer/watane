@@ -408,7 +408,8 @@ They end with `<command>: failed`, never a blank command name.
 ```
 `files` are relative paths, sorted. A missing destination parent produces an
 `internal` error naming both paths and asks the maker to create the parent
-or pass a destination with an existing parent. S2 `next`: `Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json`. Without `--dir`, it ends ` --dir <the new folder, quoted>` so it runs from where `new` ran.
+or pass a destination with an existing parent. If resolving the destination
+fails, the error names the requested path and the cause. S2 `next`: `Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json`. Without `--dir`, it ends ` --dir <the new folder, quoted>` so it runs from where `new` ran.
 
 **check** (also the `check` field of `test`)
 ```json

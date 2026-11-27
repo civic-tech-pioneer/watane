@@ -383,6 +383,10 @@ fn run_command(cli: Cli, cwd: std::io::Result<PathBuf>) -> Outcome {
     };
     let dir = match resolved_path(&dir) {
         Ok(dir) => dir,
+        Err(e) if matches!(&cli.command, Command::New { .. }) => {
+            let problem = template::cannot_create(&dir, e);
+            return Outcome::new(name, Some(dir)).fail(vec![problem]);
+        }
         Err(e) => return Outcome::new(name, Some(dir)).fail(vec![Problem::internal(e)]),
     };
     // ` --dir <mod>` and ` --home <home>` for the reruns of test and serve, only as given.
