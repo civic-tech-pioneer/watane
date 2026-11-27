@@ -2,7 +2,7 @@
 
 use crate::Error;
 use ed25519_dalek::SigningKey;
-use rustix::fs::{AtFlags, Mode, OFlags, openat, renameat, statat, unlinkat};
+use rustix::fs::{AtFlags, Dir, Mode, OFlags, openat, renameat, statat, unlinkat};
 use rustix::io::Errno;
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -207,19 +207,35 @@ pub(crate) fn open_keyless(dir: &Path) -> Result<Anchor, Error> {
         Err(Errno::NOENT) => {}
         Err(e) => return Err(io_error(&path, errno(e))),
     }
+    sweep(&anchor);
     unlock(dir, &anchor)?;
     Ok(anchor)
+}
+/// Removes each leftover `.identity.key.<32 lowercase hex>.tmp` of a crashed write (TECHNICAL
+/// 4.7). Under the lock, through the anchor. An entry that cannot be removed is left.
+fn sweep(anchor: &Anchor) {
+    let Ok(dir) = Dir::read_from(anchor) else {
+        return;
+    };
+    for entry in dir.flatten() {
+        if let Ok(name) = entry.file_name().to_str()
+            && super::is_stray_tmp(name)
+        {
+            let _ = unlinkat(anchor, name, AtFlags::empty());
+        }
+    }
 }
 pub(crate) fn open(dir: &Path) -> Result<(SigningKey, Anchor), Error> {
     prepare_dir(dir)?;
     let anchor = lock_dir(dir)?;
+    sweep(&anchor);
     let key = match read(dir, &anchor, KEY)? {
         Some(key) => key,
         None => {
             let mut seed = Zeroizing::new([0; 32]);
             let path = dir.join(KEY);
             getrandom::fill(&mut *seed).map_err(|e| io_error(&path, io::Error::other(e)))?;
-            write_key(dir, &anchor, &seed)?;
+            write_key(dir, &anchor, &seed, &mut false)?;
             read(dir, &anchor, KEY)?
                 .ok_or_else(|| io_error(&path, io::ErrorKind::NotFound.into()))?
         }
@@ -228,10 +244,22 @@ pub(crate) fn open(dir: &Path) -> Result<(SigningKey, Anchor), Error> {
     Ok((key, anchor))
 }
 
-pub(crate) fn replace(dir: &Path, anchor: &Anchor, key: &SigningKey) -> Result<(), Error> {
+/// Publishes `key` as the identity key and, once the rename has published it, stores it in
+/// `slot`, whether or not the directory sync after it succeeds (TECHNICAL 4.7).
+pub(crate) fn replace(
+    dir: &Path,
+    anchor: &Anchor,
+    key: SigningKey,
+    slot: &mut Option<SigningKey>,
+) -> Result<(), Error> {
     lock_anchor(dir, anchor)?;
+    sweep(anchor);
     let seed = Zeroizing::new(key.to_bytes());
-    let result = write_key(dir, anchor, &seed);
+    let mut published = false;
+    let result = write_key(dir, anchor, &seed, &mut published);
+    if published {
+        *slot = Some(key);
+    }
     unlock(dir, anchor)?;
     result
 }
@@ -256,7 +284,13 @@ fn remove_key(dir: &Path, anchor: &Anchor, key: &mut Option<SigningKey>) -> Resu
 
 /// Writes the seed to a temporary name in the held directory and publishes it
 /// as `identity.key`, all relative to that handle.
-fn write_key(dir: &Path, anchor: &Anchor, seed: &[u8; 32]) -> Result<(), Error> {
+/// `published` is set once the rename has made the new key the file.
+fn write_key(
+    dir: &Path,
+    anchor: &Anchor,
+    seed: &[u8; 32],
+    published: &mut bool,
+) -> Result<(), Error> {
     let mut random = [0; 16];
     getrandom::fill(&mut random).map_err(|e| io_error(dir, io::Error::other(e)))?;
     let name = format!(
@@ -276,14 +310,37 @@ fn write_key(dir: &Path, anchor: &Anchor, seed: &[u8; 32]) -> Result<(), Error> 
         file.set_permissions(fs::Permissions::from_mode(0o600))
             .map_err(|e| io_error(&tmp, e))?;
         file.write_all(seed).map_err(|e| io_error(&tmp, e))?;
+        #[cfg(test)]
+        fail_at(Step::TmpSync, &tmp)?;
         file.sync_all().map_err(|e| io_error(&tmp, e))?;
-        renameat(anchor, name.as_str(), anchor, KEY).map_err(|e| io_error(&dir.join(KEY), errno(e)))
+        renameat(anchor, name.as_str(), anchor, KEY)
+            .map_err(|e| io_error(&dir.join(KEY), errno(e)))?;
+        *published = true;
+        Ok(())
     })();
     if let Err(error) = result {
         let _ = unlinkat(anchor, name.as_str(), AtFlags::empty());
         return Err(error);
     }
+    #[cfg(test)]
+    fail_at(Step::DirSync, dir)?;
     anchor.sync_all().map_err(|e| io_error(dir, e))
+}
+/// Test hook: the step of `write_key` that fails on this thread.
+#[cfg(test)]
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum Step {
+    TmpSync,
+    DirSync,
+}
+#[cfg(test)]
+thread_local!(pub(crate) static FAIL: std::cell::Cell<Option<Step>> = const { std::cell::Cell::new(None) });
+#[cfg(test)]
+fn fail_at(step: Step, path: &Path) -> Result<(), Error> {
+    if FAIL.get() == Some(step) {
+        return Err(io_error(path, io::Error::other("injected failure")));
+    }
+    Ok(())
 }
 #[cfg(test)]
 mod tests {
@@ -354,8 +411,9 @@ mod tests {
                 })
             )
         };
-        assert!(refused(super::replace(&dir, &anchor, &new)));
-        let mut key = Some(new);
+        let mut key = Some(new.clone());
+        assert!(refused(super::replace(&dir, &anchor, new, &mut key)));
+        assert!(key.is_some());
         assert!(refused(super::remove(&dir, &anchor, &mut key)));
         assert!(key.is_some());
         std::os::unix::fs::chown(&dir, Some(0), None).expect("restore directory owner");
@@ -374,7 +432,7 @@ mod tests {
         let path = dir.path().join("identity.key");
         let seed = [7; 32];
 
-        write_key(dir.path(), &directory, &seed).expect("publish the seed");
+        write_key(dir.path(), &directory, &seed, &mut false).expect("publish the seed");
         drop(directory);
 
         let meta = fs::metadata(&path).expect("stat published key");
@@ -447,9 +505,9 @@ mod tests {
         fs::rename(&dir, &moved).expect("move the checked directory away");
         std::os::unix::fs::symlink(&other, &dir).expect("put a link in its place");
 
-        write_key(&dir, &anchor, &[1; 32]).expect("write through the handle");
+        write_key(&dir, &anchor, &[1; 32], &mut false).expect("write through the handle");
         assert_eq!(fs::read(moved.join("identity.key")).expect("key"), [1; 32]);
-        write_key(&dir, &anchor, &[2; 32]).expect("replace through the handle");
+        write_key(&dir, &anchor, &[2; 32], &mut false).expect("replace through the handle");
         assert_eq!(fs::read(moved.join("identity.key")).expect("key"), [2; 32]);
         assert_eq!(
             read(&dir, &anchor, "identity.key")
@@ -474,7 +532,7 @@ mod tests {
         fs::create_dir(dir.path().join("identity.key")).expect("block the key name");
         let anchor = super::lock_dir(dir.path()).expect("lock the directory");
         assert!(matches!(
-            write_key(dir.path(), &anchor, &[3; 32]),
+            write_key(dir.path(), &anchor, &[3; 32], &mut false),
             Err(Error::Io { path, .. }) if path == dir.path().join("identity.key")
         ));
         let names: Vec<_> = fs::read_dir(dir.path())
@@ -612,5 +670,61 @@ mod tests {
         drop(log);
         assert!(real.join("log").join("channels.db").is_file());
         crate::Log::open(&dir).expect("open again under a linked parent");
+    }
+
+    fn restore_fixture() -> (tempfile::TempDir, crate::Log, Vec<u8>, crate::PublicKey) {
+        let private = || {
+            let dir = tempfile::tempdir().expect("create directory");
+            fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700))
+                .expect("make private");
+            dir
+        };
+        let source = private();
+        let other = crate::Log::open(source.path()).expect("open source");
+        let backup = other.export_identity("pw").expect("export");
+        let wanted = other.identity().expect("identity");
+        let dir = private();
+        let log = crate::Log::open(dir.path()).expect("open log");
+        (dir, log, backup, wanted)
+    }
+
+    /// S162 AC4: after the rename, memory holds the new key even when the directory sync fails.
+    #[test]
+    fn s162_ac4_failed_sync_after_the_rename_keeps_the_new_key_in_memory() {
+        let (dir, log, backup, wanted) = restore_fixture();
+        super::FAIL.set(Some(super::Step::DirSync));
+        let result = log.restore_identity(&backup, "pw");
+        super::FAIL.set(None);
+        assert!(matches!(result, Err(Error::Io { .. })), "{result:?}");
+        assert_eq!(log.identity(), Some(wanted));
+        drop(log);
+        assert_eq!(
+            crate::Log::open(dir.path()).expect("reopen").identity(),
+            Some(wanted)
+        );
+    }
+
+    /// S162 AC5: a failure before the rename leaves the old key everywhere and no temporary file.
+    #[test]
+    fn s162_ac5_failure_before_the_rename_keeps_the_old_key() {
+        let (dir, log, backup, wanted) = restore_fixture();
+        let old = log.identity().expect("identity");
+        let seed = fs::read(dir.path().join("identity.key")).expect("read key");
+        super::FAIL.set(Some(super::Step::TmpSync));
+        let result = log.restore_identity(&backup, "pw");
+        super::FAIL.set(None);
+        assert!(matches!(result, Err(Error::Io { .. })), "{result:?}");
+        assert_ne!(old, wanted);
+        assert_eq!(log.identity(), Some(old));
+        assert_eq!(
+            fs::read(dir.path().join("identity.key")).expect("read key"),
+            seed
+        );
+        assert!(fs::read_dir(dir.path()).expect("list").all(|e| {
+            !e.expect("entry")
+                .file_name()
+                .to_string_lossy()
+                .ends_with(".tmp")
+        }));
     }
 }

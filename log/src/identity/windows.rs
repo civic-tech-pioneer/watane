@@ -81,8 +81,23 @@ fn lock_directory(path: &Path) -> Result<File, Error> {
     Ok(file)
 }
 
+/// Removes each leftover `.identity.key.<32 lowercase hex>.tmp` (TECHNICAL 4.7). Under the
+/// lock; an entry that cannot be removed is left.
+fn sweep(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if entry.file_name().to_str().is_some_and(super::is_stray_tmp) {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
+
 pub(crate) fn open_keyless(dir: &Path) -> Result<(), Error> {
     let _directory = directory(dir, true)?;
+    let _lock = lock_directory(dir)?;
+    sweep(dir);
     let path = dir.join("identity.key");
     match fs::symlink_metadata(&path) {
         Ok(_) => Err(Error::HasIdentity { path }),
@@ -120,6 +135,7 @@ fn read(path: &Path) -> Result<Option<SigningKey>, Error> {
 pub(crate) fn open(dir: &Path) -> Result<SigningKey, Error> {
     let _directory = directory(dir, true)?;
     let _lock = lock_directory(dir)?;
+    sweep(dir);
     let path = dir.join("identity.key");
     if let Some(key) = read(&path)? {
         return Ok(key);
@@ -130,11 +146,20 @@ pub(crate) fn open(dir: &Path) -> Result<SigningKey, Error> {
     read(&path)?.ok_or_else(|| io_error(&path, io::ErrorKind::NotFound.into()))
 }
 
-pub(crate) fn replace(dir: &Path, key: &SigningKey) -> Result<(), Error> {
+/// The publish step is the rename: when `write_key` succeeds, the new key is the file and goes
+/// to `slot`.
+pub(crate) fn replace(
+    dir: &Path,
+    key: SigningKey,
+    slot: &mut Option<SigningKey>,
+) -> Result<(), Error> {
     let _directory = directory(dir, false)?;
     let _lock = lock_directory(dir)?;
+    sweep(dir);
     let seed = Zeroizing::new(key.to_bytes());
-    write_key(dir, &dir.join("identity.key"), &seed)
+    write_key(dir, &dir.join("identity.key"), &seed)?;
+    *slot = Some(key);
+    Ok(())
 }
 
 pub(crate) fn remove(dir: &Path, _key: &mut Option<SigningKey>) -> Result<(), Error> {

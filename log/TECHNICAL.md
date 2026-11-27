@@ -390,6 +390,12 @@ anchor. If a step fails, remove the temporary file with `unlinkat` on the anchor
 The key has one name as soon as it is published. Hold the seed in
 `zeroize::Zeroizing`.
 
+Sweep: a crash between creating the temporary file and its rename leaves a file that holds a
+key seed. `open`, `open_keyless` and `restore_identity`, under the directory lock and through the
+anchor, remove each entry whose name is exactly `.identity.key.<32 lowercase hex>.tmp`. Nothing
+else in the directory is touched. An entry that cannot be removed (a directory of that name, a
+permission error) does not fail the call.
+
 Replace the key (restore only): take the same directory lock and publish the
 new key over `identity.key` using the same write, rename and sync sequence.
 
@@ -574,7 +580,10 @@ follows. Nothing deletes an entry or a proof.
   3. If the own channel of the current identity has an entry:
      `IdentityInUse`.
   4. In one transaction, write the `meta` row `unconfirmed` = P.
-  5. Replace the key file (section 4.7). Replace the key in memory.
+  5. Replace the key file (section 4.7). Once the rename has published the new key, the new
+     key is the one in memory, whether the directory sync after it succeeds or not; a sync
+     error is still returned. A failure before the rename leaves the old key on disk and in
+     memory.
   6. Return P.
   A crash between steps 4 and 5 leaves the old key; the participant runs the
   restore again.

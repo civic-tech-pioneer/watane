@@ -18,8 +18,22 @@ pub(crate) fn open_keyless(dir: &std::path::Path) -> Result<Anchor, Error> {
     windows::open_keyless(dir).map(|()| Anchor)
 }
 #[cfg(windows)]
-pub(crate) fn replace(dir: &std::path::Path, _: &Anchor, key: &SigningKey) -> Result<(), Error> {
-    windows::replace(dir, key)
+pub(crate) fn replace(
+    dir: &std::path::Path,
+    _: &Anchor,
+    key: SigningKey,
+    slot: &mut Option<SigningKey>,
+) -> Result<(), Error> {
+    windows::replace(dir, key, slot)
+}
+/// Whether `name` is exactly `.identity.key.<32 lowercase hex>.tmp`: the leftover of a crashed
+/// key write, which the next open removes (TECHNICAL 4.7).
+fn is_stray_tmp(name: &str) -> bool {
+    name.strip_prefix(".identity.key.")
+        .and_then(|rest| rest.strip_suffix(".tmp"))
+        .is_some_and(|hex| {
+            hex.len() == 32 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+        })
 }
 #[cfg(windows)]
 pub(crate) fn remove(

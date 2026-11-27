@@ -279,8 +279,13 @@ impl Log {
         }
         tx.execute("INSERT INTO meta(key,value) VALUES ('unconfirmed',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[public.as_bytes()])?;
         tx.commit()?;
-        identity::replace(&inner.dir, &inner.anchor, &key)?;
-        inner.key = Some(key);
+        let Inner {
+            key: slot,
+            dir,
+            anchor,
+            ..
+        } = &mut *inner;
+        identity::replace(dir, anchor, key, slot)?;
         Ok(public)
     }
     pub fn drop_identity(&self) -> Result<(), Error> {
