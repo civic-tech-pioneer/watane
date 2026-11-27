@@ -28,8 +28,9 @@ pub(crate) fn is_local_refusal(error: &ureq::Error) -> bool {
 pub(crate) type TestHosts = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<std::net::IpAddr>)>>>;
 
 /// Resolves like ureq, then refuses when any address is local. When the request goes
-/// through a proxy, ureq resolves only the proxy here and the proxy resolves the target:
-/// that case is not checked (TECHNICAL 6, "Not protected").
+/// through a proxy, ureq resolves only the proxy here and the proxy resolves the target,
+/// except SOCKS4, whose target ureq resolves here too: neither is checked (TECHNICAL 6,
+/// "Not protected").
 #[derive(Debug, Default)]
 pub(crate) struct GuardedResolver {
     /// Tests only: names with fixed addresses, in place of DNS.

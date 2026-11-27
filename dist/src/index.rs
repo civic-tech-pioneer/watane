@@ -657,40 +657,44 @@ pub(crate) fn local_base(base: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// IPv4 ranges for shared, benchmark and this-network use, and site-local IPv6.
+    const S112_RANGES: [(&str, bool); 13] = [
+        ("0.255.255.255", true),
+        ("1.0.0.0", false),
+        ("100.63.255.255", false),
+        ("100.64.0.0", true),
+        ("100.127.255.255", true),
+        ("100.128.0.0", false),
+        ("198.17.255.255", false),
+        ("198.18.0.0", true),
+        ("198.19.255.255", true),
+        ("198.20.0.0", false),
+        ("[fec0::]", true),
+        ("[feff::1]", true),
+        ("[fe7f::1]", false),
+    ];
+    /// Local IPv4 addresses embedded in IPv6.
+    const S112_EMBEDDED: [(&str, bool); 9] = [
+        ("[::ffff:100.64.0.1]", true),
+        ("[64:ff9b::192.168.1.1]", true),
+        ("[64:ff9b::8.8.8.8]", false),
+        ("[64:ff9b:1:c0a8:1:100::]", true),
+        ("[64:ff9b:1:808:8:800::]", true),
+        ("[64:ff9b:1:2:3:4:192.168.1.1]", true),
+        ("[64:ff9b:2::8.8.8.8]", false),
+        ("[2002:7f00:1::]", true),
+        ("[2002:808:808::]", false),
+    ];
     #[test]
     fn s112_shared_benchmark_and_this_network_ranges_are_local() {
-        for (host, local) in [
-            ("0.255.255.255", true),
-            ("1.0.0.0", false),
-            ("100.63.255.255", false),
-            ("100.64.0.0", true),
-            ("100.127.255.255", true),
-            ("100.128.0.0", false),
-            ("198.17.255.255", false),
-            ("198.18.0.0", true),
-            ("198.19.255.255", true),
-            ("198.20.0.0", false),
-            ("[fec0::]", true),
-            ("[feff::1]", true),
-            ("[fe7f::1]", false),
-        ] {
+        for (host, local) in S112_RANGES {
             assert_eq!(local_base(&format!("http://{host}/")), local, "{host}");
         }
     }
 
     #[test]
     fn s112_local_ipv4_addresses_stay_local_when_embedded_in_ipv6() {
-        for (host, local) in [
-            ("[::ffff:100.64.0.1]", true),
-            ("[64:ff9b::192.168.1.1]", true),
-            ("[64:ff9b::8.8.8.8]", false),
-            ("[64:ff9b:1:c0a8:1:100::]", true),
-            ("[64:ff9b:1:808:8:800::]", true),
-            ("[64:ff9b:1:2:3:4:192.168.1.1]", true),
-            ("[64:ff9b:2::8.8.8.8]", false),
-            ("[2002:7f00:1::]", true),
-            ("[2002:808:808::]", false),
-        ] {
+        for (host, local) in S112_EMBEDDED {
             assert_eq!(local_base(&format!("http://{host}/")), local, "{host}");
         }
     }
@@ -723,24 +727,14 @@ mod tests {
 
     #[test]
     fn ac6_the_range_table_runs_through_the_ip_function() {
-        for (host, local) in [
-            ("0.255.255.255", true),
-            ("1.0.0.0", false),
-            ("100.64.0.0", true),
-            ("100.128.0.0", false),
-            ("198.18.0.0", true),
-            ("198.20.0.0", false),
-            ("fec0::", true),
-            ("fe7f::1", false),
-            ("::ffff:100.64.0.1", true),
-            ("64:ff9b::192.168.1.1", true),
-            ("64:ff9b::8.8.8.8", false),
-            ("2002:7f00:1::", true),
-            ("2002:808:808::", false),
+        let extra = [
             ("127.0.0.1", true),
             ("8.8.8.8", false),
-        ] {
-            assert_eq!(local_ip(host.parse().unwrap()), local, "{host}");
+            ("172.32.0.1", false),
+        ];
+        for (host, local) in S112_RANGES.into_iter().chain(S112_EMBEDDED).chain(extra) {
+            let ip = host.trim_start_matches('[').trim_end_matches(']');
+            assert_eq!(local_ip(ip.parse().unwrap()), local, "{host}");
         }
     }
 }
