@@ -2,6 +2,8 @@
 
 use crate::Error;
 use ed25519_dalek::SigningKey;
+use rustix::fs::{AtFlags, Mode, OFlags, openat, renameat, statat, unlinkat};
+use rustix::io::Errno;
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{self, Read, Write};
 #[cfg(target_os = "linux")]
@@ -92,28 +94,38 @@ fn check_key_owner(path: &Path, meta: &fs::Metadata, current: u32) -> Result<(),
     }
     Ok(())
 }
-/// Resolves the key path once without following its final component and
-/// validates the open handle before reading. A missing file is `Ok(None)`.
-fn read(path: &Path) -> Result<Option<SigningKey>, Error> {
-    #[cfg(target_os = "linux")]
-    let flags = libc::O_NOFOLLOW | libc::O_PATH;
-    #[cfg(not(target_os = "linux"))]
-    let flags = libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_NOCTTY;
+/// The checked directory handle every later file operation is relative to.
+pub(crate) type Anchor = File;
 
-    let file = match OpenOptions::new().read(true).custom_flags(flags).open(path) {
-        Ok(file) => file,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+const KEY: &str = "identity.key";
+
+fn errno(e: rustix::io::Errno) -> io::Error {
+    e.into()
+}
+
+/// Opens `name` (the key) relative to the checked directory, without following its
+/// final component, and validates the open handle before reading. A missing
+/// file is `Ok(None)`.
+fn read(dir: &Path, anchor: &Anchor, name: &str) -> Result<Option<SigningKey>, Error> {
+    let path = dir.join(name);
+    #[cfg(target_os = "linux")]
+    let flags = OFlags::NOFOLLOW | OFlags::PATH | OFlags::CLOEXEC;
+    #[cfg(not(target_os = "linux"))]
+    let flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::NOCTTY;
+
+    let file = match openat(anchor, name, flags, Mode::empty()) {
+        Ok(fd) => File::from(fd),
+        Err(Errno::NOENT) => return Ok(None),
         #[cfg(not(target_os = "linux"))]
-        Err(e) if e.raw_os_error() == Some(libc::ELOOP) => {
-            return Err(not_plain(path, "regular file", true));
-        }
+        Err(Errno::LOOP) => return Err(not_plain(&path, "regular file", true)),
         // macOS can reject a socket at open. On Linux, O_PATH lets fstat classify it.
         #[cfg(not(target_os = "linux"))]
-        Err(e) if matches!(e.raw_os_error(), Some(libc::ENXIO | libc::EOPNOTSUPP)) => {
-            return Err(not_plain(path, "regular file", false));
+        Err(Errno::NXIO | Errno::OPNOTSUPP) => {
+            return Err(not_plain(&path, "regular file", false));
         }
-        Err(e) => return Err(io_error(path, e)),
+        Err(e) => return Err(io_error(&path, errno(e))),
     };
+    let path = path.as_path();
     let meta = key_metadata(path, &file)?;
     let current = effective_uid();
     check_key_owner(path, &meta, current)?;
@@ -165,84 +177,117 @@ fn prepare_dir(dir: &Path) -> Result<(), Error> {
     }
     check_dir(dir, effective_uid())
 }
-pub(crate) fn open_keyless(dir: &Path) -> Result<(), Error> {
-    prepare_dir(dir)?;
-    let path = dir.join("identity.key");
-    match fs::symlink_metadata(&path) {
-        Ok(_) => Err(Error::HasIdentity { path }),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(io_error(&path, e)),
-    }
-}
-fn lock_dir(dir: &Path) -> Result<File, Error> {
+/// Opens the directory once, checks the handle and locks it. The path is not
+/// used again by any later operation.
+fn lock_dir(dir: &Path) -> Result<Anchor, Error> {
     let directory = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
         .open(dir)
         .map_err(|e| io_error(dir, e))?;
+    lock_anchor(dir, &directory)?;
+    Ok(directory)
+}
+/// Checks the held handle again and takes the exclusive lock on it.
+fn lock_anchor(dir: &Path, directory: &Anchor) -> Result<(), Error> {
     let meta = directory.metadata().map_err(|e| io_error(dir, e))?;
     check_directory(dir, &meta, effective_uid())?;
     // Serialize the lookup and first publication with other opens and restores.
-    directory.lock().map_err(|e| io_error(dir, e))?;
-    Ok(directory)
+    directory.lock().map_err(|e| io_error(dir, e))
 }
-pub(crate) fn open(dir: &Path) -> Result<SigningKey, Error> {
+fn unlock(dir: &Path, anchor: &Anchor) -> Result<(), Error> {
+    anchor.unlock().map_err(|e| io_error(dir, e))
+}
+pub(crate) fn open_keyless(dir: &Path) -> Result<Anchor, Error> {
     prepare_dir(dir)?;
-    let directory = lock_dir(dir)?;
-    let path = dir.join("identity.key");
-    if let Some(key) = read(&path)? {
-        return Ok(key);
+    let anchor = lock_dir(dir)?;
+    let path = dir.join(KEY);
+    match statat(&anchor, KEY, AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(_) => return Err(Error::HasIdentity { path }),
+        Err(Errno::NOENT) => {}
+        Err(e) => return Err(io_error(&path, errno(e))),
     }
-    let mut seed = Zeroizing::new([0; 32]);
-    getrandom::fill(&mut *seed).map_err(|e| io_error(&path, io::Error::other(e)))?;
-    write_key(dir, &directory, &path, &seed)?;
-    read(&path)?.ok_or_else(|| io_error(&path, io::ErrorKind::NotFound.into()))
+    unlock(dir, &anchor)?;
+    Ok(anchor)
+}
+pub(crate) fn open(dir: &Path) -> Result<(SigningKey, Anchor), Error> {
+    prepare_dir(dir)?;
+    let anchor = lock_dir(dir)?;
+    let key = match read(dir, &anchor, KEY)? {
+        Some(key) => key,
+        None => {
+            let mut seed = Zeroizing::new([0; 32]);
+            let path = dir.join(KEY);
+            getrandom::fill(&mut *seed).map_err(|e| io_error(&path, io::Error::other(e)))?;
+            write_key(dir, &anchor, &seed)?;
+            read(dir, &anchor, KEY)?
+                .ok_or_else(|| io_error(&path, io::ErrorKind::NotFound.into()))?
+        }
+    };
+    unlock(dir, &anchor)?;
+    Ok((key, anchor))
 }
 
-pub(crate) fn replace(dir: &Path, key: &SigningKey) -> Result<(), Error> {
-    let directory = lock_dir(dir)?;
+pub(crate) fn replace(dir: &Path, anchor: &Anchor, key: &SigningKey) -> Result<(), Error> {
+    lock_anchor(dir, anchor)?;
     let seed = Zeroizing::new(key.to_bytes());
-    write_key(dir, &directory, &dir.join("identity.key"), &seed)
+    let result = write_key(dir, anchor, &seed);
+    unlock(dir, anchor)?;
+    result
 }
 
-pub(crate) fn remove(dir: &Path, key: &mut Option<SigningKey>) -> Result<(), Error> {
-    let directory = lock_dir(dir)?;
-    let path = dir.join("identity.key");
-    fs::remove_file(&path).map_err(|e| io_error(&path, e))?;
+pub(crate) fn remove(
+    dir: &Path,
+    anchor: &Anchor,
+    key: &mut Option<SigningKey>,
+) -> Result<(), Error> {
+    lock_anchor(dir, anchor)?;
+    let result = remove_key(dir, anchor, key);
+    unlock(dir, anchor)?;
+    result
+}
+fn remove_key(dir: &Path, anchor: &Anchor, key: &mut Option<SigningKey>) -> Result<(), Error> {
+    let path = dir.join(KEY);
+    unlinkat(anchor, KEY, AtFlags::empty()).map_err(|e| io_error(&path, errno(e)))?;
     // SigningKey zeroizes on drop. Stop signing even if the following sync fails.
     *key = None;
-    directory.sync_all().map_err(|e| io_error(dir, e))
+    anchor.sync_all().map_err(|e| io_error(dir, e))
 }
 
-fn write_key(dir: &Path, directory: &File, path: &Path, seed: &[u8; 32]) -> Result<(), Error> {
+/// Writes the seed to a temporary name in the held directory and publishes it
+/// as `identity.key`, all relative to that handle.
+fn write_key(dir: &Path, anchor: &Anchor, seed: &[u8; 32]) -> Result<(), Error> {
     let mut random = [0; 16];
     getrandom::fill(&mut random).map_err(|e| io_error(dir, io::Error::other(e)))?;
-    let tmp = dir.join(format!(
+    let name = format!(
         ".identity.key.{}.tmp",
         data_encoding::HEXLOWER.encode(&random)
-    ));
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&tmp)
-        .map_err(|e| io_error(&tmp, e))?;
+    );
+    let tmp = dir.join(&name);
+    let fd = openat(
+        anchor,
+        name.as_str(),
+        OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::from_raw_mode(0o600),
+    )
+    .map_err(|e| io_error(&tmp, errno(e)))?;
+    let mut file = File::from(fd);
     let result = (|| {
         file.set_permissions(fs::Permissions::from_mode(0o600))
             .map_err(|e| io_error(&tmp, e))?;
         file.write_all(seed).map_err(|e| io_error(&tmp, e))?;
         file.sync_all().map_err(|e| io_error(&tmp, e))?;
-        fs::rename(&tmp, path).map_err(|e| io_error(path, e))
+        renameat(anchor, name.as_str(), anchor, KEY).map_err(|e| io_error(&dir.join(KEY), errno(e)))
     })();
     if let Err(error) = result {
-        let _ = fs::remove_file(&tmp);
+        let _ = unlinkat(anchor, name.as_str(), AtFlags::empty());
         return Err(error);
     }
-    directory.sync_all().map_err(|e| io_error(dir, e))
+    anchor.sync_all().map_err(|e| io_error(dir, e))
 }
 #[cfg(test)]
 mod tests {
-    use super::{check_dir, check_key_owner, effective_uid, open, read, write_key};
+    use super::{check_dir, check_key_owner, effective_uid, open, read, remove_key, write_key};
     use crate::Error;
     use std::fs;
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -296,7 +341,7 @@ mod tests {
         }
         let parent = tempfile::tempdir().expect("create temporary parent");
         let dir = parent.path().join("log");
-        let old = open(&dir).expect("create identity");
+        let (old, anchor) = open(&dir).expect("create identity");
         std::os::unix::fs::chown(&dir, Some(65534), None).expect("change directory owner");
         let new = ed25519_dalek::SigningKey::from_bytes(&[9; 32]);
         let refused = |result: Result<(), Error>| {
@@ -309,13 +354,13 @@ mod tests {
                 })
             )
         };
-        assert!(refused(super::replace(&dir, &new)));
+        assert!(refused(super::replace(&dir, &anchor, &new)));
         let mut key = Some(new);
-        assert!(refused(super::remove(&dir, &mut key)));
+        assert!(refused(super::remove(&dir, &anchor, &mut key)));
         assert!(key.is_some());
         std::os::unix::fs::chown(&dir, Some(0), None).expect("restore directory owner");
         assert_eq!(
-            open(&dir).expect("reopen identity").to_bytes(),
+            open(&dir).expect("reopen identity").0.to_bytes(),
             old.to_bytes()
         );
     }
@@ -329,7 +374,7 @@ mod tests {
         let path = dir.path().join("identity.key");
         let seed = [7; 32];
 
-        write_key(dir.path(), &directory, &path, &seed).expect("publish the seed");
+        write_key(dir.path(), &directory, &seed).expect("publish the seed");
         drop(directory);
 
         let meta = fs::metadata(&path).expect("stat published key");
@@ -341,7 +386,7 @@ mod tests {
             1
         );
         assert_eq!(
-            open(dir.path()).expect("reopen published key").to_bytes(),
+            open(dir.path()).expect("reopen published key").0.to_bytes(),
             seed
         );
     }
@@ -350,7 +395,8 @@ mod tests {
     fn s109_ac4_device_is_refused() {
         // Use the system device so this runs without permission to create one.
         let path = Path::new("/dev/null");
-        let result = read(path);
+        let anchor = fs::File::open("/dev").expect("open /dev");
+        let result = read(Path::new("/dev"), &anchor, "null");
         assert!(
             matches!(
                 &result,
@@ -384,5 +430,38 @@ mod tests {
         let owner = file.metadata().expect("stat the file handle").uid();
         let current = effective_uid();
         assert_eq!(current, owner);
+    }
+
+    /// S158 AC1: after the directory is checked, a swapped path redirects nothing.
+    #[test]
+    fn ac1_swapped_directory_path_does_not_redirect_key_operations() {
+        let parent = tempfile::tempdir().expect("create parent");
+        let dir = parent.path().join("log");
+        let other = parent.path().join("other");
+        let moved = parent.path().join("moved");
+        for d in [&dir, &other] {
+            fs::create_dir(d).expect("create directory");
+            fs::set_permissions(d, fs::Permissions::from_mode(0o700)).expect("make private");
+        }
+        let anchor = super::lock_dir(&dir).expect("lock the log directory");
+        fs::rename(&dir, &moved).expect("move the checked directory away");
+        std::os::unix::fs::symlink(&other, &dir).expect("put a link in its place");
+
+        write_key(&dir, &anchor, &[1; 32]).expect("write through the handle");
+        assert_eq!(fs::read(moved.join("identity.key")).expect("key"), [1; 32]);
+        write_key(&dir, &anchor, &[2; 32]).expect("replace through the handle");
+        assert_eq!(fs::read(moved.join("identity.key")).expect("key"), [2; 32]);
+        assert_eq!(
+            read(&dir, &anchor, "identity.key")
+                .expect("read through the handle")
+                .expect("key exists")
+                .to_bytes(),
+            [2; 32]
+        );
+        let mut key = Some(ed25519_dalek::SigningKey::from_bytes(&[2; 32]));
+        remove_key(&dir, &anchor, &mut key).expect("remove through the handle");
+        assert!(key.is_none());
+        assert_eq!(fs::read_dir(&moved).expect("list").count(), 0);
+        assert_eq!(fs::read_dir(&other).expect("list other").count(), 0);
     }
 }

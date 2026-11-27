@@ -113,24 +113,26 @@ pub struct Log {
 }
 impl Log {
     pub fn open(dir: &Path) -> Result<Self, Error> {
-        let key = identity::open(dir)?;
-        let db = store::open(dir)?;
+        let (key, anchor) = identity::open(dir)?;
+        let db = store::open(dir, &anchor)?;
         Ok(Self {
             inner: std::sync::Mutex::new(Inner {
                 key: Some(key),
                 db,
                 dir: dir.to_owned(),
+                anchor,
             }),
         })
     }
     pub fn open_keyless(dir: &Path) -> Result<Self, Error> {
-        identity::open_keyless(dir)?;
-        let db = store::open(dir)?;
+        let anchor = identity::open_keyless(dir)?;
+        let db = store::open(dir, &anchor)?;
         Ok(Self {
             inner: std::sync::Mutex::new(Inner {
                 key: None,
                 db,
                 dir: dir.to_owned(),
+                anchor,
             }),
         })
     }
@@ -172,6 +174,8 @@ struct Inner {
     key: Option<SigningKey>,
     db: rusqlite::Connection,
     dir: PathBuf,
+    /// The checked directory handle; identity file operations are relative to it.
+    anchor: identity::Anchor,
 }
 impl Inner {
     fn identity(&self) -> Option<PublicKey> {
@@ -275,14 +279,19 @@ impl Log {
         }
         tx.execute("INSERT INTO meta(key,value) VALUES ('unconfirmed',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[public.as_bytes()])?;
         tx.commit()?;
-        identity::replace(&inner.dir, &key)?;
+        identity::replace(&inner.dir, &inner.anchor, &key)?;
         inner.key = Some(key);
         Ok(public)
     }
     pub fn drop_identity(&self) -> Result<(), Error> {
         let mut inner = self.lock();
         let author = inner.identity().ok_or(Error::NoIdentity)?;
-        let Inner { key, db, dir } = &mut *inner;
+        let Inner {
+            key,
+            db,
+            dir,
+            anchor,
+        } = &mut *inner;
         let tx = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         if store::head(&tx, &author)?.is_some() {
             return Err(Error::IdentityInUse(author));
@@ -291,7 +300,7 @@ impl Log {
             "DELETE FROM meta WHERE key='unconfirmed' AND value=?1",
             [author.as_bytes()],
         )?;
-        identity::remove(dir, key)?;
+        identity::remove(dir, anchor, key)?;
         tx.commit()?;
         Ok(())
     }

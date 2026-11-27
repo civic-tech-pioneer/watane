@@ -4,22 +4,28 @@
 use crate::{Entry, Error, Fork, Ingest, MAX_SEQ, PublicKey, Status, entry};
 use ed25519_dalek::SigningKey;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
-#[cfg(unix)]
-use std::fs::OpenOptions;
-#[cfg(unix)]
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::time::{Duration, Instant};
-pub(crate) fn open(dir: &Path) -> Result<Connection, Error> {
+pub(crate) fn open(dir: &Path, anchor: &crate::identity::Anchor) -> Result<Connection, Error> {
     let path = dir.join("channels.db");
+    // Unix creates the file relative to the checked directory handle.
     #[cfg(unix)]
-    let create = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&path);
+    let create = rustix::fs::openat(
+        anchor,
+        "channels.db",
+        rustix::fs::OFlags::WRONLY
+            | rustix::fs::OFlags::CREATE
+            | rustix::fs::OFlags::EXCL
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::from_raw_mode(0o600),
+    )
+    .map_err(std::io::Error::from);
     #[cfg(windows)]
-    let create = watane_log_windows_fs::create_file(&path);
+    let create = {
+        let _ = anchor;
+        watane_log_windows_fs::create_file(&path)
+    };
     match create {
         Ok(_) => {}
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
