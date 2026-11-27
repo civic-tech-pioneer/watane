@@ -35,37 +35,62 @@ through the usual release and installation controls.
 
 Covers FF1–FF3.
 
-1. Alice enters one real repository and a small slice on the planning page.
-   She reviews the sketch and dispatches it. She prepares a dedicated
-   checkout of the specified base and branch and accepts only the
-   implementer's required reach when the host asks.
-2. From the foreman page she starts an implementer on that checkout. The
-   transcript records its result. She can reload the page and recover the
-   run and transcript. She inspects the diff, applies it in her trusted
-   checkout, runs the project's checks, and opens a PR in her repository
-   tools. The foreman records the
-   PR, exact head, and check results Alice supplies.
-3. She starts a review on the foreman page with the other vendor and
-   supplies the brief, diff and check evidence for that head. The reviewer
-   returns a verdict with findings. Its session has no checkout write
-   reach or repository tools. If it needs more context, Alice adds the
-   relevant excerpt or leaves the review pending.
-4. A change request returns to the build. Alice supplies evidence for the
-   new head and the foreman asks for fresh review. Once the checks and
-   review match the current head, Alice inspects it and explicitly merges
-   in her repository tools. The planning page records the merge revision
-   and marks the slice done. Closing the page or accepting the review alone
-   leaves the PR open.
-5. With a missing account or denied folder consent, the affected agent
-   cannot proceed. Alice sees which step stopped and can cancel. If the
-   repository head changes after review, the old verdict stays visible
-   with its old head and the new head needs its own checks and review.
+Use a real repository with a small slice, a committed plan, and a
+head-guarded merge action. The following outcomes can be checked in the
+installed app. The snapshot and record rules are in
+[TECHNICAL §1](TECHNICAL.md#1-parts-and-sources-of-truth).
 
-JF1's reviewer sees the evidence Alice supplies. It runs neither the
-project gate nor user-sim, so this review is narrower than today's review
-team. Alice carries the diff, check results, PR reference and merge
-revision by hand. The first cut tests the in-host work before automating
-those handoffs. Existing required project gates still apply.
+1. **Dispatch and recover the brief.** Planning shows the project, plan
+   revision, slice, base, branch, scope, acceptance and decisions. Alice
+   checks them against the committed plan, dispatches and copies the
+   snapshot. In Foreman she pastes it, sees those same fields in a
+   preview, and confirms import. A malformed or unsupported snapshot
+   shows a field or format error and creates no run. On reload the
+   exported snapshot and the imported run are still available. Editing
+   the planning draft leaves the imported brief as it was.
+2. **Build in the chosen checkout.** Foreman shows the brief, authorized
+   implementer profile, dedicated checkout and current attempt. Alice
+   confirms the checkout against the project, base and branch, starts a
+   Claude implementer and answers the host's folder prompt. She sees
+   session progress and the transcript. She can answer tool asks and
+   stop the session from Foreman. Reloading during work restores the run
+   and transcript without starting a second session. On a usable result
+   Alice inspects the diff and advances to checking.
+3. **Record project checks.** Alice applies the diff in her trusted
+   checkout, opens or updates the PR and runs the required checks in her
+   repository tools. Foreman accepts her PR reference, exact head, diff
+   and check evidence and shows them together. A missing or failed check
+   leaves the run at checking with the reason visible. Alice can supply
+   fresh results or return to building. Required project gates still apply.
+4. **Review the exact head.** Alice starts an OpenAI reviewer from the
+   passing evidence. Foreman shows the evidence revision, head and actual
+   reviewing vendor. The reviewer receives the brief, diff and checks;
+   Alice can supply further same-head excerpts from Foreman. The
+   session has no checkout or tools. Alice reads the reply and confirms
+   its verdict and findings. If changes are requested she can start
+   another build attempt. A changed head puts the run back at checking
+   and keeps the prior verdict visible at its original head. Fresh
+   checks and review are needed for the new head.
+5. **Record Alice's merge.** Foreman shows ready for Alice only with
+   passing checks and a confirmed approval for the current evidence
+   revision. Alice rechecks the head in her repository tools and uses
+   an explicit merge action guarded by that head. If another push
+   wins the race, the merge is refused and she records the new head.
+   Accepting the review or closing the page leaves the PR open. Alice
+   records both the approved head and the resulting merge revision from
+   the merged PR. In Planning she selects that completed run and records
+   the result so the slice shows done with its receipt. Git's plan is
+   updated by hand.
+6. **Recover or stop.** With a missing account, unavailable profile,
+   denied folder consent, lost session or unusable review, Foreman shows
+   the affected step, reason and last known evidence. Alice can retry
+   after resolving the cause, stop an active session or abandon the run.
+   After reload, an unresolved start is reconciled before a new attempt
+   can start. A stale review reply or stale page action cannot restore
+   readiness after the evidence changes. Abandoning preserves the history.
+
+Alice carries repository evidence by hand. The review is limited to that
+evidence and the reviewer runs neither the project gate nor user-sim.
 
 ### JF2 · Change the factory from the factory
 
