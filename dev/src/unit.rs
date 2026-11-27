@@ -306,6 +306,7 @@ pub fn unit_tests(dir: &Path, slug: &Slug, ctx: &BuildCtx<'_>) -> Result<UnitRep
     let (copy, _) = builder::prepare(dir, slug, ctx)?;
     let binaries = builder::compile(
         ctx,
+        dir,
         &copy,
         slug,
         &[

@@ -274,8 +274,8 @@ The exit status is the class of the first error; 0 when there is none.
 | `test.contract_file` | 1 | a test file does not parse or has a wrong field | serde's text, or the field | `See the contract test form in AGENTS.md` |
 | `test.contract` | 1 | each failed contract step | `<file> step <n> (<call>): expected <x>, got <y>` | — |
 | `publish.version_exists` | 1 | the app already published this slug and WIT package version, or POST races with another publish (409 `version_exists`) | `<slug> <version> is already published as <release>; its link is <link>`; if null: `...; it has no link yet: set your site's URL in the watane app`; for POST: the app's message unchanged | `This version is already published. To publish changes, raise the version in wit/world.wit, then run: <rerun>` (file `wit/world.wit`) |
-| `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider (deps.json names no release for it), and a published mod can depend only on released providers`; when `.watane-dev.json` knows the folder: `mods:<slug> is a local provider (deps.json names its folder <absolute folder>, not a release), and ...` | `Publish <slug> first (if it is already published, that run reports its release), then depend on its release` |
-| `usage.no_source` | 2 | `new --from` of a release whose package holds no source (step 5) | `the release <ReleaseRef> holds no source (no logic/Cargo.toml, logic/src/ or tests/)` | `Build on a release that includes its source, or make a new mod that depends on this one: watane-dev new <slug, or my-<release slug> when none given> --dir <canonical destination folder, quoted> && watane-dev add --release <link or ReleaseRef as the maker passed it, quoted> --dir <same folder>[ --home <resolved home>]` |
+| `publish.local_dependency` | 1 | a provider in `deps.json` is local (`null`) | `mods:<slug> is a local provider (deps.json names no release for it), and a published mod can depend only on released providers`; when `.watane-dev.json` knows the folder: `mods:<slug> is a local provider (deps.json names its folder <absolute folder>, not a release), and ...` | If the folder is known, show the provider's publish command to publish or find its existing release, then tell the maker to add that release. Otherwise ask for the release and show the add command with a placeholder. Both commands preserve the explicit home. |
+| `usage.no_source` | 2 | `new --from` of a release whose package holds no source (step 5) | `the release <ReleaseRef> holds no source (no logic/Cargo.toml, logic/src/ or tests/)` | `Build on a release that includes its source, or make a new mod that depends on this one: watane-dev new <slug, or my-<release slug> when none given or it equals the release slug> --dir <canonical destination folder, quoted> && watane-dev add --release <link or ReleaseRef as the maker passed it, quoted> --dir <same folder>[ --home <resolved home>]` |
 | `mod.release_provider_missing` | 1 | a provider in `deps.json` with a publisher has no package in the cache (step 5, 10.1) | `the provider <ReleaseRef> is not in the cache of watane-dev` | `Start the watane app, then run: watane-dev add --release <ReleaseRef>`, plus ` --dir <canonical mod folder>` when `serve` was given `--dir` and ` --home <resolved home>` when given `--home` |
 | `env.git_missing` | 3 | step 6: `publish --push` finds no `git` on `PATH` (10.4) | `the program git was not found on PATH` | `Install git, then run: <rerun>` |
 | `env.gh_missing` | 3 | step 6: `publish --push` finds no `gh` on `PATH` | `the GitHub CLI gh was not found on PATH; publish --push creates repositories with it` | `Install the GitHub CLI (gh), ask the person to run: gh auth login, then run: <rerun>` |
@@ -391,7 +391,8 @@ of objects emit indexed dotted keys, one field per line (for example,
 join with `, `; an empty list prints `none` (for example,
 `calls: none`). Strings are unquoted, null is `missing`, and
 booleans and numbers use their plain text. No JSON containers or quotes
-are added to these values.
+are added to these values. For `add --release`, show the release and omit its
+null local `path`. JSON keeps the null field.
 Argument errors print `error[usage.args]: <message>` (clap's error text without its leading `error: ` and without its usage and help lines, on one line (`the following required arguments were not provided: <PROVIDER>`); with no command, the `no command given` text of 2.2) and
 `  fix: watane-dev --help`, then the failure line. Unknown subcommands,
 missing arguments and no arguments all follow this rule.
@@ -405,7 +406,9 @@ They end with `<command>: failed`, never a blank command name.
 ```json
 {"slug": "reading-list", "dir": "/abs/reading-list", "files": ["AGENTS.md", "CLAUDE.md", "..."]}
 ```
-`files` are relative paths, sorted. S2 `next`: `Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json`. Without `--dir`, it ends ` --dir <the new folder, quoted>` so it runs from where `new` ran.
+`files` are relative paths, sorted. A missing destination parent produces an
+`internal` error naming both paths and asks the maker to create the parent
+or pass a destination with an existing parent. S2 `next`: `Edit wit/world.wit, logic/src/lib.rs and ui/, then run: watane-dev serve --json`. Without `--dir`, it ends ` --dir <the new folder, quoted>` so it runs from where `new` ran.
 
 **check** (also the `check` field of `test`)
 ```json
@@ -635,7 +638,7 @@ fields. Text output flattens them as in 2.3. `next`:
 with results, null; with none and `indexes` 0, `Ask the person to add an
 index in the watane app, then run: <the search command>`; with none otherwise
 and two or more words, `Try fewer words: <the search command with only the first word>`;
-with one word or none, `Try other words, or search with --interface <name>: watane-dev search --json <other words>`.
+with one word or none, show a different, runnable example query that keeps the supplied filters and home.
 The search command is the one built for `env.host_not_running` below.
 When any word starts with `-`, the filters and `--home` come before the words and ` --` precedes the words, so the rerun does not read a word as a flag.
 
@@ -1193,7 +1196,8 @@ The runs, in order:
    path that is a strict descendant of `<cache>/build/` (normalized; a path starts at the text's start or after whitespace, a quote, a bracket or `:`, and ends, after the cache prefix, at the first character that is not printable ASCII, or at a quote or bracket) but not under this copy, those errors are the
    stale sibling's, and dev gives only `build.reads_outside` for that folder
    (a file whose folder is named too counts once, as the folder), not the
-   `build.compile` errors. A stale sibling with another world gives rustc text that names no path, so when the build fails and that text names none, dev also reads the `path:` string literals of `wit_bindgen::generate!` in the copy's `logic/src/**/*.rs`, resolves each against the copy's `logic/` (the copy's canonical path), normalizes it as text (a literal is never touched on disk; an absolute one may name the copy by either path), and gives the same `build.reads_outside` for each one that leaves the copy.
+   `build.compile` errors. The diagnostic's file points to the maker's
+   `logic/src` directory. Its message names the actual outside path. A stale sibling with another world gives rustc text that names no path, so when the build fails and that text names none, dev also reads the `path:` string literals of `wit_bindgen::generate!` in the copy's `logic/src/**/*.rs`, resolves each against the copy's `logic/` (the copy's canonical path), normalizes it as text (a literal is never touched on disk; an absolute one may name the copy by either path), and gives the same `build.reads_outside` for each one that leaves the copy.
 7. dev copies the `.wasm` to `<mod>/logic.wasm`, then runs
    `watane_pkg::Mod::read(dir)?.check_component()`. Each violation is
    `build.imports`, and dev deletes `<mod>/logic.wasm` again.
@@ -1899,7 +1903,7 @@ Result (2.4 `publish` plus `push`):
 `next` on success: with a link, `Give the person this link to share:
 <link>`; without a link and with `raw`, `Ask the person to set the site
 URL in the watane app to <raw> (or to <pages> if GitHub Pages serves this
-repository), then run: <rerun>` (the parenthesis only when `pages` is not null);
+repository), then look up the published release link with: <rerun>` (the parenthesis only when `pages` is not null);
 without either, the 2.4 text. With `publish.push_failed`, the commands of
 each `push_failed` fix, joined with ` && `. The raw URL can serve an older
 file for a few minutes after a push; the link stays valid because each

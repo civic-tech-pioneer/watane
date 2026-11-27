@@ -1237,7 +1237,7 @@ mod real {
         assert_eq!(
             v["next"],
             format!(
-                "Ask the person to set the site URL in the watane app to https://raw.githubusercontent.com/alice/watane-channel/main/ (or to https://alice.github.io/watane-channel/ if GitHub Pages serves this repository), then run: watane-dev publish --json --dir {} --home {} --push",
+                "Ask the person to set the site URL in the watane app to https://raw.githubusercontent.com/alice/watane-channel/main/ (or to https://alice.github.io/watane-channel/ if GitHub Pages serves this repository), then look up the published release link with: watane-dev publish --json --dir {} --home {} --push",
                 shell_quote(&f.dir),
                 shell_quote(&f.home)
             )

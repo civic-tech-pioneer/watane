@@ -286,7 +286,13 @@ impl Outcome {
             for (k, v) in fields {
                 if self.command == "publish" && k == "link" && v.is_null() {
                     text.push_str("link: none yet\n");
-                } else {
+                } else if !(self.command == "add"
+                    && k == "path"
+                    && v.is_null()
+                    && fields
+                        .get("release")
+                        .is_some_and(|release| !release.is_null()))
+                {
                     text_fields(k, v, &mut text);
                 }
             }
@@ -333,6 +339,21 @@ fn text_fields(key: &str, value: &serde_json::Value, text: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn s155_text_identifies_a_release_instead_of_reporting_a_missing_local_path() {
+        let mut out = Outcome::new("add", None);
+        out.result = Some(serde_json::json!({
+            "path": null, "release": "example/provider@1.0.0", "other": null
+        }));
+        assert_eq!(
+            out.to_text(),
+            "add: ok\nother: missing\nrelease: example/provider@1.0.0\n"
+        );
+        assert!(out.result.as_ref().unwrap()["path"].is_null());
+        out.result = Some(serde_json::json!({"path": "../provider"}));
+        assert_eq!(out.to_text(), "add: ok\npath: ../provider\n");
+    }
 
     #[test]
     fn ac7_fork_warning_codes_do_not_fail_the_command() {

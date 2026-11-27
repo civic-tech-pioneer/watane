@@ -331,6 +331,15 @@ fn s93_ac5_relative_generate_path_into_a_cache_sibling_reads_outside() {
     assert_eq!(v["errors"].as_array().unwrap().len(), 1, "{v}");
     assert_eq!(v["errors"][0]["code"], "build.reads_outside", "{v}");
     assert_eq!(
+        v["errors"][0]["file"],
+        f.dir
+            .canonicalize()
+            .unwrap()
+            .join("logic/src")
+            .to_str()
+            .unwrap()
+    );
+    assert_eq!(
         v["errors"][0]["message"],
         format!("the build read {}, outside the mod", sibling.display())
     );
@@ -375,6 +384,15 @@ fn regress_s93_generate_path_into_a_sibling_with_its_own_world_reads_outside() {
     let sibling = sibling.canonicalize().unwrap();
     assert_eq!(v["errors"].as_array().unwrap().len(), 1, "{v}");
     assert_eq!(v["errors"][0]["code"], "build.reads_outside", "{v}");
+    assert_eq!(
+        v["errors"][0]["file"],
+        f.dir
+            .canonicalize()
+            .unwrap()
+            .join("logic/src")
+            .to_str()
+            .unwrap()
+    );
     assert_eq!(
         v["errors"][0]["message"],
         format!("the build read {}, outside the mod", sibling.display())

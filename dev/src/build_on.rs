@@ -341,18 +341,30 @@ pub fn new_from(
     env: &Env,
     home: &str,
 ) -> Result<(Value, Vec<Problem>), Vec<Problem>> {
+    let cwd = match destination {
+        Some(_) => PathBuf::new(),
+        None => std::env::current_dir().map_err(|e| vec![Problem::internal(e)])?,
+    };
+    new_from_in(destination, slug, target, client, env, home, &cwd)
+}
+
+pub(crate) fn new_from_in(
+    destination: Option<&Path>,
+    slug: Option<&str>,
+    target: &str,
+    client: &Client,
+    env: &Env,
+    home: &str,
+    cwd: &Path,
+) -> Result<(Value, Vec<Problem>), Vec<Problem>> {
     let (release, package) = client.fetch(target).map_err(|e| vec![e])?;
     if !package.has_source() {
-        // The mod that would depend on it is the one this run would have created.
         let slug = dependent_slug(slug, release.slug.as_str());
-        let slug = slug.as_str();
         let dest = destination
             .map(Path::to_path_buf)
-            .or_else(|| std::env::current_dir().ok().map(|cwd| cwd.join(slug)));
-        let dir = dest.map_or_else(String::new, |dir| {
-            format!(" --dir {}", crate::cli::quote(&dir))
-        });
-        let slug = crate::cli::quote(Path::new(slug));
+            .unwrap_or_else(|| cwd.join(&slug));
+        let dir = format!(" --dir {}", crate::cli::quote(&dest));
+        let slug = crate::cli::quote(Path::new(&slug));
         let target = crate::cli::quote(Path::new(target));
         return Err(vec![Problem::new(Code::UsageNoSource, format!("the release {release} holds no source (no logic/Cargo.toml, logic/src/ or tests/)"))
         .fix(format!("Build on a release that includes its source, or make a new mod that depends on this one: watane-dev new {slug}{dir} && watane-dev add --release {target}{dir}{home}"))]);
@@ -361,11 +373,9 @@ pub fn new_from(
         .unwrap_or(release.slug.as_str())
         .parse()
         .map_err(|e| vec![Problem::internal(e)])?;
-    let dir = destination.map(Path::to_path_buf).unwrap_or(
-        std::env::current_dir()
-            .map_err(|e| vec![Problem::internal(e)])?
-            .join(slug.as_str()),
-    );
+    let dir = destination
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| cwd.join(slug.as_str()));
     let dir = dir.as_path();
     let setup = || -> Result<(), Problem> {
         template::write_guides(dir, &slug)?;

@@ -56,8 +56,26 @@ pub fn new_mod(dir: &Path, slug: &str) -> Result<NewReport, Problem> {
         return Err(if e.kind() == std::io::ErrorKind::AlreadyExists {
             Problem::new(Code::UsageExists, format!("{} exists", dir.display()))
                 .fix("Choose another slug, or pass --dir <new folder>")
+        } else if e.kind() == std::io::ErrorKind::NotFound
+            && let Some(parent) = dir.parent().filter(|p| !p.as_os_str().is_empty())
+        {
+            Problem::new(
+                Code::Internal,
+                format!(
+                    "cannot create {}: its parent {} does not exist",
+                    dir.display(),
+                    parent.display()
+                ),
+            )
+            .at(dir.display().to_string(), None, None)
+            .fix("Create the parent folder, or pass --dir with an existing parent")
         } else {
-            Problem::internal(e)
+            Problem::new(
+                Code::Internal,
+                format!("cannot create {}: {e}", dir.display()),
+            )
+            .at(dir.display().to_string(), None, None)
+            .fix("Check the paths and permissions")
         });
     }
     let write = || -> Result<(), std::io::Error> {
@@ -88,6 +106,28 @@ pub fn write_guides(dir: &Path, slug: &Slug) -> Result<(), Problem> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn s155_new_names_the_missing_parent_and_destination() {
+        let root = tempfile::tempdir().unwrap();
+        let parent = root.path().join("missing parent");
+        let dir = parent.join("new-mod");
+        let problem = new_mod(&dir, "different-slug").unwrap_err();
+        assert_eq!(problem.code, Code::Internal);
+        assert_eq!(
+            problem.message,
+            format!(
+                "cannot create {}: its parent {} does not exist",
+                dir.display(),
+                parent.display()
+            )
+        );
+        assert_eq!(problem.file.as_deref(), dir.to_str());
+        assert_eq!(
+            problem.fix.as_deref(),
+            Some("Create the parent folder, or pass --dir with an existing parent")
+        );
+    }
+
     #[test]
     fn ac1_ac2_s23_guide_explains_live_page_refresh() {
         let guide = include_str!("../template/AGENTS.md");

@@ -295,6 +295,7 @@ pub(crate) fn prepare(
 
 pub(crate) fn compile(
     ctx: &BuildCtx<'_>,
+    dir: &Path,
     copy: &Path,
     slug: &Slug,
     args: &[&str],
@@ -412,7 +413,11 @@ pub(crate) fn compile(
         siblings.extend(generate_paths_in(&copy.join("logic/src"), copy));
     }
     if !siblings.is_empty() {
-        return Err(reads_outside_problems(siblings.into_iter().collect()));
+        let source = dir.join("logic/src");
+        return Err(reads_outside_problems(siblings.into_iter().collect())
+            .into_iter()
+            .map(|problem| problem.at(source.to_string_lossy(), None, None))
+            .collect());
     }
     if !errors.is_empty() {
         return Err(errors);
@@ -458,6 +463,7 @@ pub fn build(dir: &Path, slug: &Slug, ctx: &BuildCtx<'_>) -> Result<Built, Vec<P
         let (copy, lock_updated) = prepare(dir, slug, ctx)?;
         let artifacts = compile(
             ctx,
+            dir,
             &copy,
             slug,
             &[
@@ -832,7 +838,8 @@ mod tests {
                     allow: &allow,
                 };
                 for args in [&["build", "--release"][..], &["test", "--no-run"][..]] {
-                    compile(&ctx, &copy, &"counter".parse().unwrap(), args).unwrap_err();
+                    compile(&ctx, root.path(), &copy, &"counter".parse().unwrap(), args)
+                        .unwrap_err();
                 }
             }
             // `exit` runs no destructors: drop the temp folder first.
