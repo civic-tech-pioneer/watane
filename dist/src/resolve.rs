@@ -143,8 +143,8 @@ mod tests {
         let config = config(Some(proxy));
         let r = resolver("global.test", &["8.8.8.8"]);
         // The proxy itself: allowed. A global target: allowed. A local one on another port: refused.
-        assert!(resolve(&r, "http://127.0.0.1:40855/", &config).is_ok());
-        assert!(resolve(&r, "http://global.test/", &config).is_ok());
+        resolve(&r, "http://127.0.0.1:40855/", &config).unwrap();
+        resolve(&r, "http://global.test/", &config).unwrap();
         let local = resolver("127.0.0.1", &["127.0.0.1"]);
         assert!(is_local_refusal(
             &resolve(&local, "http://127.0.0.1:9/", &config).unwrap_err()
