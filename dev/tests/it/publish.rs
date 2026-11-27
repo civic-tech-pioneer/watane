@@ -82,7 +82,9 @@ fn ac1_local_providers_precede_status_and_pipeline() {
             assert_eq!(
                 error["fix"],
                 format!(
-                    "Publish {slug} first (if it is already published, that run reports its release), then depend on its release"
+                    "Publish {slug} first or get its existing release link, then replace <release> and run: watane-dev add --release <release> --json --dir {} --home {}",
+                    crate::support::shell_path(dir.canonicalize().unwrap()),
+                    crate::support::shell_path(home.path().canonicalize().unwrap())
                 )
             );
             assert_eq!(error["file"], "deps.json");
@@ -419,17 +421,24 @@ fn ac3_local_provider_next_preserves_home_and_quotes_paths() {
         let output = command.output().unwrap();
         assert_eq!(output.status.code(), Some(1));
         let value: Value = serde_json::from_slice(&output.stdout).unwrap();
-        let mut expected = format!(
-            "watane-dev publish --json --dir {}",
-            crate::support::shell_path(provider.canonicalize().unwrap())
-        );
-        if home_arg.is_some() {
-            expected.push_str(&format!(
+        let shown_home = home_arg.map_or_else(String::new, |_| {
+            format!(
                 " --home {}",
                 crate::support::shell_path(home.canonicalize().unwrap())
-            ));
-        }
+            )
+        });
+        let expected = format!(
+            "watane-dev publish --json --dir {}{shown_home}",
+            crate::support::shell_path(provider.canonicalize().unwrap())
+        );
         assert_eq!(value["next"], expected);
+        assert_eq!(
+            value["errors"][1]["fix"],
+            format!(
+                "Run {expected} to publish the provider or find its existing release, then replace <release> and run: watane-dev add --release <release> --json --dir {}{shown_home}",
+                crate::support::shell_path(dir.canonicalize().unwrap())
+            )
+        );
         assert!(!home.join("requests").exists());
     }
 }

@@ -569,6 +569,7 @@ fn derive(
         if let Some(slug) = slug {
             slug.parse::<watane_pkg::Slug>().map_err(|e|vec![Problem::new(crate::outcome::Code::UsageSlug,format!("{slug:?} is not a valid slug: {e}")).fix("Use lowercase words of letters and digits joined by \"-\", each starting with a letter, at most 40 bytes, not a WIT keyword. Example: reading-list")])?;
         }
+        let explicit_dir = destination.is_some();
         let destination = destination
             .map(Path::to_path_buf)
             .or_else(|| slug.map(|s| cwd.join(s)));
@@ -602,7 +603,16 @@ fn derive(
             vec![e]
         })?;
         let env = Env::from_process().map_err(|e| vec![e])?;
-        crate::build_on::new_from(destination.as_deref(), slug, target, &client, &env, &shown)
+        let cwd = resolved_path(cwd).map_err(|e| vec![Problem::internal(e)])?;
+        crate::build_on::new_from_in(
+            destination.as_deref().filter(|_| explicit_dir),
+            slug,
+            target,
+            &client,
+            &env,
+            &shown,
+            &cwd,
+        )
     })();
     match result {
         Ok((value, warnings)) => {
@@ -939,7 +949,15 @@ fn search(
                     search_command(&[split[0].to_string()], publisher, interface, &shown)
                 )
             } else {
-                "Try other words, or search with --interface <name>: watane-dev search --json <other words>".into()
+                let example = if split == ["notes"] {
+                    "reading"
+                } else {
+                    "notes"
+                };
+                format!(
+                    "Try different words or use --interface, for example: {}",
+                    search_command(&[example.to_string()], publisher, interface, &shown)
+                )
             });
         }
         Ok(serde_json::json!({"home":home,"indexes":answer["indexes"],"results":answer["results"]}))
@@ -1182,45 +1200,58 @@ fn publish(
     let home_given = home.is_some();
     let result = (|| {
         let providers = watane_pkg::Deps::read(dir).map_err(check::mod_problems)?;
-        let local = deps::read_local(dir).unwrap_or_default();
-        let errors: Vec<_> = providers
+        let mut local_deps = providers
             .iter()
             .filter(|(_, publisher)| publisher.is_none())
-            .map(|(slug, _)| {
-                let names = local.get(&slug.to_string()).map_or_else(
-                    || "no release for it".to_string(),
-                    |path| {
-                        let path = dir.join(path);
-                        let path = path.canonicalize().unwrap_or(path);
-                        format!("its folder {}, not a release", path.display())
-                    },
-                );
-                Problem::new(
-                    Code::PublishLocalDependency,
-                    format!("mods:{slug} is a local provider (deps.json names {names}), and a published mod can depend only on released providers"),
-                )
-                .at("deps.json", None, None)
-                .fix(format!("Publish {slug} first (if it is already published, that run reports its release), then depend on its release"))
-            })
-            .collect();
-        if !errors.is_empty() {
-            outcome.next = providers
-                .iter()
-                .filter(|(_, publisher)| publisher.is_none())
-                .find_map(|(slug, _)| local.get(&slug.to_string()))
-                .map(|path| {
+            .peekable();
+        if local_deps.peek().is_some() {
+            let local = deps::read_local(dir).unwrap_or_default();
+            let mut errors = Vec::new();
+            let shown_home = home
+                .as_deref()
+                .map(|path| resolved_path(path).unwrap_or_else(|_| path.to_path_buf()));
+            let home_arg = shown_home
+                .as_deref()
+                .map_or_else(String::new, |path| format!(" --home {}", quote(path)));
+            let add = format!(
+                "watane-dev add --release <release> --json --dir {}{home_arg}",
+                quote(dir)
+            );
+            for (slug, _) in local_deps {
+                let folder = local.get(slug.as_str()).map(|path| {
                     let path = dir.join(path);
-                    let path = path.canonicalize().unwrap_or(path);
-                    let mut next = format!("watane-dev publish --json --dir {}", quote(&path));
-                    if let Some(home) = &home {
-                        let home = resolved_path(home).unwrap_or_else(|_| home.clone());
-                        next.push_str(&format!(" --home {}", quote(&home)));
-                    }
-                    if let Some(owner) = requested_owner {
-                        next.push_str(&format!(" --push --owner {owner}"));
-                    }
-                    next
+                    path.canonicalize().unwrap_or(path)
                 });
+                let names = folder.as_ref().map_or_else(
+                    || "no release for it".to_string(),
+                    |path| format!("its folder {}, not a release", path.display()),
+                );
+                let fix = match folder {
+                    Some(path) => {
+                        let mut command =
+                            format!("watane-dev publish --json --dir {}{home_arg}", quote(&path));
+                        if let Some(owner) = requested_owner {
+                            command.push_str(&format!(" --push --owner {owner}"));
+                        }
+                        let fix = format!(
+                            "Run {command} to publish the provider or find its existing release, then replace <release> and run: {add}"
+                        );
+                        outcome.next.get_or_insert(command);
+                        fix
+                    }
+                    None => format!(
+                        "Publish {slug} first or get its existing release link, then replace <release> and run: {add}"
+                    ),
+                };
+                errors.push(
+                    Problem::new(
+                        Code::PublishLocalDependency,
+                        format!("mods:{slug} is a local provider (deps.json names {names}), and a published mod can depend only on released providers"),
+                    )
+                    .at("deps.json", None, None)
+                    .fix(fix)
+                );
+            }
             return Err(errors);
         }
         let rerun_for = |home: &str, wait: Option<u64>| {
@@ -1436,7 +1467,7 @@ fn push_site_next(raw: &str, pages: Option<&str>, rerun: &str) -> String {
         format!(" (or to {pages} if GitHub Pages serves this repository)")
     });
     format!(
-        "Ask the person to set the site URL in the watane app to {raw}{pages}, then run: {rerun}"
+        "Ask the person to set the site URL in the watane app to {raw}{pages}, then look up the published release link with: {rerun}"
     )
 }
 
@@ -1488,11 +1519,11 @@ mod tests {
                 Some("https://o.github.io/r/"),
                 "watane-dev publish --json --push"
             ),
-            "Ask the person to set the site URL in the watane app to https://raw.githubusercontent.com/o/r/main/ (or to https://o.github.io/r/ if GitHub Pages serves this repository), then run: watane-dev publish --json --push"
+            "Ask the person to set the site URL in the watane app to https://raw.githubusercontent.com/o/r/main/ (or to https://o.github.io/r/ if GitHub Pages serves this repository), then look up the published release link with: watane-dev publish --json --push"
         );
         assert_eq!(
             push_site_next("https://raw.githubusercontent.com/o/r/main/", None, "x"),
-            "Ask the person to set the site URL in the watane app to https://raw.githubusercontent.com/o/r/main/, then run: x"
+            "Ask the person to set the site URL in the watane app to https://raw.githubusercontent.com/o/r/main/, then look up the published release link with: x"
         );
     }
 

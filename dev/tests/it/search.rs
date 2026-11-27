@@ -162,7 +162,10 @@ fn s34_no_index_next() {
                     crate::support::shell_path(home.path().canonicalize().unwrap())
                 )
             } else {
-                "Try other words, or search with --interface <name>: watane-dev search --json <other words>".to_string()
+                format!(
+                    "Try different words or use --interface, for example: watane-dev search --json notes --home {}",
+                    crate::support::shell_path(home.path().canonicalize().unwrap())
+                )
             }
         );
     }

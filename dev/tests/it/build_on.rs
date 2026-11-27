@@ -913,6 +913,37 @@ fn regress_s93_no_source_fix_runs_as_written() {
     assert_ne!(v["errors"][0]["code"], "usage.not_a_mod", "{v}");
     assert_eq!(code, 0, "{v}");
 }
+#[test]
+fn s155_no_source_recovery_names_the_new_slug_and_its_folder() {
+    let f = Fixture::new();
+    let source = page(&f.root.path().join("source"), "reading-list", false);
+    f.config("reading-list", &source);
+    let _host = start(&f.home);
+    let link = link("reading-list");
+    for folder in [None, Some("chosen folder")] {
+        let mut args = vec!["new", "reading-list", "--from", &link];
+        if let Some(folder) = folder {
+            args.extend(["--dir", folder]);
+        }
+        let (code, outcome) = f.run(&args);
+        assert_eq!(code, 2, "{outcome}");
+        let dir = f
+            .root
+            .path()
+            .canonicalize()
+            .unwrap()
+            .join(folder.unwrap_or("my-reading-list"));
+        let dir = crate::support::shell_path(&dir);
+        assert_eq!(
+            outcome["errors"][0]["fix"],
+            format!(
+                "Build on a release that includes its source, or make a new mod that depends on this one: watane-dev new my-reading-list --dir {dir} && watane-dev add --release '{link}' --dir {dir} --home {}",
+                crate::support::shell_path(f.home.canonicalize().unwrap())
+            )
+        );
+    }
+}
+
 #[cfg(unix)] // Executes the recovery command with POSIX shell paths.
 #[test]
 fn regress_s93_no_source_fix_without_slug_runs_as_written() {
