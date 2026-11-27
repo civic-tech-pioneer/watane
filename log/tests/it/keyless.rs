@@ -93,6 +93,7 @@ fn ac2_keyless_refuses_every_form_of_key_unchanged() {
         assert_eq!(fs::read(&path).ok(), bytes);
         assert_eq!(fs::read_link(&path).ok(), link);
         assert!(!dir.path().join("channels.db").exists());
+        assert!(!dir.path().join(".identity.lock").exists());
     }
 }
 
@@ -287,10 +288,10 @@ fn s162_ac2_other_names_are_left_in_place() {
 fn s162_ac3_a_directory_with_the_stray_name_is_left() {
     let temp = oracle::directory();
     let dir = temp.path();
+    // Empty, so a wrong attempt to remove it as a directory would succeed and show.
     fs::create_dir(dir.join(STRAY)).unwrap();
-    fs::write(dir.join(STRAY).join("x"), b"x").unwrap();
     Log::open(dir).unwrap();
-    assert!(dir.join(STRAY).join("x").exists());
+    assert!(fs::symlink_metadata(dir.join(STRAY)).unwrap().is_dir());
 }
 
 #[test]
