@@ -58,12 +58,29 @@ fn below(root: &Path, parent: &Dir, relative: &str, create: bool) -> Result<Opti
 }
 // Only top-level .wit files participate, just as in the mod WIT walk.
 fn files(root: &Path, relative: &str) -> Result<Files, ModError> {
+    match directory(root, relative)? {
+        Some(handle) => files_in(root, relative, &handle),
+        None => Ok(Files::new()),
+    }
+}
+// A listed dependency folder opened again: gone or no longer a directory is CHANGED at the entry.
+fn listed_files(root: &Path, relative: &str) -> Result<Files, ModError> {
+    match open::dir(root, relative) {
+        Ok(handle) => files_in(root, relative, &handle),
+        Err((part, e))
+            if part == relative
+                && !open::is_link(&e)
+                && matches!(e.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) =>
+        {
+            Err(invalid(Rule::Path, relative, CHANGED))
+        }
+        Err((part, e)) => Err(refused(root, &part, e)),
+    }
+}
+fn files_in(root: &Path, relative: &str, handle: &Dir) -> Result<Files, ModError> {
     let mut result = Files::new();
-    let Some(handle) = directory(root, relative)? else {
-        return Ok(result);
-    };
     for open::Entry { name, stat, .. } in
-        open::entries(&handle).map_err(|e| listing(root, relative, e))?
+        open::entries(handle).map_err(|e| listing(root, relative, e))?
     {
         let name = name.to_string_lossy();
         let rel = format!("{relative}/{name}");
@@ -156,7 +173,9 @@ pub fn add_provider(
             if stat.kind != Kind::Dir {
                 continue;
             }
-            let source = files(source_root, &relative)?;
+            #[cfg(all(test, unix))]
+            hook::run_listed();
+            let source = listed_files(source_root, &relative)?;
             if directory(dir, &relative)?.is_some() {
                 if files(dir, &relative)? != source {
                     return Err(invalid(
@@ -197,6 +216,16 @@ pub(crate) mod hook {
     use std::cell::RefCell;
     type Hook = Option<Box<dyn FnOnce()>>;
     thread_local!(static HOOK: RefCell<Hook> = const { RefCell::new(None) });
+    thread_local!(static LISTED: RefCell<Hook> = const { RefCell::new(None) });
+    // Runs once a provider dependency folder is listed, before it is opened.
+    pub(crate) fn set_listed(f: impl FnOnce() + 'static) {
+        LISTED.with(|h| *h.borrow_mut() = Some(Box::new(f)));
+    }
+    pub(super) fn run_listed() {
+        if let Some(f) = LISTED.with(|h| h.borrow_mut().take()) {
+            f();
+        }
+    }
     pub(crate) fn set(f: impl FnOnce() + 'static) {
         HOOK.with(|h| *h.borrow_mut() = Some(Box::new(f)));
     }
@@ -443,5 +472,34 @@ mod tests {
         let root = c.path().to_path_buf();
         hook::set(move || fs::remove_dir_all(root.join("wit/deps")).unwrap());
         changed(add_provider(c.path(), &m, None), "wit/deps/reading-list");
+    }
+    fn provider_dep() -> (tempfile::TempDir, tempfile::TempDir, Mod) {
+        let (p, c, m) = setup();
+        fs::create_dir_all(p.path().join("wit/deps/x")).unwrap();
+        fs::write(p.path().join("wit/deps/x/x.wit"), "x").unwrap();
+        (p, c, m)
+    }
+    fn untouched(c: &Path) {
+        assert!(!c.join("wit/deps/x").exists());
+        assert!(!c.join("deps.json").exists());
+    }
+    #[test]
+    fn ac1_listed_dep_folder_gone_is_changed() {
+        let (p, c, m) = provider_dep();
+        let root = p.path().to_path_buf();
+        hook::set_listed(move || fs::remove_dir_all(root.join("wit/deps/x")).unwrap());
+        changed(add_provider(c.path(), &m, None), "wit/deps/x");
+        untouched(c.path());
+    }
+    #[test]
+    fn ac2_listed_dep_folder_now_a_file_is_changed() {
+        let (p, c, m) = provider_dep();
+        let root = p.path().to_path_buf();
+        hook::set_listed(move || {
+            fs::remove_dir_all(root.join("wit/deps/x")).unwrap();
+            fs::write(root.join("wit/deps/x"), "f").unwrap();
+        });
+        changed(add_provider(c.path(), &m, None), "wit/deps/x");
+        untouched(c.path());
     }
 }
