@@ -6,16 +6,6 @@ lines. History is in `factory/DONE.md`. Upkeep work is in GitHub issues labelled
 the spec that owns them; those from before 2026-11-27 wait in `factory/decisions/LOG.md` for that
 (issue linked there).
 
-## Deputy handover
-
-From Deputy Paper to Deputy Scissors, 2026-11-28 ~09:00 UTC, after three merges (watane S162, agentic-harness S151, S163). One watcher ran over all three repositories (`watch-all.sh <state> 600 civic-tech-pioneer/watane civic-tech-pioneer/agentic-harness civic-tech-pioneer/watane-factory`); stopped. **Codex runs on GPT-6 Sol** (Human answers): every new Codex task starts on GPT-6.2 Sol; pick GPT-6 Sol by name before typing.
-
-- **watane S164** (PR #123, builder codex on GPT-6 Sol, task https://chatgpt.com/local/6b0a821f-0c44-83eb-8924-44168a8db063; reviewer claude). CI was red before review: Windows fixed (b4be4ae); macOS `manage::ac3_s82` (#106) failed on every run twice, while main passes it. **Cut** (Deputy Paper, ~08:55 UTC): revert the slice's #106 changes (`app/tests/it/manage.rs`, `app/tests/support/driver.rs`) to main, keep the rest, #106 stays open for a slice that probes on a macOS runner; sent to the Codex task, awaiting its push `S164 r0b: answers`. Then: CI all green, Claude review r1 (routine, review-lead.md in the brief). Record the cut under Cuts in the next report.
-- **watane-factory JF1-1** (PR civic-tech-pioneer/watane-factory#4, builder claude routine `trig_0115fFChXSGujUeQtnujmzEk`, reviewer codex). r1 Codex review (https://chatgpt.com/local/6b0a899e-5a40-83eb-9766-6fe08082d057) posted on the PR: changes (1), F1.1 a version-2 draft saved as version 1 (logic/src/snapshot.rs:140, lib.rs:97), P1.1 clipboard fallback. **Next: dispatch the answer r1 to a new Claude routine** (one writer: the build session went idle at delivery). Its PLAN.md is in that repository.
-- **agentic-harness**: S163 merged (551b4f46). No slice in flight there; its next lane sketch is a design-lane slice: #125 (S163 A1.1 line), the S151-H H2 answer (`mods:agent` import limit) and the `spec`-labelled upkeep issues among #97 to #124, all in `design/`.
-- **Waiting on the human:** plugin PR mboogerd/claude-plugin#13 (Codex on GPT-6 Sol in deputy 4c); watane-mods#10 (adopt.sh and factory-ci.yml with watane's guardrails); the local watane-mods checkout holds uncommitted edits plus the `[watane-factory]` row in projects.toml and one unpushed commit (bb10db8).
-- **Friction:** watane's own foreman skill has no section 6 (answer a review round); agentic-harness and the plugin do. Until watane syncs it, spell the answer steps out in watane briefs.
-
 ## Slices
 
 The main line: step 11, the agent layer; its next slice, JF1-1, is in flight in civic-tech-pioneer/watane-factory (its PLAN.md; routine `trig_0115fFChXSGujUeQtnujmzEk` 07:35 UTC, builder claude).
