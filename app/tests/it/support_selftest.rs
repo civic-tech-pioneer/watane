@@ -52,10 +52,32 @@ fn ac1_pages_serve_each_origin_on_both_loopbacks() {
             assert_eq!(response.text().unwrap(), local);
         }
     }
+    // Accepted sockets cannot be taken over when another process reuses the
+    // released port. Their close proves that both fixture listeners stopped.
+    use std::io::{Read, Write};
+    let mut open = Vec::new();
+    for address in ["127.0.0.1", "[::1]"] {
+        let mut stream = std::net::TcpStream::connect(format!("{address}:{}", pages.port)).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let host = format!("hostile.localhost:{}", pages.port);
+        stream
+            .write_all(format!("GET / HTTP/1.1\r\nHost: {host}\r\n\r\n").as_bytes())
+            .unwrap();
+        assert!(
+            stream.read(&mut [0; 1024]).unwrap() > 0,
+            "kept-alive answer"
+        );
+        open.push(stream);
+    }
     drop(pages);
-    // Worker::drop joins both listeners. Another test process may bind the
-    // released ephemeral port immediately, so a new TCP connection is not an
-    // oracle for whether these listeners stopped.
+    for mut stream in open {
+        match stream.read_to_end(&mut Vec::new()) {
+            Ok(_) => {}
+            Err(error) => assert_eq!(error.kind(), std::io::ErrorKind::ConnectionReset, "{error}"),
+        }
+    }
 }
 
 #[test]

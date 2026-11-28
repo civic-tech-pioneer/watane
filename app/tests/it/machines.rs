@@ -530,14 +530,16 @@ fn ac6_s33_corrupt_full_machine_and_no_path_name_causes() {
         "install_release",
         json!({"release":published.1["release"],"link":null}),
     );
-    // A refused peer can run through dist's 30 s entry timeout before the
-    // install command answers. The shared 30 s UI deadline is too short for
-    // that path on a loaded macOS runner.
+    // This command enters Core::install_resolved -> Node::fetch ->
+    // Node::need_release -> Net::need_blob. The macOS CI log proves only that
+    // the UI command outlasted 30 s; it does not identify a product timeout.
+    // Keep #105 open until that cause is observed on a macOS runner.
     let deadline = Instant::now() + Duration::from_secs(60);
     while !light.is_true("main", "window.__stageC !== null") {
         assert!(
             Instant::now() < deadline,
-            "corrupt-peer install did not finish"
+            "corrupt-peer install did not finish; last result: {}",
+            light.eval("main", "window.__stageC ?? null")
         );
         std::thread::yield_now();
     }

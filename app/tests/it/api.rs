@@ -383,6 +383,7 @@ async fn ac2_fetch_release_followed_and_unknown() {
     .await;
     assert_eq!(status, 200);
     assert_eq!(bytes, package());
+    assert!(dist.followed().unwrap().is_empty());
     // A link fetch caches verified bytes. The same release reference must
     // work without a follow record or another network request.
     let before_requests = site.hits.load(std::sync::atomic::Ordering::SeqCst);
