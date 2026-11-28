@@ -3,7 +3,7 @@
 
 use crate::support;
 use serde_json::{Value, json};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use support::driver::App;
 use support::journey::*;
 use support::node::NodeProc;
@@ -519,10 +519,19 @@ fn ac6_s33_corrupt_full_machine_and_no_path_name_causes() {
     // its referenced bytes. A corrupt file on first admission is refused by
     // the serving holder before it ever sends bytes; that is a different case.
     fetched(&light, &hit["release"], &package);
-    std::fs::remove_file(b.path().join("dist/packages").join(&id)).unwrap();
+    // #105: the light fetched this package twice at once, `Node::need_package`
+    // (node/src/calls.rs:130) and its sync's `fetch_wanted` (net/src/sync.rs),
+    // and the slower download could hand in good bytes after this test removed
+    // the light's copy; `install_release` then waited on an install consent.
+    // net now runs one download per package and none while the package is held
+    // (net/src/blobs.rs `fetch_via`, net TECHNICAL 5.9; regression:
+    // net/tests/it/light.rs `r1_s167_one_download_per_package_and_none_while_held`).
+    // The light holds the package here, so no download of it is in flight or can
+    // start; change the full machine's copy first, so any later one gets bad bytes.
     let mut changed = package;
     changed[0] ^= 1;
     std::fs::write(a.path().join("dist/packages").join(&id), changed).unwrap();
+    std::fs::remove_file(b.path().join("dist/packages").join(&id)).unwrap();
     // The honest holder resets the stream after checking its changed file.
     // Depending on event order, this is a hash refusal or a not-served cause.
     begin(
@@ -530,16 +539,21 @@ fn ac6_s33_corrupt_full_machine_and_no_path_name_causes() {
         "install_release",
         json!({"release":published.1["release"],"link":null}),
     );
-    // This command enters Core::install_resolved -> Node::fetch ->
-    // Node::need_release -> Net::need_blob. The macOS CI log proves only that
-    // the UI command outlasted 30 s; it does not identify a product timeout.
-    // Keep #105 open until that cause is observed on a macOS runner.
-    let deadline = Instant::now() + Duration::from_secs(60);
+    // The command is Core::install_resolved -> Node::fetch -> Node::need_release ->
+    // Net::need_blob (app/src/core.rs `install_resolved`, node/src/calls.rs `fetch`,
+    // net/src/light.rs `need_blob`). Under Xvfb it answers in about 10 ms. If the
+    // light has good bytes again the command waits on the install consent (see the
+    // cause above); a miss prints whether the light has a consent window, and both
+    // machines' problems.
+    let end = Instant::now() + TIMEOUT;
     while !light.is_true("main", "window.__stageC !== null") {
         assert!(
-            Instant::now() < deadline,
-            "corrupt-peer install did not finish; last result: {}",
-            light.eval("main", "window.__stageC ?? null")
+            Instant::now() < end,
+            "install_release did not answer in {TIMEOUT:?}; window.__stageC: {}; light has a consent window open: {}; light problems: {}; full problems: {}",
+            light.eval_raw("main", "window.__stageC"),
+            light.windows().iter().any(|w| w["label"] == "consent"),
+            machines(&light)["problems"],
+            machines(&full)["problems"],
         );
         std::thread::yield_now();
     }

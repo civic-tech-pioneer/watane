@@ -289,6 +289,14 @@ impl App {
             .unwrap()
             .clone()
     }
+    /// Runs `js`, which answers the window `label`, and returns once that
+    /// instance is destroyed (a successor may already have its label).
+    pub fn answer(&self, label: &str, js: &str) {
+        assert_eq!(
+            self.call(json!({"op":"answer","label":label,"js":js})),
+            true
+        );
+    }
     pub fn close(&self, label: &str) {
         self.call(json!({"op":"close","label":label}));
     }

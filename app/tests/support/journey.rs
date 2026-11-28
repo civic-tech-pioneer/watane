@@ -77,21 +77,24 @@ pub fn begin_install(app: &App, paths: &[PathBuf]) {
 }
 pub fn approve(app: &App) {
     // Field and integration tests run hidden. Front tests prove the focus gate.
-    app.eval("consent", "document.querySelector('#approve').disabled = false; document.querySelector('#approve').click(); null");
-    consent_closed(app);
+    app.answer(
+        "consent",
+        "document.querySelector('#approve').disabled = false; document.querySelector('#approve').click();",
+    );
 }
 pub fn deny(app: &App) {
-    app.eval("consent", "document.querySelector('#deny').click(); null");
-    consent_closed(app);
+    app.answer("consent", "document.querySelector('#deny').click();");
 }
 // The answered window closes asynchronously and keeps the label "consent"
-// until Destroyed. Wait for it, or the next request's driver calls reach it.
-fn consent_closed(app: &App) {
-    let end = Instant::now() + TIMEOUT;
-    while app.windows().iter().any(|w| w["label"] == "consent") {
-        assert!(Instant::now() < end);
-    }
-}
+// until Destroyed, and a successor can open under that label as the old one
+// goes (#106: `sync_consent`, views.rs:177, called from the old window's
+// Destroyed handler, views.rs:217-232; on macOS the install consent comes
+// before that Destroyed). So the driver's `answer` waits for the Destroyed of
+// the instance it answered (app TECHNICAL 10), never for "no window labelled
+// consent". It asks for no eval result: the window can go before one comes
+// back, which a driver eval reports as "channel is empty and sending half is
+// closed" (S167 r1: the URL-hash marker of round 0 delayed that result on
+// macOS until the window had gone).
 pub fn installed(app: &App, local: &str) {
     until(
         app,

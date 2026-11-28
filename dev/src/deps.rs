@@ -215,7 +215,7 @@ pub fn add_local(dir: &Path, provider: &Path) -> Result<AddReport, Vec<Problem>>
         };
         vec![e]
     })?;
-    let m = Mod::read(&provider).map_err(|_| usage(None))?;
+    let m = Mod::read(&provider).map_err(crate::check::mod_problems)?;
     let path = relative(&dir, &provider);
     let mut local = read_local(&dir).map_err(|e| vec![e])?;
     local.insert(m.slug().to_string(), path.clone());
@@ -260,6 +260,63 @@ mod tests {
             errors[0].fix.as_deref(),
             Some("Pass the folder of another mod to add")
         );
+    }
+
+    #[test]
+    fn ac1_unreadable_provider_names_its_problem() {
+        let t = tempfile::tempdir().unwrap();
+        let (a, b) = (t.path().join("a"), t.path().join("b"));
+        crate::template::new_mod(&a, "a").unwrap();
+        crate::template::new_mod(&b, "b").unwrap();
+        let wit = fs::read_dir(b.join("wit"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| p.extension().is_some_and(|x| x == "wit"))
+            .unwrap();
+        fs::write(&wit, "this is { not wit").unwrap();
+        let errors = add_local(&a, &b).err().unwrap();
+        // Exit 1: the first error is of class Mod; the WIT problem names its file and line.
+        assert_eq!(
+            errors[0].code.class(),
+            crate::outcome::Class::Mod,
+            "{errors:?}"
+        );
+        assert!(
+            errors[0]
+                .file
+                .as_deref()
+                .is_some_and(|f| f.starts_with("wit/"))
+                && errors[0].line.is_some(),
+            "{errors:?}"
+        );
+        assert!(
+            errors.iter().all(|e| e.code != Code::UsageProvider),
+            "{errors:?}"
+        );
+        // The problem's fields, not its whole text: the WIT parser's message
+        // quotes the file's absolute path, which macOS (/private/var) and
+        // Windows (\\?\C:) spell otherwise than the temp dir.
+        assert_eq!(
+            errors
+                .iter()
+                .map(|e| (
+                    e.code,
+                    e.file.as_deref(),
+                    e.line,
+                    e.column,
+                    e.fix.as_deref()
+                ))
+                .collect::<Vec<_>>(),
+            vec![(
+                Code::ModInvalid,
+                Some("wit/world.wit"),
+                Some(1),
+                Some(1),
+                Some("Correct wit/world.wit according to the reported rule"),
+            )],
+            "{errors:?}"
+        );
+        assert!(errors[0].message.contains("world.wit"), "{errors:?}");
     }
 
     #[test]

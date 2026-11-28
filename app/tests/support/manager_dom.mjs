@@ -302,6 +302,14 @@ if (['find-updates','ac11','ac12'].includes(which)) {
   context.offered[0].offer='ivy-key/book@3.0.0';
   vm.runInContext('renderUpdates(offered, done, failed, [])',context); assert.equal($('#updates-count').textContent,'3');
   for(const text of ["Couldn't read Ivy's channel",'Tags comes from it, so its updates wait.','watane tries again at the next check.','Last read 2 days ago.','Cause: whole: nested cause','Try again']) assert.ok($('#update-channels').textContent.includes(text),text);
+  // #103: the hint to open the publisher's link again follows a `local address` cause and no other.
+  const hint="Open or paste the publisher's link again to use its current address.";
+  assert.ok(!$('#update-channels').textContent.includes(hint),'no hint for a cause that is not a local address');
+  context.local=[{...context.failed[0],cause:'refused http://127.0.0.1/: local address'}];
+  vm.runInContext('renderUpdates(offered, done, local, [])',context);
+  assert.ok($('#update-channels').textContent.includes(hint),'the hint follows a local address cause');
+  vm.runInContext('renderUpdates(offered, done, failed, [])',context);
+  assert.ok(!$('#update-channels').textContent.includes(hint),'the hint leaves with the cause');
   context.compromised = {...context.failed[0], status: 'compromised'};
   vm.runInContext("renderUpdates(offered, done, [compromised], failed)", context);
   assert.equal($('#update-channels').children.length, 1);

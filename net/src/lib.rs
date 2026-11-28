@@ -188,6 +188,8 @@ pub(crate) struct Core {
     pub(crate) dials: Mutex<HashMap<NodeKey, sync::Dial>>,
     /// Machines with a reported package fetch failure, until a fetch succeeds (5.9).
     pub(crate) blob_unreachable: Mutex<HashSet<NodeKey>>,
+    /// The package downloads in flight: one per package (5.9).
+    pub(crate) fetching: Mutex<HashMap<BlobId, tokio::sync::watch::Receiver<()>>>,
     /// Machines that sent a bad object, for the life of this `Net` (5.6).
     pub(crate) dropped: Mutex<HashSet<NodeKey>>,
     /// Where gossip looks for a node.
@@ -374,6 +376,7 @@ impl Net {
                 syncs: Mutex::new(HashMap::new()),
                 dials: Mutex::new(HashMap::new()),
                 blob_unreachable: Mutex::new(HashSet::new()),
+                fetching: Mutex::new(HashMap::new()),
                 dropped: Mutex::new(HashSet::new()),
                 lookup: Mutex::new(None),
                 gossip: Mutex::new(None),

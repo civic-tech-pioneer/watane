@@ -246,6 +246,12 @@ fn make_fixture(with_big: bool) -> Fixture {
     }
 }
 
+/// Where `store_blob` says it entered, and what releases it.
+pub type Gate = (
+    std::sync::mpsc::Sender<()>,
+    Arc<Mutex<std::sync::mpsc::Receiver<()>>>,
+);
+
 /// What a faulty holder gives instead of the truth.
 #[derive(Default)]
 pub struct Faults {
@@ -255,6 +261,11 @@ pub struct Faults {
     pub delay: Option<Duration>,
     /// `store_blob` fails with this text.
     pub store_blob_fails: Option<String>,
+    /// `store_blob` sends on the first and waits on the second before it
+    /// stores: a download held between its check and its store.
+    pub store_blob_gate: Option<Gate>,
+    /// `blob` gives a package `store_blob` took, as the real holder does.
+    pub keeps_stored: bool,
 }
 
 /// A holder in memory. It counts the calls it gets. Its chains and packages
@@ -501,10 +512,18 @@ impl Holdings for MemHoldings {
     }
     fn store_blob(&self, id: &BlobId, file: &Path) -> Result<(), String> {
         self.stored_blobs.lock().unwrap().push(*id);
+        let gate = self.faults.lock().unwrap().store_blob_gate.clone();
+        if let Some((entered, release)) = gate {
+            entered.send(()).unwrap();
+            release.lock().unwrap().recv().unwrap();
+        }
         if let Some(cause) = self.faults.lock().unwrap().store_blob_fails.clone() {
             return Err(cause);
         }
         let bytes = std::fs::read(file).map_err(|e| e.to_string())?;
+        if self.faults.lock().unwrap().keeps_stored {
+            self.add_blob(&bytes);
+        }
         self.taken.lock().unwrap().insert(id.0, bytes);
         Ok(())
     }

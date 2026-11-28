@@ -164,10 +164,58 @@ pub(crate) async fn fetch_via(
     if size > limits.blob {
         return Err(Failed::NotFetched(NetError::TooLarge { node: *node }));
     }
-    let work = fetch_inner(core, node, id, size);
+    let work = async {
+        // One download per package at a time (5.9): a second caller waits for
+        // the first, then finds the package held, without its own download.
+        let _flight = loop {
+            match Flight::take(core, id) {
+                Ok(flight) => break flight,
+                Err(mut done) => {
+                    let _ = done.changed().await;
+                }
+            }
+        };
+        let held = sync::holder(core, move |h| h.blob(&id).is_some())
+            .await
+            .map_err(Failed::NotFetched)?;
+        if held {
+            return Ok(());
+        }
+        fetch_inner(core, node, id, size).await
+    };
     tokio::time::timeout(limits.blob_deadline, work)
         .await
         .map_err(|_| Failed::NotFetched(NetError::Timeout { node: *node }))?
+}
+
+/// The one download of a package in flight; dropping it wakes the waiters.
+struct Flight {
+    core: Arc<Core>,
+    id: BlobId,
+    _done: tokio::sync::watch::Sender<()>,
+}
+
+impl Flight {
+    /// This caller's flight, or the receiver of the one in flight.
+    fn take(core: &Arc<Core>, id: BlobId) -> Result<Self, tokio::sync::watch::Receiver<()>> {
+        let mut fetching = crate::lock(&core.fetching);
+        if let Some(done) = fetching.get(&id) {
+            return Err(done.clone());
+        }
+        let (tx, rx) = tokio::sync::watch::channel(());
+        fetching.insert(id, rx);
+        Ok(Self {
+            core: Arc::clone(core),
+            id,
+            _done: tx,
+        })
+    }
+}
+
+impl Drop for Flight {
+    fn drop(&mut self) {
+        crate::lock(&self.core.fetching).remove(&self.id);
+    }
 }
 
 /// The first four bytes of a package's hash, in hex.

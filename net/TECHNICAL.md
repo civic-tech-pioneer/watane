@@ -683,6 +683,12 @@ a full machine.
   author's fork, not the machine's lie); no other machine is asked then. A bad
   object is `BadObject`, with 5.6's drop and `Refused`. A full machine may
   call it too (it asks another full machine).
+- **One download per package.** A `Net` runs at most one download of a
+  package at a time, whoever asks (`need_blob`, sync's wanted packages of
+  5.6): a second caller waits for the first to end, inside its own deadline.
+  Each, before it downloads, asks `holdings.blob(id)`; a package the holder
+  holds is `Ok` with no transfer. So a duplicate download can never hand in
+  bytes after the holder's copy changed or went (#105, S167).
 - `need_blob(id, size)`: fetch as 5.8 (a package over `limits.blob` is
   `TooLarge` with no transfer; a hash mismatch is `BadObject`) and call
   `holdings.store_blob`. A machine that is not reached, or that does not

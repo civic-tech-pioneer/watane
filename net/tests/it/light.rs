@@ -767,3 +767,54 @@ fn ac3_s92_local_failure_ends_the_tries() {
     // one try only: the holder got one `store_blob`, so the next machine was not fetched from
     assert_eq!(light.holdings.stored_blobs.lock().unwrap().len(), 1);
 }
+
+/// #105 (S167 r1): a package the light machine is already fetching is not
+/// fetched again by a second caller (`need_blob` and sync's `fetch_wanted` at
+/// once), and one it holds is not fetched at all. Before the fix a second
+/// download could hand in good bytes after the copy was removed.
+#[test]
+fn r1_s167_one_download_per_package_and_none_while_held() {
+    let full = node(holding(&[], true), None);
+    let light = node(MemHoldings::empty(), None);
+    pair_into(&full, &light, Role::Light);
+    let bytes: Vec<u8> = (0..100_000).map(|i| (i * 7 % 251) as u8).collect();
+    let id = full.holdings.add_blob(&bytes);
+    let size = bytes.len() as u64;
+    let (entered_tx, entered) = std::sync::mpsc::channel();
+    let (release, release_rx) = std::sync::mpsc::channel();
+    let mut faults = light.holdings.faults.lock().unwrap();
+    faults.store_blob_gate = Some((entered_tx, Arc::new(std::sync::Mutex::new(release_rx))));
+    faults.keeps_stored = true;
+    drop(faults);
+    std::thread::scope(|s| {
+        let first = s.spawn(|| light.net.need_blob(&id, size));
+        // The first download is checked and held before its store.
+        entered.recv_timeout(Duration::from_secs(30)).unwrap();
+        // The second asks now; it starts before the first is stored, or after.
+        let second = s.spawn(|| light.net.need_blob(&id, size));
+        // Release the held store, and any other one, until both have answered.
+        while !(first.is_finished() && second.is_finished()) {
+            let _ = release.send(());
+            let _ = entered.recv_timeout(Duration::from_millis(10));
+        }
+        first.join().unwrap().unwrap();
+        second.join().unwrap().unwrap();
+    });
+    assert_eq!(light.holdings.stored_blobs.lock().unwrap().len(), 1);
+    // Held: a later fetch (sync's `fetch_wanted`) downloads nothing.
+    light.holdings.faults.lock().unwrap().store_blob_gate = None;
+    light.net.need_blob(&id, size).unwrap();
+    assert_eq!(light.holdings.stored_blobs.lock().unwrap().len(), 1);
+    // The review's order: the full machine's copy changes, then the light's
+    // copy goes; the next fetch reaches the changed copy and stores nothing.
+    let path = watane_net::Holdings::blob(full.holdings.as_ref(), &id).unwrap();
+    let mut changed = bytes.clone();
+    changed[0] ^= 1;
+    std::fs::write(path, changed).unwrap();
+    light.holdings.remove_blob(&id);
+    assert!(matches!(
+        light.net.need_blob(&id, size),
+        Err(NetError::NotServed { .. } | NetError::BadObject { .. })
+    ));
+    assert_eq!(light.holdings.stored_blobs.lock().unwrap().len(), 1);
+}
