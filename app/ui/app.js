@@ -719,6 +719,7 @@ export function renderUpdates(mods, done, channels, indexes) {
     const comes = names.length ? `${names.join(' and ')} ${names.length === 1 ? 'comes from it, so its' : 'come from it, so their'} updates wait. ` : '';
     element('p',`${comes}watane tries again at the next check.${channel.readAt == null ? '' : ` Last read ${ago(channel.readAt)}.`}`,body,'hint');
     element('p',`Cause: ${channel.cause}`,body,'channel-cause');
+    if (channel.cause.includes('local address')) element('p', "Open or paste the publisher's link again to use its current address.", body, 'hint');
     button(row,'Try again','retry-channel',()=>refreshChannels());
   }
   $('#failed-channels').hidden = !seen.size;

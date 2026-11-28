@@ -274,7 +274,7 @@ fn ac1_find_stale_mark() {
 #[test]
 fn ac1_find_compromised() {
     let f = Fixture::new();
-    let home = tempfile::tempdir().unwrap();
+    let home = support::app_home();
     let app = App::start(home.path(), &[]);
     f.add(&app);
     search_reading(&app);

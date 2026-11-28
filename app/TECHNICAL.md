@@ -664,7 +664,9 @@ sections with a label each, in the order of APP-F-69:
    then `watane tries again at the next check.`, then `Last read <ago>.`
    when `ChannelRow.readAt` is set; under it, 12 px `--muted`, `Cause:
    <cause>` with the whole cause (APP-F-37); `Try again`
-   (`channels_refresh`). If the channel is also compromised, the card
+   (`channels_refresh`). When the cause names a refused local address,
+   the card adds `Open or paste the publisher's link again to use its
+   current address.` If the channel is also compromised, the card
    says the channel is compromised, gives the same reason and advice as
    Find (APP-F-44), and shows the full failure as `Last read failed:
    <cause>`. That card has no `Try again` button. Hidden when empty.

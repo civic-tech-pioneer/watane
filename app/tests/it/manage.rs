@@ -673,8 +673,15 @@ fn ac3_s82_read_asked_before_fetch_then_install_and_follow() {
     assert_eq!(mods_on_disk(&app), before);
     f.ask_install(&app);
     assert!(consent_text(&app).contains(&format!("Desk asks to read {}", f.link)));
-    approve(&app);
-    consent(&app);
+    // This approval immediately opens the install consent under the same
+    // window label. The shared approve helper waits for that label to vanish,
+    // which can miss the brief interval between the two windows.
+    app.eval("consent", "document.querySelector('#approve').disabled = false; document.querySelector('#approve').click(); null");
+    until(
+        &app,
+        "consent",
+        "document.querySelector('h1')?.textContent === 'Install Book club'",
+    );
     assert_eq!(
         app.eval("consent", "document.querySelector('h1').textContent"),
         "Install Book club"

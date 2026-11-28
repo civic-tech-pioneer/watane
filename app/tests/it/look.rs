@@ -472,6 +472,10 @@ mod windows {
               return Promise.resolve().then(()=>valid && $('#updates-count').textContent==='2' && !$('#update-offers [data-local="Reading list"]'));
             "#,
             );
+            snapshot(
+                &app,
+                r#"page.renderUpdates([],[],[{channel:'key',name:'Bob',fingerprint:'bobfp',cause:'refused http://127.0.0.1/: local address',readAt:null}],[]); return document.querySelector('#update-channels').textContent.includes("Open or paste the publisher's link again to use its current address.");"#,
+            );
             // Empty lists show their placeholders and hide the Channels section.
             snapshot(
                 &app,

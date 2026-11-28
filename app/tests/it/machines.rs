@@ -3,7 +3,7 @@
 
 use crate::support;
 use serde_json::{Value, json};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use support::driver::App;
 use support::journey::*;
 use support::node::NodeProc;
@@ -530,7 +530,18 @@ fn ac6_s33_corrupt_full_machine_and_no_path_name_causes() {
         "install_release",
         json!({"release":published.1["release"],"link":null}),
     );
-    assert!(finish(&light).get("error").is_some());
+    // A refused peer can run through dist's 30 s entry timeout before the
+    // install command answers. The shared 30 s UI deadline is too short for
+    // that path on a loaded macOS runner.
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while !light.is_true("main", "window.__stageC !== null") {
+        assert!(
+            Instant::now() < deadline,
+            "corrupt-peer install did not finish"
+        );
+        std::thread::yield_now();
+    }
+    assert!(light.eval("main", "window.__stageC").get("error").is_some());
     wait_machines(&light, |v| {
         v["problems"].as_array().unwrap().iter().any(|p| {
             let text = p["text"].as_str().unwrap();

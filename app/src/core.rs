@@ -3259,7 +3259,7 @@ mod find_integration_tests {
         let carol = node.dist();
         let reference = &published.info.reference;
         let expected = node.fetch(reference).unwrap_err().to_string();
-        let error = CmdError::from(node.fetch(reference).unwrap_err());
+        let error = CmdError::from(fetch_for_install(&node, reference, None).unwrap_err());
         assert_eq!(error.message, expected);
         assert_eq!(error.code, "dist");
         assert!(carol.followed().unwrap().is_empty());
