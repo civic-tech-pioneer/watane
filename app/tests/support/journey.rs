@@ -77,19 +77,50 @@ pub fn begin_install(app: &App, paths: &[PathBuf]) {
 }
 pub fn approve(app: &App) {
     // Field and integration tests run hidden. Front tests prove the focus gate.
-    app.eval("consent", "document.querySelector('#approve').disabled = false; document.querySelector('#approve').click(); null");
-    consent_closed(app);
+    answer(
+        app,
+        "document.querySelector('#approve').disabled = false; document.querySelector('#approve').click();",
+    );
 }
 pub fn deny(app: &App) {
-    app.eval("consent", "document.querySelector('#deny').click(); null");
+    answer(app, "document.querySelector('#deny').click();");
+}
+const ANSWERED: &str = "#answered";
+fn answer(app: &App, click: &str) {
+    // Mark this window instance by its URL, before it is answered: a later
+    // consent window has the same label but opens at the plain URL.
+    app.eval(
+        "consent",
+        &format!("location.hash = {ANSWERED:?}; {click} null"),
+    );
     consent_closed(app);
 }
 // The answered window closes asynchronously and keeps the label "consent"
-// until Destroyed. Wait for it, or the next request's driver calls reach it.
+// until Destroyed. Wait for that instance, or the next request's driver calls
+// reach it. Not for "no window labelled consent": when the answer lets the
+// next confirmation of the same flow be asked before the old window is
+// destroyed, the successor is opened by the old window's Destroyed handler
+// (views.rs `sync_consent`) under the same label, and a label poll waits on
+// that one. Poll every 10 ms, not back to back: each `windows` call reads
+// title, url, focus and visibility of every window (driver.rs `windows`), and
+// those getters are main-thread round trips, the thread that must also close
+// the window (#106: on the macOS runner the answered window stayed listed for
+// 30 s; no Mac here, so a miss now prints the window list).
 fn consent_closed(app: &App) {
     let end = Instant::now() + TIMEOUT;
-    while app.windows().iter().any(|w| w["label"] == "consent") {
-        assert!(Instant::now() < end);
+    loop {
+        let windows = app.windows();
+        if !windows.iter().any(|w| {
+            w["label"] == "consent" && w["url"].as_str().is_some_and(|url| url.ends_with(ANSWERED))
+        }) {
+            return;
+        }
+        assert!(
+            Instant::now() < end,
+            "the answered consent window was not destroyed in {TIMEOUT:?}; windows: {}",
+            Value::Array(windows)
+        );
+        std::thread::sleep(Duration::from_millis(10));
     }
 }
 pub fn installed(app: &App, local: &str) {

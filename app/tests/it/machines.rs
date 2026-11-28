@@ -3,7 +3,7 @@
 
 use crate::support;
 use serde_json::{Value, json};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use support::driver::App;
 use support::journey::*;
 use support::node::NodeProc;
@@ -530,16 +530,23 @@ fn ac6_s33_corrupt_full_machine_and_no_path_name_causes() {
         "install_release",
         json!({"release":published.1["release"],"link":null}),
     );
-    // This command enters Core::install_resolved -> Node::fetch ->
-    // Node::need_release -> Net::need_blob. The macOS CI log proves only that
-    // the UI command outlasted 30 s; it does not identify a product timeout.
-    // Keep #105 open until that cause is observed on a macOS runner.
-    let deadline = Instant::now() + Duration::from_secs(60);
+    // The command is Core::install_resolved -> Node::fetch -> Node::need_release ->
+    // Net::need_blob (app/src/core.rs `install_resolved`, node/src/calls.rs `fetch`,
+    // net/src/light.rs `need_blob`). Under Xvfb it answers in about 10 ms on either
+    // event order (8 of 8 runs, and in the whole `machines::` module run in
+    // parallel); no timeout or retry schedule in app, node or net is near 30 s on
+    // that path (net's longest here is the 10 s connect and the 120 s blob
+    // deadline). The macOS log of #105 shows only that it took over 30 s, so
+    // the wait is the shared TIMEOUT and a miss prints what each machine
+    // reports, to name the cause from the next macOS failure.
+    let end = Instant::now() + TIMEOUT;
     while !light.is_true("main", "window.__stageC !== null") {
         assert!(
-            Instant::now() < deadline,
-            "corrupt-peer install did not finish; last result: {}",
-            light.eval("main", "window.__stageC ?? null")
+            Instant::now() < end,
+            "install_release did not answer in {TIMEOUT:?}; window.__stageC: {}; light problems: {}; full problems: {}",
+            light.eval_raw("main", "window.__stageC"),
+            machines(&light)["problems"],
+            machines(&full)["problems"],
         );
         std::thread::yield_now();
     }
