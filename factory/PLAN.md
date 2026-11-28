@@ -17,7 +17,15 @@ watane changes the human accepted (N3); TECHNICAL 17 gives each stage its watane
 agentic-harness part. A stage's watane slice goes first; the agentic-harness slice that uses it
 names the same interface in its sketch and fakes it until this one merges.
 
-(none in flight in watane; S164 merged 2026-11-28)
+### S167: watane flakes and core upkeep (upkeep lane)
+
+Sketched 2026-11-28 by Deputy Rock. Builder claude by rule 3 (last two handed out: agentic-harness S166 codex, watane S164 codex); reviewer codex. In flight (cloud, builder claude): routine pending.
+
+Issues, flakes first: #105 (`machines::ac6_s33...`, macOS), #106 (`manage::ac3_s82...`, macOS); then core: #115 (a dependency folder that vanishes after listing is refused with the CHANGED words, not copied empty), #114 (a `wit/deps` entry swapped for a file mid-read: the CHANGED words), #93 (an invalid-WIT provider is named; the s91 race test leaves the default run); then polish where cheap: #129, #116. The build team closes an issue already fixed on `main` with its commit; the PR body says `Fixes #n` for each other one.
+
+Outcomes: each issue's check (its test, red before the fix where Linux can show it); for #105 and #106 the cause named in the PR body with file:line, and the test passing in CI's macOS job on the fix (no Mac in the cloud: a cause shown only by reading the code and the CI log is fine, a retry or a longer timeout without a cause is not); `factory/check.sh` and CI green.
+
+Touches: `app/tests/it/`, `app/ui/app.js` (#129 only), `pkg/`, `dev/src/deps.rs`, `log/`. Constraints: no interface or format change; leave `host/src/agent/claude/` and `dev/src/bin/fake-claude.rs` alone (#87 and #85 wait: another session has uncommitted work there on the Mac). Protects: *core* (flakes, #115, #114, #93), *polish* (#129, #116). Upkeep is exempt from the size rule. spec-check not run: no spec lines change.
 
 ## Suite time
 
