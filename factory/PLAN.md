@@ -17,12 +17,6 @@ watane changes the human accepted (N3); TECHNICAL 17 gives each stage its watane
 agentic-harness part. A stage's watane slice goes first; the agentic-harness slice that uses it
 names the same interface in its sketch and fakes it until this one merges.
 
-- [~] **S162 (upkeep) pkg, log and dist from Leftovers.** In flight (cloud, builder claude, reviewer codex; routine `trig_0158j2tPhHBDJU3DrujsdrEd` 15:35 UTC). Delivered as PR #109 (head f1dfa45; user-sim ACCEPTED, adversary HELD); Deputy Paper took over from Rock 2026-11-27; #74, #75 closed as already on main, PR says Fixes #76. r1: Codex review https://chatgpt.com/local/6b09bbd6-6bd4-83ed-b86e-1d5360699056, dispatched 17:20 UTC after all CI green. r1: 2/3 findings (F1.1 Windows open_keyless lock before key check; F1.2 dist restore keeps the old site URL after a sync error); answer routine `trig_01Wi7mxU4nLRwtHoykSPWNs9` 17:54 UTC. r1 answers d4102a3, all CI green. r2: Codex review https://chatgpt.com/local/6b09ccb7-fc10-83eb-867b-e9bb9efbb063 (18:25 UTC) withheld by Codex's cybersecurity filter ("This content can't be shown"): held for the human (S162-WITHHELD). Accepted (deputy): an unlock failure masking an earlier write/sync error (two failures), to log TECHNICAL 4.7. Sketched 2026-11-27 by Deputy Rock from Leftovers; builder claude by rule 3 (the last two handed out were S161 codex and agentic-harness S160 codex). host and dev were swept by S161, so this one takes the other crates. First strike each item already on main and name it in the PR.
-  1. dist, guard and its tests: (S105 P5.3) a Kept ingest of the participant's own channel does not fail while the store is unsynced (settle only when `channel != identity`, or say so in dist TECHNICAL 4.4); (S105 P5.4) a refused redirect names the base that redirected, not the local URL; (S105 P6.1 to P6.3) tests pin `sync_pending()?` after the base loop in `read_record`, the gate in `open_link` before `follows.contains_key`, and `refresh` stops on a failed `settle(true)`; (S104) `localhost.` with a trailing dot is a local base.
-  2. log: (S109 P2.1 to P2.3) the rustix Libraries line, the `//!` cite of 4.7, `publish_key`'s rename wrapper; (S109) a crash before the rename leaves no stray `.identity.key.<hex>.tmp` that later runs trip over (swept or ignored), and `replace` does not keep the old key in memory after a failed folder fsync.
-  3. pkg: (S119 r1 P1.4) the decode refusal loop matches "a Windows device name is reserved"; (S110 R2) reserved device names refused on every platform, if not already; (S108 P2.1, P2.2) `list_entries`' error classification has a test, and pkg TECHNICAL's repeated lines go; (S57, S91) a live swap race in `add_provider` and a vanished pack entry name the path in words, not raw I/O text.
-  Each outcome is its item's check (a test, green in CI). Touches: `pkg/`, `log/`, `dist/` (src, tests, their TECHNICAL where a line is stale); not `host/`, `dev/`, `app/` (local work in progress on the Mac in host and dev), no WIT, no error-code or interface change (an item that needs one goes back to Leftovers as a finding). Boundary: dist's local-address guard and log's identity key are spec/TECHNICAL 6 rows: the adversary runs on items 1 and 2. Protects: *guard* (1, 2's key), *polish* (the rest). Size: an upkeep slice. spec-check not run: no spec decision in it, only stale lines.
-
 ## Suite time
 
 Wall time of each subsystem's tests on `main` (`factory/README.md`, "Time and value"): the
@@ -43,8 +37,6 @@ that subsystem's next slice a test-cost slice.
 | pkg | 8 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
 
 ## Waiting on the human
-
-- **S162-WITHHELD (2026-11-27, Deputy Paper): Codex withheld S162's review r2** (PR #109, task https://chatgpt.com/local/6b09ccb7-fc10-83eb-867b-e9bb9efbb063: "This content can't be shown ... apply for Daybreak"), though Daybreak is set up (Human answers, 2026-11-24: a withheld round goes to you). Options: (a) run r2 with a Claude review team (same vendor as the builder; rec, it unblocks the merge tonight); (b) retry Codex once; (c) check the Daybreak setting for this account first. Holds S162's merge only.
 
 - **JF1-ADOPT (2026-11-27, Deputy Scissors): watane-factory exists (STEP6-REPO answered); JF1-1 (`spec/design/factory/TECHNICAL.md` 6) is the main line's next slice and needs from you, in one go:** (1) the publisher who signs the factory mod and its slug (TECHNICAL 1: "chosen when the repository is made"; rec: slug `factory`, your own maker identity as for the other watane-mods); (2) adopt it into the collection: `watane-mods/factory/bin/adopt.sh <folder> civic-tech-pioneer/watane-factory` (writes config.toml and PLAN.md, adds the ruleset that holds main to `gate`, like the other mod repos) and a `[watane-factory]` row in `projects.toml` (a new project, Door H); (3) add the repository to the Codex `watane` environment (an account setting; until then JF1-1 builds with Claude, which rule 3 picks anyway). JF1-1 is handed out to Claude as soon as (2) has run; (1) can follow, the build keeps the slug and publisher in one place.
 
@@ -82,6 +74,8 @@ that subsystem's next slice a test-cost slice.
 
 ## Human answers
 
+- 2026-11-28: **Codex runs on GPT-6 Sol, not GPT-6.2 Sol** ("this is the way forward"). OpenAI's Daybreak troubleshooting page: GPT-6.2 Sol and Astra stay on standard safeguards under Daybreak Blue; GPT-6 Sol and Luna get its reduced refusals. GPT-6.2 Sol withheld S162 r2 ("This content can't be shown"); the same brief on GPT-6 Sol came through (approve). Pick it in the composer's model picker before each dispatch. The factory's rule: mboogerd/claude-plugin, deputy 4c.
+
 - 2026-11-27 (to Deputy Paper): STEP6-REPO, option (a), "feel free to do it in my stead": Deputy Paper made https://github.com/civic-tech-pioneer/watane-factory (public, main, README only) at 08:00 UTC. Publisher and mod identity not yet named. Evidence #56 closed.
 
 - 2026-11-26: S120's Door H (where the factory mods live, `spec/design/factory/TECHNICAL.md` 5, first row): **one combined factory mod in one new repository**, W29 kept, "for now". Isolation of the foreman's authority comes from agentic-harness profile narrowing at stage F, not a second mod. The next factory design or build slice writes it into that row with spec-change and settles the "Planning and foreman split" Door C row to match.
@@ -100,4 +94,4 @@ that subsystem's next slice a test-cost slice.
 
 ## Friction
 
-(none open; 2026-11-27's review of the day's PRs became plugin 0.1.7 and 0.1.8 and this file's rules)
+- (2026-11-28, S162 r2 on GPT-6 Sol) the Codex `watane` environment had no Cargo in that task, so the review's gate ran only its structural checks; r1 on GPT-6.2 Sol ran both gates. CI covered the build and tests. Watch the next Codex review; if Cargo is missing again, the environment's setup needs it.
