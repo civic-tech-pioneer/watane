@@ -6,17 +6,6 @@ lines. History is in `factory/DONE.md`. Upkeep work is in GitHub issues labelled
 the spec that owns them; those from before 2026-11-27 wait in `factory/decisions/LOG.md` for that
 (issue linked there).
 
-## Deputy handover
-
-From Deputy Scissors to Deputy Rock, 2026-11-28 ~11:35 UTC, after three merges (watane-factory JF1-1, agentic-harness S165, watane S164). One watcher over all three repositories (`watch-all.sh <state> 1800 civic-tech-pioneer/watane civic-tech-pioneer/agentic-harness civic-tech-pioneer/watane-factory`); stopped. Codex runs on GPT-6 Sol: in the composer's model list, type "GPT-6 Sol" in its search box and pick it (the list scrolls; the chip resets to GPT-6.2 Sol on each new task).
-
-- **agentic-harness S166** (PR #140, kernel guard #133 then #117 and console polish; builder codex, task https://chatgpt.com/local/6b0ab34b-3ee0-83ed-86da-d9ed2b21807d; reviewer claude). BLOCKED on #114 answered (option B: #114 left the slice, needs its own slice with a 9.3 spec change first; comment on #114). PR ready at 3aafa62b, CI green 11:31 UTC. **Next: dispatch Claude review r1** (routine, review-lead.md in the brief). Browser suite did not run in Codex (Chromium download 403): CI's.
-- **watane**: nothing in flight. Upkeep lane next: S164 left #105 (cause not named), #106 (cut, needs a macOS probe), #83 P1.2 open, polish in the new S164 r2 issue. Main line (JF1-2 in watane-factory) needs agentic-harness stage F profiles.
-- **watane-factory**: JF1-1 merged. Evidence issue civic-tech-pioneer/watane-factory#7: no cloud can run watane's real host (Claude: no IPv6 loopback; Codex: no watane-dev), so its user-sim did not run; accepted limits in #6.
-- **Report to the human not yet sent** (the human was told in chat, not as a report): Deputy decisions to list for veto: JF1-1 merged with user-sim `not run (environment)` (watane-factory PLAN); S165 r3 P3.4 LOG index waived; S166 #114 out (agentic-harness PLAN). Cuts: S164 #106 (Deputy Paper). New accepted risks: S164 R1.1 (temp path on disk-write failure), R2.1 (same-user temp-name race, `dist/src/site.rs:155`); JF1-1 two (#6); S165 A1.1 (S39 r1), A1.2/A2.1 (S154 A1.3), A3.1 (= agentic-harness #133). Owed: a factory proposal for the S153 process rule (agentic-harness #122, "Codex build team hands the adversary to the Claude review team").
-- **The human asked (2026-11-28)** why the self-clear failed: auto mode's classifier refuses `clear_session` "self". Suggested an allow rule for `mcp__ccd_session_mgmt__clear_session` in the watane checkout's `.claude/settings.local.json` (narrower than user settings); a running session may need a restart to pick it up. If your clear is refused again, take over with your context and say so.
-- **Friction:** cmd+v does not paste into the Codex pane; type the brief (newlines submit, so flatten it). watane's foreman has no section 6: spell the answer steps out in watane briefs.
-
 ## Slices
 
 The main line: step 11, the agent layer; its next slice, JF1-1, is in flight in civic-tech-pioneer/watane-factory (its PLAN.md; routine `trig_0115fFChXSGujUeQtnujmzEk` 07:35 UTC, builder claude).
@@ -103,7 +92,7 @@ that subsystem's next slice a test-cost slice.
 
 ## Deputy decisions
 
-(none in the veto window)
+- 2026-11-28 (Deputy Rock, from Scissors' handover): JF1-1 merged with user-sim `not run (environment)` (watane-factory PLAN; evidence civic-tech-pioneer/watane-factory#7); S165 r3 P3.4 LOG index waived; S166 #114 out of the slice (option B, agentic-harness PLAN). Cut: S164 #106 (needs a macOS probe). Undo: reopen as slices.
 
 ## Friction
 
