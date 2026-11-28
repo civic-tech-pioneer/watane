@@ -673,42 +673,15 @@ fn ac3_s82_read_asked_before_fetch_then_install_and_follow() {
     assert_eq!(mods_on_disk(&app), before);
     f.ask_install(&app);
     assert!(consent_text(&app).contains(&format!("Desk asks to read {}", f.link)));
-    // This approval immediately opens the install consent under the same
-    // window label. The shared approve helper waits for that label to vanish,
-    // which can miss the brief interval between the two windows.
-    app.eval_may_close("consent", "document.querySelector('#approve').disabled = false; document.querySelector('#approve').click(); null");
-    let deadline = std::time::Instant::now() + TIMEOUT;
-    while !app.is_true_if_present(
-        "consent",
-        &format!(
-            "document.querySelector('h1')?.textContent === 'Install Book club' && document.body.textContent.includes({})",
-            json!(ASKED)
-        ),
-    ) {
-        assert!(
-            std::time::Instant::now() < deadline,
-            "next consent did not open"
-        );
-        std::thread::yield_now();
-    }
+    approve(&app);
+    consent(&app);
+    assert_eq!(
+        app.eval("consent", "document.querySelector('h1').textContent"),
+        "Install Book club"
+    );
+    assert!(consent_text(&app).contains(ASKED));
     assert!(!app.home.join("mods/counter").exists());
-    let deadline = std::time::Instant::now() + TIMEOUT;
-    while !app.is_true(
-        DESK,
-        "document.querySelector('#result').textContent.includes('approved')",
-    ) {
-        if app.is_true_if_present(
-            "consent",
-            "document.querySelector('h1')?.textContent === 'Install Book club'",
-        ) {
-            app.eval_may_close("consent", "document.querySelector('#approve').disabled = false; document.querySelector('#approve').click(); null");
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "install consent did not finish"
-        );
-        std::thread::yield_now();
-    }
+    approve(&app);
     outcome(&app, "approved");
     assert!(app.home.join("mods/counter").is_dir());
     let channels = invoke(&app, "channels_list", json!({}));
