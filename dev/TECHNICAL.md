@@ -248,7 +248,7 @@ The exit status is the class of the first error; 0 when there is none.
 | `usage.not_a_mod` | 2 | the folder has no `mod.toml` | `<dir> is not a mod folder: it has no mod.toml` | `Run the command in a mod folder, or pass --dir <folder>. Create a mod with: watane-dev new <slug>` |
 | `usage.slug` | 2 | `watane_pkg::Slug::from_str` refuses it | `"<s>" is not a valid slug: <pkg reason>` | `Use lowercase words of letters and digits joined by "-", each starting with a letter, at most 40 bytes, not a WIT keyword. Example: reading-list` |
 | `usage.exists` | 2 | `new` into an existing path | `<path> exists` | `Choose another slug, or pass --dir <new folder>` |
-| `usage.provider` | 2 | `add`: the path is not a mod folder | `<path> is not a mod folder`, plus ` (<canonical path> has no mod.toml)` when the folder exists under another name; a provider that has a `mod.toml` but does not read as a mod is not this code: `add` reports `check::mod_problems` of its `ModError` (class 1) | for a relative `<path>`: `A relative provider folder is read from the current folder, not from --dir. Run add in the provider's folder or pass its absolute path`; else — |
+| `usage.provider` | 2 | `add`: the path is not a mod folder (missing, or no `mod.toml`). A provider that has a `mod.toml` but does not read as a mod is not this code: `add` reports `check::mod_problems` of its `ModError` (class 1) | `<path> is not a mod folder`, plus ` (<canonical path> has no mod.toml)` when the folder exists under another name | for a relative `<path>`: `A relative provider folder is read from the current folder, not from --dir. Run add in the provider's folder or pass its absolute path`; else — |
 | `env.toolchain` | 3 | no rustup, no cargo, no rustc | `no Rust toolchain found: <detail>` | `Install rustup with your package manager, then run: rustup default stable` |
 | `env.no_wasm_target` | 3 | the sysroot has no `wasm32-wasip2` | `the Rust toolchain at <sysroot> has no wasm32-wasip2 target` | `rustup target add wasm32-wasip2` |
 | `env.allowlist` | 3 | the vendor folder is missing or differs from the allowlist | `the crate allowlist at <path> is missing` / `... differs from the allowlist of this watane-dev: <detail>` | `'<abs dev>/scripts/vendor.sh' '<path>'` (6.2; no export needed); a resolved logic crate outside the allowlist: `Reinstall watane-dev, or set WATANE_DEV_VENDOR` |
@@ -1489,7 +1489,7 @@ Run elsewhere (the consumer's parent, a subfolder of the provider), `.` is
    `Mod::read(provider)`: a path back to this folder is
    `mod.dependency_cycle`, even if the provider has not yet pasted its
    import lines after `add`. Otherwise a failed provider read is
-   `usage.provider`.
+   `check::mod_problems` of its `ModError` (class 1), as in step 2.
 2. `watane_pkg::add_provider(dir, &provider, None)`: it copies the WIT into
    `wit/deps/<slug>/` and sets `"mods:<slug>": null` in `deps.json`. Its
    errors are `mod.invalid`.

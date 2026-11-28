@@ -276,6 +276,20 @@ mod tests {
         fs::write(&wit, "this is { not wit").unwrap();
         let expected = crate::check::mod_problems(Mod::read(&b).err().unwrap());
         let errors = add_local(&a, &b).err().unwrap();
+        // Exit 1: the first error is of class Mod; the WIT problem names its file and line.
+        assert_eq!(
+            errors[0].code.class(),
+            crate::outcome::Class::Mod,
+            "{errors:?}"
+        );
+        assert!(
+            errors[0]
+                .file
+                .as_deref()
+                .is_some_and(|f| f.starts_with("wit/"))
+                && errors[0].line.is_some(),
+            "{errors:?}"
+        );
         assert!(
             errors.iter().all(|e| e.code != Code::UsageProvider),
             "{errors:?}"
@@ -283,11 +297,11 @@ mod tests {
         assert_eq!(
             errors
                 .iter()
-                .map(|e| (e.code, e.message.clone()))
+                .map(|e| (e.code, &e.message, &e.file, e.line, e.column, &e.fix))
                 .collect::<Vec<_>>(),
             expected
                 .iter()
-                .map(|e| (e.code, e.message.clone()))
+                .map(|e| (e.code, &e.message, &e.file, e.line, e.column, &e.fix))
                 .collect::<Vec<_>>()
         );
     }
