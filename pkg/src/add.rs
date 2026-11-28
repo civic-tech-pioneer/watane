@@ -391,6 +391,7 @@ mod tests {
         let Err(ModError::Invalid(v)) = result else {
             panic!("expected invalid, got {result:?}")
         };
+        assert_eq!(v.len(), 1, "{v:?}");
         assert_eq!((v[0].rule, v[0].file.as_str()), (Rule::Path, file), "{v:?}");
         assert_eq!(v[0].message, CHANGED);
     }
@@ -477,11 +478,17 @@ mod tests {
         let (p, c, m) = setup();
         fs::create_dir_all(p.path().join("wit/deps/x")).unwrap();
         fs::write(p.path().join("wit/deps/x/x.wit"), "x").unwrap();
+        // An earlier provider is recorded; a refused add leaves its record as it was.
+        fs::write(c.path().join("deps.json"), DEPS_BEFORE).unwrap();
         (p, c, m)
     }
+    const DEPS_BEFORE: &str = "{\n  \"mods:tags\": null\n}\n";
     fn untouched(c: &Path) {
         assert!(!c.join("wit/deps/x").exists());
-        assert!(!c.join("deps.json").exists());
+        assert_eq!(
+            fs::read_to_string(c.join("deps.json")).unwrap(),
+            DEPS_BEFORE
+        );
     }
     #[test]
     fn ac1_listed_dep_folder_gone_is_changed() {

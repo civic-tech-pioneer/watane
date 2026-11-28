@@ -274,7 +274,6 @@ mod tests {
             .find(|p| p.extension().is_some_and(|x| x == "wit"))
             .unwrap();
         fs::write(&wit, "this is { not wit").unwrap();
-        let expected = crate::check::mod_problems(Mod::read(&b).err().unwrap());
         let errors = add_local(&a, &b).err().unwrap();
         // Exit 1: the first error is of class Mod; the WIT problem names its file and line.
         assert_eq!(
@@ -294,16 +293,30 @@ mod tests {
             errors.iter().all(|e| e.code != Code::UsageProvider),
             "{errors:?}"
         );
+        // The problem's fields, not its whole text: the WIT parser's message
+        // quotes the file's absolute path, which macOS (/private/var) and
+        // Windows (\\?\C:) spell otherwise than the temp dir.
         assert_eq!(
             errors
                 .iter()
-                .map(|e| (e.code, &e.message, &e.file, e.line, e.column, &e.fix))
+                .map(|e| (
+                    e.code,
+                    e.file.as_deref(),
+                    e.line,
+                    e.column,
+                    e.fix.as_deref()
+                ))
                 .collect::<Vec<_>>(),
-            expected
-                .iter()
-                .map(|e| (e.code, &e.message, &e.file, e.line, e.column, &e.fix))
-                .collect::<Vec<_>>()
+            vec![(
+                Code::ModInvalid,
+                Some("wit/world.wit"),
+                Some(1),
+                Some(1),
+                Some("Correct wit/world.wit according to the reported rule"),
+            )],
+            "{errors:?}"
         );
+        assert!(errors[0].message.contains("world.wit"), "{errors:?}");
     }
 
     #[test]

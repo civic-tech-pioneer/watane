@@ -77,54 +77,24 @@ pub fn begin_install(app: &App, paths: &[PathBuf]) {
 }
 pub fn approve(app: &App) {
     // Field and integration tests run hidden. Front tests prove the focus gate.
-    answer(
-        app,
+    app.answer(
+        "consent",
         "document.querySelector('#approve').disabled = false; document.querySelector('#approve').click();",
     );
 }
 pub fn deny(app: &App) {
-    answer(app, "document.querySelector('#deny').click();");
-}
-const ANSWERED: &str = "#answered";
-fn answer(app: &App, click: &str) {
-    // Mark this window instance by its URL, before it is answered: a later
-    // consent window has the same label but opens at the plain URL.
-    app.eval(
-        "consent",
-        &format!("location.hash = {ANSWERED:?}; {click} null"),
-    );
-    consent_closed(app);
+    app.answer("consent", "document.querySelector('#deny').click();");
 }
 // The answered window closes asynchronously and keeps the label "consent"
-// until Destroyed. Wait for that instance, not for "no window labelled
-// consent". Cause of #106 (macOS): after the read consent's approve the app
-// fetches from the local site in milliseconds and asks for the install consent
-// (manage.rs `ac3_s82_read_asked...`), while the old window's Destroyed comes
-// late on macOS. `sync_consent` (views.rs:177) opens no window while one
-// labelled "consent" exists; the old window's Destroyed handler
-// (views.rs:217-232) calls it and opens the successor under the same label as
-// the old one goes. A label poll then never sees a gap, and waits on the
-// install consent, which stays open until the test answers it (30 s panic).
-// On Linux Destroyed comes before the fetch ends, so the gap exists and the
-// old helper passed. The fix is the instance marker below (the URL hash).
-// The 10 ms sleep only relieves the main thread; it is not the fix.
-fn consent_closed(app: &App) {
-    let end = Instant::now() + TIMEOUT;
-    loop {
-        let windows = app.windows();
-        if !windows.iter().any(|w| {
-            w["label"] == "consent" && w["url"].as_str().is_some_and(|url| url.ends_with(ANSWERED))
-        }) {
-            return;
-        }
-        assert!(
-            Instant::now() < end,
-            "the answered consent window was not destroyed in {TIMEOUT:?}; windows: {}",
-            Value::Array(windows)
-        );
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
+// until Destroyed, and a successor can open under that label as the old one
+// goes (#106: `sync_consent`, views.rs:177, called from the old window's
+// Destroyed handler, views.rs:217-232; on macOS the install consent comes
+// before that Destroyed). So the driver's `answer` waits for the Destroyed of
+// the instance it answered (app TECHNICAL 10), never for "no window labelled
+// consent". It asks for no eval result: the window can go before one comes
+// back, which a driver eval reports as "channel is empty and sending half is
+// closed" (S167 r1: the URL-hash marker of round 0 delayed that result on
+// macOS until the window had gone).
 pub fn installed(app: &App, local: &str) {
     until(
         app,

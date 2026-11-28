@@ -340,6 +340,23 @@ fn dispatch(app: &tauri::AppHandle, v: &Value) -> Result<Value, String> {
             }).collect();
             Ok(json!(windows))
         }
+        "answer" => {
+            let label = field(v, "label")?;
+            let w = app.get_webview_window(label).ok_or("window not found")?;
+            // The script answers and so closes this window: wait for this
+            // instance's Destroyed, as `close` does, and ask for no eval
+            // result, since the window can go before one comes back.
+            let (tx, rx) = std::sync::mpsc::channel();
+            w.on_window_event(move |event| {
+                if matches!(event, tauri::WindowEvent::Destroyed) {
+                    let _ = tx.send(());
+                }
+            });
+            w.eval(field(v, "js")?).map_err(|e| e.to_string())?;
+            rx.recv_timeout(Duration::from_secs(30))
+                .map_err(|e| format!("{label} was not destroyed after the answer: {e}"))?;
+            Ok(json!(true))
+        }
         "close" => {
             let label = field(v, "label")?;
             let w = app.get_webview_window(label).ok_or("window not found")?;

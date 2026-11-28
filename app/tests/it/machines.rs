@@ -3,7 +3,7 @@
 
 use crate::support;
 use serde_json::{Value, json};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use support::driver::App;
 use support::journey::*;
 use support::node::NodeProc;
@@ -519,34 +519,18 @@ fn ac6_s33_corrupt_full_machine_and_no_path_name_causes() {
     // its referenced bytes. A corrupt file on first admission is refused by
     // the serving holder before it ever sends bytes; that is a different case.
     fetched(&light, &hit["release"], &package);
-    // The light fetched this package twice at once: `Node::need_package` (node/src/calls.rs:130)
-    // asks for it and downloads, and until it clears the ask (calls.rs:133) the light's
-    // sync, on a link it adopts (net/src/sync.rs `sync_all` -> `fetch_wanted`, wanted
-    // by node/src/holdings.rs:127-135), downloads the same blob. Each download hands
-    // its verified bytes to `Dist::store_package` (dist/src/holder.rs:296), which writes
-    // the file only when it is absent. The slower one can land after this test removed the
-    // light's file: the light then holds good bytes again, `need_package` returns at
-    // calls.rs:123 without asking the full machine, and `install_release` waits on the
-    // install consent that nobody answers (#105; its `net` temp name is `fetch-*.tmp`).
-    // So change the full machine's file first, so no download that starts later gets
-    // good bytes, wait until none that started earlier is still handing its bytes over, and
-    // only then remove the light's copy.
+    // #105: the light fetched this package twice at once, `Node::need_package`
+    // (node/src/calls.rs:130) and its sync's `fetch_wanted` (net/src/sync.rs),
+    // and the slower download could hand in good bytes after this test removed
+    // the light's copy; `install_release` then waited on an install consent.
+    // net now runs one download per package and none while the package is held
+    // (net/src/blobs.rs `fetch_via`, net TECHNICAL 5.9; regression:
+    // net/tests/it/light.rs `r1_s167_one_download_per_package_and_none_while_held`).
+    // The light holds the package here, so no download of it is in flight or can
+    // start; change the full machine's copy first, so any later one gets bad bytes.
     let mut changed = package;
     changed[0] ^= 1;
     std::fs::write(a.path().join("dist/packages").join(&id), changed).unwrap();
-    let end = Instant::now() + TIMEOUT;
-    while std::fs::read_dir(b.path().join("net")).unwrap().any(|e| {
-        e.unwrap()
-            .file_name()
-            .to_string_lossy()
-            .starts_with("fetch-")
-    }) {
-        assert!(
-            Instant::now() < end,
-            "a download on the light machine did not end"
-        );
-        std::thread::sleep(Duration::from_millis(10));
-    }
     std::fs::remove_file(b.path().join("dist/packages").join(&id)).unwrap();
     // The honest holder resets the stream after checking its changed file.
     // Depending on event order, this is a hash refusal or a not-served cause.

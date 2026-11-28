@@ -1834,6 +1834,7 @@ setup and the first page load of the startup window (`main` or
 | `theme` | `theme: "light" \| "dark" \| null` | W37: `true`; `set_theme` on every window (null: follow the system), so `prefers-color-scheme` follows |
 | `windows` | — | `[{label, url, title, alwaysOnTop, focused, visible}]` |
 | `close` | `label` | `true`; closes as the user does (close handlers run) |
+| `answer` | `label`, `js` | `true` once the window instance that `js` answers (and so closes) is destroyed; `js` runs by `eval`, without a result, as the window can go before one comes back. Tests answer consent with it: a successor can already hold the label (#106) |
 | `log` | — | `{commands: [{label, cmd}], blocked: [{label, kind, url}]}`; kind `navigation`, `new_window` or `download` |
 | `pick` | `paths: [string]` | `true`; the next dialog returns these paths and shows nothing |
 | `open_url` | — | The next queued authorization URL, or null. Only the driver issuer override queues URLs (19.6). |
