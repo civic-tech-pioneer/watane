@@ -107,6 +107,7 @@ pub(crate) fn retry_sharing<T>(
 thread_local! {
     /// Test seam: the next `n` directory syncs of `follows.json` on this thread fail with EIO.
     pub(crate) static TEST_FAIL_DIR_SYNC: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    static TEST_FAIL_TEMP_WRITE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 #[cfg(test)]
 fn test_dir_sync_fails() -> bool {
@@ -140,6 +141,10 @@ pub(crate) fn replace_equal(
     let mut tmp = tempfile::Builder::new()
         .make_in(parent, watane_log_windows_fs::create_file)
         .map_err(|e| io(parent, bare_io(e)))?;
+    #[cfg(test)]
+    if TEST_FAIL_TEMP_WRITE.with(|fail| fail.replace(false)) {
+        return Err(io(tmp.path(), std::io::Error::from_raw_os_error(5)));
+    }
     // The file itself: `NamedTempFile`'s own `Write` adds its path to the error (3.1).
     tmp.as_file_mut()
         .write_all(bytes)
@@ -361,5 +366,22 @@ mod tests {
         let named = parent.display().to_string().escape_debug().to_string();
         assert_eq!(text.matches(&*named).count(), 1, "{text}");
         assert!(!source.to_string().contains(" at path "), "{text}");
+    }
+    #[test]
+    fn s164_temp_write_failure_cleans_up_and_names_temp_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("file");
+        TEST_FAIL_TEMP_WRITE.with(|fail| fail.set(true));
+        let error = replace_equal(&target, b"new", 0o600).unwrap_err();
+        let DistError::Io { path, .. } = &error else {
+            panic!("{error:?}");
+        };
+        assert_eq!(path.parent(), Some(dir.path()));
+        assert_ne!(path, &target);
+        assert!(!path.exists(), "temporary file survived failed write");
+        assert!(!target.exists(), "failed write replaced target");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+        let named = path.display().to_string().escape_debug().to_string();
+        assert_eq!(error.to_string().matches(&*named).count(), 1, "{error}");
     }
 }

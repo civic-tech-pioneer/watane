@@ -376,6 +376,23 @@ async fn ac2_fetch_release_followed_and_unknown() {
         serde_json::from_slice::<Value>(&bytes).unwrap()["error"]["code"],
         "fetch_failed"
     );
+    let (status, _, bytes) = fetch(
+        Some(Arc::clone(&dist)),
+        json!({"link":published.link.as_ref().unwrap().to_string()}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(bytes, package());
+    // A link fetch caches verified bytes. The same release reference must
+    // work without a follow record or another network request.
+    let before_requests = site.hits.load(std::sync::atomic::Ordering::SeqCst);
+    let (status, _, bytes) = fetch(Some(Arc::clone(&dist)), query.clone()).await;
+    assert_eq!(status, 200);
+    assert_eq!(bytes, package());
+    assert_eq!(
+        site.hits.load(std::sync::atomic::Ordering::SeqCst),
+        before_requests
+    );
     dist.follow(published.link.as_ref().unwrap()).unwrap();
     let before = std::fs::read(home.path().join("dist/follows.json")).unwrap();
     let (status, headers, bytes) = fetch(Some(Arc::clone(&dist)), query).await;

@@ -11,8 +11,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-// Serializes tests that bind loopback ports, so a dropped port is not reused
-// by another test before a "stops on drop" check.
+// Serializes these tests' loopback listeners.
 static NET: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 const CSP: &str = "default-src 'self'; script-src 'self'; connect-src 'self'; frame-src 'none'; object-src 'none'";
@@ -53,11 +52,10 @@ fn ac1_pages_serve_each_origin_on_both_loopbacks() {
             assert_eq!(response.text().unwrap(), local);
         }
     }
-    let port = pages.port;
     drop(pages);
-    for address in ["127.0.0.1", "[::1]"] {
-        std::net::TcpStream::connect(format!("{address}:{port}")).unwrap_err();
-    }
+    // Worker::drop joins both listeners. Another test process may bind the
+    // released ephemeral port immediately, so a new TCP connection is not an
+    // oracle for whether these listeners stopped.
 }
 
 #[test]
