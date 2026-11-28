@@ -141,7 +141,7 @@ the cheapest class that still gives what the operation needs.
 
 ## 6. Interfaces
 
-### 6.1 Own machines (D1, designed)
+### 6.1 Own machines (D1, built)
 
 **Pairing.** The participant asks the anchor for a pairing code (valid 10
 minutes, one use). On the joining machine, `watane-node join <code>` or the
@@ -303,7 +303,7 @@ are a sketch: a later step designs each one.
 
 | Stage | What | Journey | Status |
 |---|---|---|---|
-| D1 Own machines | `net`: node key, tickets with hints, `watane/1`, iroh-blobs, iroh-gossip, limits in bytes, pairing, device list with expiry, mDNS, addresses, relay choice, the DHT switch. `dist`: the holder methods, a keyless open. `log`: a keyless open. `node`: the glue and `watane-node` (full replica, relay role). `app`: turn on, pair, devices, relay, DHT switch. | J8 (`FUNCTIONAL.md`) | designed |
+| D1 Own machines | `net`: node key, tickets with hints, `watane/1`, iroh-blobs, iroh-gossip, limits in bytes, pairing, device list with expiry, mDNS, addresses, relay choice, the DHT switch. `dist`: the holder methods, a keyless open. `log`: a keyless open. `node`: the glue and `watane-node` (full replica, relay role). `app`: turn on, pair, devices, relay, DHT switch. | J8 (`FUNCTIONAL.md`) | built (J8 passes, S75) |
 | D2 Friends | friend tickets; device lists to friends; grants with byte quotas; friend sync; the "checked by" mark; friends asked for queries when ticked | Bob keeps Alice's channel; with Alice's laptop closed, Carol installs from Bob's node; a stale host shows as unchecked | sketch |
 | D3 Strangers | "serve strangers" (own channel only); the node resolver for links; global addresses only for unrated nodes | Dave follows Alice from a link with no static host; a changed byte is refused and named | sketch |
 | D4 Public peer | `watane-node mirror`: a job that verifies the channels it admits and writes their site folders and a heads file, re-signed on a timer, for any web server; optional search and relay roles; public peers in the app | a mirror serves Alice's channel behind a plain web server; Alice's host withholds a withdrawal; Carol sees it, checked by the mirror | sketch |

@@ -20,7 +20,7 @@ What `pkg` does, free of implementation. `TECHNICAL.md` says how. Ids in
 
 - **PKG-F-5** pkg shall derive the grants of a mod only from its WIT world, its provider list and its list of network hosts. There is no other list of grants.
   Traces: F-RUN-2, F-RUN-7, F-INST-1, F-INST-2.
-- **PKG-F-6** pkg shall give each grant one of the kinds of F-RUN-7: private storage, network access to one named host, a call to a named interface of a named provider, a subscription to the events and collects of a named interface of a named provider, and (step 10) the management of mods.
+- **PKG-F-6** pkg shall give each grant one of the kinds of F-RUN-7: private storage, network access to one named host, a call to a named interface of a named provider, a subscription to the events and collects of a named interface of a named provider, (step 10) the management of mods, and (step 11) starting Claude Code, with or without programs and the web (PKG-F-29).
   Traces: F-RUN-7, F-APP-5.
 - **PKG-F-7** pkg shall name the provider of each call and subscription with its slug and its publisher, or as local. A WIT package name alone never names a provider.
   Traces: F-RUN-5, F-RUN-6, F-INST-1.

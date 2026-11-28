@@ -15,7 +15,7 @@ All of this is step 8 (own machines, stage D1 of `spec/PEERS.md`).
 |---|---|
 | node home | A home that `watane-node` runs: `log/`, `dist/` and `net/`, no mods, no identity. |
 | app home | The home that the app runs. It holds an identity, unless it joined as a replica. |
-| role | What the device list says about this machine: anchor (it holds the identity), full or light. |
+| role | What the device list says about this machine: full or light. The list also names its anchor, the machine that holds the identity. |
 | kept channel | A channel that this home stores because an own machine holds it (a full machine's copy), not because the participant followed or chose it here. |
 | hint | An answer of another machine that this home has not verified: a head, a hit. |
 

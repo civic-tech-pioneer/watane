@@ -7,7 +7,7 @@ What `log` does, free of implementation. `TECHNICAL.md` says how. Ids in
 
 | Term | Meaning |
 |---|---|
-| identity | The key pair of the participant. `log` holds one for each directory. |
+| identity | The key pair of the participant. `log` holds at most one for each directory; a replica's holds none (LOG-F-22, step 8). |
 | entry | One signed statement: author, position, link to the previous entry, time, kind, body, signature. |
 | position | The sequence number of an entry in its channel. The first entry has position 0. |
 | channel | The entries of one author, in position order. Each entry links to the entry before it. |
@@ -17,7 +17,7 @@ What `log` does, free of implementation. `TECHNICAL.md` says how. Ids in
 | fork proof | Two validly signed entries of one author that cannot both be in one chain. |
 | compromised | The state of a channel for which `log` holds a fork proof. |
 | backup | The secret key, encrypted with a key that comes from a passphrase. |
-| caller | The subsystem that uses `log`: `dist` (all functions) and `host` (reading entries). |
+| caller | The subsystem that uses `log`: `dist` (all functions), `host` (reading entries) and, from step 8, `net` (keys and reading entries). |
 
 ## Steps 1 and 2
 

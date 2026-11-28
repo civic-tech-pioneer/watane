@@ -26,7 +26,7 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 | profile | A named, complete setting of an agent: instructions, model, tools, permissions, skills, subagents, limits and output format. The participant makes it. (step 11) |
 | agent session | A conversation between a mod and an agent, with its turns and its stored transcript. It lives until the mod that started it deletes it. (step 11) |
 | kernel | The mod `mods:agent`: it keeps the profiles, the sessions and their transcripts, the permissions and the delegation of agents. (step 11) |
-| provider | The mod that holds the Claude Code grant and starts the participant's `claude` program for the kernel: unchecked, or checked by a judge. (step 11) |
+| provider | A mod whose interface another mod imports (`deps.json`). In step 11, the Claude Code provider is the mod that holds the Claude Code grant and starts the participant's `claude` program for the kernel: unchecked, or checked by a judge. |
 | judge | A service that the participant chose, which reads an agent step and says whether it is safe. (step 11) |
 | workspace | A folder in which agents may read and change files: one that the participant picked for a client mod, or the scratch folder of one session. (step 11) |
 | origin client | The mod, or its page, at the start of a chain of calls that ends in an agent. A consent names it. (step 11) |
@@ -76,7 +76,7 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 - **F-INST-8** When a publisher withdraws an installed version, watane tells the participant and offers the newest version that is not withdrawn. (step 4)
 - **F-INST-9** A mod manages mods only with the grant to manage them. With it, the mod sees the installed mods, their grants and how they connect. (step 10)
 - **F-INST-10** A managing mod can make things do less on its own: disable a mod, withdraw a grant, close a page. (step 10)
-- **F-INST-11** A managing mod only asks for anything more: an install, an update, a grant, a pick of a provider, or a removal that deletes data. The participant decides each request in the consent view, as if they had started it in the app. A managing mod never signs, never answers a consent and never reaches the identity. (step 10)
+- **F-INST-11** A managing mod only asks for anything more: an install, an update, an enable, a grant, a pick of a provider, or a removal, with or without its data. The participant decides each request in the consent view, as if they had started it in the app. A managing mod never signs, never answers a consent and never reaches the identity. (step 10)
 
 ### 2.4 App (step 2)
 
@@ -107,11 +107,11 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 - **F-PUB-1** Each participant has one channel.
 - **F-PUB-2** When the participant publishes a mod, watane adds a release with the name, the version and the digest of the package. A published version never changes.
 - **F-PUB-3** watane writes the channel and the packages as plain files. The maker puts them on any static web host. That host is not trusted.
-- **F-PUB-4** Where the maker agrees, the package includes the source of the mod, and the mod has its own repository with that source, tagged for each release. (repository: step 6)
+- **F-PUB-4** Where the maker agrees, the package includes the source of the mod, and the mod has its own repository with that source, tagged for each release. (repository: build step 6, `TECHNICAL.md` 8)
 - **F-PUB-5** The participant can withdraw a version, with a reason.
 - **F-PUB-6** The participant can follow a channel from a link. watane keeps a followed channel up to date and verifies each statement.
 - **F-PUB-7** If two validly signed statements of one channel cannot both be in it (two at the same position, or two that follow the same statement), watane marks the channel as compromised and stops updates from it.
-- **F-PUB-8** The maker tools push the site to a GitHub repository of the maker and each mod to its own GitHub repository, with the maker's own git login. The link reads the site from the repository's raw URL by default; GitHub Pages or any other static host also works. (step 6)
+- **F-PUB-8** The maker tools push the site to a GitHub repository of the maker and each mod to its own GitHub repository, with the maker's own git login. The link reads the site from the repository's raw URL by default; GitHub Pages or any other static host also works. (build step 6, `TECHNICAL.md` 8)
 
 ### 2.7 Find (step 4)
 
@@ -122,7 +122,7 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 
 ### 2.8 Build on (step 5)
 
-- **F-BUILD-1** The maker tools make a new mod from the source of a published mod. Where the mod has a repository, the new mod is a fork of it (step 6). The new mod records the release it came from, and watane shows this origin.
+- **F-BUILD-1** The maker tools make a new mod from the source of a published mod. Where the mod has a repository, the new mod is a fork of it (build step 6, `TECHNICAL.md` 8). The new mod records the release it came from, and watane shows this origin.
 - **F-BUILD-2** The maker tools add a dependency on an interface of a published mod, and make that interface available to the coding agent.
 - **F-BUILD-3** When no mod of the named provider is available, watane shows other mods whose interface fits, and binds one only after the participant picks it.
 - **F-BUILD-4** watane shows the mods that derive from a mod, as far as the chosen indexes list them.
@@ -148,7 +148,7 @@ order of work in `VISION.md`. `TECHNICAL.md` says how.
 
 ### 2.11 Quality
 
-- **F-QUAL-1** Every function works offline, except reading a channel or an index from its web host, and reaching another machine (step 8).
+- **F-QUAL-1** Every function works offline, except reading a channel or an index from its web host, pushing to a git host (build step 6), reaching another machine (step 8), and an agent session's plan or judge (step 11).
 - **F-QUAL-2** watane runs on macOS first and on Linux second.
 - **F-QUAL-3** watane never hides a failed verification. It names the cause.
 

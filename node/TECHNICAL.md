@@ -36,7 +36,7 @@ node/
     bin/watane-node.rs   the program (section 6)
   tests/
     support/mod.rs   homes, signed fixture channels, local nodes on loopback
-    holdings.rs  open.rs  own.rs  light.rs  restore.rs  program.rs
+    it/  main.rs  holdings.rs  open.rs  own.rs  light.rs  restore.rs  program.rs  causes.rs
 ```
 
 Inner modules are private. Only `lib.rs` exports.
@@ -342,7 +342,8 @@ stays in place and the join never reaches step 2. A keyless home can join.
    `options.net` as the caller gives it. The app gives `on` true, so `net`
    takes its own switches (`on`, relays, the DHT) from `book.json` (net
    4.5, 5.1, Q1); a new home starts with all of them off. `watane-node`
-   gives `on` false to every command but `join` and `run` (6.1).
+   opens every command with `on` false; `join` and `run` then turn it on
+   with `set_options` (6.1).
 3. A **replica**: `net.devices()` is `Some(list)` and `list.anchor !=
    net.node_key()`.
 4. Replica: `Dist::open_keyless(home, options.dist)`. Else
@@ -398,8 +399,8 @@ created when missing. A home with `home.json` (a home of the app or of
 `watane`) is refused (`HostHome`): a node home holds no mods and no
 identity. Arguments are parsed by hand, as `watane` does.
 
-- Every command but `join` and `run` opens with `options.net.on` false,
-  so it makes no network contact whatever `book.json` says (Q1).
+- Every command opens with `options.net.on` false,
+  so until `join` or `run` turns it on it makes no network contact whatever `book.json` says (Q1).
   `join` and `run` set `on: true` with `net.set_options` when they start,
   and `on: false` when they end, also on SIGINT and SIGTERM; after a crash
   `book.json` may still say on, which no other command acts on.
