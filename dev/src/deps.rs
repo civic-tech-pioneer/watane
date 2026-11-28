@@ -215,7 +215,7 @@ pub fn add_local(dir: &Path, provider: &Path) -> Result<AddReport, Vec<Problem>>
         };
         vec![e]
     })?;
-    let m = Mod::read(&provider).map_err(|_| usage(None))?;
+    let m = Mod::read(&provider).map_err(crate::check::mod_problems)?;
     let path = relative(&dir, &provider);
     let mut local = read_local(&dir).map_err(|e| vec![e])?;
     local.insert(m.slug().to_string(), path.clone());
@@ -259,6 +259,36 @@ mod tests {
         assert_eq!(
             errors[0].fix.as_deref(),
             Some("Pass the folder of another mod to add")
+        );
+    }
+
+    #[test]
+    fn ac1_unreadable_provider_names_its_problem() {
+        let t = tempfile::tempdir().unwrap();
+        let (a, b) = (t.path().join("a"), t.path().join("b"));
+        crate::template::new_mod(&a, "a").unwrap();
+        crate::template::new_mod(&b, "b").unwrap();
+        let wit = fs::read_dir(b.join("wit"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| p.extension().is_some_and(|x| x == "wit"))
+            .unwrap();
+        fs::write(&wit, "this is { not wit").unwrap();
+        let expected = crate::check::mod_problems(Mod::read(&b).err().unwrap());
+        let errors = add_local(&a, &b).err().unwrap();
+        assert!(
+            errors.iter().all(|e| e.code != Code::UsageProvider),
+            "{errors:?}"
+        );
+        assert_eq!(
+            errors
+                .iter()
+                .map(|e| (e.code, e.message.clone()))
+                .collect::<Vec<_>>(),
+            expected
+                .iter()
+                .map(|e| (e.code, e.message.clone()))
+                .collect::<Vec<_>>()
         );
     }
 
