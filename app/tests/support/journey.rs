@@ -96,16 +96,18 @@ fn answer(app: &App, click: &str) {
     consent_closed(app);
 }
 // The answered window closes asynchronously and keeps the label "consent"
-// until Destroyed. Wait for that instance, or the next request's driver calls
-// reach it. Not for "no window labelled consent": when the answer lets the
-// next confirmation of the same flow be asked before the old window is
-// destroyed, the successor is opened by the old window's Destroyed handler
-// (views.rs `sync_consent`) under the same label, and a label poll waits on
-// that one. Poll every 10 ms, not back to back: each `windows` call reads
-// title, url, focus and visibility of every window (driver.rs `windows`), and
-// those getters are main-thread round trips, the thread that must also close
-// the window (#106: on the macOS runner the answered window stayed listed for
-// 30 s; no Mac here, so a miss now prints the window list).
+// until Destroyed. Wait for that instance, not for "no window labelled
+// consent". Cause of #106 (macOS): after the read consent's approve the app
+// fetches from the local site in milliseconds and asks for the install consent
+// (manage.rs `ac3_s82_read_asked...`), while the old window's Destroyed comes
+// late on macOS. `sync_consent` (views.rs:177) opens no window while one
+// labelled "consent" exists; the old window's Destroyed handler
+// (views.rs:217-232) calls it and opens the successor under the same label as
+// the old one goes. A label poll then never sees a gap, and waits on the
+// install consent, which stays open until the test answers it (30 s panic).
+// On Linux Destroyed comes before the fetch ends, so the gap exists and the
+// old helper passed. The fix is the instance marker below (the URL hash).
+// The 10 ms sleep only relieves the main thread; it is not the fix.
 fn consent_closed(app: &App) {
     let end = Instant::now() + TIMEOUT;
     loop {

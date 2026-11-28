@@ -533,18 +533,20 @@ fn ac6_s33_corrupt_full_machine_and_no_path_name_causes() {
     // The command is Core::install_resolved -> Node::fetch -> Node::need_release ->
     // Net::need_blob (app/src/core.rs `install_resolved`, node/src/calls.rs `fetch`,
     // net/src/light.rs `need_blob`). Under Xvfb it answers in about 10 ms on either
-    // event order (8 of 8 runs, and in the whole `machines::` module run in
-    // parallel); no timeout or retry schedule in app, node or net is near 30 s on
-    // that path (net's longest here is the 10 s connect and the 120 s blob
-    // deadline). The macOS log of #105 shows only that it took over 30 s, so
-    // the wait is the shared TIMEOUT and a miss prints what each machine
-    // reports, to name the cause from the next macOS failure.
+    // event order, with the corrupt file rewritten in place or replaced by a new
+    // inode (the store reads the path, no stale handle serves the old bytes).
+    // #105 (macOS, over 30 s) is not explained by anything on that path: net's
+    // longest waits are the 10 s connect and the 120 s blob deadline. If the
+    // fetch had succeeded the command would wait on the light's install consent,
+    // so a miss prints whether the light has a consent window, and both
+    // machines' problems, to name the cause from the next macOS failure.
     let end = Instant::now() + TIMEOUT;
     while !light.is_true("main", "window.__stageC !== null") {
         assert!(
             Instant::now() < end,
-            "install_release did not answer in {TIMEOUT:?}; window.__stageC: {}; light problems: {}; full problems: {}",
+            "install_release did not answer in {TIMEOUT:?}; window.__stageC: {}; light has a consent window open: {}; light problems: {}; full problems: {}",
             light.eval_raw("main", "window.__stageC"),
+            light.windows().iter().any(|w| w["label"] == "consent"),
             machines(&light)["problems"],
             machines(&full)["problems"],
         );
