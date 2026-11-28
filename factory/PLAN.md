@@ -6,16 +6,6 @@ lines. History is in `factory/DONE.md`. Upkeep work is in GitHub issues labelled
 the spec that owns them; those from before 2026-11-27 wait in `factory/decisions/LOG.md` for that
 (issue linked there).
 
-## Deputy handover
-
-From Deputy Rock to Deputy Paper, 2026-11-28 ~14:56 UTC, at 310k tokens of context (one merge: agentic-harness S166). One watcher over all three repositories (`watch-all.sh <state> <600 while a Codex task runs, else 1800> civic-tech-pioneer/watane civic-tech-pioneer/agentic-harness civic-tech-pioneer/watane-factory`); stopped. Codex: a new task resets the model chip to GPT-6.2 Sol; open the chip only after the page has loaded (else typing lands in the composer), click the model name under the effort slider, type "GPT-6 Sol" in the list's search, pick it by its `find` ref, and check the chip before typing.
-
-- **watane S167** (PR #134, flakes and core upkeep; builder claude, reviewer codex). r1 Codex review https://chatgpt.com/local/6b0ae11b-4f30-83ed-be58-0c8753d86072, carried to the PR (changes 2: F1.1 #105 still races, a fetch before its temp file; F1.ci dev `deps.rs:297` absolute paths red on macOS and Windows; P1.1). Deputy Rock widened F1.ci with two macOS app tests red in the same job (`build_on::windows::ac5_s23...`, `manage::adv_s113...`, "channel is empty", possibly from the slice's `journey.rs` approve/deny change). **Answer r1** routine `trig_01QLtJ3YCczNVr6BQhtP4VfH` 14:55 UTC (build session `cse_01LxwP8zKyfgBf7kXN5UcMXi` idle since 14:08). Next: on "S167 r1: answers" and CI all green, Codex review r2 (new task, flattened brief, no newlines). Trend r1 2/1.
-- **agentic-harness S168** (PR #145, stage F F-P1, factory profiles in the kernel; builder codex, task https://chatgpt.com/local/6b0ac8e6-0d30-83ed-b093-a4e25ea3906a; reviewer claude). BLOCKED once, answered at rung 1 (its PLAN, Deputy decisions). r1 7/8, answers 9a627564 (lists only F1.1 to F1.7), CI green. **Claude review r2** routine `trig_01FjDPLbxMiZk1SqFPmh2hcg` 14:54 UTC; it checks whether P1.1 to P1.8 and the two accepted risks (TECHNICAL 14) landed. Consent boundary: adversary runs.
-- **Lanes (2 of 4).** Next: F-P2 (stage F's watane half: `agent-access`, `caller.connection`, the consent kinds, app words, dev fakes; TECHNICAL 17 row F-P2 in agentic-harness) in watane once S167 merges (both touch `pkg/` and `dev/`; also the other session's uncommitted `host/src/agent/claude/` work on the Mac). agentic-harness spec upkeep (#136, #107, #106, #102, #97, #112) overlaps S168 in `design/TECHNICAL.md`. watane-factory JF1-2 waits on stage F (F-P1 to F-P3).
-- **Report to the human: sent in chat** by Deputy Rock (Scissors' owed list, S166's merge, S168's decision). Deputy decisions still in the veto window: Scissors' four (below), S168 `manage.open` (agentic-harness PLAN), S166 R1.1/R1.2 and S168 r1's two risks accepted by Deputy Rock. Owed: a factory proposal for the S153 process rule (agentic-harness #122).
-- **Friction:** the Codex review missed two red macOS tests in its F1.ci; read CI logs yourself before an answer brief.
-
 ## Slices
 
 The main line: step 11, the agent layer; its next slice, JF1-1, is in flight in civic-tech-pioneer/watane-factory (its PLAN.md; routine `trig_0115fFChXSGujUeQtnujmzEk` 07:35 UTC, builder claude).
