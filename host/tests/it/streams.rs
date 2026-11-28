@@ -783,7 +783,11 @@ fn ac10_a_forwarding_mod_defers_on_full_and_resumes_on_ready_in_order() {
             std::thread::sleep(Duration::from_millis(20));
         }
     }
-    wait("a deferral", Duration::from_secs(10), || up.paused());
+    wait("a deferral", Duration::from_secs(10), || {
+        up.deliveries()
+            .iter()
+            .any(|d| d.answer == DeliveryAnswer::Deferred)
+    });
     set_mode(&env.host, "taken");
     assert_eq!(
         relay(&env.host, "api.resume", json!({"s": down})),
