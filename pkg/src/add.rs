@@ -502,4 +502,33 @@ mod tests {
         changed(add_provider(c.path(), &m, None), "wit/deps/x");
         untouched(c.path());
     }
+    // Only the listed entry itself is CHANGED at the entry; a gone ancestor is named at the ancestor.
+    #[test]
+    fn listed_dep_folder_parent_gone_is_changed_at_parent() {
+        let (p, c, m) = provider_dep();
+        let root = p.path().to_path_buf();
+        hook::set_listed(move || fs::remove_dir_all(root.join("wit/deps")).unwrap());
+        changed(add_provider(c.path(), &m, None), "wit/deps");
+        untouched(c.path());
+    }
+    // A link swapped in after the listing keeps add's link refusal at the entry.
+    #[test]
+    fn listed_dep_folder_now_a_link_is_refused_as_link() {
+        let (p, c, m) = provider_dep();
+        let root = p.path().to_path_buf();
+        let out = tempfile::tempdir().unwrap();
+        let target = out.path().to_path_buf();
+        hook::set_listed(move || {
+            fs::remove_dir_all(root.join("wit/deps/x")).unwrap();
+            symlink(&target, root.join("wit/deps/x")).unwrap();
+        });
+        let Err(ModError::Invalid(v)) = add_provider(c.path(), &m, None) else {
+            panic!("expected invalid")
+        };
+        assert_eq!(
+            (v[0].rule, v[0].file.as_str(), v[0].message.as_str()),
+            (Rule::Path, "wit/deps/x", NOT_A_DIRECTORY)
+        );
+        untouched(c.path());
+    }
 }
