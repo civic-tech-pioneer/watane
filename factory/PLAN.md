@@ -19,7 +19,7 @@ names the same interface in its sketch and fakes it until this one merges.
 
 ### S167: watane flakes and core upkeep (upkeep lane)
 
-Sketched 2026-11-28 by Deputy Rock. Builder claude by rule 3 (last two handed out: agentic-harness S166 codex, watane S164 codex); reviewer codex. In flight (cloud, builder claude): routine pending.
+Sketched 2026-11-28 by Deputy Rock. Builder claude by rule 3 (last two handed out: agentic-harness S166 codex, watane S164 codex); reviewer codex. In flight (cloud, builder claude): routine `trig_014Hxykx2EqoDYRbUm71r57F` 11:40 UTC.
 
 Issues, flakes first: #105 (`machines::ac6_s33...`, macOS), #106 (`manage::ac3_s82...`, macOS); then core: #115 (a dependency folder that vanishes after listing is refused with the CHANGED words, not copied empty), #114 (a `wit/deps` entry swapped for a file mid-read: the CHANGED words), #93 (an invalid-WIT provider is named; the s91 race test leaves the default run); then polish where cheap: #129, #116. The build team closes an issue already fixed on `main` with its commit; the PR body says `Fixes #n` for each other one.
 
