@@ -249,19 +249,6 @@ impl App {
     pub fn is_true(&self, label: &str, js: &str) -> bool {
         reads_true(&self.eval_raw(label, js))
     }
-    /// A consent window may be destroyed between two polls and recreated with
-    /// the same label. Treat that gap as "not yet" for transition tests.
-    pub fn is_true_if_present(&self, label: &str, js: &str) -> bool {
-        self.send(json!({"op":"eval","label":label,"js":js}))
-            .wait(TIMEOUT + Duration::from_secs(5))
-            .and_then(|reply| reply.get("ok").cloned())
-            .is_some_and(|raw| reads_true(&raw))
-    }
-    pub fn eval_may_close(&self, label: &str, js: &str) {
-        let _ = self
-            .send(json!({"op":"eval","label":label,"js":js}))
-            .wait(TIMEOUT + Duration::from_secs(5));
-    }
     pub fn eval(&self, label: &str, js: &str) -> Value {
         let v = self.eval_raw(label, js);
         serde_json::from_str(v.as_str().unwrap()).unwrap_or_else(|e| {
