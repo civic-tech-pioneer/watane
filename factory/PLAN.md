@@ -8,7 +8,7 @@ the spec that owns them; those from before 2026-11-27 wait in `factory/decisions
 
 ## Slices
 
-The main line: step 11, the agent layer; its next slice, JF1-1, waits on the human (JF1-ADOPT).
+The main line: step 11, the agent layer; its next slice, JF1-1, is in flight in civic-tech-pioneer/watane-factory (its PLAN.md; routine `trig_0115fFChXSGujUeQtnujmzEk` 07:35 UTC, builder claude).
 The human chose (2026-11-21, "the bridge") to build the agent layer next, driven by the collection's
 product owner (watane-mods `/po`, `factory/config.toml` here; watane keeps its own foreman, agents,
 check.sh and CI). The design lives in `watane-mods/agentic-harness/design/` (VISION, FUNCTIONAL,
@@ -39,8 +39,6 @@ that subsystem's next slice a test-cost slice.
 | pkg | 8 s | not measured | main `393ae6c` (MAIN PASS), integration binary, load ~10 to 17 |
 
 ## Waiting on the human
-
-- **JF1-ADOPT (2026-11-27, Deputy Scissors): watane-factory exists (STEP6-REPO answered); JF1-1 (`spec/design/factory/TECHNICAL.md` 6) is the main line's next slice and needs from you, in one go:** (1) the publisher who signs the factory mod and its slug (TECHNICAL 1: "chosen when the repository is made"; rec: slug `factory`, your own maker identity as for the other watane-mods); (2) adopt it into the collection: `watane-mods/factory/bin/adopt.sh <folder> civic-tech-pioneer/watane-factory` (writes config.toml and PLAN.md, adds the ruleset that holds main to `gate`, like the other mod repos) and a `[watane-factory]` row in `projects.toml` (a new project, Door H); (3) add the repository to the Codex `watane` environment (an account setting; until then JF1-1 builds with Claude, which rule 3 picks anyway). JF1-1 is handed out to Claude as soon as (2) has run; (1) can follow, the build keeps the slug and publisher in one place.
 
 - (2026-11-25, deputy-5, S122 merged: agentic-harness stage E's watane half is done) **A real judge account for V7.** (2026-11-27, Deputy Paper: stale for stage E, which merged as agentic-harness S127 on 2026-11-26 with Jev as its judge, PR civic-tech-pioneer/agentic-harness#56; N5 decided (a) by the human 2026-11-27, agentic-harness PLAN fc09fb3.) Stage E's checked provider (agentic-harness) needs a judge service the provider can call with a key Alice enters; nothing in the factory can open one (an account is the human's). Which judge (Jev or another), and may the factory use a key of yours in its cloud tests? Blocks agentic-harness stage E, so step 6's JF1.
 
@@ -75,6 +73,8 @@ that subsystem's next slice a test-cost slice.
   undo: (a) nothing; (b) a format change in pkg, host and dev. S17 built (a).
 
 ## Human answers
+
+- 2026-11-28 (to Deputy Paper): **JF1-ADOPT, yes to both**: civic-tech-pioneer/watane-factory adopted into the collection (adopt.sh, c32ad56 there; a `[watane-factory]` row in the local watane-mods `projects.toml`), mod slug `factory`, signed with the human's own maker identity. The human adds the repository to the Codex `watane` environment; until then both of its teams are Claude. JF1-1 is in flight there (its own PLAN.md).
 
 - 2026-11-28: **Codex runs on GPT-6 Sol, not GPT-6.2 Sol** ("this is the way forward"). OpenAI's Daybreak troubleshooting page: GPT-6.2 Sol and Astra stay on standard safeguards under Daybreak Blue; GPT-6 Sol and Luna get its reduced refusals. GPT-6.2 Sol withheld S162 r2 ("This content can't be shown"); the same brief on GPT-6 Sol came through (approve). Pick it in the composer's model picker before each dispatch. The factory's rule: mboogerd/claude-plugin, deputy 4c.
 
