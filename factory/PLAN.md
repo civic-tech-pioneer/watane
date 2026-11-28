@@ -17,6 +17,8 @@ watane changes the human accepted (N3); TECHNICAL 17 gives each stage its watane
 agentic-harness part. A stage's watane slice goes first; the agentic-harness slice that uses it
 names the same interface in its sketch and fakes it until this one merges.
 
+- [~] **S164 (upkeep) the four flakes, then app.** In flight (cloud, builder codex, reviewer claude). Sketched 2026-11-28 by Deputy Paper; builder codex by rule 3 (the last two handed out: watane S162 claude, agentic-harness S163 codex). Issues, guards and flakes first: #105, #106, #108 (app tests: `machines`, `manage`, `support_selftest`, macOS) and #107 (`host/tests/it/streams.rs`, Windows): find each cause from its CI log and fix the test or the code, so it passes 20 runs in a row on its OS's CI job (say how it was checked; a cause in a product path is a fix, not a retry). Then app: #73 (channel rows show words, not raw transport text), #72 (`Core::mods` stops re-reading every related channel view each refresh), #82, #83, #102, #71 (tests and tidy), #103 (the Updates card hint, if the case still occurs; else close it with why). The build team closes an issue already fixed on main with its commit; the PR body says `Fixes #n` for each other. Outcomes: each issue's check (a test or a CI run, green on all four jobs). Touches: `app/`, `host/tests/it/streams.rs` and, only if a flake's cause is there, host's stream code; `dist/` tests for #83 P1.1; not `host/src/agent/`, `dev/` (local work in progress on the Mac), no WIT, no interface or error-code change. Protects: *guard* (the flakes), *polish* (the rest). Size: an upkeep slice.
+
 ## Suite time
 
 Wall time of each subsystem's tests on `main` (`factory/README.md`, "Time and value"): the
