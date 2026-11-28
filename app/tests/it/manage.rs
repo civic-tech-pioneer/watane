@@ -676,12 +676,18 @@ fn ac3_s82_read_asked_before_fetch_then_install_and_follow() {
     // This approval immediately opens the install consent under the same
     // window label. The shared approve helper waits for that label to vanish,
     // which can miss the brief interval between the two windows.
-    app.eval("consent", "document.querySelector('#approve').disabled = false; document.querySelector('#approve').click(); null");
-    until(
-        &app,
+    app.eval_may_close("consent", "document.querySelector('#approve').disabled = false; document.querySelector('#approve').click(); null");
+    let deadline = std::time::Instant::now() + TIMEOUT;
+    while !app.is_true_if_present(
         "consent",
         "document.querySelector('h1')?.textContent === 'Install Book club'",
-    );
+    ) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "next consent did not open"
+        );
+        std::thread::yield_now();
+    }
     assert_eq!(
         app.eval("consent", "document.querySelector('h1').textContent"),
         "Install Book club"
