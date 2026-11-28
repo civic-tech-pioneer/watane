@@ -142,13 +142,20 @@ pub(crate) fn replace_equal(
         .make_in(parent, watane_log_windows_fs::create_file)
         .map_err(|e| io(parent, bare_io(e)))?;
     #[cfg(test)]
-    if TEST_FAIL_TEMP_WRITE.with(|fail| fail.replace(false)) {
-        return Err(io(tmp.path(), std::io::Error::from_raw_os_error(5)));
+    let fail_write = TEST_FAIL_TEMP_WRITE.with(|fail| fail.replace(false));
+    #[cfg(not(test))]
+    let fail_write = false;
+    let written = if fail_write {
+        Err(std::io::Error::from_raw_os_error(5))
+    } else {
+        tmp.as_file_mut().write_all(bytes)
+    };
+    if let Err(error) = written {
+        let temp_path = tmp.path().to_owned();
+        drop(tmp); // Close the handle before removing the file on Windows.
+        let _ = fs::remove_file(&temp_path);
+        return Err(io(&temp_path, error));
     }
-    // The file itself: `NamedTempFile`'s own `Write` adds its path to the error (3.1).
-    tmp.as_file_mut()
-        .write_all(bytes)
-        .map_err(|e| io(tmp.path(), e))?;
     #[cfg(unix)]
     tmp.as_file()
         .set_permissions(fs::Permissions::from_mode(mode))
