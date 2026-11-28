@@ -774,13 +774,20 @@ fn ac10_a_forwarding_mod_defers_on_full_and_resumes_on_ready_in_order() {
     while sent < 300 {
         match up.push(format!("{sent:03}").as_bytes()) {
             Ok(()) => sent += 1,
-            // The producer can outrun the forwarding mod on Windows. Full
-            // refuses this item; send it after the downstream resumes.
-            Err(watane_host::StreamError::Full) => break,
+            // Full can precede the relay's deferral. Retry this item until
+            // the relay defers, then send it after the downstream resumes.
+            Err(watane_host::StreamError::Full) => {
+                if up
+                    .deliveries()
+                    .iter()
+                    .any(|d| d.answer == DeliveryAnswer::Deferred)
+                {
+                    break;
+                }
+                assert!(Instant::now() < resend_deadline, "upstream stayed full");
+                std::thread::sleep(Duration::from_millis(10));
+            }
             Err(error) => panic!("upstream push failed: {error:?}"),
-        }
-        if sent % 50 == 0 {
-            std::thread::sleep(Duration::from_millis(20));
         }
     }
     wait("a deferral", Duration::from_secs(10), || {
